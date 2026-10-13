@@ -1,4 +1,6 @@
+
 name: hil
+
 on:
   push:
     branches: [dev, main]
@@ -9,26 +11,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  hil:
-    if: >-
-      ${{
-        hashFiles('firmware/esp8266/platformio.ini') != '' &&
-        hashFiles('tests/hil/**/*.py') != ''
-      }}
-    runs-on: [self-hosted, linux, ARM64, hil-drone]
-    timeout-minutes: 20
+  check-hil:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build firmware on the runner
+      - name: Check for HIL test files
+        id: check
+        shell: bash
         run: |
-          python3 -m venv .venv && . .venv/bin/activate
+          if [[ -f firmware/esp8266/platformio.ini ]] &&
+             [[ -d tests/hil ]] &&
+             find tests/hil -type f -name '*.py' -print -quit | grep -q .; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  hil:
+    needs: [check-hil]
+    if: ${{ needs.check-hil.outputs.enabled == 'true' }}
+    runs-on: [self-hosted, linux, ARM64, hil-drone]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python environment
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
           pip install platformio pytest pyserial
-          pio run -d firmware/esp8266 -e d1_mini
+
+      - name: Build firmware for OTA
+        run: |
+          . .venv/bin/activate
+          pio run -d firmware/esp8266 -e d1_mini_ota
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
 
-      - name: Flash the bench D1 mini over the air (USB data never touches UART0)
+      - name: Flash the bench D1 mini over the air
         run: |
           . .venv/bin/activate
           pio run -d firmware/esp8266 -e d1_mini_ota -t upload
@@ -37,8 +61,10 @@ jobs:
         run: |
           . .venv/bin/activate
           pytest tests/hil -v --junitxml=hil-report.xml
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hil-report
           path: hil-report.xml
+          if-no-files-found: ignore
