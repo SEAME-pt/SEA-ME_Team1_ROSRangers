@@ -1,0 +1,44 @@
+name: hil
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: hil-bench
+  cancel-in-progress: false
+
+jobs:
+  hil:
+    if: >-
+      ${{
+        hashFiles('firmware/esp8266/platformio.ini') != '' &&
+        hashFiles('tests/hil/**/*.py') != ''
+      }}
+    runs-on: [self-hosted, linux, ARM64, hil-drone]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build firmware on the runner
+        run: |
+          python3 -m venv .venv && . .venv/bin/activate
+          pip install platformio pytest pyserial
+          pio run -d firmware/esp8266 -e d1_mini
+        env:
+          SD_PSK: ${{ secrets.SD_PSK_HIL }}
+
+      - name: Flash the bench D1 mini over the air (USB data never touches UART0)
+        run: |
+          . .venv/bin/activate
+          pio run -d firmware/esp8266 -e d1_mini_ota -t upload
+
+      - name: Bench tests (no battery, no props)
+        run: |
+          . .venv/bin/activate
+          pytest tests/hil -v --junitxml=hil-report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hil-report
+          path: hil-report.xml
