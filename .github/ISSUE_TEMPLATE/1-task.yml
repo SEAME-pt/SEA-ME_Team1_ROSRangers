@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         After creating the issue, add a **track** and **priority** label.
-        Branch name: `feature/<issue-number>-<short-name>`.
+        Branch name: `feat/<issue-number>-<short-name>`.
   - type: textarea
     id: goal
     attributes:
