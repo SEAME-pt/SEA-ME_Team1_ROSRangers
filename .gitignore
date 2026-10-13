@@ -5,5 +5,3 @@ __pycache__/
 CLAUDE.md
 *.csv
 *.bin
-# old local FC captures; fc_cli.py now writes to drone/config/betaflight/
-config/

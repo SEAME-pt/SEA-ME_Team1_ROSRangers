@@ -5,19 +5,17 @@ Read-only by default. Any command that can change the configuration needs --writ
 and a `diff all` backup is saved before it runs.
 
 Examples:
-  python3 scripts/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → drone/config/betaflight/<ver>/
+  python3 scripts/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → config/betaflight/<ver>/
   python3 scripts/fc_cli.py run "get failsafe" "serial"
   python3 scripts/fc_cli.py --write run "set vtx_power = 1" --save
   python3 scripts/fc_cli.py --write enable-esp-uart    # UART4 = MSP 115200 (ADR-011)
   python3 scripts/fc_cli.py backup-firmware            # full 512 KB flash over DFU (needs dfu-util)
-  python3 scripts/fc_cli.py compare-diffs              # S2-02: did the config change? (last two diff all)
 
 On exit the FC reboots (Betaflight leaves the CLI that way). Nothing is saved unless you ask.
 """
 
 import argparse
 import datetime
-import difflib
 import hashlib
 import pathlib
 import re
@@ -30,31 +28,13 @@ import serial
 from serial.tools import list_ports
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-CONFIG_DIR = REPO / "drone" / "config" / "betaflight"  # repo layout from #12
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "betaflight"
 FC_USB_ID = (0x0483, 0x5740)  # STM32 virtual COM port
 
 READ_ONLY = {"version", "status", "tasks", "diff", "dump", "get", "help"}
-LIST_WHEN_BARE = {
-    "serial",
-    "feature",
-    "resource",
-    "aux",
-    "map",
-    "vtxtable",
-    "beacon",
-    "mixer",
-}
-DUMP_COMMANDS = [
-    "version",
-    "status",
-    "serial",
-    "get failsafe",
-    "get msp_override",
-    "get vbat",
-    "get vtx_power",
-    "tasks",
-]
+LIST_WHEN_BARE = {"serial", "feature", "resource", "aux", "map", "vtxtable", "beacon", "mixer"}
+DUMP_COMMANDS = ["version", "status", "serial", "get failsafe", "get msp_override",
+                 "get vbat", "get vtx_power", "tasks"]
 ESP_UART_LINE = "serial 3 1 115200 57600 0 115200"  # UART4 (id 3), MSP (1), 115200
 
 
@@ -71,9 +51,7 @@ def find_port() -> str:
     for p in list_ports.comports():
         if (p.vid, p.pid) == FC_USB_ID:
             return p.device
-    sys.exit(
-        "Flight controller not found (STM32 0483:5740). Is it plugged in, and not in DFU mode?"
-    )
+    sys.exit("Flight controller not found (STM32 0483:5740). Is it plugged in, and not in DFU mode?")
 
 
 class Cli:
@@ -127,7 +105,7 @@ def firmware_version(cli: Cli) -> str:
 
 def save_diff(cli: Cli, label: str = "") -> pathlib.Path:
     ver = firmware_version(cli)
-    out_dir = CONFIG_DIR / ver
+    out_dir = REPO / "config" / "betaflight" / ver
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     path = out_dir / f"diff_all_{stamp}{label}.txt"
@@ -140,7 +118,7 @@ def cmd_dump(args):
     cli = Cli(args.port)
     try:
         ver = firmware_version(cli)
-        out_dir = CONFIG_DIR / ver
+        out_dir = REPO / "config" / "betaflight" / ver
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         parts = ["# Read-only Betaflight CLI output. Nothing was saved to the FC.\n"]
@@ -161,9 +139,7 @@ def cmd_dump(args):
 def cmd_run(args):
     writes = [c for c in args.commands if not is_read_only(c)]
     if writes and not args.write:
-        sys.exit(
-            f"These commands can change the FC: {writes}\nAdd --write if you mean it."
-        )
+        sys.exit(f"These commands can change the FC: {writes}\nAdd --write if you mean it.")
     if args.save and not args.write:
         sys.exit("--save needs --write.")
     cli = Cli(args.port)
@@ -222,105 +198,34 @@ def cmd_backup_firmware(args):
     for target, leave in ((out, ""), (check, ":leave")):
         if target.exists():
             target.unlink()
-        r = subprocess.run(
-            [
-                "dfu-util",
-                "-a",
-                "0",
-                "-s",
-                f"0x08000000:{size}{leave}",
-                "-U",
-                str(target),
-            ],
-            capture_output=True,
-            text=True,
-        )
+        r = subprocess.run(["dfu-util", "-a", "0", "-s", f"0x08000000:{size}{leave}", "-U", str(target)],
+                           capture_output=True, text=True)
         if not target.exists() or target.stat().st_size != size:
-            sys.exit(
-                f"DFU read failed:\n{r.stdout[-500:]}\n{r.stderr[-500:]}\n"
-                "If the FC stays in DFU, unplug and replug the USB cable."
-            )
+            sys.exit(f"DFU read failed:\n{r.stdout[-500:]}\n{r.stderr[-500:]}\n"
+                     "If the FC stays in DFU, unplug and replug the USB cable.")
     same = out.read_bytes() == check.read_bytes()
     check.unlink()
     print(f"Firmware saved to {out}")
     print(f"SHA-256 {sha256(out)}")
-    print(
-        "Two reads identical"
-        if same
-        else "WARNING: the two reads differ. Repeat the backup."
-    )
+    print("Two reads identical" if same else "WARNING: the two reads differ. Repeat the backup.")
     print("The FC is back in normal mode (if not, replug the USB cable).")
 
 
-def diff_files():
-    return sorted(CONFIG_DIR.glob("*/diff_all_*.txt"), key=lambda p: p.name)
-
-
-def config_lines(path: pathlib.Path):
-    """`diff all` lines without comments (version banner, dates) and blank lines."""
-    return [
-        line
-        for line in path.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
-
-
-def cmd_compare_diffs(args):
-    files = [pathlib.Path(f) for f in args.files] or diff_files()[-2:]
-    if len(files) != 2:
-        sys.exit(
-            "Need two `diff all` files: run `fc_cli.py dump` before and after the test."
-        )
-    old, new = files
-    changes = list(
-        difflib.unified_diff(
-            config_lines(old), config_lines(new), str(old), str(new), lineterm=""
-        )
-    )
-    print(
-        "\n".join(changes) if changes else f"No configuration change:\n  {old}\n  {new}"
-    )
-
-
 def main():
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", help="FC serial port (default: auto-detect 0483:5740)")
-    ap.add_argument(
-        "--write", action="store_true", help="allow commands that change the FC"
-    )
+    ap.add_argument("--write", action="store_true", help="allow commands that change the FC")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser(
-        "dump",
-        help="save read-only CLI output and diff all to drone/config/betaflight/<ver>/",
-    )
+    sub.add_parser("dump", help="save read-only CLI output and diff all to config/betaflight/<ver>/")
     p = sub.add_parser("run", help="run CLI commands")
     p.add_argument("commands", nargs="+")
-    p.add_argument(
-        "--save", action="store_true", help="save after the commands (needs --write)"
-    )
-    sub.add_parser(
-        "enable-esp-uart", help=f"set `{ESP_UART_LINE}` and save (needs --write)"
-    )
-    sub.add_parser(
-        "backup-firmware", help=f"read the full flash over DFU into {BACKUP_DIR}"
-    )
-    p = sub.add_parser(
-        "compare-diffs",
-        help="compare two `diff all` files (default: the two newest); no FC needed",
-    )
-    p.add_argument("files", nargs="*", metavar="FILE")
+    p.add_argument("--save", action="store_true", help="save after the commands (needs --write)")
+    sub.add_parser("enable-esp-uart", help=f"set `{ESP_UART_LINE}` and save (needs --write)")
+    sub.add_parser("backup-firmware", help=f"read the full flash over DFU into {BACKUP_DIR}")
     args = ap.parse_args()
-    if args.cmd == "compare-diffs":
-        return cmd_compare_diffs(args)
     args.port = args.port or find_port()
-    {
-        "dump": cmd_dump,
-        "run": cmd_run,
-        "enable-esp-uart": cmd_enable_esp_uart,
-        "backup-firmware": cmd_backup_firmware,
-    }[args.cmd](args)
+    {"dump": cmd_dump, "run": cmd_run, "enable-esp-uart": cmd_enable_esp_uart,
+     "backup-firmware": cmd_backup_firmware}[args.cmd](args)
 
 
 if __name__ == "__main__":
