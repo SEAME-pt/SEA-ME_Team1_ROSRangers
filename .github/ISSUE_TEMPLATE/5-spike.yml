@@ -1,0 +1,30 @@
+name: Spike / research
+description: Time-boxed study or experiment that ends in a decision or a note
+labels: ["type: spike"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question to answer
+      placeholder: "Can SoftwareSerial on the D1 mini read ThoneFlow frames at 66 Hz without dropping MSP?"
+    validations:
+      required: true
+  - type: input
+    id: timebox
+    attributes:
+      label: Time box
+      placeholder: "2 days"
+    validations:
+      required: true
+  - type: textarea
+    id: threshold
+    attributes:
+      label: Decision threshold
+      description: Agreed before starting. What result leads to which decision?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: Fill in at the end. Link the ADR or vault note that records the result.
