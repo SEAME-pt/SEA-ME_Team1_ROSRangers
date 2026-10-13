@@ -18,7 +18,9 @@ def test_secret_asked_once_and_private(monkeypatch, tmp_path):
     answers = iter(["short", 'has"quote', "goodpassword"])
     monkeypatch.setattr(cfg.getpass, "getpass", lambda prompt: next(answers))
     assert cfg.get_secret("wifi:X", "pw: ") == "goodpassword"
-    monkeypatch.setattr(cfg.getpass, "getpass", lambda prompt: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(
+        cfg.getpass, "getpass", lambda prompt: (_ for _ in ()).throw(AssertionError)
+    )
     assert cfg.get_secret("wifi:X", "pw: ") == "goodpassword"
     assert stat.S_IMODE(cfg.SECRETS.stat().st_mode) == 0o600
     assert stat.S_IMODE(cfg.CONFIG_DIR.stat().st_mode) == 0o700

@@ -39,10 +39,14 @@ FAKE_ANSWERS = {
 
 def make_client(args):
     if args.usb:
-        return msp.Client(msp.SerialTransport(args.fc_port or find_fc_port(), 115200)), "FC over USB"
+        return msp.Client(
+            msp.SerialTransport(args.fc_port or find_fc_port(), 115200)
+        ), "FC over USB"
     p = cfg.load_profile()
     if not p:
-        sys.exit("No scenario configured. Run setup_test.py or setup_production.py first, or use --usb.")
+        sys.exit(
+            "No scenario configured. Run setup_test.py or setup_production.py first, or use --usb."
+        )
     host = args.esp or p["esp_ip"]
     t = msp.UdpTransport(host, p["esp_port"], p["pc_port"])
     return msp.Client(t), f"bridge {p['scenario'].upper()} via {host}:{p['esp_port']}"
@@ -69,11 +73,15 @@ def run_ping(client, n, rate, timeout, quiet=False):
 
 def print_stats(rtts, lost, bad):
     sent = len(rtts) + lost
-    print(f"\nRequests: {sent}   answers: {len(rtts)}   lost: {lost} ({100 * lost / max(1, sent):.1f} %)")
+    print(
+        f"\nRequests: {sent}   answers: {len(rtts)}   lost: {lost} ({100 * lost / max(1, sent):.1f} %)"
+    )
     if rtts:
         s = sorted(rtts)
-        print(f"RTT ms   min {s[0]:.1f}   mean {statistics.mean(s):.1f}   "
-              f"p95 {s[int(0.95 * (len(s) - 1))]:.1f}   max {s[-1]:.1f}")
+        print(
+            f"RTT ms   min {s[0]:.1f}   mean {statistics.mean(s):.1f}   "
+            f"p95 {s[int(0.95 * (len(s) - 1))]:.1f}   max {s[-1]:.1f}"
+        )
     print(f"Bad checksums: {bad}")
 
 
@@ -88,10 +96,15 @@ def cmd_info(args):
     c, label = make_client(args)
     print(f"Target: {label}")
     try:
-        for name, cmd in [("API version", msp.MSP_API_VERSION), ("FC variant", msp.MSP_FC_VARIANT),
-                          ("FC version", msp.MSP_FC_VERSION), ("Board", msp.MSP_BOARD_INFO),
-                          ("Status", msp.MSP_STATUS), ("Attitude", msp.MSP_ATTITUDE),
-                          ("Analog", msp.MSP_ANALOG)]:
+        for name, cmd in [
+            ("API version", msp.MSP_API_VERSION),
+            ("FC variant", msp.MSP_FC_VARIANT),
+            ("FC version", msp.MSP_FC_VERSION),
+            ("Board", msp.MSP_BOARD_INFO),
+            ("Status", msp.MSP_STATUS),
+            ("Attitude", msp.MSP_ATTITUDE),
+            ("Analog", msp.MSP_ANALOG),
+        ]:
             f, rtt = c.request(cmd, args.timeout)
             if f is None:
                 print(f"{name:12} no answer within {args.timeout * 1000:.0f} ms")
@@ -124,8 +137,11 @@ def cmd_attitude(args):
                 print("no answer", flush=True)
             else:
                 a = msp.decode(msp.MSP_ATTITUDE, f.payload)
-                print(f"roll {a['roll_deg']:7.1f}  pitch {a['pitch_deg']:7.1f}  "
-                      f"yaw {a['yaw_deg']:4d}   ({rtt * 1000:.1f} ms)", flush=True)
+                print(
+                    f"roll {a['roll_deg']:7.1f}  pitch {a['pitch_deg']:7.1f}  "
+                    f"yaw {a['yaw_deg']:4d}   ({rtt * 1000:.1f} ms)",
+                    flush=True,
+                )
             time.sleep(1.0 / args.rate)
     except KeyboardInterrupt:
         pass
@@ -143,8 +159,13 @@ def fake_fc(port: str, stop: threading.Event, stats: dict):
             for f in parser.feed(ser.read(512)):
                 if f.direction != "<":
                     continue
-                ser.write(msp.encode_response(f.cmd, FAKE_ANSWERS.get(f.cmd, b""),
-                                              error=f.cmd not in FAKE_ANSWERS))
+                ser.write(
+                    msp.encode_response(
+                        f.cmd,
+                        FAKE_ANSWERS.get(f.cmd, b""),
+                        error=f.cmd not in FAKE_ANSWERS,
+                    )
+                )
                 stats["answered"] += 1
             stats["bad"] = parser.bad_checksums
     finally:
@@ -166,15 +187,21 @@ def cmd_fake_fc(args):
 def cmd_cycle1a(args):
     """ESP on USB in bridge mode. This PC plays the FC on the ESP USB port and pings through Wi-Fi."""
     if not cfg.load_profile():
-        sys.exit("No scenario configured. Run setup_test.py (or setup_production.py) first.")
+        sys.exit(
+            "No scenario configured. Run setup_test.py (or setup_production.py) first."
+        )
     port = args.esp_port_usb or esp_at.find_port()
     stop, stats = threading.Event(), {"answered": 0, "bad": 0}
     th = threading.Thread(target=fake_fc, args=(port, stop, stats), daemon=True)
     th.start()
     c, label = make_client(args)
-    print(f"Cycle 1a · {label} · fake FC on {port} · {args.n} requests at {args.rate} Hz")
+    print(
+        f"Cycle 1a · {label} · fake FC on {port} · {args.n} requests at {args.rate} Hz"
+    )
     # Opening the ESP USB port resets the ESP (DTR/RTS): wait until it is back on Wi-Fi.
-    print(f"Waiting for the bridge (the ESP reboots when its USB port opens), up to {args.wait:.0f} s...")
+    print(
+        f"Waiting for the bridge (the ESP reboots when its USB port opens), up to {args.wait:.0f} s..."
+    )
     t0 = time.time()
     try:
         while True:
@@ -182,12 +209,16 @@ def cmd_cycle1a(args):
             if f is not None:
                 break
             if time.time() - t0 > args.wait:
-                print("\nFAIL: no answer through the bridge. Check `setup_test.py status` "
-                      "(or `setup_production.py connect`).")
+                print(
+                    "\nFAIL: no answer through the bridge. Check `setup_test.py status` "
+                    "(or `setup_production.py connect`)."
+                )
                 return
         print(f"Bridge ready after {time.time() - t0:.1f} s")
         time.sleep(0.5)
-        bad_before = c.parser.bad_checksums + stats["bad"]  # boot noise from the ESP does not count
+        bad_before = (
+            c.parser.bad_checksums + stats["bad"]
+        )  # boot noise from the ESP does not count
         rtts, lost = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
     finally:
         c.close()
@@ -198,34 +229,59 @@ def cmd_cycle1a(args):
     save_csv(args.csv, rtts)
     loss = 100 * lost / max(1, len(rtts) + lost)
     ok = loss <= args.max_loss and bad == 0
-    print(f"\nCycle 1a {'PASS' if ok else 'FAIL'}  (criteria: loss ≤ {args.max_loss} %, no bad checksums)")
+    print(
+        f"\nCycle 1a {'PASS' if ok else 'FAIL'}  (criteria: loss ≤ {args.max_loss} %, no bad checksums)"
+    )
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--usb", action="store_true", help="talk to the FC directly over USB")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--usb", action="store_true", help="talk to the FC directly over USB"
+    )
     ap.add_argument("--fc-port", help="FC USB serial port (default: auto-detect)")
     ap.add_argument("--esp", help="override the ESP IP from the saved scenario")
-    ap.add_argument("--esp-port-usb", help="ESP USB serial port for fake-fc/cycle1a (default: auto)")
-    ap.add_argument("--timeout", type=float, default=0.5, help="seconds to wait for each answer")
+    ap.add_argument(
+        "--esp-port-usb", help="ESP USB serial port for fake-fc/cycle1a (default: auto)"
+    )
+    ap.add_argument(
+        "--timeout", type=float, default=0.5, help="seconds to wait for each answer"
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("info", help="API version, firmware, board, status, attitude, battery")
-    for name, n, help_ in (("ping", 100, "round-trip time and loss with MSP_API_VERSION"),
-                           ("cycle1a", 500, "bridge test without the drone (ESP on USB, fake FC)")):
+    sub.add_parser(
+        "info", help="API version, firmware, board, status, attitude, battery"
+    )
+    for name, n, help_ in (
+        ("ping", 100, "round-trip time and loss with MSP_API_VERSION"),
+        ("cycle1a", 500, "bridge test without the drone (ESP on USB, fake FC)"),
+    ):
         p = sub.add_parser(name, help=help_)
         p.add_argument("-n", type=int, default=n)
-        p.add_argument("--rate", type=float, default=50, help="requests per second (0 = max)")
+        p.add_argument(
+            "--rate", type=float, default=50, help="requests per second (0 = max)"
+        )
         p.add_argument("--csv", help="save every RTT to this CSV file")
         p.add_argument("--quiet", action="store_true")
         if name == "cycle1a":
-            p.add_argument("--max-loss", type=float, default=1.0, help="pass threshold in %%")
-            p.add_argument("--wait", type=float, default=20, help="seconds to wait for the bridge")
+            p.add_argument(
+                "--max-loss", type=float, default=1.0, help="pass threshold in %%"
+            )
+            p.add_argument(
+                "--wait", type=float, default=20, help="seconds to wait for the bridge"
+            )
     p = sub.add_parser("attitude", help="print roll/pitch/yaw continuously")
     p.add_argument("--rate", type=float, default=10)
     sub.add_parser("fake-fc", help="only answer MSP on the ESP USB port")
     args = ap.parse_args()
-    {"info": cmd_info, "ping": cmd_ping, "attitude": cmd_attitude, "fake-fc": cmd_fake_fc,
-     "cycle1a": cmd_cycle1a}[args.cmd](args)
+    {
+        "info": cmd_info,
+        "ping": cmd_ping,
+        "attitude": cmd_attitude,
+        "fake-fc": cmd_fake_fc,
+        "cycle1a": cmd_cycle1a,
+    }[args.cmd](args)
 
 
 if __name__ == "__main__":

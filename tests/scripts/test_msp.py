@@ -26,7 +26,11 @@ def test_parser_roundtrip_and_split_feed():
     p = msp.Parser()
     assert p.feed(frame[:4]) == []
     (f,) = p.feed(frame[4:])
-    assert (f.direction, f.cmd, f.payload) == (">", msp.MSP_API_VERSION, bytes([0, 1, 46]))
+    assert (f.direction, f.cmd, f.payload) == (
+        ">",
+        msp.MSP_API_VERSION,
+        bytes([0, 1, 46]),
+    )
 
 
 def test_parser_skips_noise_and_counts_bad_checksum():
@@ -45,7 +49,10 @@ def test_parser_error_frame():
 
 
 def test_decoders():
-    assert msp.decode(msp.MSP_API_VERSION, bytes([0, 1, 46])) == {"protocol": 0, "api": "1.46"}
+    assert msp.decode(msp.MSP_API_VERSION, bytes([0, 1, 46])) == {
+        "protocol": 0,
+        "api": "1.46",
+    }
     att = msp.decode(msp.MSP_ATTITUDE, struct.pack("<hhh", -123, 45, 270))
     assert att == {"roll_deg": -12.3, "pitch_deg": 4.5, "yaw_deg": 270}
     st = msp.decode(msp.MSP_STATUS, struct.pack("<HHHI", 125, 0, 0x23, 1))
@@ -67,10 +74,20 @@ def test_client_refuses_write_commands():
         msp.Client(Dummy()).request(200)  # MSP_SET_RAW_RC
 
 
-@pytest.mark.parametrize("line,expected", [
-    ("version", True), ("get failsafe", True), ("diff all", True), ("serial", True),
-    ("serial 3 1 115200 57600 0 115200", False), ("set vtx_power = 1", False),
-    ("save", False), ("feature -3D", False), ("feature", True), ("defaults", False),
-])
+@pytest.mark.parametrize(
+    "line,expected",
+    [
+        ("version", True),
+        ("get failsafe", True),
+        ("diff all", True),
+        ("serial", True),
+        ("serial 3 1 115200 57600 0 115200", False),
+        ("set vtx_power = 1", False),
+        ("save", False),
+        ("feature -3D", False),
+        ("feature", True),
+        ("defaults", False),
+    ],
+)
 def test_fc_cli_read_only_filter(line, expected):
     assert is_read_only(line) is expected

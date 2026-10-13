@@ -31,14 +31,19 @@ import esp_at
 
 
 def pc_ip_towards(ip: str) -> str:
-    out = subprocess.run(["ip", "-4", "route", "get", ip], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["ip", "-4", "route", "get", ip], capture_output=True, text=True
+    ).stdout
     m = re.search(r"\bsrc ([\d.]+)", out)
     return m.group(1) if m else ""
 
 
 def pc_wifi_ssid() -> str:
-    out = subprocess.run(["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"],
-                         capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["nmcli", "-t", "-f", "ACTIVE,SSID", "device", "wifi"],
+        capture_output=True,
+        text=True,
+    ).stdout
     for line in out.splitlines():
         if line.startswith("yes:"):
             return line[4:]
@@ -46,15 +51,25 @@ def pc_wifi_ssid() -> str:
 
 
 def reachable(ip: str) -> bool:
-    return subprocess.run(["ping", "-c", "3", "-W", "1", ip], capture_output=True).returncode == 0
+    return (
+        subprocess.run(
+            ["ping", "-c", "3", "-W", "1", ip], capture_output=True
+        ).returncode
+        == 0
+    )
 
 
 def cmd_setup(args):
     ssid_now = pc_wifi_ssid()
     if ssid_now != args.ssid:
-        print(f"WARNING: this PC is on Wi-Fi '{ssid_now or 'none'}', not '{args.ssid}'.")
-    password = cfg.get_secret(f"wifi:{args.ssid}", f"Password for Wi-Fi '{args.ssid}': ",
-                              ask_again=args.ask_password)
+        print(
+            f"WARNING: this PC is on Wi-Fi '{ssid_now or 'none'}', not '{args.ssid}'."
+        )
+    password = cfg.get_secret(
+        f"wifi:{args.ssid}",
+        f"Password for Wi-Fi '{args.ssid}': ",
+        ask_again=args.ask_password,
+    )
     ser = esp_at.open_port(args.port or esp_at.find_port())
     try:
         print("1. ESP in AT mode")
@@ -75,16 +90,27 @@ def cmd_setup(args):
         pc_ip = pc_ip_towards(esp_ip)
         print(f"3. ESP {esp_ip}, this PC {pc_ip}")
         if not reachable(esp_ip):
-            raise esp_at.EspError(f"This PC cannot ping the ESP at {esp_ip}. The network may isolate "
-                                  "clients from each other: use setup_production.py instead.")
+            raise esp_at.EspError(
+                f"This PC cannot ping the ESP at {esp_ip}. The network may isolate "
+                "clients from each other: use setup_production.py instead."
+            )
         print("   ping from this PC to the ESP: OK")
         print("4. Transparent UDP bridge at boot")
-        esp_at.at_ok(ser, f'AT+SAVETRANSLINK=1,"{pc_ip}",{cfg.BRIDGE_PORT},"UDP",{cfg.BRIDGE_PORT}')
-        cfg.save_profile({
-            "scenario": "test", "ssid": args.ssid, "esp_ip": esp_ip, "pc_ip": pc_ip,
-            "esp_port": cfg.BRIDGE_PORT, "pc_port": cfg.BRIDGE_PORT,
-            "configured": datetime.datetime.now().isoformat(timespec="seconds"),
-        })
+        esp_at.at_ok(
+            ser,
+            f'AT+SAVETRANSLINK=1,"{pc_ip}",{cfg.BRIDGE_PORT},"UDP",{cfg.BRIDGE_PORT}',
+        )
+        cfg.save_profile(
+            {
+                "scenario": "test",
+                "ssid": args.ssid,
+                "esp_ip": esp_ip,
+                "pc_ip": pc_ip,
+                "esp_port": cfg.BRIDGE_PORT,
+                "pc_port": cfg.BRIDGE_PORT,
+                "configured": datetime.datetime.now().isoformat(timespec="seconds"),
+            }
+        )
         print("5. Rebooting the ESP into the bridge")
         esp_at.reboot(ser)
     finally:
@@ -97,22 +123,32 @@ def cmd_setup(args):
 def cmd_status(args):
     p = cfg.load_profile()
     if p.get("scenario") != "test":
-        sys.exit(f"Active scenario: {p.get('scenario', 'none')}. Run setup_test.py setup.")
+        sys.exit(
+            f"Active scenario: {p.get('scenario', 'none')}. Run setup_test.py setup."
+        )
     print(f"Scenario TEST on '{p['ssid']}' (configured {p['configured']})")
     print(f"  ESP {p['esp_ip']}:{p['esp_port']}  →  PC {p['pc_ip']}:{p['pc_port']}")
     now = pc_ip_towards(p["esp_ip"])
     if now != p["pc_ip"]:
-        print(f"  WARNING: this PC is now {now or 'offline'}; the ESP still sends to {p['pc_ip']}. Run setup again.")
+        print(
+            f"  WARNING: this PC is now {now or 'offline'}; the ESP still sends to {p['pc_ip']}. Run setup again."
+        )
     print(f"  ping ESP: {'OK' if reachable(p['esp_ip']) else 'no answer'}")
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--port", help="ESP serial port (default: auto-detect)")
     sub = ap.add_subparsers(dest="cmd")
-    p = sub.add_parser("setup", help="configure the ESP and this PC for the TEST scenario")
+    p = sub.add_parser(
+        "setup", help="configure the ESP and this PC for the TEST scenario"
+    )
     p.add_argument("--ssid", default="SEAME")
-    p.add_argument("--ask-password", action="store_true", help="ask for the Wi-Fi password again")
+    p.add_argument(
+        "--ask-password", action="store_true", help="ask for the Wi-Fi password again"
+    )
     sub.add_parser("status", help="show the saved TEST scenario and check the ESP")
     ap.set_defaults(ssid="SEAME", ask_password=False)
     args = ap.parse_args()

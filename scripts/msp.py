@@ -20,8 +20,13 @@ MSP_ATTITUDE = 108
 MSP_ANALOG = 110
 
 READ_ONLY_COMMANDS = {
-    MSP_API_VERSION, MSP_FC_VARIANT, MSP_FC_VERSION, MSP_BOARD_INFO,
-    MSP_STATUS, MSP_ATTITUDE, MSP_ANALOG,
+    MSP_API_VERSION,
+    MSP_FC_VARIANT,
+    MSP_FC_VERSION,
+    MSP_BOARD_INFO,
+    MSP_STATUS,
+    MSP_ATTITUDE,
+    MSP_ANALOG,
 }
 
 
@@ -55,7 +60,9 @@ class Frame:
         self.payload = payload
 
     def __repr__(self):
-        return f"Frame({self.direction!r}, cmd={self.cmd}, payload={self.payload.hex()})"
+        return (
+            f"Frame({self.direction!r}, cmd={self.cmd}, payload={self.payload.hex()})"
+        )
 
 
 class Parser:
@@ -109,6 +116,7 @@ class Parser:
 
 # ---------- payload decoders ----------
 
+
 def decode(cmd: int, p: bytes) -> dict:
     if cmd == MSP_API_VERSION and len(p) >= 3:
         return {"protocol": p[0], "api": f"{p[1]}.{p[2]}"}
@@ -120,9 +128,13 @@ def decode(cmd: int, p: bytes) -> dict:
         return {"board": p[:4].decode(errors="replace")}
     if cmd == MSP_STATUS and len(p) >= 10:
         cycle, i2c_err, sensors, flags = struct.unpack_from("<HHHI", p)
-        return {"cycle_time_us": cycle, "i2c_errors": i2c_err,
-                "sensors_mask": sensors, "flight_mode_flags": flags,
-                "armed": bool(flags & 1)}
+        return {
+            "cycle_time_us": cycle,
+            "i2c_errors": i2c_err,
+            "sensors_mask": sensors,
+            "flight_mode_flags": flags,
+            "armed": bool(flags & 1),
+        }
     if cmd == MSP_ATTITUDE and len(p) >= 6:
         roll, pitch, yaw = struct.unpack_from("<hhh", p)
         return {"roll_deg": roll / 10, "pitch_deg": pitch / 10, "yaw_deg": yaw}
@@ -132,6 +144,7 @@ def decode(cmd: int, p: bytes) -> dict:
 
 
 # ---------- transports ----------
+
 
 class SerialTransport:
     def __init__(self, port: str, baud: int = 115200):

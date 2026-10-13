@@ -26,9 +26,23 @@ import serial
 from serial.tools import list_ports
 
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "esp8266"
-USB_SERIAL_IDS = {(0x0403, 0x6001), (0x1A86, 0x7523), (0x10C4, 0xEA60), (0x1A86, 0x55D4)}
-QUERIES = ["AT+GMR", "AT+CWMODE_DEF?", "AT+CWJAP_DEF?", "AT+CWSAP_DEF?", "AT+CIPAP_DEF?",
-           "AT+CIFSR", "AT+CWAUTOCONN?", "AT+CIPMODE?", "AT+SYSRAM?"]
+USB_SERIAL_IDS = {
+    (0x0403, 0x6001),
+    (0x1A86, 0x7523),
+    (0x10C4, 0xEA60),
+    (0x1A86, 0x55D4),
+}
+QUERIES = [
+    "AT+GMR",
+    "AT+CWMODE_DEF?",
+    "AT+CWJAP_DEF?",
+    "AT+CWSAP_DEF?",
+    "AT+CIPAP_DEF?",
+    "AT+CIFSR",
+    "AT+CWAUTOCONN?",
+    "AT+CIPMODE?",
+    "AT+SYSRAM?",
+]
 
 
 class EspError(RuntimeError):
@@ -39,7 +53,9 @@ def find_port() -> str:
     for p in list_ports.comports():
         if (p.vid, p.pid) in USB_SERIAL_IDS:
             return p.device
-    sys.exit("ESP USB-serial not found (FT232R / CH340 / CP210x). Is the ESP plugged in by USB?")
+    sys.exit(
+        "ESP USB-serial not found (FT232R / CH340 / CP210x). Is the ESP plugged in by USB?"
+    )
 
 
 def open_port(port: str, baud: int = 115200) -> serial.Serial:
@@ -90,7 +106,9 @@ def ensure_at_mode(ser):
         return
     leave_passthrough(ser)
     if "OK" not in at(ser, "AT"):
-        raise EspError("The ESP does not answer AT commands. Check the USB cable and the port.")
+        raise EspError(
+            "The ESP does not answer AT commands. Check the USB cable and the port."
+        )
     print("  ESP was in transparent mode: left it.")
 
 
@@ -103,8 +121,12 @@ def join_wifi(ser, ssid: str, password: str):
     out = at(ser, f'AT+CWJAP_DEF="{ssid}","{password}"', 25, secret=password)
     if "WIFI GOT IP" not in out and not out.endswith("OK"):
         code = re.search(r"\+CWJAP:(\d)", out)
-        reason = {"1": "timeout", "2": "wrong password", "3": "network not found",
-                  "4": "connection failed"}.get(code.group(1) if code else "", "unknown")
+        reason = {
+            "1": "timeout",
+            "2": "wrong password",
+            "3": "network not found",
+            "4": "connection failed",
+        }.get(code.group(1) if code else "", "unknown")
         raise EspError(f"Could not join '{ssid}' ({reason}).")
     print(f"  joined '{ssid}'")
 
@@ -117,7 +139,9 @@ def cmd_query(args):
     ser = open_port(args.port)
     try:
         if "OK" not in at(ser, "AT"):
-            sys.exit("No answer to AT: the ESP is probably in transparent mode. Run: esp_at.py exit-bridge")
+            sys.exit(
+                "No answer to AT: the ESP is probably in transparent mode. Run: esp_at.py exit-bridge"
+            )
         for q in QUERIES:
             print(at(ser, q, 2))
             print("---")
@@ -159,7 +183,12 @@ def cmd_exit_bridge(args):
 
 
 def cmd_restore(args):
-    if input("AT+RESTORE erases saved Wi-Fi settings and resets all AT settings. Type 'yes': ") != "yes":
+    if (
+        input(
+            "AT+RESTORE erases saved Wi-Fi settings and resets all AT settings. Type 'yes': "
+        )
+        != "yes"
+    ):
         sys.exit("Cancelled.")
     ser = open_port(args.port)
     try:
@@ -170,7 +199,9 @@ def cmd_restore(args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--port", help="ESP serial port (default: auto-detect)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("query", help="read-only AT state")
@@ -183,8 +214,13 @@ def main():
     args = ap.parse_args()
     args.port = args.port or find_port()
     try:
-        {"query": cmd_query, "raw": cmd_raw, "backup": cmd_backup,
-         "exit-bridge": cmd_exit_bridge, "restore": cmd_restore}[args.cmd](args)
+        {
+            "query": cmd_query,
+            "raw": cmd_raw,
+            "backup": cmd_backup,
+            "exit-bridge": cmd_exit_bridge,
+            "restore": cmd_restore,
+        }[args.cmd](args)
     except EspError as e:
         sys.exit(str(e))
 
