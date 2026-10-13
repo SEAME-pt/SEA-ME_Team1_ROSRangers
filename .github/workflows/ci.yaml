@@ -1,0 +1,114 @@
+name: ci
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files
+
+  protocol-cpp:
+    if: ${{ hashFiles('lib/protocol/CMakeLists.txt') != '' }}
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libgtest-dev gcovr clang-tidy cppcheck
+
+      - name: Configure
+        run: cmake -S lib/protocol -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSD_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Coverage gate
+        run: gcovr -r lib/protocol build --filter lib/protocol/src --fail-under-line 80 --xml-pretty -o coverage.xml
+
+      - name: Static analysis
+        run: |
+          clang-tidy -p build $(git ls-files 'lib/protocol/src/*.cpp') --warnings-as-errors='*'
+          cppcheck --enable=warning,style,performance --error-exitcode=1 --inline-suppr lib/protocol/src lib/protocol/include
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-cpp
+          path: coverage.xml
+
+  ground-python:
+    if: ${{ hashFiles('ground/src/sd_protocol_py/pyproject.toml') != '' }}
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-cov
+      - run: pip install -e ground/src/sd_protocol_py
+      - run: pytest ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
+
+  esp-firmware:
+    if: ${{ hashFiles('firmware/esp8266/platformio.ini') != '' }}
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install platformio
+      - run: pio run -d firmware/esp8266 -e d1_mini
+        env:
+          SD_PSK: ${{ secrets.SD_PSK_CI }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esp-firmware
+          path: firmware/esp8266/.pio/build/d1_mini/firmware.bin
+
+  betaflight-sitl:
+    needs: [lint, protocol-cpp, ground-python]
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.lint.result == 'success' &&
+        needs.protocol-cpp.result == 'success' &&
+        needs.ground-python.result == 'success' &&
+        hashFiles('lib/protocol/CMakeLists.txt') != '' &&
+        hashFiles('ground/src/sd_protocol_py/pyproject.toml') != '' &&
+        hashFiles('tests/sitl/**/*.py') != ''
+      }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Betaflight SITL (same version as the drone)
+        run: |
+          git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
+          mkdir -p shim && printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
+          chmod +x shim/arm-none-eabi-gcc
+          PATH="$PWD/shim:$PATH" make -C bf TARGET=SITL -j"$(nproc)"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest && pip install -e ground/src/sd_protocol_py
+      - name: MSP integration tests against SITL (TCP 5761)
+        run: |
+          (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
+          sleep 3
+          pytest tests/sitl -v
