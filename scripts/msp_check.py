@@ -146,6 +146,7 @@ def fake_fc(port: str, stop: threading.Event, stats: dict):
                 ser.write(msp.encode_response(f.cmd, FAKE_ANSWERS.get(f.cmd, b""),
                                               error=f.cmd not in FAKE_ANSWERS))
                 stats["answered"] += 1
+            stats["bad"] = parser.bad_checksums
     finally:
         stats["bad"] = parser.bad_checksums
         ser.close()
@@ -170,21 +171,29 @@ def cmd_cycle1a(args):
     stop, stats = threading.Event(), {"answered": 0, "bad": 0}
     th = threading.Thread(target=fake_fc, args=(port, stop, stats), daemon=True)
     th.start()
-    time.sleep(1)
     c, label = make_client(args)
     print(f"Cycle 1a · {label} · fake FC on {port} · {args.n} requests at {args.rate} Hz")
+    # Opening the ESP USB port resets the ESP (DTR/RTS): wait until it is back on Wi-Fi.
+    print(f"Waiting for the bridge (the ESP reboots when its USB port opens), up to {args.wait:.0f} s...")
+    t0 = time.time()
     try:
-        f, _ = c.request(msp.MSP_API_VERSION, 2.0)
-        if f is None:
-            print("\nFAIL: no answer through the bridge. Check `setup_test.py status` "
-                  "(or `setup_production.py connect`).")
-            return
+        while True:
+            f, _ = c.request(msp.MSP_API_VERSION, 0.5)
+            if f is not None:
+                break
+            if time.time() - t0 > args.wait:
+                print("\nFAIL: no answer through the bridge. Check `setup_test.py status` "
+                      "(or `setup_production.py connect`).")
+                return
+        print(f"Bridge ready after {time.time() - t0:.1f} s")
+        time.sleep(0.5)
+        bad_before = c.parser.bad_checksums + stats["bad"]  # boot noise from the ESP does not count
         rtts, lost = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
     finally:
         c.close()
         stop.set()
         th.join(2)
-    bad = c.parser.bad_checksums + stats["bad"]
+    bad = c.parser.bad_checksums + stats["bad"] - bad_before
     print_stats(rtts, lost, bad)
     save_csv(args.csv, rtts)
     loss = 100 * lost / max(1, len(rtts) + lost)
@@ -210,6 +219,7 @@ def main():
         p.add_argument("--quiet", action="store_true")
         if name == "cycle1a":
             p.add_argument("--max-loss", type=float, default=1.0, help="pass threshold in %%")
+            p.add_argument("--wait", type=float, default=20, help="seconds to wait for the bridge")
     p = sub.add_parser("attitude", help="print roll/pitch/yaw continuously")
     p.add_argument("--rate", type=float, default=10)
     sub.add_parser("fake-fc", help="only answer MSP on the ESP USB port")
