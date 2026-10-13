@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         A crash, damage or safety event is an **Incident**, not a bug. Use that template instead.
-        Branch name: `fix/<issue-number>-<short-name>`.
+        Branch name: `bugfix/<issue-number>-<short-name>`.
   - type: textarea
     id: what
     attributes:
