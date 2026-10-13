@@ -27,3 +27,11 @@ Kept outside the repository: `~/Projects/SEAME/backups/betaflight/betaflight_4.5
 | SHA-256 | `37ec792dbfebb47322af94c45e928389139c7e947ede7e6f5c16438c07614f12` |
 | Contains | Betaflight 4.5.1 for `ODDITYRCF7AIO` plus the configuration at that moment (v2) |
 | Restore | `dfu-util -a 0 -s 0x08000000:leave -D <file>` (FC in DFU mode) |
+
+## 2026-10-13 · `diff_all_2026-10-13_v3.txt`
+
+| Change | Before | After | Why |
+|---|---|---|---|
+| `serial 3` (UART4) | unused (`serial 3 0 …`) | **MSP at 115200** (`serial 3 1 115200 57600 0 115200`) | Link to the ESP (ADR-011). Made with `fc_cli.py --write enable-esp-uart`; the `diff all` taken just before was identical to v2. |
+
+Nothing is wired to T4/R4 yet: soldering waits for instructor approval and the `ESP_to_FC` §10 checks.
