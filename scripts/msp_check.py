@@ -40,7 +40,8 @@ FAKE_ANSWERS = {
 def make_client(args):
     if args.usb:
         return msp.Client(
-            msp.SerialTransport(args.fc_port or find_fc_port(), 115200)
+            msp.SerialTransport(args.fc_port or find_fc_port(), 115200),
+            trace=args.trace,
         ), "FC over USB"
     p = cfg.load_profile()
     if not p:
@@ -49,7 +50,10 @@ def make_client(args):
         )
     host = args.esp or p["esp_ip"]
     t = msp.UdpTransport(host, p["esp_port"], p["pc_port"])
-    return msp.Client(t), f"bridge {p['scenario'].upper()} via {host}:{p['esp_port']}"
+    return (
+        msp.Client(t, trace=args.trace),
+        f"bridge {p['scenario'].upper()} via {host}:{p['esp_port']}",
+    )
 
 
 def run_ping(client, n, rate, timeout, quiet=False):
@@ -96,22 +100,49 @@ def cmd_info(args):
     c, label = make_client(args)
     print(f"Target: {label}")
     try:
-        for name, cmd in [
-            ("API version", msp.MSP_API_VERSION),
-            ("FC variant", msp.MSP_FC_VARIANT),
-            ("FC version", msp.MSP_FC_VERSION),
-            ("Board", msp.MSP_BOARD_INFO),
-            ("Status", msp.MSP_STATUS),
-            ("Attitude", msp.MSP_ATTITUDE),
-            ("Analog", msp.MSP_ANALOG),
-        ]:
-            f, rtt = c.request(cmd, args.timeout)
-            if f is None:
-                print(f"{name:12} no answer within {args.timeout * 1000:.0f} ms")
-            elif f.direction == "!":
-                print(f"{name:12} FC returned an MSP error")
-            else:
-                print(f"{name:12} {msp.decode(cmd, f.payload)}  ({rtt * 1000:.1f} ms)")
+        read_commands(
+            c,
+            args.timeout,
+            [
+                ("API version", msp.MSP_API_VERSION),
+                ("FC variant", msp.MSP_FC_VARIANT),
+                ("FC version", msp.MSP_FC_VERSION),
+                ("Board", msp.MSP_BOARD_INFO),
+                ("Status", msp.MSP_STATUS),
+                ("Attitude", msp.MSP_ATTITUDE),
+                ("Analog", msp.MSP_ANALOG),
+            ],
+        )
+    finally:
+        c.close()
+
+
+def read_commands(client, timeout, commands):
+    for name, cmd in commands:
+        f, rtt = client.request(cmd, timeout)
+        if f is None:
+            print(f"{name:12} no answer within {timeout * 1000:.0f} ms")
+        elif f.direction == "!":
+            print(f"{name:12} FC returned an MSP error")
+        else:
+            print(f"{name:12} {msp.decode(cmd, f.payload)}  ({rtt * 1000:.1f} ms)")
+
+
+def cmd_core(args):
+    if not args.usb:
+        sys.exit("The core command requires --usb to read the FC directly.")
+    c, label = make_client(args)
+    print(f"Target: {label}")
+    try:
+        read_commands(
+            c,
+            args.timeout,
+            [
+                ("API version", msp.MSP_API_VERSION),
+                ("Status", msp.MSP_STATUS),
+                ("Attitude", msp.MSP_ATTITUDE),
+            ],
+        )
     finally:
         c.close()
 
@@ -149,7 +180,7 @@ def cmd_attitude(args):
         c.close()
 
 
-def fake_fc(port: str, stop: threading.Event, stats: dict):
+def fake_fc(port: str, stop: threading.Event, stats: dict, trace: bool = False):
     """Answer MSP requests on the ESP's USB serial port, like a Betaflight FC would."""
     ser = esp_at.open_port(port)
     ser.timeout = 0.005
@@ -159,13 +190,18 @@ def fake_fc(port: str, stop: threading.Event, stats: dict):
             for f in parser.feed(ser.read(512)):
                 if f.direction != "<":
                     continue
-                ser.write(
-                    msp.encode_response(
-                        f.cmd,
-                        FAKE_ANSWERS.get(f.cmd, b""),
-                        error=f.cmd not in FAKE_ANSWERS,
-                    )
+                response = msp.encode_response(
+                    f.cmd,
+                    FAKE_ANSWERS.get(f.cmd, b""),
+                    error=f.cmd not in FAKE_ANSWERS,
                 )
+                if trace:
+                    print(
+                        f"ESP/FC received: {msp.encode_request(f.cmd, f.payload).hex(' ')}",
+                        flush=True,
+                    )
+                    print(f"ESP/FC sent:      {response.hex(' ')}", flush=True)
+                ser.write(response)
                 stats["answered"] += 1
             stats["bad"] = parser.bad_checksums
     finally:
@@ -178,7 +214,7 @@ def cmd_fake_fc(args):
     stop, stats = threading.Event(), {"answered": 0, "bad": 0}
     print(f"Fake FC on {port}. Ctrl+C to stop.")
     try:
-        fake_fc(port, stop, stats)
+        fake_fc(port, stop, stats, trace=args.trace)
     except KeyboardInterrupt:
         pass
     print(f"Answered {stats['answered']} requests, bad checksums {stats['bad']}")
@@ -192,7 +228,9 @@ def cmd_cycle1a(args):
         )
     port = args.esp_port_usb or esp_at.find_port()
     stop, stats = threading.Event(), {"answered": 0, "bad": 0}
-    th = threading.Thread(target=fake_fc, args=(port, stop, stats), daemon=True)
+    th = threading.Thread(
+        target=fake_fc, args=(port, stop, stats, args.trace), daemon=True
+    )
     th.start()
     c, label = make_client(args)
     print(
@@ -250,8 +288,18 @@ def main():
         "--timeout", type=float, default=0.5, help="seconds to wait for each answer"
     )
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser(
+    p = sub.add_parser(
         "info", help="API version, firmware, board, status, attitude, battery"
+    )
+    p.add_argument(
+        "--trace", action="store_true", help="print raw MSP frames sent and received"
+    )
+    p = sub.add_parser(
+        "core",
+        help="read API version, status, and attitude (use with --usb)",
+    )
+    p.add_argument(
+        "--trace", action="store_true", help="print raw MSP frames sent and received"
     )
     for name, n, help_ in (
         ("ping", 100, "round-trip time and loss with MSP_API_VERSION"),
@@ -264,6 +312,11 @@ def main():
         )
         p.add_argument("--csv", help="save every RTT to this CSV file")
         p.add_argument("--quiet", action="store_true")
+        p.add_argument(
+            "--trace",
+            action="store_true",
+            help="print raw MSP frames sent and received",
+        )
         if name == "cycle1a":
             p.add_argument(
                 "--max-loss", type=float, default=1.0, help="pass threshold in %%"
@@ -273,10 +326,17 @@ def main():
             )
     p = sub.add_parser("attitude", help="print roll/pitch/yaw continuously")
     p.add_argument("--rate", type=float, default=10)
-    sub.add_parser("fake-fc", help="only answer MSP on the ESP USB port")
+    p.add_argument(
+        "--trace", action="store_true", help="print raw MSP frames sent and received"
+    )
+    p = sub.add_parser("fake-fc", help="only answer MSP on the ESP USB port")
+    p.add_argument(
+        "--trace", action="store_true", help="print raw MSP frames received and sent"
+    )
     args = ap.parse_args()
     {
         "info": cmd_info,
+        "core": cmd_core,
         "ping": cmd_ping,
         "attitude": cmd_attitude,
         "fake-fc": cmd_fake_fc,

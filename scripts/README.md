@@ -1,5 +1,8 @@
 # Scripts: flight controller, ESP and transparent bridge
 
+For the full execution-order walkthrough, see
+[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md).
+
 Two network scenarios, one script each. Both configure the ESP **and** this PC automatically.
 
 | Scenario | Script | Network | Laptop internet | Use |

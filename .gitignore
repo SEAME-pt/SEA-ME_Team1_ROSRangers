@@ -3,3 +3,5 @@ __pycache__/
 *.csv
 *.bin
 .pytest_cache/
+CLAUDE.md
+config/

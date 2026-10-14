@@ -183,20 +183,31 @@ class UdpTransport:
 
 
 class Client:
-    def __init__(self, transport):
+    def __init__(self, transport, trace: bool = False):
         self.t = transport
         self.parser = Parser()
+        self.trace = trace
 
     def request(self, cmd: int, timeout: float = 0.5):
         """Send one read-only request. Returns (Frame or None, round-trip seconds)."""
         if cmd not in READ_ONLY_COMMANDS:
             raise ValueError(f"MSP command {cmd} is not in the read-only list")
-        self.t.send(encode_request(cmd))
+        request = encode_request(cmd)
+        self.t.send(request)
+        if self.trace:
+            print(f"PC -> ESP/FC: {request.hex(' ')}", flush=True)
         t0 = time.perf_counter()
         while time.perf_counter() - t0 < timeout:
             for f in self.parser.feed(self.t.recv()):
                 if f.cmd == cmd and f.direction in ">!":
+                    if self.trace:
+                        frame = encode_response(
+                            f.cmd, f.payload, error=f.direction == "!"
+                        )
+                        print(f"PC <- ESP/FC: {frame.hex(' ')}", flush=True)
                     return f, time.perf_counter() - t0
+        if self.trace:
+            print("PC <- ESP/FC: timeout", flush=True)
         return None, None
 
     def close(self):

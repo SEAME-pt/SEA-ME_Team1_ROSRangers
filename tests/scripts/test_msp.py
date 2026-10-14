@@ -74,6 +74,21 @@ def test_client_refuses_write_commands():
         msp.Client(Dummy()).request(200)  # MSP_SET_RAW_RC
 
 
+def test_client_trace_is_disabled_by_default():
+    class Dummy:
+        def send(self, data):
+            pass
+
+        def recv(self):
+            return msp.encode_response(msp.MSP_API_VERSION, bytes([0, 1, 46]))
+
+        def close(self):
+            pass
+
+    frame, _ = msp.Client(Dummy()).request(msp.MSP_API_VERSION)
+    assert frame.payload == bytes([0, 1, 46])
+
+
 @pytest.mark.parametrize(
     "line,expected",
     [
