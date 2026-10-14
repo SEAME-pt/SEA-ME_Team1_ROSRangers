@@ -36,31 +36,35 @@ jobs:
         id: check
         shell: bash
         run: |
-          if [[ -f lib/protocol/CMakeLists.txt ]]; then
+          if [[ -f drone/lib/protocol/CMakeLists.txt ]]; then
             echo "cpp=true" >> "$GITHUB_OUTPUT"
           else
             echo "cpp=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=protocol-cpp skipped::drone/lib/protocol/CMakeLists.txt not found"
           fi
 
-          if [[ -f ground/src/sd_protocol_py/pyproject.toml ]]; then
+          if [[ -f drone/ground/src/sd_protocol_py/pyproject.toml ]]; then
             echo "python=true" >> "$GITHUB_OUTPUT"
           else
             echo "python=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=ground-python skipped::drone/ground/src/sd_protocol_py/pyproject.toml not found"
           fi
 
-          if [[ -f firmware/esp8266/platformio.ini ]]; then
+          if [[ -f drone/firmware/esp8266/platformio.ini ]]; then
             echo "esp=true" >> "$GITHUB_OUTPUT"
           else
             echo "esp=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=esp-firmware skipped::drone/firmware/esp8266/platformio.ini not found"
           fi
 
-          if [[ -f lib/protocol/CMakeLists.txt &&
-                -f ground/src/sd_protocol_py/pyproject.toml &&
-                -d tests/sitl ]] &&
-             find tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
+          if [[ -f drone/lib/protocol/CMakeLists.txt &&
+                -f drone/ground/src/sd_protocol_py/pyproject.toml &&
+                -d drone/tests/sitl ]] &&
+             find drone/tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
             echo "sitl=true" >> "$GITHUB_OUTPUT"
           else
             echo "sitl=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=betaflight-sitl skipped::needs the C++ lib, the Python package and a test in drone/tests/sitl"
           fi
 
   protocol-cpp:
@@ -74,7 +78,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libgtest-dev gcovr clang-tidy cppcheck
 
       - name: Configure
-        run: cmake -S lib/protocol -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSD_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        run: cmake -S drone/lib/protocol -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSD_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Build
         run: cmake --build build
@@ -83,12 +87,12 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
       - name: Coverage gate
-        run: gcovr -r lib/protocol build --filter lib/protocol/src --fail-under-line 80 --xml-pretty -o coverage.xml
+        run: gcovr -r drone/lib/protocol build --filter drone/lib/protocol/src --fail-under-line 80 --xml-pretty -o coverage.xml
 
       - name: Static analysis
         run: |
-          clang-tidy -p build $(git ls-files 'lib/protocol/src/*.cpp') --warnings-as-errors='*'
-          cppcheck --enable=warning,style,performance --error-exitcode=1 --inline-suppr lib/protocol/src lib/protocol/include
+          clang-tidy -p build $(git ls-files 'drone/lib/protocol/src/*.cpp') --warnings-as-errors='*'
+          cppcheck --enable=warning,style,performance --error-exitcode=1 --inline-suppr drone/lib/protocol/src drone/lib/protocol/include
 
       - uses: actions/upload-artifact@v4
         with:
@@ -105,8 +109,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest pytest-cov
-      - run: pip install -e ground/src/sd_protocol_py
-      - run: pytest ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
+      - run: pip install -e drone/ground/src/sd_protocol_py
+      - run: pytest drone/ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
 
   esp-firmware:
     needs: [lint, check-components]
@@ -119,13 +123,13 @@ jobs:
           python-version: "3.12"
       - run: pip install platformio
       - name: Build ESP8266 firmware
-        run: pio run -d firmware/esp8266 -e d1_mini
+        run: pio run -d drone/firmware/esp8266 -e d1_mini
         env:
           SD_PSK: ${{ secrets.SD_PSK_CI }}
       - uses: actions/upload-artifact@v4
         with:
           name: esp-firmware
-          path: firmware/esp8266/.pio/build/d1_mini/firmware.bin
+          path: drone/firmware/esp8266/.pio/build/d1_mini/firmware.bin
 
   check-sitl:
     runs-on: ubuntu-latest
@@ -138,10 +142,10 @@ jobs:
         id: check
         shell: bash
         run: |
-          if [[ -f lib/protocol/CMakeLists.txt &&
-                -f ground/src/sd_protocol_py/pyproject.toml &&
-                -d tests/sitl ]] &&
-            find tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
+          if [[ -f drone/lib/protocol/CMakeLists.txt &&
+                -f drone/ground/src/sd_protocol_py/pyproject.toml &&
+                -d drone/tests/sitl ]] &&
+            find drone/tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
@@ -174,10 +178,10 @@ jobs:
           python-version: "3.12"
 
       - run: pip install pytest
-      - run: pip install -e ground/src/sd_protocol_py
+      - run: pip install -e drone/ground/src/sd_protocol_py
 
       - name: MSP integration tests against SITL
         run: |
           (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
           sleep 3
-          pytest tests/sitl -v
+          pytest drone/tests/sitl -v

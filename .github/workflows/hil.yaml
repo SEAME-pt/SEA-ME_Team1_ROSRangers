@@ -22,12 +22,13 @@ jobs:
         id: check
         shell: bash
         run: |
-          if [[ -f firmware/esp8266/platformio.ini ]] &&
-             [[ -d tests/hil ]] &&
-             find tests/hil -type f -name '*.py' -print -quit | grep -q .; then
+          if [[ -f drone/firmware/esp8266/platformio.ini ]] &&
+             [[ -d drone/tests/hil ]] &&
+             find drone/tests/hil -type f -name '*.py' -print -quit | grep -q .; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=hil skipped::needs drone/firmware/esp8266/platformio.ini and a test in drone/tests/hil"
           fi
 
   hil:
@@ -48,19 +49,19 @@ jobs:
       - name: Build firmware for OTA
         run: |
           . .venv/bin/activate
-          pio run -d firmware/esp8266 -e d1_mini_ota
+          pio run -d drone/firmware/esp8266 -e d1_mini_ota
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
 
       - name: Flash the bench D1 mini over the air
         run: |
           . .venv/bin/activate
-          pio run -d firmware/esp8266 -e d1_mini_ota -t upload
+          pio run -d drone/firmware/esp8266 -e d1_mini_ota -t upload
 
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
-          pytest tests/hil -v --junitxml=hil-report.xml
+          pytest drone/tests/hil -v --junitxml=hil-report.xml
 
       - uses: actions/upload-artifact@v4
         if: always()
