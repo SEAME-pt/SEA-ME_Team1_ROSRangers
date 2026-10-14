@@ -1,4 +1,6 @@
+
 name: ci
+
 on:
   pull_request:
     branches: [dev, main]
@@ -20,9 +22,50 @@ jobs:
       - run: pip install pre-commit
       - run: pre-commit run --all-files
 
+  check-components:
+    runs-on: ubuntu-24.04
+    outputs:
+      cpp: ${{ steps.check.outputs.cpp }}
+      python: ${{ steps.check.outputs.python }}
+      esp: ${{ steps.check.outputs.esp }}
+      sitl: ${{ steps.check.outputs.sitl }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect available components
+        id: check
+        shell: bash
+        run: |
+          if [[ -f lib/protocol/CMakeLists.txt ]]; then
+            echo "cpp=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cpp=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ -f ground/src/sd_protocol_py/pyproject.toml ]]; then
+            echo "python=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "python=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ -f firmware/esp8266/platformio.ini ]]; then
+            echo "esp=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "esp=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ -f lib/protocol/CMakeLists.txt &&
+                -f ground/src/sd_protocol_py/pyproject.toml &&
+                -d tests/sitl ]] &&
+             find tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
+            echo "sitl=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sitl=false" >> "$GITHUB_OUTPUT"
+          fi
+
   protocol-cpp:
-    if: ${{ hashFiles('lib/protocol/CMakeLists.txt') != '' }}
-    needs: lint
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.cpp == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +78,7 @@ jobs:
 
       - name: Build
         run: cmake --build build
+
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
@@ -52,8 +96,8 @@ jobs:
           path: coverage.xml
 
   ground-python:
-    if: ${{ hashFiles('ground/src/sd_protocol_py/pyproject.toml') != '' }}
-    needs: lint
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.python == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -65,8 +109,8 @@ jobs:
       - run: pytest ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
 
   esp-firmware:
-    if: ${{ hashFiles('firmware/esp8266/platformio.ini') != '' }}
-    needs: lint
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.esp == 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -74,7 +118,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install platformio
-      - run: pio run -d firmware/esp8266 -e d1_mini
+      - name: Build ESP8266 firmware
+        run: pio run -d firmware/esp8266 -e d1_mini
         env:
           SD_PSK: ${{ secrets.SD_PSK_CI }}
       - uses: actions/upload-artifact@v4
@@ -103,29 +148,35 @@ jobs:
           fi
 
   betaflight-sitl:
-    needs: [lint, protocol-cpp, ground-python]
+    needs: [lint, protocol-cpp, ground-python, check-components]
     if: >-
       ${{
         !cancelled() &&
         needs.lint.result == 'success' &&
         needs.protocol-cpp.result == 'success' &&
         needs.ground-python.result == 'success' &&
-        needs.check-sitl.outputs.enabled == 'true'
-    }}
+        needs.check-components.outputs.sitl == 'true'
+      }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Build Betaflight SITL (same version as the drone)
+
+      - name: Build Betaflight SITL
         run: |
           git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
-          mkdir -p shim && printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
+          mkdir -p shim
+          printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
           chmod +x shim/arm-none-eabi-gcc
           PATH="$PWD/shim:$PATH" make -C bf TARGET=SITL -j"$(nproc)"
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pytest && pip install -e ground/src/sd_protocol_py
-      - name: MSP integration tests against SITL (TCP 5761)
+
+      - run: pip install pytest
+      - run: pip install -e ground/src/sd_protocol_py
+
+      - name: MSP integration tests against SITL
         run: |
           (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
           sleep 3
