@@ -1,0 +1,1 @@
+pytest suites run on the self-hosted runner
