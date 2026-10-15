@@ -1,13 +1,17 @@
+import csv
 import pathlib
 import struct
 import sys
+import threading
 
 import pytest
+import serial
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 
 import msp  # noqa: E402
 from fc_cli import is_read_only  # noqa: E402
+from msp_check import cmd_attitude, fake_fc, run_ping, save_csv  # noqa: E402
 
 
 def test_api_version_request_matches_known_bytes():
@@ -106,3 +110,74 @@ def test_client_trace_is_disabled_by_default():
 )
 def test_fc_cli_read_only_filter(line, expected):
     assert is_read_only(line) is expected
+
+
+def test_fake_fc_records_serial_errors(monkeypatch):
+    error = serial.SerialException("device disconnected")
+    monkeypatch.setattr(
+        "msp_check.esp_at.open_port",
+        lambda port: (_ for _ in ()).throw(error),
+    )
+    stats = {"answered": 0, "bad": 0}
+    fake_fc("/dev/ttyUSB0", threading.Event(), stats)
+    assert stats["error"] == "device disconnected"
+
+
+def test_run_ping_records_successes_and_timeouts():
+    class DummyClient:
+        def __init__(self):
+            self.calls = 0
+
+        def request(self, command, timeout):
+            self.calls += 1
+            if self.calls == 2:
+                return None, None
+            return object(), 0.025
+
+    rtts, lost, records = run_ping(DummyClient(), 3, 0, 0.5, quiet=True)
+    assert rtts == [25.0, 25.0]
+    assert lost == 1
+    assert records == [
+        {"request": 1, "status": "ok", "rtt_ms": "25.000"},
+        {"request": 2, "status": "timeout", "rtt_ms": ""},
+        {"request": 3, "status": "ok", "rtt_ms": "25.000"},
+    ]
+
+
+def test_save_csv_writes_raw_and_analytics(tmp_path):
+    raw_path = tmp_path / "results" / "bridge.csv"
+    records = [
+        {"request": 1, "status": "ok", "rtt_ms": "20.000"},
+        {"request": 2, "status": "timeout", "rtt_ms": ""},
+    ]
+    save_csv(raw_path, records, lost=1, bad=0)
+    analytics_path = tmp_path / "results" / "bridge_analytics.csv"
+    assert raw_path.exists()
+    assert analytics_path.exists()
+    with raw_path.open(newline="") as fh:
+        assert list(csv.DictReader(fh))[1]["status"] == "timeout"
+    with analytics_path.open(newline="") as fh:
+        analytics = dict(csv.reader(fh))
+    assert analytics["requests"] == "2"
+    assert analytics["lost"] == "1"
+    assert analytics["loss_percent"] == "50.0"
+
+
+def test_attitude_reports_lost_serial_connection(monkeypatch, capsys):
+    class DummyClient:
+        parser = type("Parser", (), {"bad_checksums": 0})()
+
+        def request(self, command, timeout):
+            raise serial.SerialException("write failed: Input/output error")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "msp_check.make_client", lambda args: (DummyClient(), "FC over USB")
+    )
+    args = type("Args", (), {"trace": False, "timeout": 0.5, "rate": 10})()
+    with pytest.raises(SystemExit) as exc:
+        cmd_attitude(args)
+    assert "FC serial connection was lost" in str(exc.value)
+    assert "USB cable" in str(exc.value)

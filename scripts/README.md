@@ -2,6 +2,27 @@
 
 For the full execution-order walkthrough, see
 [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md).
+For the complete command catalog, see [COMMANDS.md](./COMMANDS.md).
+
+## One command interface
+
+The recommended way to navigate the scripts is the unified interface:
+
+```bash
+python3 scripts/seame.py
+```
+
+This opens an interactive menu. For copy/paste and automation, provide the
+command directly:
+
+```bash
+python3 scripts/seame.py list
+python3 scripts/seame.py network test setup
+python3 scripts/seame.py msp --usb info
+```
+
+The original specialist scripts remain available, so existing commands do not
+need to change.
 
 Two network scenarios, one script each. Both configure the ESP **and** this PC automatically.
 
@@ -12,6 +33,7 @@ Two network scenarios, one script each. Both configure the ESP **and** this PC a
 
 | Script | What it does | Changes hardware? |
 |---|---|---|
+| `seame.py` | Interactive and direct command interface for all script groups | Depends on selected command |
 | `setup_test.py` | `setup` (default), `status` | ESP settings |
 | `setup_production.py` | `setup` (default), `connect`, `disconnect`, `status` | ESP settings, a NetworkManager profile |
 | `msp_check.py` | `info`, `ping`, `attitude`, `cycle1a`, `fake-fc`: to the active scenario, or `--usb` | Never: read-only MSP only |

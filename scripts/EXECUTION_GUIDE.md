@@ -3,6 +3,17 @@
 This guide describes the scripts in the order they are normally used, from
 initial setup through testing the flight controller over the ESP8266 bridge.
 
+For a searchable command list and the interactive interface, see
+[`COMMANDS.md`](./COMMANDS.md). The recommended entry point is:
+
+```bash
+python3 scripts/seame.py
+```
+
+Every command below can also be run through that interface. For example,
+`python3 scripts/fc_cli.py dump` is equivalent to
+`python3 scripts/seame.py fc dump`.
+
 The scripts support this data path:
 
 ```text
@@ -57,7 +68,7 @@ The flight controller is connected directly by USB for this stage.
 ### 2.1 Capture the current configuration
 
 ```bash
-python3 scripts/fc_cli.py dump
+python3 scripts/seame.py fc dump
 ```
 
 [`fc_cli.py`](./fc_cli.py) performs these actions:
@@ -77,7 +88,7 @@ config/betaflight/<firmware-version>/
 ### 2.2 Configure UART4 for MSP
 
 ```bash
-python3 scripts/fc_cli.py --write enable-esp-uart
+python3 scripts/seame.py fc --write enable-esp-uart
 ```
 
 This command:
@@ -98,7 +109,7 @@ Choose one of the following scenarios.
 ### 3.1 Test scenario: use the SEAME Wi-Fi
 
 ```bash
-python3 scripts/setup_test.py
+python3 scripts/seame.py network test setup
 ```
 
 [`setup_test.py`](./setup_test.py) performs the following sequence:
@@ -120,13 +131,13 @@ The default SSID is `SEAME`. To specify another SSID or request the password
 again:
 
 ```bash
-python3 scripts/setup_test.py setup --ssid SEAME --ask-password
+python3 scripts/seame.py network test setup --ssid SEAME --ask-password
 ```
 
 Check the saved scenario and reachability with:
 
 ```bash
-python3 scripts/setup_test.py status
+python3 scripts/seame.py network test status
 ```
 
 ### 3.2 Production scenario: use the ESP access point
@@ -134,7 +145,7 @@ python3 scripts/setup_test.py status
 Configure the ESP:
 
 ```bash
-python3 scripts/setup_production.py
+python3 scripts/seame.py network production setup
 ```
 
 [`setup_production.py`](./setup_production.py) performs the following sequence:
@@ -155,7 +166,7 @@ python3 scripts/setup_production.py
 Connect the PC to the new network:
 
 ```bash
-python3 scripts/setup_production.py connect
+python3 scripts/seame.py network production connect
 ```
 
 The PC uses static address `192.168.4.2/24`. Internet access is normally
@@ -164,13 +175,13 @@ unavailable while this connection is active.
 Check the scenario:
 
 ```bash
-python3 scripts/setup_production.py status
+python3 scripts/seame.py network production status
 ```
 
 Leave the network when finished:
 
 ```bash
-python3 scripts/setup_production.py disconnect
+python3 scripts/seame.py network production disconnect
 ```
 
 ## 4. Understand the saved bridge state
@@ -195,7 +206,7 @@ run without `--usb`.
 For Cycle 1a, keep the ESP on USB and do not connect it to the FC:
 
 ```bash
-python3 scripts/msp_check.py cycle1a --csv cycle1a_test.csv
+python3 scripts/seame.py msp cycle1a --csv cycle1a_test.csv
 ```
 
 The execution sequence is:
@@ -215,7 +226,7 @@ zero bad checksums.
 To see the traffic in both directions, add `--trace`:
 
 ```bash
-python3 scripts/msp_check.py cycle1a --trace -n 5 --rate 1
+python3 scripts/seame.py msp cycle1a --trace -n 5 --rate 1
 ```
 
 The output shows:
@@ -236,8 +247,8 @@ recommended while inspecting the traffic.
 Before testing the bridge with the real FC, test the FC directly:
 
 ```bash
-python3 scripts/msp_check.py --usb info
-python3 scripts/msp_check.py --usb ping -n 500 --csv baseline_usb.csv
+python3 scripts/seame.py msp --usb info
+python3 scripts/seame.py msp --usb ping -n 500 --csv baseline_usb.csv
 ```
 
 With `--usb`, [`msp_check.py`](./msp_check.py) uses the FC USB serial port
@@ -247,7 +258,7 @@ FC data, latency, packet loss, and checksum errors.
 To read only the three core FC values:
 
 ```bash
-python3 scripts/msp_check.py --usb core
+python3 scripts/seame.py msp --usb core
 ```
 
 This sends exactly these requests, in order:
@@ -261,7 +272,7 @@ MSP_ATTITUDE
 To display the raw MSP frames as well as the decoded values:
 
 ```bash
-python3 scripts/msp_check.py --usb core --trace
+python3 scripts/seame.py msp --usb core --trace
 ```
 
 The `core` command requires `--usb`; it does not use the ESP bridge or the
@@ -280,13 +291,13 @@ After Cycle 1a passes:
 Then query the FC through the bridge:
 
 ```bash
-python3 scripts/msp_check.py info
+python3 scripts/seame.py msp info
 ```
 
 For a single query with raw traffic visible:
 
 ```bash
-python3 scripts/msp_check.py info --trace
+python3 scripts/seame.py msp info --trace
 ```
 
 The request path is:
@@ -305,8 +316,8 @@ msp_check.py
 Useful checks:
 
 ```bash
-python3 scripts/msp_check.py ping -n 1000 --rate 50 --csv cycle1b_test.csv
-python3 scripts/msp_check.py attitude
+python3 scripts/seame.py msp ping -n 1000 --rate 50 --csv cycle1b_test.csv
+python3 scripts/seame.py msp attitude
 ```
 
 `attitude` continuously displays roll, pitch, and yaw. Stop it with
@@ -320,25 +331,25 @@ be connected to USB and not wired to the FC.
 Read the current state:
 
 ```bash
-python3 scripts/esp_at.py query
+python3 scripts/seame.py esp query
 ```
 
 If the ESP is in transparent mode, leave it:
 
 ```bash
-python3 scripts/esp_at.py exit-bridge
+python3 scripts/seame.py esp exit-bridge
 ```
 
 Send an AT command manually:
 
 ```bash
-python3 scripts/esp_at.py raw "AT+CWLAP"
+python3 scripts/seame.py esp raw "AT+CWLAP"
 ```
 
 Back up the complete ESP flash:
 
 ```bash
-python3 scripts/esp_at.py backup
+python3 scripts/seame.py esp backup
 ```
 
 Backups are saved under:
@@ -352,7 +363,7 @@ The backup can contain Wi-Fi passwords.
 Factory-reset the ESP:
 
 ```bash
-python3 scripts/esp_at.py restore
+python3 scripts/seame.py esp restore
 ```
 
 This requires typing `yes` and erases saved AT settings and Wi-Fi
@@ -363,20 +374,20 @@ credentials.
 For production mode:
 
 ```bash
-python3 scripts/setup_production.py disconnect
+python3 scripts/seame.py network production disconnect
 ```
 
 To leave the ESP in AT mode, with the ESP USB connected and FC wiring
 disconnected:
 
 ```bash
-python3 scripts/esp_at.py exit-bridge
+python3 scripts/seame.py esp exit-bridge
 ```
 
 To factory-reset the ESP:
 
 ```bash
-python3 scripts/esp_at.py restore
+python3 scripts/seame.py esp restore
 ```
 
 ## Script dependency order

@@ -15,6 +15,8 @@ Examples:
 """
 
 import argparse
+import csv
+import pathlib
 import statistics
 import struct
 import sys
@@ -24,6 +26,7 @@ import time
 import bridge_config as cfg
 import esp_at
 import msp
+import serial
 from fc_cli import find_port as find_fc_port
 
 FAKE_ANSWERS = {
@@ -57,7 +60,7 @@ def make_client(args):
 
 
 def run_ping(client, n, rate, timeout, quiet=False):
-    rtts, lost = [], 0
+    rtts, lost, records = [], 0, []
     period = 1.0 / rate if rate else 0
     try:
         for i in range(n):
@@ -65,14 +68,21 @@ def run_ping(client, n, rate, timeout, quiet=False):
             f, rtt = client.request(msp.MSP_API_VERSION, timeout)
             if f is None:
                 lost += 1
+                records.append(
+                    {"request": i + 1, "status": "timeout", "rtt_ms": ""}
+                )
             else:
-                rtts.append(rtt * 1000)
+                rtt_ms = rtt * 1000
+                rtts.append(rtt_ms)
+                records.append(
+                    {"request": i + 1, "status": "ok", "rtt_ms": f"{rtt_ms:.3f}"}
+                )
             if not quiet and (i + 1) % max(1, n // 10) == 0:
                 print(f"  {i + 1}/{n}", flush=True)
             time.sleep(max(0.0, t_next - time.perf_counter()))
     except KeyboardInterrupt:
         pass
-    return rtts, lost
+    return rtts, lost, records
 
 
 def print_stats(rtts, lost, bad):
@@ -89,11 +99,48 @@ def print_stats(rtts, lost, bad):
     print(f"Bad checksums: {bad}")
 
 
-def save_csv(path, rtts):
-    if path:
-        with open(path, "w") as fh:
-            fh.write("rtt_ms\n" + "\n".join(f"{r:.3f}" for r in rtts) + "\n")
-        print(f"RTTs saved to {path}")
+def percentile(values, fraction):
+    if not values:
+        return ""
+    values = sorted(values)
+    return values[int(fraction * (len(values) - 1))]
+
+
+def save_csv(path, records, lost, bad):
+    if not path:
+        return
+    raw_path = pathlib.Path(path)
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    with raw_path.open("w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=("request", "status", "rtt_ms"))
+        writer.writeheader()
+        writer.writerows(records)
+
+    rtts = [float(row["rtt_ms"]) for row in records if row["rtt_ms"]]
+    sent = len(records)
+    analytics_path = raw_path.with_name(
+        f"{raw_path.stem}_analytics{raw_path.suffix or '.csv'}"
+    )
+    metrics = {
+        "requests": sent,
+        "answers": len(rtts),
+        "lost": lost,
+        "loss_percent": 100 * lost / max(1, sent),
+        "bad_checksums": bad,
+        "min_rtt_ms": min(rtts) if rtts else "",
+        "mean_rtt_ms": statistics.mean(rtts) if rtts else "",
+        "median_rtt_ms": statistics.median(rtts) if rtts else "",
+        "p95_rtt_ms": percentile(rtts, 0.95),
+        "p99_rtt_ms": percentile(rtts, 0.99),
+        "max_rtt_ms": max(rtts) if rtts else "",
+        "stdev_rtt_ms": statistics.pstdev(rtts) if rtts else "",
+    }
+    with analytics_path.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(("metric", "value"))
+        writer.writerows(metrics.items())
+    print(f"Raw request data saved to {raw_path}")
+    print(f"Analytics saved to {analytics_path}")
 
 
 def cmd_info(args):
@@ -151,11 +198,11 @@ def cmd_ping(args):
     c, label = make_client(args)
     print(f"Target: {label}, {args.n} requests at {args.rate or 'max'} Hz")
     try:
-        rtts, lost = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
+        rtts, lost, records = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
     finally:
         c.close()
     print_stats(rtts, lost, c.parser.bad_checksums)
-    save_csv(args.csv, rtts)
+    save_csv(args.csv, records, lost, c.parser.bad_checksums)
 
 
 def cmd_attitude(args):
@@ -163,7 +210,13 @@ def cmd_attitude(args):
     print(f"Target: {label}. Ctrl+C to stop. Tilt the drone by hand (props off).")
     try:
         while True:
-            f, rtt = c.request(msp.MSP_ATTITUDE, args.timeout)
+            try:
+                f, rtt = c.request(msp.MSP_ATTITUDE, args.timeout)
+            except serial.SerialException as exc:
+                sys.exit(
+                    f"ERROR: FC serial connection was lost: {exc}. "
+                    "Check the USB cable and FC power, then run the command again."
+                )
             if f is None:
                 print("no answer", flush=True)
             else:
@@ -182,10 +235,11 @@ def cmd_attitude(args):
 
 def fake_fc(port: str, stop: threading.Event, stats: dict, trace: bool = False):
     """Answer MSP requests on the ESP's USB serial port, like a Betaflight FC would."""
-    ser = esp_at.open_port(port)
-    ser.timeout = 0.005
     parser = msp.Parser()
+    ser = None
     try:
+        ser = esp_at.open_port(port)
+        ser.timeout = 0.005
         while not stop.is_set():
             for f in parser.feed(ser.read(512)):
                 if f.direction != "<":
@@ -204,9 +258,13 @@ def fake_fc(port: str, stop: threading.Event, stats: dict, trace: bool = False):
                 ser.write(response)
                 stats["answered"] += 1
             stats["bad"] = parser.bad_checksums
+    except serial.SerialException as exc:
+        stats["error"] = str(exc)
+        print(f"Fake FC error on {port}: {exc}", file=sys.stderr, flush=True)
     finally:
         stats["bad"] = parser.bad_checksums
-        ser.close()
+        if ser is not None:
+            ser.close()
 
 
 def cmd_fake_fc(args):
@@ -218,6 +276,54 @@ def cmd_fake_fc(args):
     except KeyboardInterrupt:
         pass
     print(f"Answered {stats['answered']} requests, bad checksums {stats['bad']}")
+
+
+def cmd_usb_relay(args):
+    """Relay MSP bytes between the ESP USB serial port and the FC USB port."""
+    esp_port = args.esp_port_usb or esp_at.find_port()
+    fc_port = args.fc_port or find_fc_port()
+    esp_ser = esp_at.open_port(esp_port)
+    fc_ser = serial.Serial(fc_port, 115200, timeout=0.01)
+    stop = threading.Event()
+    errors = []
+
+    def forward(source, target, label):
+        try:
+            while not stop.is_set():
+                data = source.read(512)
+                if data:
+                    target.write(data)
+        except serial.SerialException as exc:
+            errors.append(f"{label}: {exc}")
+            stop.set()
+
+    threads = [
+        threading.Thread(
+            target=forward, args=(esp_ser, fc_ser, "ESP → FC"), daemon=True
+        ),
+        threading.Thread(
+            target=forward, args=(fc_ser, esp_ser, "FC → ESP"), daemon=True
+        ),
+    ]
+    print(
+        f"USB relay active: ESP {esp_port} ↔ FC {fc_port}. "
+        "Press Ctrl+C to stop."
+    )
+    for thread in threads:
+        thread.start()
+    try:
+        while not stop.wait(0.2):
+            pass
+    except KeyboardInterrupt:
+        print("\nStopping USB relay.")
+    finally:
+        stop.set()
+        for thread in threads:
+            thread.join(1)
+        esp_ser.close()
+        fc_ser.close()
+    if errors:
+        sys.exit(f"USB relay stopped: {errors[0]}")
 
 
 def cmd_cycle1a(args):
@@ -257,16 +363,19 @@ def cmd_cycle1a(args):
         bad_before = (
             c.parser.bad_checksums + stats["bad"]
         )  # boot noise from the ESP does not count
-        rtts, lost = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
+        rtts, lost, records = run_ping(c, args.n, args.rate, args.timeout, args.quiet)
     finally:
         c.close()
         stop.set()
         th.join(2)
     bad = c.parser.bad_checksums + stats["bad"] - bad_before
+    fake_fc_error = stats.get("error")
+    if fake_fc_error:
+        print(f"Fake FC stopped unexpectedly: {fake_fc_error}", file=sys.stderr)
     print_stats(rtts, lost, bad)
-    save_csv(args.csv, rtts)
+    save_csv(args.csv, records, lost, bad)
     loss = 100 * lost / max(1, len(rtts) + lost)
-    ok = loss <= args.max_loss and bad == 0
+    ok = loss <= args.max_loss and bad == 0 and not fake_fc_error
     print(
         f"\nCycle 1a {'PASS' if ok else 'FAIL'}  (criteria: loss ≤ {args.max_loss} %, no bad checksums)"
     )
@@ -333,6 +442,10 @@ def main():
     p.add_argument(
         "--trace", action="store_true", help="print raw MSP frames received and sent"
     )
+    sub.add_parser(
+        "usb-relay",
+        help="relay MSP bytes between the ESP USB port and the FC USB port",
+    )
     args = ap.parse_args()
     {
         "info": cmd_info,
@@ -340,6 +453,7 @@ def main():
         "ping": cmd_ping,
         "attitude": cmd_attitude,
         "fake-fc": cmd_fake_fc,
+        "usb-relay": cmd_usb_relay,
         "cycle1a": cmd_cycle1a,
     }[args.cmd](args)
 
