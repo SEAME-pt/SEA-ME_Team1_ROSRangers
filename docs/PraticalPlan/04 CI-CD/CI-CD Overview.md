@@ -49,7 +49,7 @@ flowchart LR
 3. Empty C++ lib + 1 GoogleTest, coverage gate at **50%** → raise to 80% by week 6.
 4. pytest skeleton for the ground packages.
 5. PlatformIO build of a "hello" firmware for `d1_mini`.
-6. `config/betaflight/` with the `diff all` files, reviewed like code.
+6. `drone/config/betaflight/` with the `diff all` files, reviewed like code.
 
 Then: SITL job (week 3), HIL job (week 4), tag `v0.1.0` on `main` (week 8).
 
