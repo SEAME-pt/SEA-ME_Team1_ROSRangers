@@ -91,6 +91,11 @@ pre-commit run --all-files
 - [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
 
 ## 5. Glossary
+## 3. Related pages
+
+- [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
+
+## 4. Glossary
 
 | Term | Meaning |
 | --- | --- |
