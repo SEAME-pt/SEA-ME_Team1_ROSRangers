@@ -154,7 +154,7 @@ In order. When time is short, cut from the bottom.
 2. **CI + HIL:** green pipeline, coverage > 80% (Module 1 deliverable).
 3. **End-to-end link:** ground ↔ ESP ↔ FC with measured latency ([[PC_to_ESP]], [[ESP_to_FC]]).
 4. **Position hold** in the cage (Module 1 demo).
-5. **Gesture control** ([[Gesture Pipeline]]).
+5. **Gesture control** ([[00 Gesture Pipeline|Gesture Pipeline]]).
 6. Stretch goals.
 
 ## 5. Project Milestones
