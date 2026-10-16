@@ -35,3 +35,18 @@ Kept outside the repository: `~/Projects/SEAME/backups/betaflight/betaflight_4.5
 | `serial 3` (UART4) | unused (`serial 3 0 …`) | **MSP at 115200** (`serial 3 1 115200 57600 0 115200`) | Link to the ESP (ADR-011). Made with `fc_cli.py --write enable-esp-uart`; the `diff all` taken just before was identical to v2. |
 
 Nothing is wired to T4/R4 yet: soldering waits for instructor approval and the `ESP_to_FC` §10 checks.
+
+## 2026-10-16 · Check, and a firmware backup with v3 (not in Git)
+
+`diff all` read again on 16 Oct, before and after the ESP bench tests: identical to `diff_all_2026-10-13_v3.txt` (the only difference is a trailing space after `signature`). No new `diff all` file: the configuration did not change.
+
+The 13 Oct firmware backup holds v2. This one holds v3 and is the current restore point.
+Kept outside the repository: `~/Projects/SEAME/backups/betaflight/betaflight_4.5.1_flash_2026-10-16.bin`.
+
+| Item | Value |
+|---|---|
+| SHA-256 | `9c10f274a9a62ce23d3d5c099551a4441571308ad96e5eb1da40aeb01463a7c8` |
+| Size | 524 288 bytes (full internal flash) |
+| Contains | Betaflight 4.5.1 for `ODDITYRCF7AIO` plus configuration v3 (UART4 = MSP 115200) |
+| Made with | `fc_cli.py backup-firmware` (DFU, read twice and compared) |
+| Restore | `dfu-util -a 0 -s 0x08000000:leave -D <file>` (FC in DFU mode) |
