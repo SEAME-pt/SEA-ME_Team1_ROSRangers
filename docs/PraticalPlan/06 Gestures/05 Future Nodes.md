@@ -192,7 +192,7 @@ The safety parameters ([[03 Gesture_node]] §7, [[04 Mission_Node]] §2.3) then 
 | **Interface package** | A ROS 2 package that only defines messages, services or actions. |
 | **Launch file** | A Python file that starts several nodes with their parameters (`ros2 launch`). |
 | **Lifecycle node** | A ROS 2 node with managed states (configure, activate, deactivate), used for `flight_interface`. |
-| **MediaPipe** | A Google framework used here to detect hand landmarks. |
+| **MediaPipe** | A Google framework used here to detect hand landmarks. | 
 | **Spike** | A short, time-boxed investigation to answer a question before building. |
 | **Tasks API** | MediaPipe's newer API (`HandLandmarker`) that replaces the removed `mp.solutions`. |
 | **v4l2** | Video4Linux2, the Linux camera interface (`/dev/video*`). |
