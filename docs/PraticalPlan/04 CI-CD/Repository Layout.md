@@ -37,7 +37,7 @@ sea-me-drone/
 │       ├── flight_interface/# lifecycle node (real + PX4 backends)
 │       ├── estimator/
 │       └── gesture_node/    # talks to the MediaPipe recogniser process
-├── tools/gesture/           # MediaPipe recogniser in its own venv (from Gesture Recognition Program)
+├── tools/gesture/           # MediaPipe recogniser in its own venv (see 06 Gestures)
 ├── simulation/              # PX4/Gazebo worlds, launch files, Betaflight SITL scripts
 ├── tests/
 │   ├── vectors/             # golden vectors shared by C++ and Python

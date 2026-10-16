@@ -20,16 +20,16 @@ tags:
 ## 1. Decision
 
 - **Ubuntu 24.04 LTS + ROS 2 Jazzy (LTS)**, the same image on every laptop and in CI (`ros:jazzy` container).
-- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[Gesture Recognition Program]] (`mediapipe==0.10.21`).
+- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] (`mediapipe==0.10.21`).
 
 ## 2. Consequences
 
-- MediaPipe pulls `numpy` and OpenCV with pip. These can clash with the apt-installed ROS packages (`cv_bridge`). Keep the gesture recogniser in **its own venv/process** and talk to ROS 2 through a thin node ([[Gesture Pipeline]]).
+- MediaPipe pulls `numpy` and OpenCV with pip. These can clash with the apt-installed ROS packages (`cv_bridge`). Keep the gesture recogniser in **its own venv/process** and talk to ROS 2 through a thin node ([[00 Gesture Pipeline|Gesture Pipeline]]).
 - PX4 SITL + Gazebo support for this exact combination must be checked on the official pages before installing (not verified here).
 
 ## 3. Related pages
 
-- [[Gesture Pipeline]] · [[Decision Register]]
+- [[00 Gesture Pipeline|Gesture Pipeline]] · [[Decision Register]]
 
 ## 4. Glossary
 
