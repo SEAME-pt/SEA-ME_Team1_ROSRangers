@@ -17,7 +17,7 @@ aliases:
 # 🎯 Mission_Node: gesture intent → velocity target
 
 > [!WARNING] Status: DRAFT. This is a proposal and nothing has been built yet.
-> This page designs the node that comes after `gesture_node` in [[00 Gesture Pipeline|Gesture Pipeline]] §1. Its input comes from [[04 Gesture_node]]. Topic names, message types and numbers marked **(proposal)** must be agreed by the team before coding (§10). Nothing here changes an accepted ADR.
+> This page designs the node that comes after `gesture_node` in [[00 Gesture Pipeline|Gesture Pipeline]] §1. Its input comes from [[03 Gesture_node]]. Topic names, message types and numbers marked **(proposal)** must be agreed by the team before coding (§10). Nothing here changes an accepted ADR.
 
 ---
 
@@ -49,7 +49,7 @@ Why keep it separate from `gesture_node`:
 
 ### 2.1 `/gesture/intent` (exists)
 
-Type `std_msgs/msg/String`, 20 Hz, published by `gesture_node`. Format: [[04 Gesture_node]] §4.
+Type `std_msgs/msg/String`, 20 Hz, published by `gesture_node`. Format: [[03 Gesture_node]] §4.
 
 ```json
 {"intent":"MOVE_RIGHT","gesture":"INDEX_RIGHT","reason":"ok","t":1791976551.56,"xy":[0.51,0.42]}
@@ -168,7 +168,7 @@ So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15 ([[00 Gesture Pipelin
 
 | Situation | Action |
 |---|---|
-| Not `airborne` (on the ground, incl. start-up `no_packets_yet`) | ignore. Stay `IDLE`/`READY`. Never "land" a drone that is on the ground ([[04 Gesture_node]] §9). |
+| Not `airborne` (on the ground, incl. start-up `no_packets_yet`) | ignore. Stay `IDLE`/`READY`. Never "land" a drone that is on the ground ([[03 Gesture_node]] §9). |
 | Airborne, mask 8 or 11 | zero velocity (hover in place) and set `land_request: true` in `/mission/state`. The **pilot** lands, because they own throttle. |
 | Airborne, mask 15 | hover for 2 s (proposal), then descend at `max_vertical_mps` until the estimator reports the ground. The pilot can still take over at any time. |
 
@@ -228,7 +228,7 @@ Until the controller exists, the mission node can be tested on its own: run it a
 
 ## 📁 7. Package layout (proposal)
 
-Same structure as `gesture_node` ([[04 Gesture_node]] §8):
+Same structure as `gesture_node` ([[03 Gesture_node]] §8):
 
 | Path | Content |
 |---|---|
@@ -262,7 +262,7 @@ To be registered in [[Dev_Strategy]] §15 style:
 
 ## ❓ 10. Open points (decide before coding)
 
-- **Topic names and types.** `/mission/velocity_target` (TwistStamped) and `/mission/state`, `/flight/state` (JSON strings) are proposals. A typed custom message package (`drone_msgs`) would also fix `/gesture/intent` ([[04 Gesture_node]] §9, [[06 Future Nodes]]).
+- **Topic names and types.** `/mission/velocity_target` (TwistStamped) and `/mission/state`, `/flight/state` (JSON strings) are proposals. A typed custom message package (`drone_msgs`) would also fix `/gesture/intent` ([[03 Gesture_node]] §9, [[05 Future Nodes]]).
 - **Who publishes `/flight/state`,** and how `airborne` is decided (baro height threshold?).
 - **Left/right convention** in the cage: operator frame vs drone frame.
 - **Engage rule.** Is `OPEN_HAND_UP` once enough, or must it be re-shown after every `STOP_HOVER`?
@@ -272,7 +272,7 @@ To be registered in [[Dev_Strategy]] §15 style:
 
 ## 🔗 11. Related pages
 
-[[00 Gesture Pipeline]] · [[02 ROS 2 Nodes - Install and Test]] · [[04 Gesture_node]] · [[06 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
+[[00 Gesture Pipeline]] · [[02 ROS 2 Nodes - Install and Test]] · [[03 Gesture_node]] · [[05 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
 
 ---
 

@@ -15,7 +15,7 @@ aliases:
 
 # 🤖 ROS 2 and nodes: install ROS 2 Jazzy, then build, run and test each node
 
-This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[04 Gesture_node]], [[05 Mission_Node]].
+This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[03 Gesture_node]], [[04 Mission_Node]].
 
 > [!WARNING] Status: DRAFT. Tested with ROS 2 stubbed on the host, not yet built on real Jazzy
 > The `gesture_node` filter has 17 unit tests, and the real `gesture_sender.py` fed into the real node code behaved as described in §9. Nobody has run `colcon build` on a real Jazzy install yet. Record the first real build in the test log (§12).
@@ -312,13 +312,13 @@ Press `q` in the window to quit.
 | `ros2 param get <node> <name>` | Reads a parameter | `ros2 param get /gesture_node stable_packets` |
 | `ros2 param set <node> <name> <value>` | Changes a parameter while running | see the warning below |
 | `ros2 bag record <topics>` / `ros2 bag play <file>` | Records topics and replays them | record `/gesture/intent` once, replay it without a camera |
-| `ros2 launch <package> <file>` | Starts several nodes from one file | later, for `gesture_node` + `mission_node` ([[06 Future Nodes]]) |
+| `ros2 launch <package> <file>` | Starts several nodes from one file | later, for `gesture_node` + `mission_node` ([[05 Future Nodes]]) |
 | `ros2 service` / `ros2 action` | Same idea for services and actions | not used yet |
 
 Add `--help` to any command, for example `ros2 topic --help`.
 
 > [!WARNING] Parameters are safety settings
-> `ros2 param set` changes a value while the node runs, but `gesture_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[04 Gesture_node]] §7). Agree changes with the team first.
+> `ros2 param set` changes a value while the node runs, but `gesture_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[03 Gesture_node]] §7). Agree changes with the team first.
 
 ### The CLI and `rclpy`
 
@@ -422,7 +422,7 @@ Attach the result to the GitHub issue (Test session form).
 
 ## 🧪 10. Test `mission_node` (when it exists)
 
-==🟠The package is not created yet.== Once it is, it is built and run the same way as `gesture_node` (symlink into `~/ros2_ws/src`, `colcon build --packages-select mission_node`). The rules it must pass are in [[05 Mission_Node]] §8. The first test needs no other node, only fake inputs:
+==🟠The package is not created yet.== Once it is, it is built and run the same way as `gesture_node` (symlink into `~/ros2_ws/src`, `colcon build --packages-select mission_node`). The rules it must pass are in [[04 Mission_Node]] §8. The first test needs no other node, only fake inputs:
 
 ```bash
 ros2 topic pub -r 20 /gesture/intent std_msgs/msg/String \

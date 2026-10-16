@@ -114,7 +114,7 @@ Mirroring: `gestures.py` flips the frame so left and right match the operator ([
 
 ## 📨 4. `drone_msgs`: typed messages
 
-`/gesture/intent`, `/mission/state` and `/flight/state` are JSON inside `std_msgs/String` ([[04 Gesture_node]] §9, [[05 Mission_Node]] §10). A message package would make them typed and checked.
+`/gesture/intent`, `/mission/state` and `/flight/state` are JSON inside `std_msgs/String` ([[03 Gesture_node]] §9, [[04 Mission_Node]] §10). A message package would make them typed and checked.
 
 ```text
 drone/ground/src/drone_msgs/
@@ -133,13 +133,13 @@ drone/ground/src/drone_msgs/
 
 ## 🎛️ 5. Velocity controller + estimator
 
-Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[05 Mission_Node]] §6. Open question there: keep mission and controller as two nodes, or one.
+Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[04 Mission_Node]] §6. Open question there: keep mission and controller as two nodes, or one.
 
 ---
 
 ## 📡 6. `flight_interface`: the link to the drone
 
-A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the ESP8266 ([[Protocol Spec v0]]), with its own watchdog, and a PX4 SITL backend for simulation ([[ADR-019 Sim Backends|ADR-019]]). The folder `drone/ground/src/flight_interface/` exists but holds only `info.md`. It would also publish `/flight/state` for `mission_node` ([[05 Mission_Node]] §2.2).
+A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the ESP8266 ([[Protocol Spec v0]]), with its own watchdog, and a PX4 SITL backend for simulation ([[ADR-019 Sim Backends|ADR-019]]). The folder `drone/ground/src/flight_interface/` exists but holds only `info.md`. It would also publish `/flight/state` for `mission_node` ([[04 Mission_Node]] §2.2).
 
 ---
 
@@ -147,7 +147,7 @@ A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the 
 
 Static poses only cover "which fingers, which way". A tracker that follows the palm position over several frames could add movement gestures as **mode commands** (for example wave = land request), never as direct motion.
 
-- Needs the palm `xy`, which `gestures.py` does not send yet ([[04 Gesture_node]] §3).
+- Needs the palm `xy`, which `gestures.py` does not send yet ([[03 Gesture_node]] §3).
 - Could live inside the recogniser, or as a small node between it and `gesture_node`.
 - Any new gesture must go through the same stability filter and be added to the vocabulary ([[00 Gesture Pipeline]] §3).
 
@@ -179,7 +179,7 @@ A package with a launch file and a parameter YAML that starts `gesture_node` and
 ros2 launch gesture_bringup gestures.launch.py
 ```
 
-The safety parameters ([[04 Gesture_node]] §7, [[05 Mission_Node]] §2.3) then live in one reviewed YAML file instead of command lines.
+The safety parameters ([[03 Gesture_node]] §7, [[04 Mission_Node]] §2.3) then live in one reviewed YAML file instead of command lines.
 
 ---
 

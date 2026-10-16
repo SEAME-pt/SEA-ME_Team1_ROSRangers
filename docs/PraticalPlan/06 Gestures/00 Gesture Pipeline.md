@@ -40,10 +40,10 @@ flowchart LR
 | Step | Piece | Question it answers | Status | Note |
 | :--- | :--- | :--- | :---: | :--- |
 | 1 | `gestures.py` + `hand_processing.py` | "Which hand pose is this?" | ==🟢working prototype== | [[01 Gesture Recognition with OpenCV and MediaPipe\|01]] |
-| 2 | `gesture_sender.py` | "How does the pose reach ROS 2?" | ==🟢working== | [[04 Gesture_node\|04]] §6 |
-| 3 | `gesture_node` | "What does the **operator** want?" | ==🟠draft, tested without real ROS 2== | [[04 Gesture_node\|04]] |
-| 4 | `mission_node` | "What should the **drone** do now?" | ==🔴design only== | [[05 Mission_Node\|05]] |
-| 5 | controller, `flight_interface`, … | "How do we fly it safely?" | ==🔴planned== | [[06 Future Nodes\|06]], [[System Overview]] |
+| 2 | `gesture_sender.py` | "How does the pose reach ROS 2?" | ==🟢working== | [[03 Gesture_node\|03]] §6 |
+| 3 | `gesture_node` | "What does the **operator** want?" | ==🟠draft, tested without real ROS 2== | [[03 Gesture_node\|03]] |
+| 4 | `mission_node` | "What should the **drone** do now?" | ==🔴design only== | [[04 Mission_Node\|04]] |
+| 5 | controller, `flight_interface`, … | "How do we fly it safely?" | ==🔴planned== | [[05 Future Nodes\|05]], [[System Overview]] |
 
 Only steps 1 to 3 exist in code today. Everything after `/gesture/intent` is design or plan.
 
@@ -56,9 +56,9 @@ Only steps 1 to 3 exist in code today. Everything after `/gesture/intent` is des
 | **00 Gesture Pipeline** (this page) | The whole chain, the gesture vocabulary, the safety rules, where the files live |
 | [[01 Gesture Recognition with OpenCV and MediaPipe]] | How OpenCV and MediaPipe find the hand, the math, the gesture names, the code, tuning |
 | [[02 ROS 2 Nodes - Install and Test]] | What ROS 2 and nodes are, installing ROS 2 Jazzy, building, running and testing each node built so far |
-| [[04 Gesture_node]] | The `gesture_node`: inputs, outputs, filter rules, parameters |
-| [[05 Mission_Node]] | The `mission_node` design: modes, intent → velocity, axis masking, land requests |
-| [[06 Future Nodes]] | Nodes to add later, including a MediaPipe node inside ROS 2 |
+| [[03 Gesture_node]] | The `gesture_node`: inputs, outputs, filter rules, parameters |
+| [[04 Mission_Node]] | The `mission_node` design: modes, intent → velocity, axis masking, land requests |
+| [[05 Future Nodes]] | Nodes to add later, including a MediaPipe node inside ROS 2 |
 
 > [!TIP] Reading order
 > New to this? Read 00 → 01 → 02, then the node you work on.
@@ -67,7 +67,7 @@ Only steps 1 to 3 exist in code today. Everything after `/gesture/intent` is des
 
 ## 🏷️ 3. Gesture vocabulary v0
 
-One table from hand to motion. The intent names come from `gesture_node` ([[04 Gesture_node|04]] §5), the velocities from the `mission_node` design ([[05 Mission_Node|05]] §4.2).
+One table from hand to motion. The intent names come from `gesture_node` ([[03 Gesture_node|03]] §5), the velocities from the `mission_node` design ([[04 Mission_Node|04]] §4.2).
 
 | Gesture (from `recognize()`) | Intent | Meaning | Proposed velocity |
 | :--- | :--- | :--- | :--- |
@@ -79,7 +79,7 @@ One table from hand to motion. The intent names come from `gesture_node` ([[04 G
 | `INDEX_MIDDLE_LEFT` / `INDEX_MIDDLE_RIGHT` | `YAW_LEFT` / `YAW_RIGHT` | yaw left / right | ±20 °/s |
 | none / unknown / not in the table | `NEUTRAL` | **never** "continue the last command" | 0 |
 
-Movement gestures (wave, swipe) from a planned motion tracker could be added later as mode commands, for example wave = land request ([[06 Future Nodes|06]]).
+Movement gestures (wave, swipe) from a planned motion tracker could be added later as mode commands, for example wave = land request ([[05 Future Nodes|05]]).
 
 ---
 
@@ -87,14 +87,14 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 
 | Rule | Where it lives |
 | :--- | :--- |
-| A gesture must be seen in several packets in a row before it counts (stability filter) | `gesture_node` ([[04 Gesture_node\|04]] §5) |
-| Hand gone briefly → `NEUTRAL`. Hand or recogniser gone for long → `HOVER_LAND_REQUEST` | `gesture_node` ([[04 Gesture_node\|04]] §5) |
-| A deliberate `OPEN_HAND_UP` is needed before anything moves (engage) | `mission_node` ([[05 Mission_Node\|05]] §4.1) |
-| Hard speed limits (0.3 m/s lateral) and smooth ramps | `mission_node` ([[05 Mission_Node\|05]] §4) |
-| Only the axes in the override mask are commanded | `mission_node` ([[05 Mission_Node\|05]] §4.3) |
+| A gesture must be seen in several packets in a row before it counts (stability filter) | `gesture_node` ([[03 Gesture_node\|03]] §5) |
+| Hand gone briefly → `NEUTRAL`. Hand or recogniser gone for long → `HOVER_LAND_REQUEST` | `gesture_node` ([[03 Gesture_node\|03]] §5) |
+| A deliberate `OPEN_HAND_UP` is needed before anything moves (engage) | `mission_node` ([[04 Mission_Node\|04]] §4.1) |
+| Hard speed limits (0.3 m/s lateral) and smooth ramps | `mission_node` ([[04 Mission_Node\|04]] §4) |
+| Only the axes in the override mask are commanded | `mission_node` ([[04 Mission_Node\|04]] §4.3) |
 | Never arm, disarm or change the override switch (SAF-03/04) | every node |
 
-`gestures.py` has **no** safety logic. It only reports what it sees. The values for the filter (packet count, timeouts) have one source: [[04 Gesture_node|04]] §7.
+`gestures.py` has **no** safety logic. It only reports what it sees. The values for the filter (packet count, timeouts) have one source: [[03 Gesture_node|03]] §7.
 
 ---
 
@@ -133,7 +133,7 @@ The full steps are in [[02 ROS 2 Nodes - Install and Test|02]]. The short versio
 
 ## 🚀 8. Module 2 extension (accepted by instructors)
 
-Replacing the rule-based `recognize()` with a trained landmark classifier, and the portability proof (the same `/gesture/intent` driving the car or the arm), are planned in [[Roadmap to April 2027]] §4. Candidate nodes for that: [[06 Future Nodes|06]].
+Replacing the rule-based `recognize()` with a trained landmark classifier, and the portability proof (the same `/gesture/intent` driving the car or the arm), are planned in [[Roadmap to April 2027]] §4. Candidate nodes for that: [[05 Future Nodes|05]].
 
 ---
 

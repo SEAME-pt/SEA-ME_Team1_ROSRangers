@@ -18,7 +18,7 @@ aliases:
 This note explains how the webcam program turns a hand into a gesture name such as `THUMB_UP` or `INDEX_MIDDLE_LEFT`. It covers **static gestures**: which fingers are extended and which way they point. It also explains how to install and run the program on Linux.
 
 > [!NOTE] Where this fits
-> This is step 1 of the [[00 Gesture Pipeline|Gesture Pipeline]]. What happens to the gesture name after it leaves this program is in [[04 Gesture_node]].
+> This is step 1 of the [[00 Gesture Pipeline|Gesture Pipeline]]. What happens to the gesture name after it leaves this program is in [[03 Gesture_node]].
 
 ---
 
@@ -33,7 +33,7 @@ This note explains how the webcam program turns a hand into a gesture name such 
 > MediaPipe's official C++ API can only be built from source with Bazel, which is slow and fragile. In Python we install the prebuilt `mediapipe` package with pip, so nothing is compiled.
 
 > [!WARNING] Keep `mediapipe==0.10.21` pinned (checked 2026-10-12)
-> MediaPipe **1.1.0** (released 6 Oct 2026) **removed** the legacy `mp.solutions` API that this code uses (verified in the wheel). Upgrading needs a port to the Tasks API (`HandLandmarker`). The "Python 3.10 to 3.12 only" limit applies to 0.10.21: 1.1.0 supports Python 3.9–3.14 and ships Linux aarch64 wheels (Raspberry Pi 5). A port is listed in [[06 Future Nodes]].
+> MediaPipe **1.1.0** (released 6 Oct 2026) **removed** the legacy `mp.solutions` API that this code uses (verified in the wheel). Upgrading needs a port to the Tasks API (`HandLandmarker`). The "Python 3.10 to 3.12 only" limit applies to 0.10.21: 1.1.0 supports Python 3.9–3.14 and ships Linux aarch64 wheels (Raspberry Pi 5). A port is listed in [[05 Future Nodes]].
 
 ---
 
@@ -86,7 +86,7 @@ In `gestures.py` there are two versions of the same image:
 | :--- | :--- |
 | OpenCV (camera, video file, `imread`) | `cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)` |
 | Pillow (image file) | `np.array(Image.open("hand.jpg").convert("RGB"))` |
-| ROS 2 image topic (future) | `cv_bridge` → `sensor_msgs/Image` to a NumPy array ([[06 Future Nodes]]) |
+| ROS 2 image topic (future) | `cv_bridge` → `sensor_msgs/Image` to a NumPy array ([[05 Future Nodes]]) |
 | Other (screen capture, other camera libraries) | Convert the output to an RGB `uint8` array |
 
 > [!WARNING] Things to check when connecting a new source
@@ -260,7 +260,7 @@ drone/tools/gesture/
 | :--- | :--- |
 | `hand_processing.py` | Everything that uses MediaPipe, plus the math, the finger logic and the gesture names. It never imports OpenCV, so it accepts any RGB image. |
 | `gestures.py` | The OpenCV part: camera loop and window. Imports `create_hands`, `detect_gesture` and `draw_hand` from `hand_processing.py` and `send_gesture` from `gesture_sender.py`. |
-| `gesture_sender.py` | Sends JSON over UDP to `gesture_node`. Explained in [[04 Gesture_node]] §6. |
+| `gesture_sender.py` | Sends JSON over UDP to `gesture_node`. Explained in [[03 Gesture_node]] §6. |
 
 All three must be in the same folder. The three functions `gestures.py` uses from `hand_processing.py`:
 
@@ -496,7 +496,7 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 - Lighting and camera quality affect accuracy.
 - Up to 2 hands are detected (`max_num_hands=2`), but only the **first** hand is recognized and drawn.
 - Gestures that depend on more than "extended or not" (pinch, OK sign) need extra logic using distances between landmarks (§12).
-- Only static poses. Movement (wave, swipe) needs a tracker over several frames ([[06 Future Nodes]]).
+- Only static poses. Movement (wave, swipe) needs a tracker over several frames ([[05 Future Nodes]]).
 
 ---
 
@@ -521,7 +521,7 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 
 ## ➕ 12. Adding new gestures
 
-1. **Static:** hold the gesture and read its name in the terminal (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `gesture_node` ([[04 Gesture_node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` above `case _`.
+1. **Static:** hold the gesture and read its name in the terminal (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `gesture_node` ([[03 Gesture_node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` above `case _`.
 2. **Distance based (pinch, OK sign):** compare the distance between two landmarks with `dist()`, for example thumb tip (4) and index tip (8), divided by `hand_size(lm)` so it does not depend on the distance to the camera:
 
 $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$

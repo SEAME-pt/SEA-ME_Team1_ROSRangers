@@ -17,7 +17,7 @@ aliases:
 `gesture_node` (v0.2) is the first ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It receives gesture names from `gestures.py` over UDP, filters them with safety rules, and publishes what the operator wants on `/gesture/intent`.
 
 > [!NOTE] Related notes
-> How the gesture names are made: [[01 Gesture Recognition with OpenCV and MediaPipe|01]]. How to build, run and test this node: [[02 ROS 2 Nodes - Install and Test|02]] §6–9. Who reads its output: [[05 Mission_Node]].
+> How the gesture names are made: [[01 Gesture Recognition with OpenCV and MediaPipe|01]]. How to build, run and test this node: [[02 ROS 2 Nodes - Install and Test|02]] §6–9. Who reads its output: [[04 Mission_Node]].
 
 > [!WARNING] Status: DRAFT
 > 17 unit tests pass and the node logic was checked with ROS 2 stubbed. It has not been built on a real Jazzy install yet ([[02 ROS 2 Nodes - Install and Test|02]] §12).
@@ -145,7 +145,7 @@ Three details that matter:
 - While you switch from one gesture to another, the old intent stays until the new gesture has 5 consecutive packets (about 0.4 s at the 10 Hz keep-alive).
 
 > [!WARNING] What this node never does
-> It only filters and relays intent. It never arms or disarms and never touches the override switch ([[Safety Rules]], rule 5). `mission_node` must treat the start-up `HOVER_LAND_REQUEST` / `no_packets_yet` as "no recogniser yet", not as a real land request ([[05 Mission_Node]] §4.4).
+> It only filters and relays intent. It never arms or disarms and never touches the override switch ([[Safety Rules]], rule 5). `mission_node` must treat the start-up `HOVER_LAND_REQUEST` / `no_packets_yet` as "no recogniser yet", not as a real land request ([[04 Mission_Node]] §4.4).
 
 ---
 
@@ -217,7 +217,7 @@ Only `__init__.py`, `gesture_filter.py` and `gesture_node.py` go in the inner `g
 
 ## ❓ 9. Open points
 
-- [ ] **Message type.** `std_msgs/String` holding JSON works but is untyped. A custom message package (`drone_msgs`) is proposed in [[06 Future Nodes]].
+- [ ] **Message type.** `std_msgs/String` holding JSON works but is untyped. A custom message package (`drone_msgs`) is proposed in [[05 Future Nodes]].
 - [ ] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` must not land from it on the ground.
 - [ ] **Keep-alive rate.** The code uses 10 Hz (accept in about 0.4 s). An earlier version of the pipeline page said 5 Hz. Confirm 10 Hz with the team.
 - [ ] **Tests.** The node wrapper (socket and timers) is only checked by hand. The filter has unit tests ([[Testing Strategy]]).
