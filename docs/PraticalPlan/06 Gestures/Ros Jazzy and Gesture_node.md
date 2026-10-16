@@ -266,24 +266,23 @@ export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # Jazzy: only talk to this machi
 
 ## 8. Install `gesture_node` and the sender
 
-The package is `gesture_node_ros2_package_v2.zip`. Unzip it. You get:
+The package was first delivered as `gesture_node_ros2_package_v2.zip`. In the repo it is split in two places:
 
-```text
-gesture_node/            ← the ROS 2 package (goes into the workspace)
-│   package.xml  setup.py  setup.cfg  resource/gesture_node
-│   gesture_node/__init__.py  gesture_filter.py  gesture_node.py
-│   test/test_gesture_filter.py
-recogniser_side/         ← plain Python for the MediaPipe side
-    gesture_sender.py    ← copy next to gestures.py
-    udp_listen.py        ← proof tool without ROS
-README.md
-```
+| File or folder | Repo path | Notes |
+|---|---|---|
+| `package.xml`, `setup.py`, `setup.cfg`, `resource/gesture_node`, `gesture_node/` (`__init__.py`, `gesture_filter.py`, `gesture_node.py`), `test/test_gesture_filter.py` | `drone/ground/src/gesture_node/` | The ROS 2 package. `package.xml` must be directly in this folder. |
+| `gesture_sender.py` | `drone/tools/gesture/` | Plain Python for the MediaPipe side, next to `gestures.py`. |
+| `udp_listen.py` (proof tool without ROS) | not in the repo yet | Optional. If you add it, put it in `drone/tools/gesture/`. |
+| `~/ros2_ws/` | Host PC, **not in the repo** | Build folder, see below. |
+
+> [!info] Why `ros2_ws` is on the host PC and not in the repo
+> The workspace is only colcon's build output (`build/`, `install/`, `log/`). It is generated, large and tied to one machine and ROS version, so it is never committed. The source stays in the repo and the workspace links to it with a symlink, so editing the repo files is enough (`--symlink-install`). Each teammate and the CI runner builds their own workspace from the same repo. Step by step: [[Gesture Pipeline]] §5–6.
 
 ### 8.1 Build the node
 
 ```bash
 mkdir -p ~/ros2_ws/src
-cp -r gesture_node ~/ros2_ws/src/            # so that ~/ros2_ws/src/gesture_node/package.xml exists
+ln -s ~/ROSRangers/drone/ground/src/gesture_node ~/ros2_ws/src/gesture_node   # symlink to the repo, not a copy
 
 source /opt/ros/jazzy/setup.zsh
 cd ~/ros2_ws
@@ -292,8 +291,8 @@ colcon build --packages-select gesture_node --symlink-install
 source install/setup.zsh
 ```
 
-- `package.xml` must be directly inside `src/gesture_node/`, not one folder deeper.
-- `--symlink-install` lets you edit `gesture_node.py` and rerun without rebuilding.
+- `~/ros2_ws/src/gesture_node/package.xml` must exist (through the symlink), not one folder deeper.
+- `--symlink-install` lets you edit `gesture_node.py` in the repo and rerun without rebuilding.
 - Run `source ~/ros2_ws/install/setup.bash` in **every new terminal** (or add it to `~/.bashrc` after the ROS line).
 - Setuptools deprecation warnings during the build are common and harmless if it finishes with `Summary: 1 package finished`.
 - **Do not activate the MediaPipe venv** in terminals that run ROS 2.
@@ -307,13 +306,13 @@ ros2 pkg list | grep gesture_node
 ### 8.2 Run the unit tests (optional, no ROS needed)
 
 ```bash
-cd ~/ros2_ws/src/gesture_node
+cd ~/ROSRangers/drone/ground/src/gesture_node
 python3 -m unittest discover -s test -v      # 17 tests, all OK
 ```
 
 ### 8.3 Connect `gestures.py` to the node
 
-Copy `recogniser_side/gesture_sender.py` into the folder of `gestures.py` (it uses only the standard library, so the venv needs nothing new). In `gestures.py`, once per camera frame:
+`gesture_sender.py` already sits next to `gestures.py` in `drone/tools/gesture/` (it uses only the standard library, so the venv needs nothing new). In `gestures.py`, once per camera frame:
 
 ```python
 from gesture_sender import send_gesture
@@ -346,8 +345,8 @@ ros2 topic echo /gesture/intent
 Terminal 3, the recogniser (venv active here, and only here):
 
 ```bash
-cd <folder of gestures.py>
-source <your venv>/bin/activate
+cd ~/ROSRangers/drone/tools/gesture
+source .venv/bin/activate
 python gestures.py
 ```
 
@@ -362,7 +361,7 @@ Work through the levels in order. Each one proves one link of the chain, so a fa
 Start the node (§9, terminal 1) and `ros2 topic echo /gesture/intent` (terminal 2). In terminal 3 run the fake camera:
 
 ```bash
-python3 recogniser_side/gesture_sender.py
+cd ~/ROSRangers/drone/tools/gesture && python3 gesture_sender.py
 ```
 
 About 13 s of scripted input should produce this sequence (`intent` / `reason`):
@@ -383,7 +382,7 @@ About 13 s of scripted input should produce this sequence (`intent` / `reason`):
 Stop the node (the UDP port is shared). Run:
 
 ```bash
-python3 recogniser_side/udp_listen.py
+python3 udp_listen.py   # from the folder where you keep it; not in the repo yet
 ```
 
 Start `gestures.py`. Every packet is printed with a rate:

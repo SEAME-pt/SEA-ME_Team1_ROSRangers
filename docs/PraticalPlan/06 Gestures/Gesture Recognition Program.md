@@ -126,12 +126,16 @@ python3 -c "import cv2, mediapipe; print(cv2.__version__, mediapipe.__version__)
 ### 🗂️ Project Structure
 
 ```text
-gesture-detector/
+drone/tools/gesture/
 ├── gestures.py          # OpenCV: camera loop, window, execute()
 ├── hand_processing.py   # MediaPipe + math + finger logic + gesture names
-├── requirements.txt     # mediapipe, opencv-python
-└── README.md
+├── gesture_sender.py    # sends the gesture to gesture_node over UDP (standard library only)
+├── requirements.txt     # mediapipe==0.10.21, opencv-python
+└── .venv/               # your virtual environment (not committed)
 ```
+
+> [!info] Where these files live in the repo
+> All of them are in `drone/tools/gesture/`, and the program runs in its own venv there, apart from ROS 2. The ROS 2 side (`gesture_node`) is in `drone/ground/src/gesture_node/`, and the ROS workspace `~/ros2_ws` stays on the host PC outside the repo (it only holds colcon's build output). Setup and run steps for all of it: [[Gesture Pipeline]] §5–7. In the setup below, `gesture-detector/` and `gesture-env` are just the names used in the first prototype. In the repo, use `drone/tools/gesture/` and `.venv`.
 
 The code is divided into **2 files**, so the MediaPipe part does not depend on OpenCV:
 
