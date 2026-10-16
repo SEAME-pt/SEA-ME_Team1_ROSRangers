@@ -25,7 +25,9 @@ def test_latest_backup_is_newest_stamp(tmp_path, monkeypatch):
 
 def test_boot_bytes_report_counts_what_an_msp_parser_sees():
     good = msp.encode_response(msp.MSP_API_VERSION, bytes([0, 1, 46]))
-    report = esp_at.boot_bytes_report(b"\x00\xff ets Jan  8 2013$M<\x02\x01xx\x00" + good)
+    report = esp_at.boot_bytes_report(
+        b"\x00\xff ets Jan  8 2013$M<\x02\x01xx\x00" + good
+    )
     assert report["msp_headers"] == 2
     assert report["msp_frames"] == 1
     assert report["bad_checksums"] == 1
@@ -58,12 +60,17 @@ def test_set_sleep_in_bridge_leaves_and_reenters_passthrough(monkeypatch):
     }
     monkeypatch.setattr(esp_at.time, "sleep", lambda s: None)
     monkeypatch.setattr(
-        esp_at, "at", lambda ser, cmd, wait=1.0, secret="": sent.append(cmd) or replies[cmd]
+        esp_at,
+        "at",
+        lambda ser, cmd, wait=1.0, secret="": sent.append(cmd) or replies[cmd],
     )
     ser = type(
         "Ser",
         (),
-        {"write": lambda self, d: written.append(d), "reset_input_buffer": lambda self: None},
+        {
+            "write": lambda self, d: written.append(d),
+            "reset_input_buffer": lambda self: None,
+        },
     )()
     assert esp_at.set_sleep_in_bridge(ser, "none") == "2"
     assert written == [b"+++"]

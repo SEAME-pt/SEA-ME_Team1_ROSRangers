@@ -1,0 +1,57 @@
+name: Task
+description: Feature or implementation work
+labels: ["type: task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        After creating the issue, add a **track** and **priority** label.
+        Branch name: `feature/<issue-number>-<short-name>`.
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What needs to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Why is it needed? Link the vault note, ADR or Study Plan week.
+      placeholder: "Study Plan v2 §4, ADR-011"
+    validations:
+      required: true
+  - type: input
+    id: requirement
+    attributes:
+      label: Requirement
+      description: "REQ-<SYS|NAV|SEN|COM|CTL|SAF|PWR|SW|HW>-NNN, or N/A"
+      placeholder: REQ-COM-001
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know it is done? Include tests.
+      value: |
+        - [ ]
+        - [ ] Unit tests added and CI green
+    validations:
+      required: true
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: Verification level
+      description: Where must this be shown to work?
+      options:
+        - label: Unit tests
+        - label: Simulation (PX4 SITL / Betaflight SITL)
+        - label: HIL bench (props off)
+        - label: Cage flight
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Dependencies, links, open questions.

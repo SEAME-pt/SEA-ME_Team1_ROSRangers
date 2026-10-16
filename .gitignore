@@ -1,7 +1,9 @@
 .venv/
 __pycache__/
+.pytest_cache/
+.obsidian/
+CLAUDE.md
 *.csv
 *.bin
-.pytest_cache/
-CLAUDE.md
+# old local FC captures; fc_cli.py now writes to drone/config/betaflight/
 config/

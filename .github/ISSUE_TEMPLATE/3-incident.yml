@@ -1,0 +1,69 @@
+name: Incident / crash
+description: Crash, hardware fault, damaged part or safety event (Safety Rules #12)
+labels: ["type: incident", "safety-critical", "P0 🔴"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every crash, incident or fault is logged here with its cause and fix (program rule; spares are limited).
+        Make the hardware safe first, then file this.
+  - type: input
+    id: when
+    attributes:
+      label: Date and time
+      placeholder: "2026-10-20 14:30"
+    validations:
+      required: true
+  - type: dropdown
+    id: context
+    attributes:
+      label: Context
+      options:
+        - Bench (props off)
+        - HIL bench
+        - Cage flight
+        - Charging / battery handling
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: unit
+    attributes:
+      label: Drone unit and people present
+      description: Which of the 2 flying units, safety pilot, operator.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Sequence of events. Link the video or logs if any.
+    validations:
+      required: true
+  - type: textarea
+    id: damage
+    attributes:
+      label: Damage and parts affected
+      placeholder: "Props x2 broken, motor 3 hot, no damage to FC"
+    validations:
+      required: true
+  - type: textarea
+    id: cause
+    attributes:
+      label: Cause
+      description: Root cause if known. Write "unknown" for now and update later.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Fix and prevention
+      description: What was repaired, and what changes so it does not happen again (rule, test, code).
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety follow-up
+      options:
+        - label: Battery disconnected and inspected
+        - label: Failsafe re-tested before the next flight
+        - label: Safety Rules updated if a rule was missing

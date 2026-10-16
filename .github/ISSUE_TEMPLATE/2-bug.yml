@@ -1,0 +1,56 @@
+name: Bug
+description: Software or configuration defect (no hardware damage)
+labels: ["type: bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A crash, damage or safety event is an **Incident**, not a bug. Use that template instead.
+        Branch name: `bugfix/<issue-number>-<short-name>`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What was expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Ground / ROS 2
+        - ESP firmware
+        - Protocol library
+        - Betaflight configuration
+        - CI / tooling
+        - Simulation
+        - Gestures
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit / version
+      description: Commit SHA, branch, Betaflight version, firmware build.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and evidence
+      description: Paste logs or attach files (rosbag, CI run link, screenshots).
+      render: text
