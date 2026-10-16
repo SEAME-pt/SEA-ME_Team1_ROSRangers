@@ -1,0 +1,30 @@
+# Dev_Strategy Document
+---
+- [x] ==🟠5. Feature and Bug-Fix Branches Documentation and Know How==
+- [x] ==🟠6.  Pull Request Workflow Documentation and Know How==
+- [x] ==🟠7. Rebase Policy Documentation and Know How==
+- [x] ==🟠8. Merge Strategy Documentation and Know How==
+- [x] ==🟠9. Branch Protection and Know How==
+- [ ] ==🔴 Deep Study of the following points (10 to 25)==
+- [ ] ==🟡Search about cherry pick github==
+
+# Sprint 0 — week 2 (12–16 Oct)
+---
+- [ ] ==🔴 Safety induction for everyone== ([[Safety Rules]])
+- [ ] ==🔴 Save `diff all` + `status` (Betaflight 4.5.1)==
+- [x] ==🔴 Re-check the barometer: DPS310 detected (2026-10-14)==
+- [ ] ==🟠 Create the software repo with `main` + `dev` and branch protection== ([[Repository Layout]])
+- [ ] ==🟠 Back up the D1 mini AT firmware (`esptool.py read_flash`)== ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]])
+- [ ] ==🟠 Ask instructors: reflash permission, lab HIL runners, ROS 2 distro, ToF/MCU for the flow sensor== ([[Open Questions]])
+- [ ] ==🟡 Confirm the ELRS wires on R2/T2 with a multimeter==
+- [ ] ==🟡 Review and merge `docs/vault-update-2026-10-12`== ([[Decision Register]])
+
+
+## Glossary
+
+| Term | Meaning |
+| --- | --- |
+| **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **Branch** | An independent line of development in version control. |
+| **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
+| **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |

@@ -1,0 +1,58 @@
+name: Test session
+description: Planned bench, HIL or cage-flight test (e.g. ESP Bench Test Plan stage, ESP_to_FC §11 phase)
+labels: ["type: test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Plan the test here, run it, then paste the results before closing.
+        Add `props-off` or `in-cage-flight` as a label.
+  - type: input
+    id: plan
+    attributes:
+      label: Test plan reference
+      placeholder: "ESP Bench Test Plan Stage 2 / ESP_to_FC §11 Phase 3 / F1–F9"
+    validations:
+      required: true
+  - type: dropdown
+    id: level
+    attributes:
+      label: Test level
+      options:
+        - Bench, USB only
+        - Bench, battery without props
+        - HIL bench (no LiPo)
+        - Cage flight
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective and pass criteria
+      description: What is measured and what counts as a pass.
+      placeholder: "RTT p99 < 20 ms over 1000 packets, 0 loss"
+    validations:
+      required: true
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Safety checklist (Safety Rules)
+      options:
+        - label: Props off unless this is a planned cage flight
+          required: true
+        - label: VTX antenna on before any battery
+          required: true
+        - label: Safety pilot with the radio present (cage flights)
+        - label: Failsafe tested today (cage flights)
+        - label: No LiPo on the HIL bench
+        - label: Nothing soldered to the FC before Stages 1–2 pass
+  - type: input
+    id: config
+    attributes:
+      label: Configuration
+      description: Betaflight version, firmware commit, unit used.
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Fill in after the session. Measurements, logs, video links, pass/fail.
