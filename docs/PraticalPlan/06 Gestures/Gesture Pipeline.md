@@ -34,6 +34,7 @@ flowchart LR
 
 - `execute()` in `gestures.py` stops printing and sends one small JSON datagram per **change** (plus a 5 Hz keep-alive) to `127.0.0.1`.
 - MediaPipe stays out of the ROS 2 Python environment ([[ADR-018 Ground OS and ROS 2|ADR-018]]).
+- The mission node (what it reads, decides and publishes) is designed in [[Mission Node]].
 
 ## 3. Vocabulary v0 (names produced by `recognize()`)
 
