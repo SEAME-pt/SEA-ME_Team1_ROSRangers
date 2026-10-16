@@ -350,7 +350,47 @@ source .venv/bin/activate
 python gestures.py
 ```
 
-Useful commands: `ros2 node list`, `ros2 topic list`, `ros2 topic info /gesture/intent`, `ros2 topic hz /gesture/intent` (expect about 20 Hz), `ros2 param list /gesture_node`.
+### 9.1 The `ros2` command line (CLI)
+
+`ros2` is one program with sub-commands. It talks to nodes that are already running, so you can inspect and control them without changing their code. Every terminal needs the two `source` lines first (§8.1). The examples use `gesture_node`.
+
+|Command|What it does|Example|
+|---|---|---|
+|`ros2 run <package> <executable>`|Starts a node|`ros2 run gesture_node gesture_node`|
+|`ros2 pkg list`|Lists installed packages|`ros2 pkg list \| grep gesture_node`|
+|`ros2 node list`|Lists running nodes|shows `/gesture_node`|
+|`ros2 node info <node>`|Shows a node's topics and parameters|`ros2 node info /gesture_node`|
+|`ros2 topic list`|Lists all topics|shows `/gesture/intent`|
+|`ros2 topic echo <topic>`|Prints messages as they arrive|`ros2 topic echo /gesture/intent`|
+|`ros2 topic info <topic>`|Shows the type, publishers and subscribers|`ros2 topic info /gesture/intent`|
+|`ros2 topic hz <topic>`|Measures the publish rate|`ros2 topic hz /gesture/intent` (expect about 20 Hz)|
+|`ros2 topic pub <topic> <type> <data>`|Publishes a message by hand|useful to fake an input to another node|
+|`ros2 param list <node>`|Lists a node's parameters|`ros2 param list /gesture_node`|
+|`ros2 param get <node> <name>`|Reads a parameter|`ros2 param get /gesture_node stable_packets`|
+|`ros2 param set <node> <name> <value>`|Changes a parameter while running|see the warning below|
+|`ros2 bag record <topics>` / `ros2 bag play <file>`|Records topics to a file and replays them|record `/gesture/intent` once, replay it without a camera|
+|`ros2 launch <package> <file>`|Starts several nodes from one file|later, to start `gesture_node` and the mission node together|
+|`ros2 service` / `ros2 action`|Same idea for services and actions|not used by `gesture_node`|
+
+Add `--help` to any command to see its options, for example `ros2 topic --help`.
+
+> [!warning] Parameters are safety settings
+> `ros2 param set` changes `stable_packets` and the timeouts while the node runs, but `gesture_node` reads them only once, at start-up (§6.4). To use new values, restart the node with `--ros-args -p ...`. Agree changes with the team before changing them.
+
+#### The CLI and `rclpy`
+
+`ros2` is how you inspect and poke at a node while it runs. `rclpy` is the Python library `gesture_node.py` is written with: it creates the node, the publisher on `/gesture/intent`, the timers and the parameters, and `rclpy.spin()` keeps it running. `rclpy` has no commands of its own. The mapping:
+
+|In `gesture_node.py` (`rclpy`)|What you see with `ros2`|
+|---|---|
+|`super().__init__("gesture_node")`|the name in `ros2 node list`|
+|`declare_parameter(...)` / `get_parameter(...)`|`ros2 param list` / `get`, and `--ros-args -p`|
+|`create_publisher(String, topic, 10)`|`ros2 topic list`, `info` and `echo`|
+|`create_timer(...)`|the 20 Hz rate in `ros2 topic hz`|
+|`get_logger().info(...)`|the messages in the terminal where the node runs|
+|`rclpy.spin(node)`|the node stays alive until Ctrl+C|
+
+The node has no subscriber, service or lifecycle yet. The mission node will add the first subscriber (to `/gesture/intent`), and `flight_interface` will be a lifecycle node.
 
 ## 10. Prove that `gestures.py` is being processed
 
@@ -498,6 +538,8 @@ ros2 topic echo /gesture/intent --field data > gesture_proof.log
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **Keep-alive** | A small periodic message that proves the sender is still running. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **CLI** | Command-line interface: here the `ros2` command and its sub-commands. |
+| **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **colcon** | The build tool for ROS 2 workspaces. |
 | **rosdep** | A tool that installs the system dependencies a ROS 2 package declares. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
