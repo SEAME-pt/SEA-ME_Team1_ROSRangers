@@ -59,11 +59,11 @@ tags: [plan]
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
 - [x] Save `diff all` and `status` output in the software repo under `config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
-- [ ] Confirm the ELRS wires are on R2/T2 with a multimeter ([[2.5Drone]] #22, Medium certainty)
+- [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
 - [ ] Back up the D1 mini **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
 - [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU still open.
-- [ ] XT30 → XT60 adapter received; battery checked
+- [x] XT30 → XT60 adapter received; battery checked (2026-10-16, [[Battery Log]], GitHub #19)
 
 ---
 
