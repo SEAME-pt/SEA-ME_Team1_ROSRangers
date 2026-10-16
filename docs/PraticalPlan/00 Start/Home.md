@@ -33,7 +33,7 @@ tags:
 | Decisions | [[Decision Register]] (ADR-001 to ADR-020) |
 | Architecture | [[System Overview]] · [[Protocol Spec v0]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
-| Hardware | [[Hardware Inventory]] · [[Safety Rules]] |
+| Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] |
 | Gestures | [[Gesture Pipeline]] |
 | Reference | [[Verified Facts and Sources]] · [[Open Questions]] |
 
