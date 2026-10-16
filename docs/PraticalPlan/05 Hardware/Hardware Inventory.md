@@ -29,7 +29,7 @@ tags:
 | Radio | BETAFPV ELRS Nano 2.4 GHz on UART2 + RadioMaster Pocket | [[2.5Drone]] |
 | Wi-Fi bridge | **Wemos D1 mini** (ESP8266), currently **AT firmware 1.7.4.0** → custom firmware ([[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]]) | [[ESP_to_FC]] |
 | Flow sensor | ThoneFlow-3901U, **not installed**, CX-OF-like protocol, no height | [[ThoneFlow]] |
-| Battery | CNHL 4S 850 mAh (the manual suggests 450–650 mAh). Waiting for the XT30 ↔ XT60 adapter. | team, [[2.5Drone]] |
+| Battery | CNHL 4S 850 mAh (the manual suggests 450–650 mAh). XT30 ↔ XT60 adapter received, polarity OK. Checked 2026-10-16: no swelling, 3.90 V/cell ([[Battery Log]]). | team, [[2.5Drone]] |
 
 ## 2. Ground and lab
 
