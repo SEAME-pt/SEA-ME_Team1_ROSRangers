@@ -32,7 +32,8 @@ def test_run_command_dispatches_to_script(monkeypatch):
     monkeypatch.setattr(
         seame.subprocess,
         "run",
-        lambda command: calls.append(command) or type("Result", (), {"returncode": 0})(),
+        lambda command: calls.append(command)
+        or type("Result", (), {"returncode": 0})(),
     )
     command, args = seame.resolve_command(["msp", "--usb", "info"])
     assert seame.run_command(command, args) == 0
@@ -45,7 +46,8 @@ def test_msp_global_options_work_after_subcommand(monkeypatch):
     monkeypatch.setattr(
         seame.subprocess,
         "run",
-        lambda command: calls.append(command) or type("Result", (), {"returncode": 0})(),
+        lambda command: calls.append(command)
+        or type("Result", (), {"returncode": 0})(),
     )
     command, args = seame.resolve_command(
         ["msp", "ping", "-n", "30000", "--rate", "50", "--timeout", "1"]
@@ -123,7 +125,9 @@ def test_interactive_stays_open_after_running_command(monkeypatch):
 
 def test_wait_for_enter_keeps_command_output_visible(monkeypatch, capsys):
     answers = iter([""])
-    monkeypatch.setattr("builtins.input", lambda prompt: (print(prompt), next(answers))[1])
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt: (print(prompt), next(answers))[1]
+    )
     seame.wait_for_enter()
     assert "Press Enter to return to the menu..." in capsys.readouterr().out
 
@@ -138,3 +142,26 @@ def test_clear_screen_only_writes_escape_sequence_in_terminal(monkeypatch, capsy
     monkeypatch.setattr(seame.sys.stdout, "isatty", lambda: True)
     seame.clear_screen()
     assert capsys.readouterr().out == "\033[2J\033[H"
+
+
+def test_group_menu_rc_order_always_passes_write(monkeypatch):
+    answers = iter(["13"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    command, args = seame.menu_command("msp")
+    assert command.script == "msp_check.py"
+    assert args == ["rc-order", "--write"]
+
+
+def test_group_menu_cycle1a_accepts_bench_arguments(monkeypatch):
+    answers = iter(["3", "--sleep none --duration 600 --csv s1-05.csv"])
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+    _, args = seame.menu_command("msp")
+    assert args == [
+        "cycle1a",
+        "--sleep",
+        "none",
+        "--duration",
+        "600",
+        "--csv",
+        "s1-05.csv",
+    ]

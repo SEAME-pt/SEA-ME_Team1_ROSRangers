@@ -33,15 +33,25 @@ class Command:
 
 
 COMMANDS = (
-    Command("network test", "Configure or inspect the SEAME Wi-Fi scenario.", "setup_test.py"),
+    Command(
+        "network test",
+        "Configure or inspect the SEAME Wi-Fi scenario.",
+        "setup_test.py",
+    ),
     Command(
         "network production",
         "Configure, connect, disconnect, or inspect the drone AP.",
         "setup_production.py",
     ),
     Command("fc", "Run Betaflight USB CLI and firmware-backup commands.", "fc_cli.py"),
-    Command("msp", "Run read-only MSP checks over USB or the ESP bridge.", "msp_check.py"),
-    Command("esp", "Inspect, back up, or manually control ESP AT firmware.", "esp_at.py"),
+    Command(
+        "msp",
+        "Run MSP checks and bench tests over USB or the ESP bridge.",
+        "msp_check.py",
+    ),
+    Command(
+        "esp", "Inspect, back up, or manually control ESP AT firmware.", "esp_at.py"
+    ),
 )
 
 GROUPS = (
@@ -102,11 +112,10 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
                 ("connect", "Connect to the drone network"),
                 ("disconnect", "Disconnect from the drone network"),
                 ("status", "Show scenario status"),
+                ("reboot-test", "S1-04: reset the ESP 20 times and time reconnects"),
             ]
         )
-        action_index = prompt_choice(
-            f"Choose a {scenario} network action:", actions
-        )
+        action_index = prompt_choice(f"Choose a {scenario} network action:", actions)
         if action_index is None:
             return None
         if action_index == -1:
@@ -120,6 +129,7 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
             ("enable-esp-uart", "Configure UART4 for MSP (writes FC configuration)"),
             ("backup-firmware", "Back up FC firmware"),
             ("run", "Run a custom Betaflight CLI command"),
+            ("compare-diffs", "Compare the two newest diff all files"),
         ]
         index = prompt_choice("Choose a flight-controller action:", options)
         if index is None:
@@ -147,6 +157,10 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
             ("--usb info", "Read FC information over USB"),
             ("--usb core", "Read core FC values over USB"),
             ("--usb ping", "Measure USB latency and packet loss"),
+            ("--usb status-watch", "S2-02: watch FC status while the ESP power-cycles"),
+            ("rc", "Display the RC channels the FC sees"),
+            ("rc-order --write", "S2-04: check channel order (sends RC values)"),
+            ("link-watch", "S2-06: detect when the FC stops answering"),
         ]
         index = prompt_choice("Choose an MSP check:", options)
         if index is None:
@@ -162,8 +176,28 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
                 "  --rate HZ          requests per second (default: 50; 0 = maximum)\n"
                 "  --timeout SECONDS  response timeout (default: 0.5)\n"
                 "  --csv FILE         save successful RTTs to a CSV file\n"
+                "  --stream           send at the true --rate without waiting\n"
                 "  --trace            print raw MSP frames\n"
                 "Example: -n 30000 --rate 50 --timeout 1 --csv bridge_10min.csv\n"
+                "Arguments: "
+            )
+            args.extend(extra)
+        elif action == "cycle1a":
+            extra = prompt_arguments(
+                "Optional cycle 1a arguments (press Enter for defaults):\n"
+                "  -n N / --duration S  requests, or seconds at --rate (default: 500)\n"
+                "  --stream             send at the true --rate without waiting\n"
+                "  --sleep MODE         ESP Wi-Fi sleep: none, light or modem\n"
+                "  --csv FILE           save RTTs and analytics under results/\n"
+                "Example: --stream --sleep none --duration 600 --csv s1-05.csv\n"
+                "Arguments: "
+            )
+            args.extend(extra)
+        elif action in {"link-watch", "--usb status-watch"}:
+            extra = prompt_arguments(
+                "Optional arguments (press Enter for defaults):\n"
+                "  --duration S  stop after S seconds (default: Ctrl+C)\n"
+                "  --csv FILE    save the log under results/\n"
                 "Arguments: "
             )
             args.extend(extra)
@@ -203,6 +237,8 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
         ("exit-bridge", "Leave transparent bridge mode"),
         ("restore", "Factory-reset ESP AT settings"),
         ("raw", "Send a custom AT command"),
+        ("boot-log", "S1-03: record the ESP boot bytes"),
+        ("write-flash", "S1-02: write the newest backup back (asks first)"),
     ]
     index = prompt_choice("Choose an ESP action:", options)
     if index is None:
@@ -211,9 +247,10 @@ def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
         return -1
     action = options[index][0]
     if action == "raw":
-        return Command("esp", "", "esp_at.py"), ["raw", *prompt_arguments(
-            "Enter AT command(s), quoted separately:"
-        )]
+        return Command("esp", "", "esp_at.py"), [
+            "raw",
+            *prompt_arguments("Enter AT command(s), quoted separately:"),
+        ]
     return Command("esp", "", "esp_at.py"), [action]
 
 
@@ -282,8 +319,8 @@ def normalize_msp_arguments(args: list[str]) -> list[str]:
             value_index = index + 1
             if value_index >= len(normalized):
                 return normalized
-            normalized[0:0] = normalized[index:value_index + 1]
-            del normalized[index + 2:index + 4]
+            normalized[0:0] = normalized[index : value_index + 1]
+            del normalized[index + 2 : index + 4]
     return normalized
 
 

@@ -1,7 +1,8 @@
 """Minimal MSP v1 client (Betaflight) over a serial port or UDP.
 
-Only read-only requests are defined here. Nothing in this module sends
-MSP_SET_* commands.
+`Client.request` sends read-only requests only. The single write command
+(MSP_SET_RAW_RC, for the channel-order bench test) goes through `Client.write`,
+which refuses to run unless the client was created with `allow_write=True`.
 """
 
 import socket
@@ -16,8 +17,10 @@ MSP_FC_VARIANT = 2
 MSP_FC_VERSION = 3
 MSP_BOARD_INFO = 4
 MSP_STATUS = 101
+MSP_RC = 105
 MSP_ATTITUDE = 108
 MSP_ANALOG = 110
+MSP_SET_RAW_RC = 200
 
 READ_ONLY_COMMANDS = {
     MSP_API_VERSION,
@@ -25,9 +28,14 @@ READ_ONLY_COMMANDS = {
     MSP_FC_VERSION,
     MSP_BOARD_INFO,
     MSP_STATUS,
+    MSP_RC,
     MSP_ATTITUDE,
     MSP_ANALOG,
 }
+WRITE_COMMANDS = {MSP_SET_RAW_RC}
+
+# Betaflight keeps rcData as roll, pitch, yaw, throttle, then AUX1...
+RC_NAMES = ("roll", "pitch", "yaw", "throttle")
 
 
 def checksum(data: bytes) -> int:
@@ -127,20 +135,45 @@ def decode(cmd: int, p: bytes) -> dict:
     if cmd == MSP_BOARD_INFO and len(p) >= 4:
         return {"board": p[:4].decode(errors="replace")}
     if cmd == MSP_STATUS and len(p) >= 10:
-        cycle, i2c_err, sensors, flags = struct.unpack_from("<HHHI", p)
-        return {
-            "cycle_time_us": cycle,
-            "i2c_errors": i2c_err,
-            "sensors_mask": sensors,
-            "flight_mode_flags": flags,
-            "armed": bool(flags & 1),
-        }
+        return decode_status(p)
+    if cmd == MSP_RC:
+        return {"channels": list(struct.unpack_from(f"<{len(p) // 2}H", p))}
     if cmd == MSP_ATTITUDE and len(p) >= 6:
         roll, pitch, yaw = struct.unpack_from("<hhh", p)
         return {"roll_deg": roll / 10, "pitch_deg": pitch / 10, "yaw_deg": yaw}
     if cmd == MSP_ANALOG and len(p) >= 1:
-        return {"vbat_v": p[0] / 10}
+        out = {"vbat_v": p[0] / 10}
+        if len(p) >= 5:
+            out["rssi"] = struct.unpack_from("<H", p, 3)[0]  # 0..1023
+        return out
     return {"raw": p.hex()}
+
+
+def decode_status(p: bytes) -> dict:
+    """MSP_STATUS. Betaflight 4.x layout; the fields after the first 10 bytes are optional."""
+    cycle, i2c_err, sensors, flags = struct.unpack_from("<HHHI", p)
+    out = {
+        "cycle_time_us": cycle,
+        "i2c_errors": i2c_err,
+        "sensors_mask": sensors,
+        "flight_mode_flags": flags,
+        "armed": bool(flags & 1),
+    }
+    if len(p) >= 13:
+        out["cpu_load"] = struct.unpack_from("<H", p, 11)[0]
+    # 13: gyro cycle time (u16), 15: count of extra flight-mode bytes, then those bytes
+    if len(p) >= 16:
+        i = 16 + p[15]
+        if len(p) >= i + 5:
+            out["arming_disable_flags"] = struct.unpack_from("<I", p, i + 1)[0]
+        if len(p) >= i + 6:
+            out["reboot_required"] = bool(p[i + 5] & 1)
+    return out
+
+
+def encode_rc(channels) -> bytes:
+    """MSP_SET_RAW_RC / MSP_RC payload: one little-endian u16 per channel."""
+    return struct.pack(f"<{len(channels)}H", *channels)
 
 
 # ---------- transports ----------
@@ -183,23 +216,45 @@ class UdpTransport:
 
 
 class Client:
-    def __init__(self, transport, trace: bool = False):
+    def __init__(
+        self,
+        transport,
+        trace: bool = False,
+        allow_write: bool = False,
+        loopback: bool = False,
+    ):
         self.t = transport
         self.parser = Parser()
         self.trace = trace
+        self.allow_write = allow_write
+        self.loopback = (
+            loopback  # TX wired to RX on the ESP: our own request comes back
+        )
+
+    def is_answer(self, f: Frame) -> bool:
+        return f.direction in (">!<" if self.loopback else ">!")
 
     def request(self, cmd: int, timeout: float = 0.5):
         """Send one read-only request. Returns (Frame or None, round-trip seconds)."""
         if cmd not in READ_ONLY_COMMANDS:
             raise ValueError(f"MSP command {cmd} is not in the read-only list")
-        request = encode_request(cmd)
+        return self._exchange(cmd, b"", timeout)
+
+    def write(self, cmd: int, payload: bytes, timeout: float = 0.5):
+        """Send one write command. Only for clients created with allow_write=True."""
+        if not self.allow_write or cmd not in WRITE_COMMANDS:
+            raise ValueError(f"MSP write {cmd} is not allowed on this client")
+        return self._exchange(cmd, payload, timeout)
+
+    def _exchange(self, cmd: int, payload: bytes, timeout: float):
+        request = encode_request(cmd, payload)
         self.t.send(request)
         if self.trace:
             print(f"PC -> ESP/FC: {request.hex(' ')}", flush=True)
         t0 = time.perf_counter()
         while time.perf_counter() - t0 < timeout:
             for f in self.parser.feed(self.t.recv()):
-                if f.cmd == cmd and f.direction in ">!":
+                if f.cmd == cmd and self.is_answer(f):
                     if self.trace:
                         frame = encode_response(
                             f.cmd, f.payload, error=f.direction == "!"

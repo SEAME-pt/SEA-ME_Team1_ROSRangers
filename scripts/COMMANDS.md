@@ -436,6 +436,79 @@ Stop it with `Ctrl+C`. This tests the Wi-Fi/ESP path plus the FC USB path, but
 it also measures the extra PC serial relay rather than a direct physical
 ESP-to-FC UART connection.
 
+## ESP Bench Test Plan commands
+
+Commands for the vault's *ESP Bench Test Plan*. Results go to `results/` (bare
+file names). Props off and no battery for every test. Stage 2 tests can be rehearsed
+now through `msp usb-relay` (ESP and FC both on USB) or `msp fake-fc`; repeat them
+on the temporary wires when the D1 mini is wired to the FC.
+
+| ID | Command | Notes |
+|---|---|---|
+| S1-01 | `esp backup` | Prints PASS when the image size equals the flash size. |
+| S1-02 | `esp write-flash blink.bin`, then `esp write-flash` | The second command writes the newest backup back and checks that `AT` answers. Bring your own blink `.bin`. Both ask for `yes`. |
+| S1-03 | `esp boot-log [--seconds 3]` | Resets the ESP twice: once read at 74880 (ROM text), once at 115200 (what the FC UART sees, run through an MSP parser). Saves both `.bin` files. |
+| S1-04 | `network production reboot-test [--reboots 20]` | ESP on USB, production scenario set up. Resets the ESP through RTS, then times NetworkManager reconnect and the first ping. Writes `s1-04_softap_reboots.csv`. |
+| S1-05 | `msp cycle1a --stream --sleep none --duration 600 --csv s1-05.csv` | 10 min at a true 50 Hz with Wi-Fi sleep off (ADR-006). Shows median, p99, max RTT and the longest silence between answers. |
+| S1-06 | `msp cycle1a --stream --sleep modem --duration 600 --csv s1-06.csv` | Same, with modem sleep. Sleep only matters in station mode (the test scenario). |
+| S1-07 | Not possible | AT transparent mode has a single link. Needs the custom firmware (ADR-007). |
+| S1-08 | Manual | USB power meter. Record peak and average mA. |
+| S1-09 | `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv` | Production scenario (the PC talks to the ESP directly). The ESP is far from the PC, so no fake FC: a jumper from the D1 mini TX pin to its RX pin echoes every request. See below. |
+| S1-10 | Not possible | Needs the custom firmware. |
+| S2-01 | `msp info`, `msp ping -n 100` | API 1.46, 100/100 answers. |
+| S2-02 | `fc dump` → `msp --usb status-watch --csv s2-02.csv` → `fc dump` → `fc compare-diffs` | Power-cycle the ESP 20× during `status-watch`. FAIL on FC timeouts, a lost FC USB port (reboot), arming, rising I2C errors or `reboot_required`. |
+| S2-03 | `msp attitude` | Tilt the FC by hand. |
+| S2-04 | `msp rc` (sticks, read-only), then `msp rc-order --write` | `rc-order` sends roll 1200, pitch 1400, throttle 1000, yaw 1600, AUX1-4 at 1000, and checks the MSP_RC readback against map AETR1234. Refuses when the FC reports armed. The FC only applies the values with an MSP receiver or MSP Override on; otherwise it says so. |
+| S2-05 | Manual (`setup_production --channel 1/6/11`) | Read ELRS LQ on the radio. `MSP_ANALOG` RSSI is now decoded by `msp info`. |
+| S2-06 | `msp link-watch --csv s2-06.csv` | Unplug a jumper mid-stream (rehearse: stop `fake-fc`/`usb-relay`, or unplug the FC USB with `--usb`). PASS when every loss is detected within 500 ms of the last answer. |
+
+### S1-09 range test with a TX-RX jumper
+
+1. ESP on USB, in the lab: `network production setup` (once).
+2. Unplug the USB. Power the D1 mini from a power bank and wait about 10 s, until
+   it has booted into the bridge. **Then** put a jumper between the TX and RX pins.
+   With the jumper on at power-up, the AT firmware reads its own boot messages
+   back as commands and may never reach the bridge.
+3. Near the PC first, as a baseline: `network production connect`, then
+   `msp ping --loopback --stream --duration 60 --csv s1-09_near.csv`.
+4. ESP in the cage, PC in the coding room:
+   `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv`.
+5. `network production disconnect` to get the internet back.
+
+Compare the two runs with each other, not with `cycle1a`: the loopback path has
+no PC serial port in it, so its RTTs are a little lower.
+
+### One at a time or `--stream`
+
+By default `ping` and `cycle1a` send one request and wait for its answer before
+the next. When the RTT is longer than the period (20 ms at 50 Hz), the real rate
+drops: a 31 ms median RTT gives about 26 Hz, and 30,000 requests take about
+19 minutes instead of 10.
+
+`--stream` sends request *i* at exactly `start + i / rate`, without waiting.
+Several requests are in flight at once. MSP v1 has no request IDs, so the
+requests rotate through five read-only commands with short answers (API
+version, FC variant, FC version, attitude, analog). After the run, each answer
+is matched to a request with the same command, keeping the order (one ESP and
+one UDP flow do not reorder packets) and choosing the smallest total RTT. A
+request is lost when no answer fits it within `--timeout`.
+
+The loss count is exact. Which request is marked lost can be ambiguous in one
+rare case: a burst of at least five drops right after a backlog of more than
+100 ms. Two pairings then fit equally, and the smaller RTTs are chosen.
+
+Both modes add these lines to the analytics CSV:
+
+| Metric | Meaning |
+|---|---|
+| `duration_s`, `effective_rate_hz` | How long the run really took and the real request rate. |
+| `max_gap_ms`, `p99_gap_ms` | Longest (and p99) silence between two answers. This is what the ESP loss timeout `T_loss` must cover (OD-07). |
+| `gaps_over_250ms` | Silences longer than `--gap-limit` (default 250 ms, the initial `T_loss` in ADR-004). |
+
+`--sleep` is also available on `msp usb-relay` (it waits `--settle` seconds for
+the ESP to boot first). `AT+SLEEP` is not saved: opening the ESP USB port resets
+the ESP and restores the default, which is why it is set inside `cycle1a`.
+
 ## Command groups
 
 | Command | Purpose | Hardware effect |
@@ -463,6 +536,14 @@ ESP-to-FC UART connection.
 | `esp exit-bridge` | Leave transparent mode and disable it at boot. | Changes ESP settings |
 | `esp raw "AT+CWLAP"` | Send one or more manual AT commands. | Depends on command |
 | `esp restore` | Factory-reset ESP AT settings after confirmation. | Erases ESP settings |
+| `esp write-flash [IMAGE]` | Write an image (default: newest backup) and verify it. | Overwrites ESP flash |
+| `esp boot-log` | Reset the ESP and record its boot bytes. | Resets the ESP |
+| `network production reboot-test` | Reset the ESP 20 times and time each reconnect. | Resets the ESP, changes PC network connection |
+| `fc compare-diffs` | Compare the two newest `diff all` files. | No FC needed |
+| `msp rc` | Display the RC channels the FC sees. | Read-only |
+| `msp rc-order --write` | Send distinct AETR values and check the readback. | Sends RC values to the FC |
+| `msp link-watch` | Report when the FC stops answering, and how fast. | Read-only |
+| `msp --usb status-watch` | Log FC status changes while the ESP is power-cycled. | Read-only |
 
 ## Direct specialist scripts
 

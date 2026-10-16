@@ -19,11 +19,14 @@ Examples:
   python3 scripts/setup_production.py connect          # join the drone network
   python3 scripts/setup_production.py disconnect       # back to the usual Wi-Fi (SEAME)
   python3 scripts/setup_production.py status
+  python3 scripts/setup_production.py reboot-test       # S1-04: 20 resets, time to reconnect
 """
 
 import argparse
+import csv
 import datetime
 import os
+import statistics
 import re
 import subprocess
 import sys
@@ -33,6 +36,7 @@ import time
 import bridge_config as cfg
 import esp_at
 
+RESULTS_DIR = esp_at.RESULTS_DIR
 AP_IP = "192.168.4.1"
 PC_IP = "192.168.4.2"
 NM_NAME = "seame-drone"
@@ -150,20 +154,39 @@ def cmd_setup(args):
     )
 
 
-def cmd_connect(args):
-    p = cfg.load_profile()
-    if p.get("scenario") != "production":
-        sys.exit("Run setup_production.py setup first.")
-    password = cfg.get_secret(f"wifi:{p['ssid']}", f"Password for '{p['ssid']}': ")
-    nmcli("device", "wifi", "rescan", check=False)
-    time.sleep(3)
+def nm_up(password: str, wait: int = 0):
+    """Bring the drone connection up; the password goes through a temporary passwd-file."""
     fd, path = tempfile.mkstemp()
     try:
         with os.fdopen(fd, "w") as fh:
             fh.write(f"802-11-wireless-security.psk:{password}\n")
-        nmcli("connection", "up", NM_NAME, "passwd-file", path)
+        extra = ["--wait", str(wait)] if wait else []
+        nmcli(*extra, "connection", "up", NM_NAME, "passwd-file", path)
     finally:
         os.unlink(path)
+
+
+def ping_once(ip: str) -> bool:
+    return (
+        subprocess.run(
+            ["ping", "-c", "1", "-W", "1", ip], capture_output=True
+        ).returncode
+        == 0
+    )
+
+
+def production_password() -> tuple[dict, str]:
+    p = cfg.load_profile()
+    if p.get("scenario") != "production":
+        sys.exit("Run setup_production.py setup first.")
+    return p, cfg.get_secret(f"wifi:{p['ssid']}", f"Password for '{p['ssid']}': ")
+
+
+def cmd_connect(args):
+    p, password = production_password()
+    nmcli("device", "wifi", "rescan", check=False)
+    time.sleep(3)
+    nm_up(password)
     print(
         f"Connected to '{p['ssid']}' as {PC_IP}. Test with: python3 scripts/msp_check.py info"
     )
@@ -191,6 +214,70 @@ def cmd_status(args):
     print(f"  this PC on the drone network: {'yes' if active else 'no'}")
 
 
+def reboot_once(ser, password: str, wait: int, clock=time.monotonic) -> dict:
+    """Reset the ESP, rejoin its network and time it. Times are from the reset."""
+    nmcli("connection", "down", NM_NAME, check=False)
+    esp_at.hard_reset(ser)
+    t0 = clock()
+    row = {"connected": False, "connect_s": "", "reachable_s": ""}
+    try:
+        nm_up(password, wait)
+    except esp_at.EspError:
+        return row
+    row["connected"], row["connect_s"] = True, f"{clock() - t0:.2f}"
+    while clock() - t0 < wait:
+        if ping_once(AP_IP):
+            row["reachable_s"] = f"{clock() - t0:.2f}"
+            break
+    return row
+
+
+def cmd_reboot_test(args):
+    p, password = production_password()
+    ser = esp_at.open_port(args.port or esp_at.find_port())
+    rows = []
+    try:
+        print(
+            f"S1-04: {args.reboots} resets of the ESP SoftAP '{p['ssid']}'. Ctrl+C to stop."
+        )
+        for i in range(1, args.reboots + 1):
+            row = {"reboot": i, **reboot_once(ser, password, args.wait)}
+            rows.append(row)
+            print(
+                f"  {i:2d}/{args.reboots}  "
+                + (
+                    f"connected {row['connect_s']} s, ping {row['reachable_s'] or 'no answer'} s"
+                    if row["connected"]
+                    else f"NOT connected within {args.wait} s"
+                )
+            )
+    except KeyboardInterrupt:
+        pass
+    finally:
+        ser.close()
+    out = RESULTS_DIR / args.csv
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="") as fh:
+        writer = csv.DictWriter(
+            fh, fieldnames=("reboot", "connected", "connect_s", "reachable_s")
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+    ok = [r for r in rows if r["connected"] and r["reachable_s"]]
+    print(f"\nSaved {out}\nConnected and reachable: {len(ok)}/{len(rows)}")
+    if ok:
+        times = [float(r["reachable_s"]) for r in ok]
+        print(
+            f"Time to reach the ESP: min {min(times):.1f} s, "
+            f"median {statistics.median(times):.1f} s, max {max(times):.1f} s"
+        )
+    passed = len(rows) == args.reboots and len(ok) == len(rows)
+    print(
+        f"S1-04 {'PASS' if passed else 'FAIL'}  ({args.reboots}/{args.reboots} connects)"
+    )
+    print("Back to the usual Wi-Fi: python3 scripts/setup_production.py disconnect")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -215,6 +302,17 @@ def main():
     sub.add_parser("connect", help="join the drone network (no internet meanwhile)")
     sub.add_parser("disconnect", help="leave the drone network")
     sub.add_parser("status", help="show the saved PRODUCTION scenario")
+    p = sub.add_parser(
+        "reboot-test",
+        help="S1-04: reset the ESP N times (ESP on USB) and time each reconnect",
+    )
+    p.add_argument("--reboots", type=int, default=20)
+    p.add_argument(
+        "--wait", type=int, default=30, help="seconds allowed for each reconnect"
+    )
+    p.add_argument(
+        "--csv", default="s1-04_softap_reboots.csv", help="file name in results/"
+    )
     ap.set_defaults(ssid=None, channel=6, max_clients=1, ask_password=False)
     args = ap.parse_args()
     args.cmd = args.cmd or "setup"
@@ -224,6 +322,7 @@ def main():
             "connect": cmd_connect,
             "disconnect": cmd_disconnect,
             "status": cmd_status,
+            "reboot-test": cmd_reboot_test,
         }[args.cmd](args)
     except esp_at.EspError as e:
         sys.exit(f"ERROR: {e}")

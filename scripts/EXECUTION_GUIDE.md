@@ -82,7 +82,7 @@ python3 scripts/seame.py fc dump
 Captures are saved under:
 
 ```text
-config/betaflight/<firmware-version>/
+drone/config/betaflight/<firmware-version>/
 ```
 
 ### 2.2 Configure UART4 for MSP

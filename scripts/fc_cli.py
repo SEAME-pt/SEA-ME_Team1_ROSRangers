@@ -5,17 +5,19 @@ Read-only by default. Any command that can change the configuration needs --writ
 and a `diff all` backup is saved before it runs.
 
 Examples:
-  python3 scripts/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → config/betaflight/<ver>/
+  python3 scripts/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → drone/config/betaflight/<ver>/
   python3 scripts/fc_cli.py run "get failsafe" "serial"
   python3 scripts/fc_cli.py --write run "set vtx_power = 1" --save
   python3 scripts/fc_cli.py --write enable-esp-uart    # UART4 = MSP 115200 (ADR-011)
   python3 scripts/fc_cli.py backup-firmware            # full 512 KB flash over DFU (needs dfu-util)
+  python3 scripts/fc_cli.py compare-diffs              # S2-02: did the config change? (last two diff all)
 
 On exit the FC reboots (Betaflight leaves the CLI that way). Nothing is saved unless you ask.
 """
 
 import argparse
 import datetime
+import difflib
 import hashlib
 import pathlib
 import re
@@ -28,6 +30,7 @@ import serial
 from serial.tools import list_ports
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+CONFIG_DIR = REPO / "drone" / "config" / "betaflight"  # repo layout from #12
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "betaflight"
 FC_USB_ID = (0x0483, 0x5740)  # STM32 virtual COM port
 
@@ -124,7 +127,7 @@ def firmware_version(cli: Cli) -> str:
 
 def save_diff(cli: Cli, label: str = "") -> pathlib.Path:
     ver = firmware_version(cli)
-    out_dir = REPO / "config" / "betaflight" / ver
+    out_dir = CONFIG_DIR / ver
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     path = out_dir / f"diff_all_{stamp}{label}.txt"
@@ -137,7 +140,7 @@ def cmd_dump(args):
     cli = Cli(args.port)
     try:
         ver = firmware_version(cli)
-        out_dir = REPO / "config" / "betaflight" / ver
+        out_dir = CONFIG_DIR / ver
         out_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         parts = ["# Read-only Betaflight CLI output. Nothing was saved to the FC.\n"]
@@ -249,6 +252,36 @@ def cmd_backup_firmware(args):
     print("The FC is back in normal mode (if not, replug the USB cable).")
 
 
+def diff_files():
+    return sorted(CONFIG_DIR.glob("*/diff_all_*.txt"), key=lambda p: p.name)
+
+
+def config_lines(path: pathlib.Path):
+    """`diff all` lines without comments (version banner, dates) and blank lines."""
+    return [
+        line
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+
+
+def cmd_compare_diffs(args):
+    files = [pathlib.Path(f) for f in args.files] or diff_files()[-2:]
+    if len(files) != 2:
+        sys.exit(
+            "Need two `diff all` files: run `fc_cli.py dump` before and after the test."
+        )
+    old, new = files
+    changes = list(
+        difflib.unified_diff(
+            config_lines(old), config_lines(new), str(old), str(new), lineterm=""
+        )
+    )
+    print(
+        "\n".join(changes) if changes else f"No configuration change:\n  {old}\n  {new}"
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -260,7 +293,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser(
         "dump",
-        help="save read-only CLI output and diff all to config/betaflight/<ver>/",
+        help="save read-only CLI output and diff all to drone/config/betaflight/<ver>/",
     )
     p = sub.add_parser("run", help="run CLI commands")
     p.add_argument("commands", nargs="+")
@@ -273,7 +306,14 @@ def main():
     sub.add_parser(
         "backup-firmware", help=f"read the full flash over DFU into {BACKUP_DIR}"
     )
+    p = sub.add_parser(
+        "compare-diffs",
+        help="compare two `diff all` files (default: the two newest); no FC needed",
+    )
+    p.add_argument("files", nargs="*", metavar="FILE")
     args = ap.parse_args()
+    if args.cmd == "compare-diffs":
+        return cmd_compare_diffs(args)
     args.port = args.port or find_port()
     {
         "dump": cmd_dump,
