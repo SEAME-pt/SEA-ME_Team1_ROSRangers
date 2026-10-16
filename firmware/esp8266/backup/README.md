@@ -20,8 +20,14 @@ Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev
 |---|---|---|
 | `esp8266_AT1.7.4_807d3a1d0850_2026-10-13.bin` | `ecbc494c933f7e47cb2a65ae316a3b96ae71815a2a94fb8664f8d8de1656523b` | Before `AT+RESTORE`. **Contains Wi-Fi credentials.** Never publish. |
 | `esp8266_AT1.7.4_807d3a1d0850_2026-10-13_factory-reset.bin` | `26436ff4af3828561c30fa37a1a316be85f98ad237717b5ef326278d36823d5c` | After `AT+RESTORE`. No credentials found. Differs from the first only in sectors `0x3FD000`–`0x3FFFFF` (system parameters). |
+| `esp8266_flash_2026-10-16_164249.bin` | `c6a2dfc5a50b1a2d113b1d959937d8af7f106e3a0cba40a479bd7e2b6d3c5506` | Bench settings of 16 Oct: drone SoftAP and the transparent UDP bridge at boot. **Contains Wi-Fi credentials.** Never publish. Current restore point. |
 
-Both were checked with `esptool verify-flash 0 <image>` (digest matched).
+All were checked with `esptool verify_flash 0 <image>` (digest matched).
+
+The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and ESP-S1-02: blink was flashed, then this image was written back and verified, and the ESP booted into the AT firmware again (`ready`, same boot output as before).
+
+> [!note] Boot warning, present in every image
+> The ESP prints `mismatch map 2,spi_size_map 4` and `system_partition_table_regist fail` at boot: the flash header says 512 KB + 512 KB, but AT 1.7.4 / SDK 3.0.5 expects 1024 KB + 1024 KB on a 4 MB chip. The AT firmware still starts and the bridge works. Leave it as is, so the backups stay the known-good state. Set the right map when the custom firmware is flashed (ADR-007).
 
 ## State after `AT+RESTORE` (2026-10-13)
 
@@ -35,14 +41,20 @@ Both were checked with `esptool verify-flash 0 <image>` (digest matched).
 
 ## How it was made
 
+Command names use underscores: esptool 4.x accepts only those, esptool 5 accepts both.
+`scripts/esp_at.py backup` runs the same three commands and checks the size.
+
 ```bash
-esptool --port /dev/ttyUSB0 flash-id
-esptool --port /dev/ttyUSB0 --baud 460800 read-flash 0 ALL <image>
-esptool --port /dev/ttyUSB0 verify-flash 0 <image>
+esptool --port /dev/ttyUSB0 flash_id
+esptool --port /dev/ttyUSB0 --baud 460800 read_flash 0 ALL <image>
+esptool --port /dev/ttyUSB0 verify_flash 0 <image>
 ```
 
 ## Restore
 
 ```bash
-esptool --port /dev/ttyUSB0 --baud 460800 write-flash 0 <image>
+esptool --port /dev/ttyUSB0 --baud 460800 write_flash 0 <image>
+esptool --port /dev/ttyUSB0 verify_flash 0 <image>
 ```
+
+Or `scripts/esp_at.py write-flash [<image>]` (default: the newest backup); it asks for confirmation and verifies.
