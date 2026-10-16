@@ -33,6 +33,14 @@ tags:
 | 13 | Mandated ROS 2 distro? | **No** (2026-10-14) → Jazzy stays ([[ADR-018 Ground OS and ROS 2\|ADR-018]]) |
 | 14 | ToF rangefinder or extra MCU? | **Neither** (team, 2026-10-14). No rangefinder in the lab → height from the DPS310 baro. No MCU (no companion computer on the drone) → [[ADR-016 Flow Sensor Path\|ADR-016]] |
 
+### 1.1 Answered (2026-10-16, GitHub #16)
+
+| # | Question | Answer → effect |
+|---|---|---|
+| 15 | ELRS wires on R2/T2? | **Yes** (team, multimeter, 2026-10-16) → [[2.5Drone]] #22 is now High certainty, UART2 stays ELRS ([[ADR-011 FC UART Allocation\|ADR-011]]) |
+| 16 | T4/R4 reach the MCU, no shorts? | **Yes** (team, multimeter, 2026-10-16): continuity to the MCU side, no short to the neighbouring pads → T4/R4 are cleared for the D1 mini ([[ADR-011 FC UART Allocation\|ADR-011]], [[Wiring and Pinout]]) |
+| 17 | What are the CAM and DV5V pads? | From the OddityRC wiring diagram ([vendor diagram](https://www.rotorama.com/cms/assets/docs/6d96909d797b5e734f781ca47138a567/35018-0/6x.jpg)): **CAM** = analog camera video input (to the AT7456E OSD). **DV5V** = the 5 V pad the diagram uses to power the receiver (TBS, ELRS or SBUS). Neither is a control or UART pad. The Betaflight target has no camera-control pin (`CAMERA_CONTROL_PIN` is commented out). → [[Wiring and Pinout]] §1 |
+
 ## 2. Still open
 
 ### For instructors
@@ -45,10 +53,11 @@ tags:
 
 ### Physical checks
 - [x] **Baro:** DPS310 detected in `status`, and the Sensors tab altitude follows the board when raised/lowered (2026-10-14, GitHub #15).
-- [ ] ELRS wires really on R2/T2 (multimeter, [[2.5Drone]] #22).
-- [ ] T4/R4 continuity to the MCU side, no shorts to neighbours.
+- [x] ELRS wires really on R2/T2 (multimeter, [[2.5Drone]] #22). → Yes (#15 above)
+- [x] T4/R4 continuity to the MCU side, no shorts to neighbours. → Yes (#16 above)
 - [ ] FC 5V rail: available current for the D1 mini (FC-05).
-- [ ] What exactly are the CAM and DV5V pads used for on this board?
+- [x] What exactly are the CAM and DV5V pads used for on this board? → camera video in, receiver 5 V (#17 above)
+- [x] Is the ELRS red (5 V) wire on **DV5V** or on a **5V** pad? → **5V** (team, 2026-10-16). Moving it to DV5V: GitHub #41.
 
 ### Tests
 - [ ] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? (week 2)
@@ -61,5 +70,6 @@ tags:
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
+| **OSD** | On-Screen Display: the chip that draws flight data over the analog camera video. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
