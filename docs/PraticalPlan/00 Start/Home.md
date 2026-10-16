@@ -34,7 +34,7 @@ tags:
 | Architecture | [[System Overview]] · [[Protocol Spec v0]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
 | Hardware | [[Hardware Inventory]] · [[Safety Rules]] |
-| Gestures | [[Gesture Pipeline]] |
+| Gestures | [[00 Gesture Pipeline]] · [[01 Gesture Recognition with OpenCV and MediaPipe]] · [[02 ROS 2 Nodes - Install and Test]] · [[04 Gesture_node]] · [[05 Mission_Node]] · [[06 Future Nodes]] |
 | Reference | [[Verified Facts and Sources]] · [[Open Questions]] |
 
 ## 2. Team documents this plan builds on
@@ -46,7 +46,7 @@ tags:
 | Ground ↔ ESP link | [[PC_to_ESP]] |
 | ESP ↔ FC link | [[ESP_to_FC]] |
 | Optical flow | [[ThoneFlow]] |
-| Gesture prototype | [[Gesture Recognition Program]] |
+| Gesture prototype | [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] |
 
 ## 3. The five things to remember
 

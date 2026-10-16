@@ -1,5 +1,5 @@
 ---
-title: Mission Node (gesture intent → velocity target)
+title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
@@ -9,16 +9,19 @@ tags:
   - ros2
   - mission
   - safety
+aliases:
+  - Mission Node
+  - mission_node
 ---
 
-# Mission Node (gesture intent → velocity target)
+# 🎯 Mission_Node: gesture intent → velocity target
 
-> [!warning] Status: DRAFT. This is a proposal and nothing has been built yet.
-> This page designs the node that comes after `gesture_node` in [[Gesture Pipeline]] §2. Topic names, message types and numbers marked **(proposal)** must be agreed by the team before coding (§10). Nothing here changes an accepted ADR.
+> [!WARNING] Status: DRAFT. This is a proposal and nothing has been built yet.
+> This page designs the node that comes after `gesture_node` in [[00 Gesture Pipeline|Gesture Pipeline]] §1. Its input comes from [[04 Gesture_node]]. Topic names, message types and numbers marked **(proposal)** must be agreed by the team before coding (§10). Nothing here changes an accepted ADR.
 
 ---
 
-## 1. Where it sits
+## 📍 1. Where it sits
 
 ```mermaid
 flowchart LR
@@ -39,14 +42,14 @@ flowchart LR
 | `flight_interface` | "How do I send it safely?" | protocol, session, watchdog, sim or real backend |
 
 Why keep it separate from `gesture_node`:
-- `/gesture/intent` stays drone-independent, so the same intents can drive a car or an arm in Module 2 ([[Gesture Pipeline]] §8).
+- `/gesture/intent` stays drone-independent, so the same intents can drive a car or an arm in Module 2 ([[00 Gesture Pipeline|Gesture Pipeline]] §8).
 - All drone-specific limits live in one place, which makes them easy to review and test.
 
-## 2. What it reads
+## 📥 2. What it reads
 
 ### 2.1 `/gesture/intent` (exists)
 
-Type `std_msgs/msg/String`, 20 Hz, published by `gesture_node`. Format: [[Ros Jazzy and Gesture_node]] §6.2.
+Type `std_msgs/msg/String`, 20 Hz, published by `gesture_node`. Format: [[04 Gesture_node]] §4.
 
 ```json
 {"intent":"MOVE_RIGHT","gesture":"INDEX_RIGHT","reason":"ok","t":1791976551.56,"xy":[0.51,0.42]}
@@ -75,7 +78,7 @@ The node never reads ARM state in order to change it. It reads state only to dec
 | `intent_topic` | `/gesture/intent` | input topic |
 | `intent_timeout_sec` | `0.25` | no intent message for this long → zero velocity (5 missed messages at 20 Hz) |
 | `intent_lost_sec` | `2.0` | no intent message for this long → disengage + land request |
-| `max_lateral_mps` | `0.3` | speed for `MOVE_LEFT/RIGHT` ([[Gesture Pipeline]] §4) |
+| `max_lateral_mps` | `0.3` | speed for `MOVE_LEFT/RIGHT` ([[00 Gesture Pipeline|Gesture Pipeline]] §4) |
 | `max_vertical_mps` | `0.2` | speed for `CLIMB_SLOWLY` / `DESCEND_…` |
 | `max_yaw_rate_dps` | `20.0` | yaw rate for `YAW_LEFT/RIGHT` |
 | `max_accel_mps2` | `0.5` | ramp limit, so a new gesture never steps the target |
@@ -83,7 +86,7 @@ The node never reads ARM state in order to change it. It reads state only to dec
 
 Speed limits are **safety settings**. They are clamped again downstream (controller, `flight_interface`, ESP), as [[Protocol Spec v0]] §5 requires.
 
-## 3. What it does
+## ⚙️ 3. What it does
 
 On every 20 Hz tick:
 
@@ -97,7 +100,7 @@ On every 20 Hz tick:
 
 There are no threads. One timer does all of this, the same pattern as `gesture_node`. As in `gesture_filter.py`, the logic goes in a ROS-free module (`mission_logic.py`) with an injectable clock, so it can be unit-tested.
 
-## 4. Rules
+## 🛡️ 4. Rules
 
 ### 4.1 Modes
 
@@ -144,7 +147,7 @@ Body frame, ROS convention (REP-103): x forward, y **left**, z up, yaw positive 
 | `HOVER_LAND_REQUEST` | see §4.4 | | | |
 
 - The vocabulary v0 has **no forward/back gesture**, so `linear.x` is always 0 for now.
-- "Left/right" is the **operator's** left/right ([[Gesture Pipeline]] §3). The drone's left only matches if the operator and the drone face the same way. Agree a convention for the cage (§10).
+- "Left/right" is the **operator's** left/right ([[00 Gesture Pipeline|Gesture Pipeline]] §3). The drone's left only matches if the operator and the drone face the same way. Agree a convention for the cage (§10).
 - Zero velocity means "hold position" (the controller drives flow to zero), not "let go of the sticks".
 
 ### 4.3 Axis masking (who owns which stick)
@@ -157,7 +160,7 @@ The ground may only command the axes in the override mask ([[ADR-010 MSP Overrid
 | 11 | roll, pitch, yaw | `linear.x`, `linear.y`, `angular.z`. **`linear.z` is forced to 0**, because the pilot has throttle. |
 | 15 | all four | everything, **only** with altitude hold or a validated altitude loop |
 
-So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15 ([[Gesture Pipeline]] §3: "only once throttle is ours"). The node logs `axis_not_owned` so the operator knows why.
+So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15 ([[00 Gesture Pipeline|Gesture Pipeline]] §3: "only once throttle is ours"). The node logs `axis_not_owned` so the operator knows why.
 
 ### 4.4 Land requests
 
@@ -165,7 +168,7 @@ So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15 ([[Gesture Pipeline]]
 
 | Situation | Action |
 |---|---|
-| Not `airborne` (on the ground, incl. start-up `no_packets_yet`) | ignore. Stay `IDLE`/`READY`. Never "land" a drone that is on the ground ([[Ros Jazzy and Gesture_node]] §13). |
+| Not `airborne` (on the ground, incl. start-up `no_packets_yet`) | ignore. Stay `IDLE`/`READY`. Never "land" a drone that is on the ground ([[04 Gesture_node]] §9). |
 | Airborne, mask 8 or 11 | zero velocity (hover in place) and set `land_request: true` in `/mission/state`. The **pilot** lands, because they own throttle. |
 | Airborne, mask 15 | hover for 2 s (proposal), then descend at `max_vertical_mps` until the estimator reports the ground. The pilot can still take over at any time. |
 
@@ -177,7 +180,7 @@ The mission node never disarms. Touchdown and disarm stay with the pilot or the 
 - It never keeps moving on stale or unknown input.
 - It never sends a target above the limits, even if a parameter is set higher. A hard-coded ceiling applies (proposal: 0.5 m/s, 45 °/s).
 
-## 5. What it publishes
+## 📤 5. What it publishes
 
 ### 5.1 `/mission/velocity_target` (proposal)
 
@@ -214,7 +217,7 @@ Type `std_msgs/msg/String` (JSON), published on every change and at 2 Hz otherwi
 
 The node logs the same kind of messages as `gesture_node`: every mode change, every land request, bad input counters, and a 5 s health report (intent rate, last intent).
 
-## 6. What happens downstream (not this node's job)
+## ⬇️ 6. What happens downstream (not this node's job)
 
 1. **Velocity controller** (week 5, tracks C + E, [[Study Plan v2]] §7) reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle.
 2. **`flight_interface`** packs those into `SETPOINT` (0x60): `mode 1` (attitude), `roll`, `pitch`, `yaw_rate` in −1000..1000, `throttle` 0..1000 ([[Protocol Spec v0]] §3). It sends at 50 Hz and its own watchdog sends `mode 0` (neutral) if the controller goes silent.
@@ -223,9 +226,9 @@ The node logs the same kind of messages as `gesture_node`: every mode change, ev
 
 Until the controller exists, the mission node can be tested on its own: run it and watch its two topics.
 
-## 7. Package layout (proposal)
+## 📁 7. Package layout (proposal)
 
-Same structure as `gesture_node` ([[Gesture Pipeline]] §5):
+Same structure as `gesture_node` ([[04 Gesture_node]] §8):
 
 | Path | Content |
 |---|---|
@@ -234,19 +237,19 @@ Same structure as `gesture_node` ([[Gesture Pipeline]] §5):
 | `drone/ground/src/mission_node/mission_node/mission_node.py` | subscriptions, timer, publishers |
 | `drone/ground/src/mission_node/test/` | pytest for `mission_logic.py` |
 
-## 8. How to test it
+## 🧪 8. How to test it
 
 | Level | Setup | Pass when |
 |---|---|---|
-| 0: unit | `colcon test --packages-select mission_node` | every rule in §4 has a test: stale intent → zero, unknown intent → zero, engage only after `HOLD_POSITION`, land request ignored on the ground, z zeroed under mask 11, ramp never exceeds `max_accel_mps2`, clamp ceiling holds |
+| 0: unit | `colcon test --packages-select mission_node` (build steps: [[02 ROS 2 Nodes - Install and Test|02]] §10) | every rule in §4 has a test: stale intent → zero, unknown intent → zero, engage only after `HOLD_POSITION`, land request ignored on the ground, z zeroed under mask 11, ramp never exceeds `max_accel_mps2`, clamp ceiling holds |
 | 1: fake intents | `ros2 topic pub -r 20 /gesture/intent std_msgs/msg/String "{data: '{\"intent\":\"MOVE_RIGHT\",\"reason\":\"ok\"}'}"` + a fake `/flight/state` | `linear.y` ramps to −0.3 and holds. Stop the publisher → zero within 0.25 s |
-| 2: full chain, no camera | `gesture_sender.py` → `gesture_node` → `mission_node` ([[Gesture Pipeline]] §7) | the §7 intent sequence gives the expected velocity sequence |
+| 2: full chain, no camera | `gesture_sender.py` → `gesture_node` → `mission_node` ([[02 ROS 2 Nodes - Install and Test|02]] §9, Level 0) | the Level 0 intent sequence gives the expected velocity sequence |
 | 3: real gestures | `gestures.py` + webcam | as level 2 with your hand. Record a `ros2 bag` of both topics as evidence |
 | 4: simulation | PX4 SITL behind `flight_interface` (week 6) | gestures drive the sim drone: hover, move, land request ([[Study Plan v2]] §8) |
 
 Real-drone use is a **stretch** goal (week 7), only at low limits, with the pilot on the kill switch ([[Safety Rules]]).
 
-## 9. Requirement IDs (proposal)
+## 🔖 9. Requirement IDs (proposal)
 
 To be registered in [[Dev_Strategy]] §15 style:
 
@@ -257,9 +260,9 @@ To be registered in [[Dev_Strategy]] §15 style:
 | REQ-CTL-0xx | Gesture speeds are limited to 0.3 m/s lateral, 0.2 m/s vertical and 20 °/s yaw (parameters, with a hard ceiling). |
 | REQ-SW-0xx | `/mission/velocity_target` is published at 20 Hz in every mode. |
 
-## 10. Open points (decide before coding)
+## ❓ 10. Open points (decide before coding)
 
-- **Topic names and types.** `/mission/velocity_target` (TwistStamped) and `/mission/state`, `/flight/state` (JSON strings) are proposals. A typed custom message package (`drone_msgs`) would also fix `/gesture/intent` ([[Ros Jazzy and Gesture_node]] §13).
+- **Topic names and types.** `/mission/velocity_target` (TwistStamped) and `/mission/state`, `/flight/state` (JSON strings) are proposals. A typed custom message package (`drone_msgs`) would also fix `/gesture/intent` ([[04 Gesture_node]] §9, [[06 Future Nodes]]).
 - **Who publishes `/flight/state`,** and how `airborne` is decided (baro height threshold?).
 - **Left/right convention** in the cage: operator frame vs drone frame.
 - **Engage rule.** Is `OPEN_HAND_UP` once enough, or must it be re-shown after every `STOP_HOVER`?
@@ -267,13 +270,13 @@ To be registered in [[Dev_Strategy]] §15 style:
 - **Forward/back.** Vocabulary v0 has no gesture for it. Add one, or keep `linear.x = 0` for Module 1.
 - **Mission vs controller in one node?** [[System Overview]] draws "mission / controller" as one box. This page keeps them apart (the controller needs the estimator and its own tests). Confirm in the architecture review.
 
-## 11. Related pages
+## 🔗 11. Related pages
 
-[[Gesture Pipeline]] · [[Ros Jazzy and Gesture_node]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
+[[00 Gesture Pipeline]] · [[02 ROS 2 Nodes - Install and Test]] · [[04 Gesture_node]] · [[06 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
 
 ---
 
-## 12. Glossary
+## Glossary
 
 | Term | Meaning |
 | --- | --- |

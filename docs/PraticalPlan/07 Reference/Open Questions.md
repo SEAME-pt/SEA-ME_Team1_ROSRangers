@@ -22,7 +22,7 @@ tags:
 | 2 | Baro present? | **Yes, DPS310 detected.** `status` 2026-10-13/14: `I2C:1`, `BARO=DPS310`, 0 I2C errors. ALTHOLD is possible if it fits the 2026.6.2 build → [[ADR-014 Betaflight Version\|ADR-014]] |
 | 3 | ESP board? | D1 mini → [[ADR-012 ESP UART Pins\|ADR-012]] |
 | 4 | Upgrade Betaflight? | **Yes** → [[ADR-014 Betaflight Version\|ADR-014]] |
-| 5 | Gestures OK for Module 2? | Yes → [[Gesture Pipeline]] |
+| 5 | Gestures OK for Module 2? | Yes → [[00 Gesture Pipeline|Gesture Pipeline]] |
 | 6 | GitFlow mandatory? | No → the team's [[Dev_Strategy]] model ([[ADR-017 Branching Model\|ADR-017]]) |
 | 7 | HIL runners? | Pis/Arduinos available, concept new → [[HIL Runner]] |
 | 8 | Ground OS? | Linux → [[ADR-018 Ground OS and ROS 2\|ADR-018]] |
