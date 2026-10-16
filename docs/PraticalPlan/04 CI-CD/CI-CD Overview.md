@@ -53,6 +53,44 @@ flowchart LR
 
 Then: SITL job (week 3), HIL job (week 4), tag `v0.1.0` on `main` (week 8).
 
+## 3. Before you commit: run pre-commit
+
+Run this from the repo root before every push (ideally before every commit):
+
+```bash
+pre-commit run --all-files
+```
+
+**Why.** The `lint` job in `ci.yaml` runs exactly this command, and every other job waits for it (`needs: lint`). If it fails locally it fails in the PR, blocks the merge into `dev` and wastes a CI run. Running it first keeps PRs green and review diffs free of whitespace and formatting noise.
+
+**What it checks** (config: `.pre-commit-config.yaml`):
+
+| Hook | What it does |
+| --- | --- |
+| `end-of-file-fixer` | Files end with exactly one newline (auto-fixes). |
+| `trailing-whitespace` | Removes trailing spaces (auto-fixes). |
+| `check-yaml` | YAML parses (workflows, issue forms, `labels.yml`). |
+| `ruff` | Python lint (Python ground nodes, protocol, tests). |
+| `ruff-format` | Python formatting (auto-fixes). |
+| `clang-format` | C/C++ formatting for the protocol library and firmware (auto-fixes). |
+
+**Requirements.**
+
+- Python 3 and `pip`. CI uses 3.12.
+- `pip install pre-commit` (or `pipx install pre-commit`). Nothing else: hooks (ruff, clang-format) are downloaded into pre-commit's own cache on the first run, so that run needs internet and is slow. Later runs are fast.
+- Run from inside the git repo. Hooks only see tracked or staged files, so `git add` new files first.
+
+**If it fails.** Many hooks fix the files themselves and then report "Failed". Run `git diff` to review the fixes, `git add` them and run the command again until everything says `Passed`. `ruff` errors and `check-yaml` errors need a manual fix.
+
+**Optional: run it automatically.** `pre-commit install` registers a git hook so the checks run on every `git commit` (on staged files only). It does not replace `--all-files`, which is what CI runs. Never bypass with `--no-verify` to get a commit through: CI will fail anyway.
+
+**When you change the hooks.** Edit `.pre-commit-config.yaml` in its own PR, run `pre-commit run --all-files` and commit any reformatting it causes. See [[GitHub Actions Starter]] §4 for the starting config.
+
+## 4. Related pages
+
+- [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
+
+## 5. Glossary
 ## 3. Related pages
 
 - [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
@@ -68,4 +106,5 @@ Then: SITL job (week 3), HIL job (week 4), tag `v0.1.0` on `main` (week 8).
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **pre-commit** | Tool that runs lint and format hooks on the repo; the same checks run in CI as `lint`. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
