@@ -17,14 +17,15 @@ treats silence as "the recogniser died or the hand is gone".
 
 Try it without a camera:   python3 gesture_sender.py
 """
+
 import json
 import socket
 import sys
 import time
 
 HOST = "127.0.0.1"
-PORT = 5005               # must match gesture_node's udp_port parameter
-KEEPALIVE_SEC = 0.1       # 10 packets/s -> a new gesture is accepted in ~0.4 s
+PORT = 5005  # must match gesture_node's udp_port parameter
+KEEPALIVE_SEC = 0.1  # 10 packets/s -> a new gesture is accepted in ~0.4 s
 
 _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 _last = {"gesture": "<unset>", "time": 0.0}
@@ -40,7 +41,7 @@ def send_gesture(gesture, xy=None):
     try:
         _sock.sendto(json.dumps(packet).encode("utf-8"), (HOST, PORT))
     except OSError:
-        pass                  # nobody listening is not an error for the recogniser
+        pass  # nobody listening is not an error for the recogniser
     _last["gesture"] = gesture
     _last["time"] = now
 
@@ -50,9 +51,9 @@ def _demo():
     script = [
         ("OPEN_HAND_UP", 2.0),
         ("INDEX_RIGHT", 3.0),
-        (None, 0.6),            # short gap: node goes NEUTRAL
+        (None, 0.6),  # short gap: node goes NEUTRAL
         ("CLOSED_HAND", 2.0),
-        (None, 3.0),            # long gap: node asks HOVER_LAND_REQUEST
+        (None, 3.0),  # long gap: node asks HOVER_LAND_REQUEST
         ("INDEX_LEFT", 2.0),
     ]
     print(f"Demo: sending to {HOST}:{PORT}. Ctrl+C to stop.")
@@ -61,7 +62,7 @@ def _demo():
         end = time.monotonic() + seconds
         while time.monotonic() < end:
             send_gesture(gesture, [0.5, 0.5] if gesture else None)
-            time.sleep(1 / 30)        # pretend 30 FPS
+            time.sleep(1 / 30)  # pretend 30 FPS
     print("Demo finished.")
 
 

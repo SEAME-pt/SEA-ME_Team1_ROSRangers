@@ -2,6 +2,7 @@ import cv2 as opencv
 from hand_processing import create_hands, detect_gesture, draw_hand
 from gesture_sender import send_gesture
 
+
 def execute(gesture):
     match gesture:
         case "OPEN_HAND_UP":
@@ -9,7 +10,7 @@ def execute(gesture):
         case "CLOSED_HAND":
             print("Gesture: Closed Hand -> Stop / Hover in place")
         case "THUMB_UP":
-            print("Gesture: Thumb-up -> Climb Slowly")      
+            print("Gesture: Thumb-up -> Climb Slowly")
         case "THUMB_DOWN":
             print("Gesture: Thumb-down -> Descend Slowly / Land Request")
         case "INDEX_LEFT":
@@ -20,6 +21,7 @@ def execute(gesture):
             print("Gesture: Index Middle Left -> Yaw Left")
         case "INDEX_MIDDLE_RIGHT":
             print("Gesture: Index Middle Right -> Yaw Right")
+
 
 def main():
     cap = opencv.VideoCapture(2)  # /dev/video*
@@ -33,11 +35,11 @@ def main():
 
             frame = opencv.flip(frame, 1)  # mirror view
             rgb = opencv.cvtColor(frame, opencv.COLOR_BGR2RGB)
-            
-            gesture, hand = detect_gesture(hands ,rgb)
+
+            gesture, hand = detect_gesture(hands, rgb)
             if hand:
                 draw_hand(frame, hand)
-            
+
             if gesture and gesture != last_gesture:
                 print(gesture)
                 last_gesture = gesture

@@ -13,6 +13,7 @@ Rules (see "Gesture Pipeline" safety logic):
   * Nothing received yet -> HOVER_LAND_REQUEST (reason "no_packets_yet").
   * Unknown gestures are NEUTRAL. "No data" is never "keep moving".
 """
+
 import math
 import time
 
@@ -64,19 +65,24 @@ def clean_xy(value):
 
 
 class GestureFilter:
-    def __init__(self, stable_packets=5, neutral_timeout=0.3,
-                 stale_timeout=2.0, clock=time.monotonic):
+    def __init__(
+        self,
+        stable_packets=5,
+        neutral_timeout=0.3,
+        stale_timeout=2.0,
+        clock=time.monotonic,
+    ):
         self.stable_packets = max(1, int(stable_packets))
         self.neutral_timeout = max(0.0, float(neutral_timeout))
         # The stale timeout can never be shorter than the neutral timeout.
         self.stale_timeout = max(self.neutral_timeout, float(stale_timeout))
         self._clock = clock
 
-        self._last_packet = None          # time of the last packet of any kind
-        self._last_hand = clock()         # time of the last packet WITH a hand
-        self._candidate = None            # gesture currently being counted
-        self._count = 0                   # consecutive packets of the candidate
-        self._accepted = None             # gesture that passed the stability check
+        self._last_packet = None  # time of the last packet of any kind
+        self._last_hand = clock()  # time of the last packet WITH a hand
+        self._candidate = None  # gesture currently being counted
+        self._count = 0  # consecutive packets of the candidate
+        self._accepted = None  # gesture that passed the stability check
         self._t = None
         self._xy = None
 
@@ -90,7 +96,7 @@ class GestureFilter:
     def update(self, packet):
         """Feed one decoded datagram (a dict) into the filter."""
         now = self._clock()
-        self._expire(now)               # must happen BEFORE the new packet counts
+        self._expire(now)  # must happen BEFORE the new packet counts
         self._last_packet = now
         self._t = clean_number(packet.get("t"))
         self._xy = clean_xy(packet.get("xy"))
@@ -118,8 +124,13 @@ class GestureFilter:
         self._expire(now)
 
         def result(intent, gesture, reason):
-            return {"intent": intent, "gesture": gesture, "reason": reason,
-                    "t": self._t, "xy": self._xy}
+            return {
+                "intent": intent,
+                "gesture": gesture,
+                "reason": reason,
+                "t": self._t,
+                "xy": self._xy,
+            }
 
         if self._last_packet is None:
             return result(INTENT_HOVER_LAND, None, "no_packets_yet")

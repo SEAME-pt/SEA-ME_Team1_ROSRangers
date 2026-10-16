@@ -3,11 +3,17 @@
 Run with:  python3 -m unittest discover -s test -v      (from the package folder)
 or:        colcon test --packages-select gesture_node   (uses pytest)
 """
+
 import math
 import unittest
 
 from gesture_node.gesture_filter import (
-    GESTURE_TO_INTENT, GestureFilter, clean_number, clean_xy, normalize_gesture)
+    GESTURE_TO_INTENT,
+    GestureFilter,
+    clean_number,
+    clean_xy,
+    normalize_gesture,
+)
 
 
 class FakeClock:
@@ -28,8 +34,9 @@ def packet(gesture, t=1.0, xy=(0.5, 0.5)):
 class FilterTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
-        self.f = GestureFilter(stable_packets=5, neutral_timeout=0.3,
-                               stale_timeout=2.0, clock=self.clock)
+        self.f = GestureFilter(
+            stable_packets=5, neutral_timeout=0.3, stale_timeout=2.0, clock=self.clock
+        )
 
     def send(self, gesture, n=1, dt=0.1):
         for _ in range(n):
@@ -67,8 +74,8 @@ class FilterTests(unittest.TestCase):
     def test_old_gesture_is_not_replayed_after_hand_gap(self):
         self.accept_right()
         self.f.update(packet(None))
-        self.clock.advance(0.5)                 # hand gone longer than 0.3 s
-        self.f.update(packet("CLOSED_HAND"))    # first packet of a new gesture
+        self.clock.advance(0.5)  # hand gone longer than 0.3 s
+        self.f.update(packet("CLOSED_HAND"))  # first packet of a new gesture
         self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "unconfirmed")
 
@@ -88,16 +95,16 @@ class FilterTests(unittest.TestCase):
     def test_switching_gesture_needs_five_packets(self):
         self.accept_right()
         self.send("CLOSED_HAND", 2)
-        self.assertEqual(self.intent(), "MOVE_RIGHT")   # still debouncing
+        self.assertEqual(self.intent(), "MOVE_RIGHT")  # still debouncing
         self.send("CLOSED_HAND", 3)
         self.assertEqual(self.intent(), "STOP_HOVER")
 
     def test_no_hand_goes_neutral_then_hover_land(self):
         self.accept_right()
-        self.send(None, 6)                      # sender keeps sending "no hand" for 0.6 s
+        self.send(None, 6)  # sender keeps sending "no hand" for 0.6 s
         self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_hand")
-        self.send(None, 20)                     # ... and for 2 s more
+        self.send(None, 20)  # ... and for 2 s more
         self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
         self.assertEqual(self.reason(), "no_hand_long")
 
@@ -126,7 +133,9 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(self.intent(), "MOVE_RIGHT")
 
     def test_bad_numbers_never_leak(self):
-        self.f.update({"gesture": "INDEX_RIGHT", "t": float("nan"), "xy": [1, float("inf")]})
+        self.f.update(
+            {"gesture": "INDEX_RIGHT", "t": float("nan"), "xy": [1, float("inf")]}
+        )
         out = self.f.decide()
         self.assertIsNone(out["t"])
         self.assertIsNone(out["xy"])

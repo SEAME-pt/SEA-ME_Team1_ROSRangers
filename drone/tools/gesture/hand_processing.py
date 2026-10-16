@@ -19,10 +19,18 @@ MIDDLE = (9, 10, 12)
 RING = (13, 14, 16)
 PINKY = (17, 18, 20)
 
-FINGERS = {"THUMB": THUMB, "INDEX": INDEX, "MIDDLE": MIDDLE, "RING": RING, "PINKY": PINKY}
+FINGERS = {
+    "THUMB": THUMB,
+    "INDEX": INDEX,
+    "MIDDLE": MIDDLE,
+    "RING": RING,
+    "PINKY": PINKY,
+}
 
-EXTENDED_ANGLE = 140     # degrees at the middle joint; above this the finger is extended
-THUMB_OUT_RATIO = 0.5    # how far the thumb tip sticks out past the palm edge, in hand sizes (a guess)
+EXTENDED_ANGLE = 140  # degrees at the middle joint; above this the finger is extended
+THUMB_OUT_RATIO = (
+    0.5  # how far the thumb tip sticks out past the palm edge, in hand sizes (a guess)
+)
 
 
 # ---------- MediaPipe ----------
@@ -78,7 +86,7 @@ def hand_size(lm):
 def thumb_out(lm):
     """How far the thumb tip sticks out past the index knuckle, along the palm's width axis.
     Negative or near 0 = tucked, clearly positive = out."""
-    ux = lm[5][0] - lm[17][0]   # axis from the pinky knuckle toward the index knuckle
+    ux = lm[5][0] - lm[17][0]  # axis from the pinky knuckle toward the index knuckle
     uy = lm[5][1] - lm[17][1]
     palm_width = max(math.hypot(ux, uy), 1e-6)
     along = ((lm[4][0] - lm[5][0]) * ux + (lm[4][1] - lm[5][1]) * uy) / palm_width
@@ -113,7 +121,9 @@ def pointing_direction(lm, fingers):
 # ---------- Gesture recognition ----------
 def recognize(lm):
     # Names of the fingers that are extended, e.g. ["INDEX", "MIDDLE"]
-    extended = [name for name, finger in FINGERS.items() if is_finger_extended(lm, finger)]
+    extended = [
+        name for name, finger in FINGERS.items() if is_finger_extended(lm, finger)
+    ]
 
     # Which way the extended fingers point (not used when the hand is closed)
     direction = pointing_direction(lm, [FINGERS[name] for name in extended])
