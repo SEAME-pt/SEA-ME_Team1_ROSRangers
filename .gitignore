@@ -1,2 +1,8 @@
 .obsidian/
 CLAUDE.md
+.venv/
+__pycache__/
+*.csv
+*.bin
+.pytest_cache/
+config/
