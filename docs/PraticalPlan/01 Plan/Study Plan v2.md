@@ -57,7 +57,7 @@ tags: [plan]
 ### 2.2 To do this week (12–16 Oct)
 
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
-- [x] Save `diff all` and `status` output in the software repo under `config/betaflight/4.5.1/`
+- [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
