@@ -31,6 +31,19 @@ Tiago - Soldar e perceção de hardware mais a fundo. Vai investigar conexão en
 Guilherme - Melhorias docs e ajuda com os outros elementos.
 
 
+19/Oct - 09:36/09:50
+Ale saiu do grupo.
+Perceber como vai proceder relativamente ao grupo agora com 4 pessoas.
+Falar com a Maria relativamente a este situação.
+Planeamento da sprint
+	Mostrar a board do github
+	Documentação
+Paulo - Estudar hardware e progredir com os testes no drone.
+Thiago - Avançar com a documentação do FPV e testes relacionados com ele
+Bruno - Avanço nos nodes e talvez radio
+Guilherme - Verificar motores, acrescentar CI/CD pipelines.
+
+
 ---
 
 ## Glossary
