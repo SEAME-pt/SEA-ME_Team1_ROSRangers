@@ -1,17 +1,18 @@
 # SEA-ME_Team1_ROSRangers
 SEA:ME 2026/2027 (Portugal) - Team 1/ ROS Rangers
 
-## Drone scripts
+## Documentation
 
-The scripts have one navigable entry point:
+The project documentation (plan, decisions, architecture, hardware notes and
+team process) lives in [`docs/`](./docs) on the `dev` branch. It is an
+[Obsidian](https://obsidian.md) vault, so it reads best in Obsidian, where
+wikilinks, embeds and diagrams render.
 
-```bash
-python3 scripts/seame.py
-```
+To open it:
 
-Use the interactive menu, or run a command directly such as
-`python3 scripts/seame.py msp info`. The ESP is soldered to the FC: never plug
-in its USB. See
-[the command catalog](./scripts/COMMANDS.md) and the
-[execution guide](./scripts/EXECUTION_GUIDE.md) for the available workflows,
-safety requirements, and expected order.
+1. Check out `dev`: `git checkout dev && git pull`.
+2. In Obsidian, choose **Open folder as vault** and select the `docs/` folder.
+3. Start at `PraticalPlan/00 Start/Home.md`, the map of everything.
+
+Recommended plugins are listed in `docs/-Must Have Plugins/`. Don't commit
+your `.obsidian/` workspace files.
