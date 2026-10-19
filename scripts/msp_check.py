@@ -16,7 +16,9 @@ Examples:
   python3 scripts/msp_check.py attitude
   python3 scripts/msp_check.py fake-fc                    # only the fake FC, on the ESP USB port
 
-Bench test plan (vault: ESP Bench Test Plan):
+Bench test plan (vault: ESP Bench Test Plan). The ESP is now soldered to the FC: run
+Stage 2 with `seame.py test <id>`. cycle1a, fake-fc, usb-relay and --loopback need the
+ESP on its own USB (Stage 1, before soldering):
   cycle1a --stream --sleep none --duration 600 --csv s1-05.csv   # S1-05 (S1-09: same, at the real distance)
   cycle1a --stream --sleep modem --duration 600 --csv s1-06.csv  # S1-06
   --usb status-watch --csv s2-02.csv                      # S2-02, while the ESP is power-cycled

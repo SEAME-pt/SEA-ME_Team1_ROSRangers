@@ -15,8 +15,8 @@
 While this PC is on the drone network it has no internet (unless it also has a cable).
 
 Examples:
-  python3 scripts/setup_production.py                  # = setup
-  python3 scripts/setup_production.py connect          # join the drone network
+  python3 scripts/setup_production.py setup            # ESP on its own USB, not wired to the FC
+  python3 scripts/setup_production.py connect         # join the drone network
   python3 scripts/setup_production.py disconnect       # back to the usual Wi-Fi (SEAME)
   python3 scripts/setup_production.py status
   python3 scripts/setup_production.py reboot-test       # S1-04: 20 resets, time to reconnect
@@ -283,7 +283,7 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--port", help="ESP serial port (default: auto-detect)")
-    sub = ap.add_subparsers(dest="cmd")
+    sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser(
         "setup", help="configure the ESP and this PC for the PRODUCTION scenario"
     )
@@ -315,7 +315,6 @@ def main():
     )
     ap.set_defaults(ssid=None, channel=6, max_clients=1, ask_password=False)
     args = ap.parse_args()
-    args.cmd = args.cmd or "setup"
     try:
         {
             "setup": cmd_setup,

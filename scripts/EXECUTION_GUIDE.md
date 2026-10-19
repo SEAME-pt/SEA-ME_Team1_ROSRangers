@@ -3,6 +3,13 @@
 This guide describes the scripts in the order they are normally used, from
 initial setup through testing the flight controller over the ESP8266 bridge.
 
+> [!warning] The ESP is now soldered to the FC
+> Sections 3, 5 and 8 need the ESP on its own USB. They were done before
+> soldering and are kept for reference; `seame.py` refuses those commands unless
+> `--esp-on-usb` comes first. From now on: `seame.py network connect`, sections
+> 6 and 7, and the guided Stage 2 tests (`seame.py test list`, see
+> [COMMANDS.md](./COMMANDS.md#esp-bench-test-plan-commands)).
+
 For a searchable command list and the interactive interface, see
 [`COMMANDS.md`](./COMMANDS.md). The recommended entry point is:
 

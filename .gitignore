@@ -1,7 +1,7 @@
-.venv/
-__pycache__/
 .obsidian/
 CLAUDE.md
+.venv/
+__pycache__/
 *.csv
 *.bin
 .pytest_cache/

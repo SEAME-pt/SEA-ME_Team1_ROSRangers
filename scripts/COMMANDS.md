@@ -1,47 +1,56 @@
 # SEA:ME script commands
 
-Use [`seame.py`](./seame.py) as the single entry point. It can be used as an
-interactive menu:
+> [!warning] The ESP is soldered to the FC (UART4)
+> Never plug in the ESP's USB: its USB chip and the FC T4 pin would both drive the
+> ESP RX line (ADR-012). Every command that needs the ESP on USB (`esp ...`,
+> `network setup`, `network reboot-test`, `msp cycle1a`, `msp fake-fc`,
+> `msp usb-relay`, `msp ping --loopback`) is refused by `seame.py` unless
+> `--esp-on-usb` comes first. Use it only with a written, reviewed procedure
+> (e.g. flashing the custom firmware). The sections marked *ESP on USB* below
+> describe the Stage 1 work done before soldering.
+
+Use [`seame.py`](./seame.py) as the single entry point. Run it without arguments
+for the menu:
 
 ```bash
 python3 scripts/seame.py
 ```
 
-The interactive menu is numeric. Choose a group first, then its scenario or
-action. For example:
-
 ```text
-Choose a command group:
-  1) network
-  2) fc
-  3) msp
-  4) esp
-Select an option: 1
-
-Choose a network scenario:
-  1) Test network (SEAME Wi-Fi)
-  2) Production network (drone access point)
-Select an option: 2
+SEA:ME drone. The ESP is soldered to the FC: never plug in the ESP USB.
+  1) Drone Wi-Fi: connect, disconnect, status
+  2) Read the FC: info, attitude, RC, latency
+  3) FC over USB: CLI dump, compare, reboot, status watch
+  4) Bench tests (ESP Bench Test Plan, Stage 2)
+  b) Back    q) Quit
 ```
 
-The screen is cleared whenever a new menu opens, so only the current options
-remain visible. Type `b` to go back one menu or `q` to exit immediately from
-any menu. Commands needing extra options ask for them after the numbered
-selection. Direct command-line usage remains available for automation and
-advanced options. After a command finishes, the interactive interface stays
-open and clears the screen before showing the next menu. Choose `q` when you
-are finished. The command output remains visible until you press Enter at the
-`Press Enter to return to the menu...` prompt.
+- **Read the FC** asks once whether to go through the ESP (drone Wi-Fi) or the
+  FC USB cable, then offers info, attitude, RC channels, latency (`ping --stream`)
+  and link watch. Everything there is read-only.
+- **FC over USB** holds the Betaflight CLI tools and `status-watch`. The menu
+  only runs read-only CLI commands; writes need the direct command with `--write`.
+- **Bench tests** are guided runs of the Stage 2 tests (see
+  [ESP Bench Test Plan commands](#esp-bench-test-plan-commands)).
 
-It also accepts commands directly, which is useful for the execution guide,
-automation, and copy/paste:
+Type `b` to go back and `q` to quit. Ctrl+C stops the running command
+(`attitude`, `rc`, `link-watch`, ...) and returns to the menu. The output stays
+visible until you press Enter.
+
+Every menu entry is also a direct command, for copy/paste and automation:
 
 ```bash
-python3 scripts/seame.py <command> [options]
+python3 scripts/seame.py network connect           # `network` = the drone AP
+python3 scripts/seame.py msp info                  # through the ESP
+python3 scripts/seame.py msp attitude --usb        # over the FC USB
+python3 scripts/seame.py fc dump
+python3 scripts/seame.py test list                 # the guided bench tests
+python3 scripts/seame.py test s2-01
 ```
 
-The interface dispatches to the existing specialist scripts. Their complete
-low-level options remain available with `--help`.
+The interface dispatches to the specialist scripts. `<group> --help` lists all
+their options. MSP global options (`--usb`, `--timeout`, `--esp`, `--fc-port`)
+can go before or after the subcommand.
 
 ## MSP latency and loss options
 
@@ -134,11 +143,13 @@ When using `seame.py`, CSV output paths are normalized as follows:
 
 ## Other command options
 
-The interactive menu uses the defaults for network setup, FC diagnostics, and
-ESP inspection. Use the direct command form when you need to change one of
-these values. The exact options are listed below.
+The menu uses the defaults. Use the direct command form when you need to change
+one of these values. The exact options are listed below.
 
-### Network: test scenario
+### Network: test scenario (setup: ESP on USB)
+
+`setup` needs `--esp-on-usb` first. With the ESP soldered it stays in the
+production scenario.
 
 ```bash
 python3 scripts/seame.py network test setup [--port PORT] \
@@ -168,6 +179,10 @@ python3 scripts/seame.py network test setup --ask-password
 from `~/.config/seame-drone/bridge.json` and checks reachability.
 
 ### Network: production scenario
+
+Day to day you only need `connect`, `disconnect` and `status`; `network` alone
+means this scenario (`seame.py network connect`). `setup` and `reboot-test` need
+the ESP on USB, so `--esp-on-usb` first.
 
 ```bash
 python3 scripts/seame.py network production setup [--port PORT] \
@@ -225,7 +240,12 @@ python3 scripts/seame.py fc --write run \
 
 `fc run` is read-only unless `--write` is supplied. `--save` requires
 `--write`. Before write operations, the script saves a `diff all` backup.
-`fc dump` and `fc backup-firmware` do not change FC settings.
+`fc dump`, `fc reboot` and `fc backup-firmware` do not change FC settings.
+
+Every CLI session ends with `exit`, and Betaflight reboots when it leaves the
+CLI. So `fc dump` and `fc run` reboot the FC; `fc reboot` does only that (used by
+`test s2-06`). UART4 is already MSP at 115200, so `enable-esp-uart` is not in the
+menu any more.
 
 ### MSP information and attitude
 
@@ -250,13 +270,8 @@ python3 scripts/seame.py msp --usb core --trace
 python3 scripts/seame.py msp attitude --rate 5
 ```
 
-The interactive menu provides two attitude options:
-
-- `attitude`: read continuously through the active ESP bridge.
-- `--usb attitude`: read continuously from the FC USB serial connection,
-  without using the ESP.
-
-Direct commands:
+In the menu, **Read the FC** asks for the path first (ESP or FC USB). Direct
+commands:
 
 ```bash
 # Through the ESP bridge
@@ -274,7 +289,9 @@ Both modes use `--rate 10` updates per second by default and accept
 does not require the ESP to be connected or configured. Stop `attitude` with
 `Ctrl+C`.
 
-### MSP Cycle 1a
+### MSP Cycle 1a (ESP on USB)
+
+Stage 1 only, before soldering: needs `--esp-on-usb` first.
 
 ```bash
 python3 scripts/seame.py msp cycle1a [options]
@@ -302,7 +319,10 @@ python3 scripts/seame.py msp cycle1a \
   -n 500 --rate 50 --max-loss 1 --wait 20 --csv cycle1a.csv
 ```
 
-### ESP AT commands
+### ESP AT commands (ESP on USB)
+
+Every `esp` command needs `--esp-on-usb` first, e.g.
+`seame.py --esp-on-usb esp query`. Only with a written procedure.
 
 Global ESP option:
 
@@ -326,9 +346,9 @@ python3 scripts/seame.py esp raw "AT+GMR" "AT+CIFSR"
 
 `restore` asks for confirmation by requiring the user to type `yes`.
 
-### Fake FC responder
+### Fake FC responder (ESP on USB)
 
-The interactive menu exposes `msp → fake-fc`. It starts a fake flight
+Stage 1 only: needs `--esp-on-usb` first. It starts a fake flight
 controller that listens on the ESP USB serial port and responds to supported
 read-only MSP requests with predefined mock data:
 
@@ -342,20 +362,8 @@ read-only MSP requests with predefined mock data:
 | Attitude | Roll `0°`, pitch `0°`, yaw `0°` |
 | Analog | Battery value `0 V` |
 
-Select it interactively:
-
-```text
-1) info
-2) ping
-3) cycle1a
-4) fake-fc
-...
-```
-
-Or run it directly:
-
 ```bash
-python3 scripts/seame.py msp fake-fc
+python3 scripts/seame.py --esp-on-usb msp fake-fc
 ```
 
 Optional arguments:
@@ -376,7 +384,10 @@ mock values above; it does not currently provide an interactive prompt for
 changing attitude, battery, or status values. For an automated bridge test
 that starts the fake FC and sends requests automatically, use `msp cycle1a`.
 
-### Wi-Fi ESP to USB FC relay
+### Wi-Fi ESP to USB FC relay (ESP on USB)
+
+Stage 2 rehearsal before soldering: needs `--esp-on-usb` first. The soldered
+UART4 link replaces it.
 
 If the ESP and FC are both connected to the same PC by USB, but are not
 physically wired together, use the USB relay:
@@ -402,10 +413,8 @@ This lets the ESP remain connected to the PC over Wi-Fi while the FC remains
 connected directly to the PC by USB. The PC software acts as the missing
 serial wire. It does not connect the ESP USB pins physically to the FC.
 
-Select `msp → USB relay` in the interactive menu, or run:
-
 ```bash
-python3 scripts/seame.py msp usb-relay
+python3 scripts/seame.py --esp-on-usb msp usb-relay
 ```
 
 The defaults auto-detect both ports. To select them explicitly:
@@ -439,9 +448,30 @@ ESP-to-FC UART connection.
 ## ESP Bench Test Plan commands
 
 Commands for the vault's *ESP Bench Test Plan*. Results go to `results/` (bare
-file names). Props off and no battery for every test. Stage 2 tests can be rehearsed
-now through `msp usb-relay` (ESP and FC both on USB) or `msp fake-fc`; repeat them
-on the temporary wires when the D1 mini is wired to the FC.
+file names, git-ignored: copy the numbers to #30 and the vault results log).
+Props off, no battery and the ESP USB unplugged for every test.
+
+### Stage 2 on the soldered link: `seame.py test`
+
+The menu's **Bench tests** entry runs these, as does `seame.py test <id>`. Each
+says what you have to do by hand and runs the steps in order.
+
+| `test` | ID | What runs | What you do |
+|---|---|---|---|
+| `s2-01` | S2-01 | `msp info`, `msp ping -n 100 --csv s2-01.csv` | Check API 1.46 and 100/100 answers. |
+| `latency` | S1-05 / S1-09 | `msp ping --stream --duration 600 --csv s1-05_soldered.csv` (asks duration and file) | Place the PC and the drone (next to each other, or coding room ↔ cage). Replaces `cycle1a` and `--loopback`, which need the ESP USB or a TX-RX jumper. |
+| `s2-02` | S2-02 | `fc dump` → `msp --usb status-watch --csv s2-02.csv` → `fc dump` → `fc compare-diffs` | During the watch, press the ESP reset button 20×, about 5 s apart, then Ctrl+C. FAIL on FC timeouts, an FC reboot, arming, rising I2C errors or `reboot_required`. The dumps reboot the FC by themselves (CLI `exit`); that is outside the watch. |
+| `s2-03` | S2-03 | `msp attitude` | Tilt the drone by hand. |
+| `s2-04` | S2-04 (read) | `msp rc` | Move the sticks. |
+| `s2-04-write` | S2-04 (write) | `msp rc-order --write` after you type `yes` | Only with MSP Override configured and approved. Sends roll 1200, pitch 1400, throttle 1000, yaw 1600, AUX1-4 at 1000; checks the readback against AETR1234; refuses when armed. |
+| `s2-05` | S2-05 | `msp ping --stream --duration 300 --csv s2-05_ch6.csv` | Read the ELRS LQ on the radio. Only the current AP channel (6): changing it needs `network setup`, i.e. the ESP USB. |
+| `s2-06` | S2-06 | `msp link-watch --duration 40 --csv s2-06.csv`, with `fc reboot` at 10 s and 25 s | Nothing; needs the FC on USB. A soldered wire cannot be unplugged, so the FC goes silent by rebooting while the ESP stays powered. PASS when each loss is reported within 500 ms. |
+| `s1-08` | S1-08 | `msp ping --stream --duration 60 --csv s1-08_stream.csv` | USB power meter between the PC and the FC. Note the current with the ESP reset button held, then average and peak during the stream. ESP current = the difference. |
+
+### Stage 1 (before soldering, ESP on USB)
+
+Kept for reference and for a re-run with the ESP on its own USB (needs
+`--esp-on-usb`).
 
 | ID | Command | Notes |
 |---|---|---|
@@ -455,14 +485,8 @@ on the temporary wires when the D1 mini is wired to the FC.
 | S1-08 | Manual | USB power meter. Record peak and average mA. |
 | S1-09 | `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv` | Production scenario (the PC talks to the ESP directly). The ESP is far from the PC, so no fake FC: a jumper from the D1 mini TX pin to its RX pin echoes every request. See below. |
 | S1-10 | Not possible | Needs the custom firmware. |
-| S2-01 | `msp info`, `msp ping -n 100` | API 1.46, 100/100 answers. |
-| S2-02 | `fc dump` → `msp --usb status-watch --csv s2-02.csv` → `fc dump` → `fc compare-diffs` | Power-cycle the ESP 20× during `status-watch`. FAIL on FC timeouts, a lost FC USB port (reboot), arming, rising I2C errors or `reboot_required`. |
-| S2-03 | `msp attitude` | Tilt the FC by hand. |
-| S2-04 | `msp rc` (sticks, read-only), then `msp rc-order --write` | `rc-order` sends roll 1200, pitch 1400, throttle 1000, yaw 1600, AUX1-4 at 1000, and checks the MSP_RC readback against map AETR1234. Refuses when the FC reports armed. The FC only applies the values with an MSP receiver or MSP Override on; otherwise it says so. |
-| S2-05 | Manual (`setup_production --channel 1/6/11`) | Read ELRS LQ on the radio. `MSP_ANALOG` RSSI is now decoded by `msp info`. |
-| S2-06 | `msp link-watch --csv s2-06.csv` | Unplug a jumper mid-stream (rehearse: stop `fake-fc`/`usb-relay`, or unplug the FC USB with `--usb`). PASS when every loss is detected within 500 ms of the last answer. |
 
-### S1-09 range test with a TX-RX jumper
+### S1-09 range test with a TX-RX jumper (before soldering)
 
 1. ESP on USB, in the lab: `network production setup` (once).
 2. Unplug the USB. Power the D1 mini from a power bank and wait about 10 s, until
@@ -511,39 +535,34 @@ the ESP and restores the default, which is why it is set inside `cycle1a`.
 
 ## Command groups
 
+With the ESP soldered to the FC:
+
 | Command | Purpose | Hardware effect |
 |---|---|---|
-| `network test setup` | Configure the ESP as a station on the SEAME Wi-Fi and save the active bridge profile. | Changes ESP settings |
-| `network test status` | Check the saved test profile and ESP reachability. | Read-only |
-| `network production setup` | Configure the ESP access point and the PC NetworkManager profile. | Changes ESP and PC network settings |
-| `network production connect` | Join the saved drone access point. | Changes PC network connection |
-| `network production disconnect` | Leave the drone access point. | Changes PC network connection |
-| `network production status` | Show the saved production profile and connection state. | Read-only |
-| `fc dump` | Save Betaflight read-only diagnostics and `diff all`. | Read-only |
-| `fc --write enable-esp-uart` | Configure FC UART4 for MSP at 115200 and save it. | Writes FC configuration |
-| `fc run <command>...` | Run Betaflight CLI commands. | Read-only unless `--write` is used |
-| `fc backup-firmware` | Read and verify the FC flash through DFU. | Read-only, requires `dfu-util` |
-| `msp --usb info` | Read FC information directly over USB. | Read-only |
-| `msp --usb ping -n 500` | Measure direct USB MSP latency and loss. | Read-only |
-| `msp cycle1a --csv result.csv` | Test the ESP bridge using a fake FC. | Read-only |
-| `msp fake-fc` | Run only the predefined fake FC responder. | Read-only |
-| `msp usb-relay` | Relay bytes between ESP USB and FC USB through the PC. | Read-only |
-| `msp info` | Read FC information through the active ESP bridge. | Read-only |
-| `msp ping -n 1000 --rate 50` | Measure bridge latency and loss. | Read-only |
-| `msp attitude` | Continuously display roll, pitch, and yaw. | Read-only |
-| `esp query` | Display ESP AT firmware and network settings. | Read-only |
-| `esp backup` | Back up and verify the ESP flash. | Read-only |
-| `esp exit-bridge` | Leave transparent mode and disable it at boot. | Changes ESP settings |
-| `esp raw "AT+CWLAP"` | Send one or more manual AT commands. | Depends on command |
-| `esp restore` | Factory-reset ESP AT settings after confirmation. | Erases ESP settings |
-| `esp write-flash [IMAGE]` | Write an image (default: newest backup) and verify it. | Overwrites ESP flash |
-| `esp boot-log` | Reset the ESP and record its boot bytes. | Resets the ESP |
-| `network production reboot-test` | Reset the ESP 20 times and time each reconnect. | Resets the ESP, changes PC network connection |
-| `fc compare-diffs` | Compare the two newest `diff all` files. | No FC needed |
-| `msp rc` | Display the RC channels the FC sees. | Read-only |
+| `network connect` | Join the saved drone access point. | Changes PC network connection |
+| `network disconnect` | Leave the drone access point. | Changes PC network connection |
+| `network status` | Show the saved profile and connection state. | Read-only |
+| `msp [--usb] info` | FC information through the ESP, or over the FC USB. | Read-only |
+| `msp [--usb] attitude` | Continuously display roll, pitch, and yaw. | Read-only |
+| `msp [--usb] rc` | Display the RC channels the FC sees. | Read-only |
+| `msp [--usb] ping --stream --duration 60` | Latency and loss at a true 50 Hz. | Read-only |
+| `msp [--usb] link-watch` | Report when the FC stops answering, and how fast. | Read-only |
+| `msp --usb status-watch` | Log FC status changes (S2-02). | Read-only |
+| `msp --usb core` | API version, status and attitude only (`info` covers it). | Read-only |
 | `msp rc-order --write` | Send distinct AETR values and check the readback. | Sends RC values to the FC |
-| `msp link-watch` | Report when the FC stops answering, and how fast. | Read-only |
-| `msp --usb status-watch` | Log FC status changes while the ESP is power-cycled. | Read-only |
+| `fc dump` | Save Betaflight read-only diagnostics and `diff all`. | Reboots the FC (CLI `exit`) |
+| `fc run <command>...` | Run Betaflight CLI commands. | Read-only unless `--write`; reboots the FC |
+| `fc reboot` | Reboot the FC. | Reboots the FC |
+| `fc compare-diffs` | Compare the two newest `diff all` files. | No FC needed |
+| `fc backup-firmware` | Read and verify the FC flash through DFU. | Read-only, requires `dfu-util` |
+| `fc --write enable-esp-uart` | Configure FC UART4 for MSP at 115200 and save it. Already done. | Writes FC configuration |
+| `test <id>` | Guided Stage 2 bench test (`test list`). | See the table above |
+
+Need `--esp-on-usb` first (ESP on its own USB, never while it is wired to a
+powered FC): `network setup`, `network reboot-test`, `network test setup`,
+`msp cycle1a`, `msp fake-fc`, `msp usb-relay`, `msp ping --loopback`, and every
+`esp` command (`query`, `backup`, `exit-bridge`, `raw`, `restore`,
+`write-flash`, `boot-log`).
 
 ## Direct specialist scripts
 

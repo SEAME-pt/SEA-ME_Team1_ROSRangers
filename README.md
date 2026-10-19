@@ -10,7 +10,8 @@ python3 scripts/seame.py
 ```
 
 Use the interactive menu, or run a command directly such as
-`python3 scripts/seame.py msp --usb info`. See
+`python3 scripts/seame.py msp info`. The ESP is soldered to the FC: never plug
+in its USB. See
 [the command catalog](./scripts/COMMANDS.md) and the
 [execution guide](./scripts/EXECUTION_GUIDE.md) for the available workflows,
 safety requirements, and expected order.

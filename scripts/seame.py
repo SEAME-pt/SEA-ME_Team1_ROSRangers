@@ -1,65 +1,164 @@
 #!/usr/bin/env python3
-"""Unified command interface for the SEA:ME drone scripts.
+"""One entry point for the SEA:ME drone bench scripts. Props off, no battery.
 
-Run without arguments for an interactive menu, or use a command directly:
+The ESP is soldered to the FC (UART4). This PC reaches the FC in two ways:
+  - through the ESP, over the drone Wi-Fi (the default for `msp`)
+  - straight over the FC USB cable (`msp --usb ...` and every `fc` command)
 
-    python3 scripts/seame.py list
-    python3 scripts/seame.py network test setup
+Run without arguments for the menu, or give a command:
+
+    python3 scripts/seame.py network connect
+    python3 scripts/seame.py msp info
+    python3 scripts/seame.py msp attitude --usb
     python3 scripts/seame.py fc dump
-    python3 scripts/seame.py msp --usb info
+    python3 scripts/seame.py test s2-01
 
-Arguments after a command are passed to the existing specialist script. This
-keeps one entry point convenient without duplicating hardware logic.
+Arguments after a command go to the specialist script (`<command> --help` lists
+them), so no hardware logic is duplicated here.
+
+Commands that need the ESP on its own USB port (`esp ...`, `network setup`,
+`msp cycle1a`, ...) are refused unless `--esp-on-usb` comes first. With the ESP
+soldered, its USB chip and the FC would both drive the ESP RX line (ADR-012).
 """
 
 from __future__ import annotations
 
 import shlex
+import signal
 import subprocess
 import sys
-from dataclasses import dataclass
+import time
+from collections.abc import Callable
 from pathlib import Path
 
-
 SCRIPTS_DIR = Path(__file__).resolve().parent
+QUIT = -1
+NM_NAME = "seame-drone"  # NetworkManager profile made by setup_production.py
 
-
-@dataclass(frozen=True)
-class Command:
-    name: str
-    description: str
-    script: str | None
-    prefix: tuple[str, ...] = ()
-
-
-COMMANDS = (
-    Command(
-        "network test",
-        "Configure or inspect the SEAME Wi-Fi scenario.",
-        "setup_test.py",
-    ),
-    Command(
-        "network production",
-        "Configure, connect, disconnect, or inspect the drone AP.",
-        "setup_production.py",
-    ),
-    Command("fc", "Run Betaflight USB CLI and firmware-backup commands.", "fc_cli.py"),
-    Command(
-        "msp",
-        "Run MSP checks and bench tests over USB or the ESP bridge.",
-        "msp_check.py",
-    ),
-    Command(
-        "esp", "Inspect, back up, or manually control ESP AT firmware.", "esp_at.py"
-    ),
+# Longest prefix first. `network` alone means the drone access point (production).
+ROUTES = (
+    (("network", "production"), "setup_production.py"),
+    (("network", "test"), "setup_test.py"),
+    (("network",), "setup_production.py"),
+    (("fc",), "fc_cli.py"),
+    (("msp",), "msp_check.py"),
+    (("esp",), "esp_at.py"),
 )
 
-GROUPS = (
-    ("network", "network"),
-    ("fc", "fc"),
-    ("msp", "msp"),
-    ("esp", "esp"),
+GROUP_HELP = (
+    ("network", "drone Wi-Fi: connect, disconnect, status"),
+    ("msp", "read the FC through the ESP (default) or over USB (--usb)"),
+    ("fc", "Betaflight CLI over the FC USB: dump, run, compare-diffs, reboot"),
+    ("test", "guided bench tests on the soldered link (see `test list`)"),
+    ("esp", "ESP AT firmware over its own USB (needs --esp-on-usb)"),
 )
+
+# msp_check.py options that belong before its subcommand.
+MSP_GLOBAL_FLAGS = ("--usb",)
+MSP_GLOBAL_VALUES = ("--timeout", "--fc-port", "--esp", "--esp-port-usb")
+
+ESP_USB_SUBCOMMANDS = {
+    "setup_test.py": {"setup"},
+    "setup_production.py": {"setup", "reboot-test"},
+    "msp_check.py": {"cycle1a", "fake-fc", "usb-relay"},
+}
+ESP_USB_WARNING = """\
+Refused: this command needs the ESP on its own USB port.
+
+The ESP is soldered to the FC. With its USB plugged in, the USB chip and the FC
+T4 pin both drive the ESP RX line (ADR-012, Safety Rules). `ping --loopback`
+needs a TX-RX jumper, which the soldered wires make impossible.
+
+Only follow a written, reviewed procedure for this (e.g. flashing the custom
+firmware). If that is what you are doing, put --esp-on-usb first:
+    python3 scripts/seame.py --esp-on-usb {command}"""
+
+
+# ---------------------------------------------------------------- dispatching
+
+
+def resolve_command(argv: list[str]) -> tuple[str, list[str]] | None:
+    """Return (script, arguments for it), or None for an unknown command."""
+    for words, script in ROUTES:
+        if tuple(argv[: len(words)]) == words:
+            args = argv[len(words) :]
+            if script == "msp_check.py":
+                args = normalize_msp_arguments(args)
+            return script, args
+    return None
+
+
+def normalize_msp_arguments(args: list[str]) -> list[str]:
+    """Move msp_check.py's global options before its subcommand, keeping their order.
+
+    Lets `msp attitude --usb` and `msp ping --timeout 1` work like `msp --usb attitude`.
+    """
+    front, rest = [], []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in MSP_GLOBAL_FLAGS or (
+            "=" in arg and arg.split("=", 1)[0] in MSP_GLOBAL_VALUES
+        ):
+            front.append(arg)
+        elif arg in MSP_GLOBAL_VALUES and i + 1 < len(args):
+            front += args[i : i + 2]
+            i += 1
+        else:
+            rest.append(arg)
+        i += 1
+    return front + rest
+
+
+def subcommand(script: str, args: list[str]) -> str | None:
+    """First positional argument, skipping the global options of `script`."""
+    takes_value = set(MSP_GLOBAL_VALUES) | {"--port"}
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in takes_value:
+            skip = True
+        elif not arg.startswith("-"):
+            return arg
+    return None
+
+
+def needs_esp_usb(script: str, args: list[str]) -> bool:
+    if "-h" in args or "--help" in args:
+        return False
+    if script == "esp_at.py":
+        return True
+    if script == "msp_check.py" and "--loopback" in args:
+        return True
+    return subcommand(script, args) in ESP_USB_SUBCOMMANDS.get(script, set())
+
+
+def run_script(script: str, args: list[str]) -> int:
+    """Run a specialist script. Ctrl+C stops the script, not this menu."""
+    previous = signal.signal(signal.SIGINT, lambda *_: None)  # reset to default on exec
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPTS_DIR / script), *args], check=False
+        )
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    return completed.returncode
+
+
+def run(argv: list[str], esp_on_usb: bool = False) -> int:
+    resolved = resolve_command(argv)
+    if resolved is None:
+        print(f"Unknown command: {' '.join(argv)}\n\n{command_help()}", file=sys.stderr)
+        return 2
+    script, args = resolved
+    if needs_esp_usb(script, args) and not esp_on_usb:
+        print(ESP_USB_WARNING.format(command=" ".join(argv)), file=sys.stderr)
+        return 2
+    return run_script(script, args)
+
+
+# ---------------------------------------------------------------- prompts
 
 
 def clear_screen() -> None:
@@ -67,21 +166,21 @@ def clear_screen() -> None:
         print("\033[2J\033[H", end="")
 
 
-def prompt_choice(title: str, options: list[tuple[str, str]]) -> int | None:
-    """Show numbered options and return the selected zero-based index."""
+def prompt_choice(title: str, options: list[str]) -> int | None:
+    """Show numbered options. Return the zero-based index, None (back) or QUIT."""
+    clear_screen()
     while True:
-        clear_screen()
         print(f"\n{title}")
-        for number, (_, label) in enumerate(options, 1):
+        for number, label in enumerate(options, 1):
             print(f"  {number}) {label}")
-        print("  b) Back")
+        print("  b) Back    q) Quit")
         try:
             choice = input("Select an option: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             print()
             return None
         if choice in {"q", "quit", "exit"}:
-            return -1
+            return QUIT
         if choice in {"b", "back"}:
             return None
         if choice.isdigit() and 1 <= int(choice) <= len(options):
@@ -89,239 +188,32 @@ def prompt_choice(title: str, options: list[tuple[str, str]]) -> int | None:
         print("Please enter one of the displayed numbers.")
 
 
-def menu_command(group: str) -> tuple[Command, list[str]] | int | None:
-    if group == "network":
-        scenario_index = prompt_choice(
-            "Choose a network scenario:",
-            [
-                ("test", "Test network (SEAME Wi-Fi)"),
-                ("production", "Production network (drone access point)"),
-            ],
-        )
-        if scenario_index is None:
-            return None
-        if scenario_index == -1:
-            return -1
-        scenario = ("test", "production")[scenario_index]
-        script = "setup_test.py" if scenario == "test" else "setup_production.py"
-        actions = (
-            [("setup", "Configure the scenario"), ("status", "Show scenario status")]
-            if scenario == "test"
-            else [
-                ("setup", "Configure the scenario"),
-                ("connect", "Connect to the drone network"),
-                ("disconnect", "Disconnect from the drone network"),
-                ("status", "Show scenario status"),
-                ("reboot-test", "S1-04: reset the ESP 20 times and time reconnects"),
-            ]
-        )
-        action_index = prompt_choice(f"Choose a {scenario} network action:", actions)
-        if action_index is None:
-            return None
-        if action_index == -1:
-            return -1
-        action = actions[action_index][0]
-        return Command(f"network {scenario}", "", script), [action]
-
-    if group == "fc":
-        options = [
-            ("dump", "Save read-only CLI diagnostics"),
-            ("enable-esp-uart", "Configure UART4 for MSP (writes FC configuration)"),
-            ("backup-firmware", "Back up FC firmware"),
-            ("run", "Run a custom Betaflight CLI command"),
-            ("compare-diffs", "Compare the two newest diff all files"),
-        ]
-        index = prompt_choice("Choose a flight-controller action:", options)
-        if index is None:
-            return None
-        if index == -1:
-            return -1
-        action = options[index][0]
-        if action == "enable-esp-uart":
-            return Command("fc", "", "fc_cli.py"), ["--write", action]
-        if action == "run":
-            return Command("fc", "", "fc_cli.py"), prompt_arguments(
-                "Enter Betaflight command(s), quoted separately if needed:"
-            )
-        return Command("fc", "", "fc_cli.py"), [action]
-
-    if group == "msp":
-        options = [
-            ("info", "Read FC information through the ESP bridge"),
-            ("ping", "Measure bridge latency and packet loss"),
-            ("cycle1a", "Run the bridge test with a fake FC"),
-            ("fake-fc", "Start a fake FC responder on the ESP USB port"),
-            ("usb-relay", "Relay bytes between ESP USB and FC USB"),
-            ("attitude", "Display attitude continuously"),
-            ("--usb attitude", "Display attitude continuously over FC USB"),
-            ("--usb info", "Read FC information over USB"),
-            ("--usb core", "Read core FC values over USB"),
-            ("--usb ping", "Measure USB latency and packet loss"),
-            ("--usb status-watch", "S2-02: watch FC status while the ESP power-cycles"),
-            ("rc", "Display the RC channels the FC sees"),
-            ("rc-order --write", "S2-04: check channel order (sends RC values)"),
-            ("link-watch", "S2-06: detect when the FC stops answering"),
-        ]
-        index = prompt_choice("Choose an MSP check:", options)
-        if index is None:
-            return None
-        if index == -1:
-            return -1
-        action = options[index][0]
-        args = shlex.split(action)
-        if action.endswith("ping"):
-            extra = prompt_arguments(
-                "Optional MSP arguments (press Enter for defaults):\n"
-                "  -n N              number of requests (ping default: 100)\n"
-                "  --rate HZ          requests per second (default: 50; 0 = maximum)\n"
-                "  --timeout SECONDS  response timeout (default: 0.5)\n"
-                "  --csv FILE         save successful RTTs to a CSV file\n"
-                "  --stream           send at the true --rate without waiting\n"
-                "  --trace            print raw MSP frames\n"
-                "Example: -n 30000 --rate 50 --timeout 1 --csv bridge_10min.csv\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        elif action == "cycle1a":
-            extra = prompt_arguments(
-                "Optional cycle 1a arguments (press Enter for defaults):\n"
-                "  -n N / --duration S  requests, or seconds at --rate (default: 500)\n"
-                "  --stream             send at the true --rate without waiting\n"
-                "  --sleep MODE         ESP Wi-Fi sleep: none, light or modem\n"
-                "  --csv FILE           save RTTs and analytics under results/\n"
-                "Example: --stream --sleep none --duration 600 --csv s1-05.csv\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        elif action in {"link-watch", "--usb status-watch"}:
-            extra = prompt_arguments(
-                "Optional arguments (press Enter for defaults):\n"
-                "  --duration S  stop after S seconds (default: Ctrl+C)\n"
-                "  --csv FILE    save the log under results/\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        elif action == "--usb attitude":
-            extra = prompt_arguments(
-                "Optional USB attitude arguments (press Enter for defaults):\n"
-                "  --fc-port PORT  FC USB serial port (default: auto-detect)\n"
-                "  --rate HZ        updates per second (default: 10)\n"
-                "  --trace          print raw MSP frames\n"
-                "Example: --rate 5 --trace\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        elif action == "fake-fc":
-            extra = prompt_arguments(
-                "Optional fake-FC arguments (press Enter for defaults):\n"
-                "  --esp-port-usb PORT  ESP USB serial port (default: auto-detect)\n"
-                "  --trace               print received and sent MSP frames\n"
-                "Example: --trace\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        elif action == "usb-relay":
-            extra = prompt_arguments(
-                "Optional USB relay arguments (press Enter for auto-detect):\n"
-                "  --esp-port-usb PORT  ESP USB serial port\n"
-                "  --fc-port PORT       FC USB serial port\n"
-                "Example: --esp-port-usb /dev/ttyUSB0 --fc-port /dev/ttyACM0\n"
-                "Arguments: "
-            )
-            args.extend(extra)
-        return Command("msp", "", "msp_check.py"), args
-
-    options = [
-        ("query", "Show ESP AT and network state"),
-        ("backup", "Back up ESP flash"),
-        ("exit-bridge", "Leave transparent bridge mode"),
-        ("restore", "Factory-reset ESP AT settings"),
-        ("raw", "Send a custom AT command"),
-        ("boot-log", "S1-03: record the ESP boot bytes"),
-        ("write-flash", "S1-02: write the newest backup back (asks first)"),
-    ]
-    index = prompt_choice("Choose an ESP action:", options)
-    if index is None:
-        return None
-    if index == -1:
-        return -1
-    action = options[index][0]
-    if action == "raw":
-        return Command("esp", "", "esp_at.py"), [
-            "raw",
-            *prompt_arguments("Enter AT command(s), quoted separately:"),
-        ]
-    return Command("esp", "", "esp_at.py"), [action]
+def ask(prompt: str, default: str = "") -> str:
+    shown = f" [{default}]" if default else " [none]"
+    try:
+        answer = input(f"{prompt}{shown}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return default
+    return answer or default
 
 
-def prompt_arguments(prompt: str) -> list[str]:
-    while True:
-        try:
-            line = input(f"{prompt} ").strip()
-        except (EOFError, KeyboardInterrupt):
-            return []
-        if not line:
-            return []
-        try:
-            return shlex.split(line)
-        except ValueError as exc:
-            print(f"Invalid command line: {exc}")
+def pause(message: str) -> bool:
+    """Wait for Enter. False when the user cancels with Ctrl+C / Ctrl+D."""
+    try:
+        input(f"{message}\nPress Enter to continue (Ctrl+C to cancel)... ")
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+    return True
 
 
-def command_help() -> str:
-    lines = ["Available command groups:", ""]
-    width = max(len(command.name) for command in COMMANDS)
-    for command in COMMANDS:
-        lines.append(f"  {command.name:<{width}}  {command.description}")
-    lines.extend(
-        [
-            "",
-            "Common examples:",
-            "  seame.py network test setup",
-            "  seame.py network production connect",
-            "  seame.py fc dump",
-            "  seame.py msp --usb info",
-            "  seame.py esp query",
-            "",
-            "Use '<group> --help' for the specialist script's complete options.",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def resolve_command(argv: list[str]) -> tuple[Command, list[str]] | None:
-    for command in sorted(COMMANDS, key=lambda item: len(item.name), reverse=True):
-        words = command.name.split()
-        if argv[: len(words)] == words:
-            return command, argv[len(words) :]
-    return None
-
-
-def run_command(command: Command, args: list[str]) -> int:
-    if command.script is None:
-        return 0
-    if command.script == "msp_check.py":
-        args = normalize_msp_arguments(args)
-    script = SCRIPTS_DIR / command.script
-    completed = subprocess.run([sys.executable, str(script), *command.prefix, *args])
-    return completed.returncode
-
-
-def normalize_msp_arguments(args: list[str]) -> list[str]:
-    """Allow global MSP options after the subcommand in the unified interface."""
-    normalized = list(args)
-    for option in ("--timeout", "--fc-port", "--esp", "--esp-port-usb"):
-        try:
-            index = normalized.index(option)
-        except ValueError:
-            continue
-        if index > 0:
-            value_index = index + 1
-            if value_index >= len(normalized):
-                return normalized
-            normalized[0:0] = normalized[index : value_index + 1]
-            del normalized[index + 2 : index + 4]
-    return normalized
+def confirm(message: str) -> bool:
+    try:
+        return input(f"{message}\nType 'yes' to continue: ").strip().lower() == "yes"
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
 
 
 def wait_for_enter() -> None:
@@ -331,42 +223,371 @@ def wait_for_enter() -> None:
         print()
 
 
-def interactive() -> int:
-    print("SEA:ME drone command interface")
-    while True:
-        group_index = prompt_choice("Choose a command group:", list(GROUPS))
-        if group_index is None:
-            return 0
-        if group_index == -1:
-            return 0
-        group = GROUPS[group_index][0]
-        selected = menu_command(group)
-        if selected is None:
-            continue
-        if selected == -1:
-            return 0
-        command, args = selected
-        result = run_command(command, args)
+def csv_args(name: str) -> list[str]:
+    return ["--csv", name] if name else []
+
+
+def duration_args(seconds: str) -> list[str]:
+    return ["--duration", seconds] if seconds else []
+
+
+def on_drone_network() -> bool:
+    try:
+        out = subprocess.run(
+            ["nmcli", "-t", "-f", "NAME", "connection", "show", "--active"],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout
+    except FileNotFoundError:
+        return True  # no NetworkManager: nothing to check
+    return NM_NAME in out.splitlines()
+
+
+def check_drone_network() -> bool:
+    if on_drone_network():
+        return True
+    print("This PC is not on the drone Wi-Fi. Run `network connect` first.")
+    return confirm("Continue anyway (e.g. another network setup)?")
+
+
+# ---------------------------------------------------------------- bench tests
+# Each runs the steps of the vault's ESP Bench Test Plan that still apply with the
+# ESP soldered to the FC. Results go to results/ (git-ignored): copy them to #30.
+
+
+def run_steps(*steps: list[str]) -> int:
+    for argv in steps:
+        print(f"\n$ seame.py {shlex.join(argv)}")
+        result = run(argv)
         if result:
-            print(f"Command exited with status {result}.")
-        else:
-            print("Command completed.")
+            return result
+    return 0
+
+
+def test_s2_01() -> int:
+    print("S2-01: expect API 1.46 and 100/100 answers.")
+    if not check_drone_network():
+        return 1
+    return run_steps(
+        ["msp", "info"], ["msp", "ping", "-n", "100", "--csv", "s2-01.csv"]
+    )
+
+
+def test_latency() -> int:
+    print(
+        "Latency and loss at a true 50 Hz through the real FC.\n"
+        "Replaces S1-05 on the production AP and the S1-09 runs, which needed the ESP\n"
+        "USB or a TX-RX jumper. Note where the PC and the drone are."
+    )
+    if not check_drone_network():
+        return 1
+    seconds = ask("Duration in seconds", "600")
+    name = ask("CSV file in results/", "s1-05_soldered.csv")
+    return run_steps(
+        ["msp", "ping", "--stream", *duration_args(seconds), *csv_args(name)]
+    )
+
+
+def test_s2_02() -> int:
+    print(
+        "S2-02: the FC must ignore ESP resets.\n"
+        "Needs the FC on USB and the ESP powered. Each `fc dump` ends with `exit`,\n"
+        "which reboots the FC: that is expected and is not part of the test."
+    )
+    if run_steps(["fc", "dump"]):
+        return 1
+    if not pause(
+        "\nWait about 5 s for the FC to come back. During the status watch, press the\n"
+        "ESP reset button 20 times, about 5 s apart, then stop the watch with Ctrl+C."
+    ):
+        return 1
+    run_steps(["msp", "--usb", "status-watch", "--csv", "s2-02.csv"])
+    time.sleep(1)
+    return run_steps(["fc", "dump"], ["fc", "compare-diffs"])
+
+
+def test_s2_03() -> int:
+    print("S2-03: tilt the drone by hand; the angles must follow. Ctrl+C to stop.")
+    if not check_drone_network():
+        return 1
+    return run_steps(["msp", "attitude"])
+
+
+def test_s2_04_read() -> int:
+    print("S2-04 (read): move the sticks; the channels must follow. Ctrl+C to stop.")
+    if not check_drone_network():
+        return 1
+    return run_steps(["msp", "rc"])
+
+
+def test_s2_04_write() -> int:
+    if not confirm(
+        "S2-04 (write) sends MSP_SET_RAW_RC: roll 1200, pitch 1400, throttle 1000,\n"
+        "yaw 1600, AUX1-4 low. Only with props off, no battery, and MSP Override\n"
+        "configured and approved (ESP_to_FC §10.5)."
+    ):
+        return 1
+    if not check_drone_network():
+        return 1
+    return run_steps(["msp", "rc-order", "--write"])
+
+
+def test_s2_05() -> int:
+    print(
+        "S2-05: Wi-Fi next to ELRS. Radio on and bound; read the ELRS link quality on\n"
+        "the radio while the link streams. Only the current AP channel can be tested:\n"
+        "changing it needs `network setup --channel`, which needs the ESP USB."
+    )
+    if not check_drone_network():
+        return 1
+    seconds = ask("Duration in seconds", "300")
+    name = ask("CSV file in results/", "s2-05_ch6.csv")
+    return run_steps(
+        ["msp", "ping", "--stream", *duration_args(seconds), *csv_args(name)]
+    )
+
+
+def test_s2_06(first: float = 10, second: float = 25, total: float = 40) -> int:
+    print(
+        f"S2-06: the FC goes silent and the loss must be reported within 500 ms.\n"
+        f"A soldered wire cannot be unplugged, so the FC is rebooted over USB at\n"
+        f"{first:.0f} s and {second:.0f} s while the ESP stays powered. Needs the FC on USB."
+    )
+    if not check_drone_network():
+        return 1
+    watch = ["link-watch", "--duration", str(total), "--csv", "s2-06.csv"]
+    previous = signal.signal(signal.SIGINT, lambda *_: None)
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(SCRIPTS_DIR / "msp_check.py"), *watch]
+        )
+        start = time.monotonic()
+        for at in (first, second):
+            time.sleep(max(0.0, at - (time.monotonic() - start)))
+            if proc.poll() is not None:
+                break
+            print(f"\n[{at:.0f} s] rebooting the FC")
+            run_script("fc_cli.py", ["reboot"])
+        return proc.wait()
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def test_s1_08() -> int:
+    print(
+        "S1-08: ESP current. USB power meter between this PC and the FC.\n"
+        "  1. Hold the ESP reset button and note the current (FC alone).\n"
+        "  2. Release it, wait for the drone Wi-Fi, then note average and peak during\n"
+        "     the 60 s stream below. ESP current = stream current - step 1."
+    )
+    if not pause("\nDo step 1 now."):
+        return 1
+    if not check_drone_network():
+        return 1
+    return run_steps(
+        ["msp", "ping", "--stream", "--duration", "60", "--csv", "s1-08_stream.csv"]
+    )
+
+
+TESTS: dict[str, tuple[str, Callable[[], int]]] = {
+    "s2-01": ("S2-01 link check: FC info and 100 pings", test_s2_01),
+    "latency": ("S1-05/S1-09 latency, 10 min at 50 Hz", test_latency),
+    "s2-02": ("S2-02 ESP resets while the FC runs (FC USB)", test_s2_02),
+    "s2-03": ("S2-03 attitude while tilting the drone", test_s2_03),
+    "s2-04": ("S2-04 RC channels, read-only", test_s2_04_read),
+    "s2-04-write": ("S2-04 RC channel order (sends RC values)", test_s2_04_write),
+    "s2-05": ("S2-05 Wi-Fi next to ELRS", test_s2_05),
+    "s2-06": ("S2-06 FC loss detection (reboots the FC)", test_s2_06),
+    "s1-08": ("S1-08 ESP current draw (USB power meter)", test_s1_08),
+}
+
+
+def run_test(args: list[str]) -> int:
+    if not args or args[0] in {"list", "-h", "--help"}:
+        width = max(len(key) for key in TESTS)
+        for key, (label, _) in TESTS.items():
+            print(f"  {key:<{width}}  {label}")
+        return 0 if args else 2
+    if args[0] not in TESTS:
+        print(f"Unknown test: {args[0]}. Use `test list`.", file=sys.stderr)
+        return 2
+    return TESTS[args[0]][1]()
+
+
+# ---------------------------------------------------------------- menus
+# A menu returns None (back), QUIT, or the exit status of what it ran.
+
+
+def pick(title: str, items: list[tuple[str, Callable[[], int | None]]]) -> int | None:
+    index = prompt_choice(title, [label for label, _ in items])
+    if index is None or index == QUIT:
+        return index
+    return items[index][1]()
+
+
+def menu_network() -> int | None:
+    return pick(
+        "Drone Wi-Fi (this PC has no internet while connected):",
+        [
+            ("Connect", lambda: run(["network", "connect"])),
+            ("Disconnect", lambda: run(["network", "disconnect"])),
+            ("Status", lambda: run(["network", "status"])),
+        ],
+    )
+
+
+def menu_read() -> int | None:
+    path = prompt_choice(
+        "Read the FC through:",
+        ["the ESP, over the drone Wi-Fi", "the FC USB cable"],
+    )
+    if path is None or path == QUIT:
+        return path
+    via = [] if path == 0 else ["--usb"]
+
+    def ping() -> int:
+        seconds = ask("Duration in seconds at 50 Hz", "60")
+        name = ask("CSV file in results/")
+        return run(
+            ["msp", *via, "ping", "--stream", *duration_args(seconds), *csv_args(name)]
+        )
+
+    def link_watch() -> int:
+        seconds = ask("Duration in seconds (Enter = until Ctrl+C)")
+        name = ask("CSV file in results/")
+        return run(
+            ["msp", *via, "link-watch", *duration_args(seconds), *csv_args(name)]
+        )
+
+    return pick(
+        "Read the FC (read-only):",
+        [
+            (
+                "Info: firmware, status, attitude, battery",
+                lambda: run(["msp", *via, "info"]),
+            ),
+            (
+                "Attitude, continuously (Ctrl+C to stop)",
+                lambda: run(["msp", *via, "attitude"]),
+            ),
+            (
+                "RC channels, continuously (Ctrl+C to stop)",
+                lambda: run(["msp", *via, "rc"]),
+            ),
+            ("Latency and loss (ping)", ping),
+            ("Link watch: report when the FC stops answering", link_watch),
+        ],
+    )
+
+
+def menu_fc_usb() -> int | None:
+    def cli_commands() -> int:
+        line = ask("Betaflight CLI command(s), each quoted (read-only)")
+        try:
+            commands = shlex.split(line)
+        except ValueError as exc:
+            print(f"Invalid command line: {exc}")
+            return 2
+        return run(["fc", "run", *commands]) if commands else 0
+
+    def status_watch() -> int:
+        seconds = ask("Duration in seconds (Enter = until Ctrl+C)")
+        name = ask("CSV file in results/")
+        return run(
+            ["msp", "--usb", "status-watch", *duration_args(seconds), *csv_args(name)]
+        )
+
+    return pick(
+        "FC over USB:",
+        [
+            (
+                "CLI dump: read-only output and `diff all` (reboots the FC)",
+                lambda: run(["fc", "dump"]),
+            ),
+            (
+                "Compare the two newest `diff all` files",
+                lambda: run(["fc", "compare-diffs"]),
+            ),
+            ("Run read-only CLI command(s)", cli_commands),
+            ("Status watch: log FC status changes", status_watch),
+            ("Reboot the FC", lambda: run(["fc", "reboot"])),
+            ("Back up the FC firmware (DFU)", lambda: run(["fc", "backup-firmware"])),
+        ],
+    )
+
+
+def menu_tests() -> int | None:
+    return pick(
+        "Bench tests on the soldered link. Props off, no battery, ESP USB unplugged:",
+        [(label, func) for label, func in TESTS.values()],
+    )
+
+
+MAIN_MENU = (
+    ("Drone Wi-Fi: connect, disconnect, status", menu_network),
+    ("Read the FC: info, attitude, RC, latency", menu_read),
+    ("FC over USB: CLI dump, compare, reboot, status watch", menu_fc_usb),
+    ("Bench tests (ESP Bench Test Plan, Stage 2)", menu_tests),
+)
+
+
+def interactive() -> int:
+    while True:
+        index = prompt_choice(
+            "SEA:ME drone. The ESP is soldered to the FC: never plug in the ESP USB.",
+            [label for label, _ in MAIN_MENU],
+        )
+        if index is None or index == QUIT:
+            return 0
+        result = MAIN_MENU[index][1]()
+        if result == QUIT:
+            return 0
+        if result is None:
+            continue
+        print(
+            "Command completed."
+            if result == 0
+            else f"Command exited with status {result}."
+        )
         wait_for_enter()
+
+
+# ---------------------------------------------------------------- entry point
+
+
+def command_help() -> str:
+    width = max(len(name) for name, _ in GROUP_HELP)
+    lines = ["Command groups:", ""]
+    lines += [f"  {name:<{width}}  {text}" for name, text in GROUP_HELP]
+    lines += [
+        "",
+        "Examples:",
+        "  seame.py network connect",
+        "  seame.py msp info",
+        "  seame.py msp attitude --usb",
+        "  seame.py msp ping --stream --duration 600 --csv run.csv",
+        "  seame.py fc dump",
+        "  seame.py test list",
+        "",
+        "Use '<group> --help' for all the options of a group.",
+    ]
+    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    esp_on_usb = bool(argv) and argv[0] == "--esp-on-usb"
+    if esp_on_usb:
+        argv = argv[1:]
     if not argv:
         return interactive()
     if argv[0] in {"list", "help", "--help", "-h"}:
         print(command_help())
         return 0
-    resolved = resolve_command(argv)
-    if resolved is None:
-        print(f"Unknown command: {' '.join(argv)}\n\n{command_help()}", file=sys.stderr)
-        return 2
-    command, args = resolved
-    return run_command(command, args)
+    if argv[0] == "test":
+        return run_test(argv[1:])
+    return run(argv, esp_on_usb)
 
 
 if __name__ == "__main__":

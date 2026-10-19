@@ -14,7 +14,7 @@ Only for bench work, props off: anybody on the SEAME network can send packets to
 If this PC gets a new IP (another day, another laptop), run `setup` again.
 
 Examples:
-  python3 scripts/setup_test.py                # = setup
+  python3 scripts/setup_test.py setup          # ESP on its own USB, not wired to the FC
   python3 scripts/setup_test.py status
   python3 scripts/setup_test.py setup --ask-password
 """
@@ -141,7 +141,7 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--port", help="ESP serial port (default: auto-detect)")
-    sub = ap.add_subparsers(dest="cmd")
+    sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser(
         "setup", help="configure the ESP and this PC for the TEST scenario"
     )
@@ -152,7 +152,6 @@ def main():
     sub.add_parser("status", help="show the saved TEST scenario and check the ESP")
     ap.set_defaults(ssid="SEAME", ask_password=False)
     args = ap.parse_args()
-    args.cmd = args.cmd or "setup"
     try:
         {"setup": cmd_setup, "status": cmd_status}[args.cmd](args)
     except esp_at.EspError as e:
