@@ -331,7 +331,7 @@ The ground computer produces high-level control commands (see companion page for
 
 ### 10.1 Identification (documentation first)
 
-- [ ] Obtain manufacturer documentation/wiring diagram for the OddityRC F722AIO and cross-check with the `ODDITYRCF7AIO` target definition.
+- [x] Obtain manufacturer documentation/wiring diagram for the OddityRC F722AIO and cross-check with the `ODDITYRCF7AIO` target definition. (2026-10-16: vendor diagram matches the target pad list, see [[Wiring and Pinout]] §1.)
 - [ ] Identify, from documentation **and** physical inspection, which pads correspond to the intended UART (UART4 candidate): TX pad, RX pad, ground, and available power pads. Record them in [[Wiring and Pinout]].
 - [ ] Confirm that silkscreen label ↔ Betaflight UART number ↔ MCU pin are consistent; do not assume.
 - [ ] Confirm the pads are not shared with another function (e.g. a peripheral, buzzer, LED strip) that would conflict.
@@ -463,7 +463,7 @@ Evidence (logs, test records, photographs) is required for each.
 
 | # | Decision | Blocks | Owner | Status | Proposed resolution |
 |---|---|---|---|---|---|
-| FC-01 | Physical pads for the chosen UART (documentation + inspection) | Any wiring |  | Partly resolved | **T4/R4 pads exposed** (team pad list, 2026-10-12); continuity/short check still needed. See [[Wiring and Pinout]]. |
+| FC-01 | Physical pads for the chosen UART (documentation + inspection) | Any wiring |  | Resolved (2026-10-16) | **T4/R4 pads exposed** (team pad list, 2026-10-12). Continuity to the MCU side OK and no shorts to neighbours (multimeter, 2026-10-16, GitHub #16). Vendor wiring diagram cross-checked. See [[Wiring and Pinout]]. |
 | FC-02 | Confirm UART4 is usable for MSP on this target; otherwise choose fallback (UART1/UART6) | Any wiring/config |  | Accepted | UART4 for the ESP; UART1 (T1/R1, free) is the fallback. ELRS stays on UART2, Tramp on UART3. [[ADR-011 FC UART Allocation\|ADR-011]] |
 | FC-03 | MSP baud rate and port settings | Bench testing |  | Accepted | 115200 8N1 (Betaflight MSP default); change only on measured need. [[ADR-009 ESP to FC Link\|ADR-009]] |
 | FC-04 | FC logic level and level-compatibility handling | Any wiring |  | Partly resolved | Both MCUs are 3.3 V logic devices; **measure** the T4 idle level before connecting. [[ADR-013 Wiring and Power\|ADR-013]] |

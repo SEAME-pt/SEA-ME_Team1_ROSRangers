@@ -27,6 +27,8 @@ tags:
 | Fact | Source |
 |---|---|
 | Target `ODDITYRCF7AIO`: F722, ICM42688P, baro drivers DPS310/QMP6988, 16 MB flash, UART1/2/3/4/6, UART4 = PA0/PA1 | `betaflight/config` → `configs/ODTY/ODDITYRCF7AIO/config.h` |
+| Pads (vendor diagram): `CAM` = camera video in, `VTX` = video out, `DV5V` = receiver 5 V, UART4 row `T4 5V SCL DV5V R2` / `R4 GND 3V3 SDA GND T2`. Target has no camera-control pin (`CAMERA_CONTROL_PIN` commented out). | [OddityRC F7 40A AIO wiring diagram](https://www.rotorama.com/cms/assets/docs/6d96909d797b5e734f781ca47138a567/35018-0/6x.jpg), `config.h` above |
+| ELRS on R2/T2. T4/R4 continuity to the MCU side, no shorts to neighbours (2026-10-16) | **team**, multimeter (GitHub #16) |
 | Installed 4.5.1, MSP API 1.46. UART2 Serial RX, UART3 Tramp. `status` `I2C:1`, `BARO=DPS310` (2026-10-13/14; earlier `I2C:0` superseded) | **team** ([[2.5Drone]], [[ESP_to_FC]]) |
 | MSP Override is compiled into every 4.5.1 build. `msp_override_failsafe` defaults to OFF. | Betaflight 4.5.1 `target/common_pre.h`, `pg/rx.c` |
 | 4.5.1 override has no freshness check (885 µs before the first frame; values held) | Betaflight 4.5.1 `rx/msp_override.c`, `rx/msp.c` |
