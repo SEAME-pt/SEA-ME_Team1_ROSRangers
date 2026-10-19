@@ -30,7 +30,7 @@ tags:
 
 ## 2. Baseline on 4.5.1 (Module 1 week 1)
 
-1. `version`, `status`, `diff all`. Commit them to the software repo under `config/betaflight/4.5.1/`.
+1. `version`, `status`, `diff all`. Commit them to the software repo under `drone/config/betaflight/4.5.1/`.
 2. Hover test + blackbox log (16 MB onboard flash).
 
 ## 3. Upgrade to 2026.6.2 (week 2, [[ADR-014 Betaflight Version|ADR-014]])
@@ -39,7 +39,7 @@ tags:
 2. Configurator → Firmware Flasher → board `ODDITYRCF7AIO`, 2026.6.2, cloud build. Include CRSF and Tramp. Try ALTHOLD only if the baro is detected. It may not fit 512 KB.
 3. Full chip erase, then re-enter the settings **by hand** using the old diff as a checklist.
 4. Calibrate the accelerometer, re-check motor order/direction (props off), failsafe, then hover.
-5. `diff all` → `config/betaflight/2026.6.2/`.
+5. `diff all` → `drone/config/betaflight/2026.6.2/`.
 
 ## 4. CLI for the ESP link (after approval)
 
