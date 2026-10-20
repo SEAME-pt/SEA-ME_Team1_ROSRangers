@@ -315,6 +315,7 @@ The ground computer produces high-level control commands (see companion page for
 
 ### 9.1 Principles (proposed)
 
+- **Link-loss safe state (team, 2026-10-20, [[ADR-004 ESP Failsafe|ADR-004]]):** when the ground link is lost (F3), the ESP streams neutral sticks so the drone holds its position, and the pilot takes over with the radio. This is separate from Betaflight's own receiver failsafe (F4, DROP on ELRS loss), which is not changed.
 - **Assume the worst case for held values** until tested otherwise: the FC may continue acting on the last override.
 - **Pilot takeover must not depend on any component on the ESP8266 path.**
 - Every failure scenario above must have a recorded props-off test result before the design is considered acceptable (§12).

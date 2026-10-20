@@ -170,7 +170,7 @@ In order. When time is short, cut from the bottom.
 
 | Date | Milestone | Version tag on `main` |
 |---|---|---|
-| 16 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction | – |
+| 18 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction (done, GitHub #13) | – |
 | 30 Oct 2026 | Sprint 1 demo: FC telemetry in ROS 2 over Wi-Fi; Betaflight upgraded | – |
 | 13 Nov 2026 | Sprint 2 demo: failsafe under fault injection (bench); HIL job green | – |
 | 27 Nov 2026 | Sprint 3 demo: position hold in the cage + PX4 SITL | – |
