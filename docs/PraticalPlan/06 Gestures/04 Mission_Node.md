@@ -2,7 +2,7 @@
 title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
-date: 2026-10-19
+date: 2026-10-20
 project: SEA autonomous drone
 tags:
   - gestures
@@ -20,7 +20,7 @@ aliases:
 `mission_node` (v0.1) is the second ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It reads what the operator wants from `/gesture/intent` ([[03 Intent_node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
 
 > [!WARNING] Status: DRAFT. Built and tested on real ROS 2 Jazzy, not reviewed yet
-> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and `gesture_sender.py` (§10, test log in [[02 ROS 2 Nodes - Install and Test|02]] §12).
+> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[02 ROS 2 Nodes - Install and Test|02]] §12). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[01 Gesture Node]]); that chain has not run with `mission_node` yet.
 > - It lives in **`MISSION_NODE_PACKAGE/`** at the repo root **for now**. Its final place is `drone/ground/src/mission_node/` ([[00 Gesture Pipeline]] §5). Only the folder moves. The package name stays `mission_node`.
 > - Topic names, `/flight/state` fields and every number are still **proposals**. The team must agree them (§13). Choices made while coding are listed in §11 for review. Nothing here changes an accepted ADR.
 > - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). Never use it with a real drone.
@@ -63,7 +63,7 @@ One ROS 2 Python package, `mission_node`, with **three executables** and **two l
 | `fake_flight_state` | executable (pretend input) | publishes a pretend `/flight/state` at 10 Hz. Every field is a parameter you can change while it runs (§7.1) |
 | `fake_intent` | executable (pretend input) | publishes pretend `/gesture/intent` messages in `intent_node`'s format: a 29 s scripted demo, or one constant intent you change by hand (§7.2) |
 | `mission_demo.launch.py` | launch file | `fake_flight_state` + `mission_node` + `fake_intent`: **the node on its own with pretend values** |
-| `mission_with_gestures.launch.py` | launch file | `intent_node` + `fake_flight_state` + `mission_node`: **the real gesture chain**. You add `gestures.py` or `gesture_sender.py` |
+| `mission_with_gestures.launch.py` | launch file | `intent_node` + `fake_flight_state` + `mission_node`: **the real gesture chain**. You add `gesture_node` or the fake `/gesture/raw` publisher (§9.2) |
 
 ### 2.1 Files
 
@@ -405,7 +405,7 @@ mission_node mission_node
 - `~/ROSRangers` is wherever you cloned the repo.
 - When the package moves to `drone/ground/src/mission_node/`, delete the symlink and point a new one there. Nothing else changes.
 - Rebuild after changing `setup.py` or `package.xml`, or after **adding** a launch file. Edits to existing Python and launch files take effect without a rebuild (`--symlink-install`).
-- ==🔴Do not activate the MediaPipe venv in terminals that run ROS 2.==
+- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[02 ROS 2 Nodes - Install and Test|02]] §6.3).
 
 Every ROS terminal below starts with:
 
@@ -462,24 +462,25 @@ ros2 param set /fake_flight_state override_active false   # -> IDLE
 > [!NOTE] Why not `ros2 topic pub`?
 > `ros2 topic pub -r 20 /gesture/intent std_msgs/msg/String "{data: '{\"intent\":\"MOVE_RIGHT\",\"reason\":\"ok\"}'}"` works too, but each new `ros2 topic pub` needs about a second to connect, and switching takes you longer than `intent_lost_sec` (2 s). So the node sees `intent_topic_lost` between two commands, and with `airborne: true` it goes to `LAND_REQUEST`. That is correct behaviour, but it gets in the way of a manual test. `fake_intent` in `constant` mode publishes without gaps.
 
-### 9.2 With `intent_node` and the fake camera (`gesture_sender.py`)
+### 9.2 With `intent_node` and the fake camera (fake `/gesture/raw`)
 
-| Terminal | Python | Command |
-| :---: | :--- | :--- |
-| 1 | system + ROS | `ros2 launch mission_node mission_with_gestures.launch.py` |
-| 2 | system + ROS | `ros2 topic echo /mission/state --field data` |
-| 3 | any, **no** ROS needed | `cd ~/ROSRangers/drone/tools/gesture && python3 gesture_sender.py` |
+| Terminal | Command |
+| :---: | :--- |
+| 1 | `ros2 launch mission_node mission_with_gestures.launch.py` |
+| 2 | `ros2 topic echo /mission/state --field data` |
+| 3 | the scripted fake camera of [[02 ROS 2 Nodes - Install and Test\|02]] §9, Level 0 (publishes on `/gesture/raw`) |
 
-The launch file starts `intent_node` (UDP 5005), `fake_flight_state` and `mission_node`. It accepts the same `mask:=` and `airborne:=` arguments. Don't start `fake_intent` here.
+The launch file starts `intent_node`, `fake_flight_state` and `mission_node`. It accepts the same `mask:=` and `airborne:=` arguments. Don't start `fake_intent` here.
 
-### 9.3 With `intent_node` and the webcam (`gestures.py`)
+> [!WARNING] The launch file must switch `intent_node` to the topic
+> Since 2026-10-20 the recogniser publishes on `/gesture/raw` and nothing sends UDP any more. `intent_node` still defaults to `input_source: udp`, so the launch file must start it with `parameters=[{"input_source": "topic"}]`. Until that is changed, this section and §9.3 get no gestures (`HOVER_LAND_REQUEST` / `no_packets_yet` forever, which `mission_node` treats as `NEUTRAL`).
 
-As 9.2, but terminal 3 is the real recogniser (setup in [[01 Gesture Recognition with OpenCV and MediaPipe|01]] §6):
+### 9.3 With `intent_node` and the webcam (`gesture_node`)
+
+As 9.2, but terminal 3 is the real recogniser, built as in [[02 ROS 2 Nodes - Install and Test|02]] §6.3:
 
 ```bash
-cd ~/ROSRangers/drone/tools/gesture
-source .venv/bin/activate
-python3 gestures.py                   # on Wayland: QT_QPA_PLATFORM=xcb python3 gestures.py
+ros2 run gesture_node gesture_node    # on Wayland: QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node
 ```
 
 Try it: open hand up (engage) → index pointing right (moves right) → fist (stop, `READY`) → index right again (nothing: not engaged) → open hand (engage again) → hide your hand for 3 s (`LAND_REQUEST`) → open hand (`READY`, operator back).
@@ -522,7 +523,7 @@ Run §9.1 (the demo). **Pass:**
 
 ### Level 2: full chain, no camera
 
-Run §9.2. The Level 0 sequence of `gesture_sender.py` ([[02 ROS 2 Nodes - Install and Test|02]] §9) should give (checked on 2026-10-19):
+Run §9.2. The Level 0 fake-camera sequence ([[02 ROS 2 Nodes - Install and Test|02]] §9) should give (checked on 2026-10-19 with the UDP sender; the topic version sends the same sequence):
 
 | Fake camera | `intent_node` intent | `mission_node` mode | Velocity |
 | :--- | :--- | :--- | :--- |

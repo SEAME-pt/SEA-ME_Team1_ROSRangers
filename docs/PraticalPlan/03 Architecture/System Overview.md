@@ -59,7 +59,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
-| Webcam + MediaPipe | ≥ 20 FPS | [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] |
+| Webcam + MediaPipe | ≥ 20 FPS | [[01 Gesture Node|Gesture Recognition Program]] |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.
 

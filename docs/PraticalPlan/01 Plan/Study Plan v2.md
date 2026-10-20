@@ -13,7 +13,7 @@ tags: [plan]
 > [!summary] What changed from v1 ([[plano_de_estudo]])
 > - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner.
 > - Aligned to the **Module 1 deliverables**: architecture document, green CI (>80% coverage + HIL), real-time profile, sim-to-real report, E-stop under fault injection, sprint demos every 2 weeks.
-> - **Gestures are part of the plan.** The webcam prototype already exists ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
+> - **Gestures are part of the plan.** The webcam prototype already exists ([[01 Gesture Node|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
 > - **Betaflight upgrade to 2026.6.2** in week 2, before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]]).
 > - ESP on **UART4**. ELRS stays on **UART2** ([[ADR-011 FC UART Allocation|ADR-011]]). **Custom ESP firmware** replaces AT 1.7.4.0 ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]).
 > - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]).
@@ -51,7 +51,7 @@ tags: [plan]
 - [x] Exposed pads listed: T1, R1, R2, R3, T4, R4, CAM, SCL, SDA, 5V, 3.3V, GND, DV5V
 - [x] Development process and Git workflow documented ([[Dev_Strategy]], Git Learning notes)
 - [x] Communication drafts written ([[PC_to_ESP]], [[ESP_to_FC]], [[ThoneFlow]])
-- [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
+- [x] Static-gesture webcam prototype working ([[01 Gesture Node|Gesture Recognition Program]])
 - [x] Decisions accepted ([[Decision Register]])
 
 ### 2.2 To do this week (12–16 Oct)

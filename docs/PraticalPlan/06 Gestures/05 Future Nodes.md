@@ -2,7 +2,7 @@
 title: Future nodes to add
 type: architecture
 status: draft
-date: 2026-10-19
+date: 2026-10-20
 project: SEA autonomous drone
 tags:
   - gestures
@@ -15,7 +15,7 @@ tags:
 Nodes and packages that the gesture chain will need after `intent_node` and `mission_node`, and some that would make it better. Each one says why we would add it, what it reads and publishes, and what must be decided first.
 
 > [!WARNING] Status: ideas and proposals
-> Nothing on this page is decided or built. Topic names and message types are **proposals**. A node that changes an accepted decision (for example the MediaPipe node vs [[ADR-018 Ground OS and ROS 2|ADR-018]]) needs a new ADR first. Turn an item into work with the Spike or Task issue form, not here.
+> Nothing on this page is decided or built, except §2, which was built as `gesture_node` on 2026-10-20 ([[01 Gesture Node]]). Topic names and message types are **proposals**. A node that changes an accepted decision (for example the MediaPipe node vs [[ADR-018 Ground OS and ROS 2|ADR-018]]) needs a new ADR; for §2 it is still to be written. Turn an item into work with the Spike or Task issue form, not here.
 
 ---
 
@@ -23,7 +23,8 @@ Nodes and packages that the gesture chain will need after `intent_node` and `mis
 
 ```mermaid
 flowchart LR
-  CAM["camera_node<br/>(§3)"] -->|/image_raw| MP["mediapipe_node<br/>(§2)"]
+  W[Webcam] --> MP["gesture_node<br/>(§2, built)"]
+  CAM["camera_node<br/>(§3, optional)"] -.->|/image_raw| UI2["rqt_image_view / ros2 bag"]
   MP -->|/gesture/raw| GN[intent_node]
   MT["motion tracker<br/>(§7)"] -.-> GN
   GN -->|/gesture/intent| MN[mission_node]
@@ -35,8 +36,8 @@ flowchart LR
 
 | § | Node or package | Why | When (proposal) | Status |
 | :---: | :--- | :--- | :--- | :---: |
-| 2 | `mediapipe_node` | recogniser inside ROS 2 instead of UDP | after the chain works end to end | ==🟣idea, needs ADR== |
-| 3 | `camera_node` | camera frames as a ROS topic | with §2 | ==🟣idea== |
+| 2 | `mediapipe_node` → built as **`gesture_node`** | recogniser inside ROS 2 instead of UDP | done 2026-10-20 | ==🟢built, ADR still needed== |
+| 3 | `camera_node` | camera frames as a ROS topic | only if we need to see or record the picture | ==🟣idea, optional== |
 | 4 | `drone_msgs` | typed messages instead of JSON strings | before the topics are frozen | ==🟠proposed== |
 | 5 | controller + estimator | velocity target → attitude setpoints | Module 1, week 5 | ==🟠planned== |
 | 6 | `flight_interface` | ground ↔ drone link, sim and real backends | Module 1 | ==🟠planned== |
@@ -48,55 +49,52 @@ flowchart LR
 
 ---
 
-## 🖐️ 2. `mediapipe_node`: MediaPipe inside ROS 2
+## 🖐️ 2. `mediapipe_node`: MediaPipe inside ROS 2 (built as `gesture_node`)
 
-Today `gestures.py` runs in its own venv and talks to `intent_node` over UDP ([[00 Gesture Pipeline]] §5). A `mediapipe_node` would make the recogniser a real ROS 2 node.
+> [!SUCCESS] Built on 2026-10-20 as `gesture_node`
+> This idea was built under the name `gesture_node`, with one change: the node reads the camera itself with `cv2.VideoCapture(0)` instead of subscribing to `/image_raw` from a `camera_node`. That avoids `cv_bridge` (the clash ADR-018 feared) and the cost of sending every frame between processes. Everything about it is in [[01 Gesture Node]]. The proposal below is kept for the record.
 
 ```mermaid
 flowchart LR
-  subgraph today[Today]
+  subgraph before[Before 2026-10-20]
     W1[Webcam] --> G1["gestures.py (venv)"] -->|UDP| N1[intent_node]
   end
-  subgraph future[With mediapipe_node]
+  subgraph proposed[Proposed]
     W2[Webcam] --> C2[camera_node] -->|/image_raw| M2[mediapipe_node] -->|/gesture/raw| N2[intent_node]
+  end
+  subgraph built[Built]
+    W3[Webcam] --> M3[gesture_node] -->|/gesture/raw| N3["intent_node<br/>input_source:=topic"]
   end
 ```
 
-### What it would do
+### Proposal vs what was built
 
-| | Proposal |
-| :--- | :--- |
-| **Reads** | `/image_raw` (`sensor_msgs/msg/Image`) from `camera_node` (§3), converted to an RGB NumPy array with `cv_bridge` |
-| **Does** | calls `create_hands()` and `detect_gesture()` from `hand_processing.py`, unchanged ([[01 Gesture Recognition with OpenCV and MediaPipe\|01]] §2: it accepts any RGB array) |
-| **Publishes** | `/gesture/raw`: gesture name, palm `xy`, timestamp, every frame. Optional `/gesture/landmarks` (21 points) for logging and the classifier (§8) |
-| **Then** | `intent_node` subscribes to `/gesture/raw` instead of the UDP socket. `gesture_filter.py` is ROS-free, so the safety rules stay **exactly** the same |
+| | Proposal | Built (`gesture_node`) |
+| :--- | :--- | :--- |
+| **Reads** | `/image_raw` from `camera_node` (§3), via `cv_bridge` | the webcam directly, `cv2.VideoCapture(0)`, in the same process |
+| **Does** | `create_hands()` and `detect_gesture()` from `hand_processing.py`, unchanged | same: `hand_processing.py` is a byte-for-byte copy, `gestures.py` only changed its imports |
+| **Publishes** | `/gesture/raw`: gesture name, palm `xy`, timestamp. Optional `/gesture/landmarks` | `/gesture/raw`: the same JSON the UDP sender used (`gesture`, `t`, `xy`), ~10 Hz. No `/gesture/landmarks` yet |
+| **Then** | `intent_node` subscribes to `/gesture/raw` | `intent_node` subscribes with `input_source:=topic`; `gesture_filter.py` unchanged, so the safety rules are **exactly** the same |
 
-### Pros and cons
+### How the dependency clash was solved
 
-| Pros | Cons |
-| :--- | :--- |
-| No UDP port and no second process to start by hand | MediaPipe's pip `numpy` / OpenCV can clash with the apt ROS packages (`cv_bridge`). This is the reason for [[ADR-018 Ground OS and ROS 2\|ADR-018]] |
-| `ros2 bag` can record the images and landmarks, so recognition bugs can be replayed | Heavier node; a MediaPipe crash now happens inside the ROS graph |
-| One launch file starts everything (§11) | Loses the clean "recogniser knows nothing about ROS" split |
-| Standard tools (`rqt_image_view`, `ros2 topic hz`) on the camera feed | More work to package (pip dependency inside a colcon package) |
+Option 1 of the spike list: **a venv with system packages** (`python3.12 -m venv --system-site-packages ~/gesture-venv`), MediaPipe from pip, ROS from apt, and `gesture_node` built with the venv's Python so `ros2 run` uses it ([[01 Gesture Node]] §10). `cv_bridge` is not used, so its `numpy` question does not apply.
 
-### Ways to solve the dependency clash (to compare in a spike)
+Not tried yet: option 2, **port to the Tasks API on MediaPipe 1.1.0** (needed anyway, because 0.10.21 is the last version with `mp.solutions`, [[00 Gesture Pipeline]] §6), and option 3, **a container** with ROS 2 Jazzy and MediaPipe pinned together.
 
-1. **venv with system packages:** create the venv with `python3 -m venv --system-site-packages`, install `mediapipe` there, and run the node from that venv. ROS stays from apt, MediaPipe from pip. Check that `numpy` from pip does not break `cv_bridge`.
-2. **Port to the Tasks API on MediaPipe 1.1.0:** needed anyway, because 0.10.21 is the last version with `mp.solutions` ([[00 Gesture Pipeline]] §6). 1.1.0 supports Python 3.12 and ARM64 (Raspberry Pi 5).
-3. **Container:** run the node in a Docker image with ROS 2 Jazzy and MediaPipe pinned together.
+### Still to do
 
-### Before building it
-
-- [ ] Spike issue: try options 1 to 3, record what works on Ubuntu 24.04 + Jazzy
 - [ ] New ADR that amends or supersedes [[ADR-018 Ground OS and ROS 2|ADR-018]] (never edit it silently)
-- [ ] Keep `gestures.py` + UDP working until the node passes the same tests ([[02 ROS 2 Nodes - Install and Test|02]] §9)
+- [ ] Record the first full run with the webcam ([[02 ROS 2 Nodes - Install and Test|02]] §9, §12)
+- [ ] Optional `/gesture/landmarks` (21 points) for logging and the classifier (§8)
+
+The old `gestures.py` + UDP prototype (`drone/tools/gesture/`) was removed on 2026-10-20, before the node passed the tests of [[02 ROS 2 Nodes - Install and Test|02]] §9. Git history still has it.
 
 ---
 
 ## 📷 3. `camera_node`: the webcam as a ROS topic
 
-Needed by §2. No code to write: use an existing package.
+Not needed by `gesture_node`, which reads the camera itself (§2). Useful only to **see or record the picture** (`rqt_image_view`, `ros2 bag`). Two processes can't open the same webcam at once, so this would replace the capture in `gesture_node`. No code to write: use an existing package.
 
 | Option | Install | Publishes |
 | :--- | :--- | :--- |
@@ -108,7 +106,7 @@ ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:=/dev/video0   
 ros2 run rqt_image_view rqt_image_view     # check the picture
 ```
 
-Mirroring: `gestures.py` flips the frame so left and right match the operator ([[01 Gesture Recognition with OpenCV and MediaPipe|01]] §2). With a camera node, `mediapipe_node` must flip the image itself.
+Mirroring: `gestures.py` flips the frame so left and right match the operator ([[01 Gesture Node|01]] §4). With a camera node, `gesture_node` would have to flip the image itself. Cost: each frame is sent between processes (about 0.9 MB at 640×480), a few ms per frame in Python ([[01 Gesture Node]] §2).
 
 ---
 
@@ -147,7 +145,7 @@ A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the 
 
 Static poses only cover "which fingers, which way". A tracker that follows the palm position over several frames could add movement gestures as **mode commands** (for example wave = land request), never as direct motion.
 
-- Needs the palm `xy`, which `gestures.py` does not send yet ([[03 Intent_node]] §3).
+- Needs the palm `xy`, which `gesture_node` does not send yet ([[01 Gesture Node]] §8).
 - Could live inside the recogniser, or as a small node between it and `intent_node`.
 - Any new gesture must go through the same stability filter and be added to the vocabulary ([[00 Gesture Pipeline]] §3).
 
@@ -173,7 +171,7 @@ Shows the operator what the system thinks: current mode, intent, `reason`, land 
 
 ## 🚀 11. `gesture_bringup`: one launch file
 
-A package with a launch file and a parameter YAML that starts `intent_node` and `mission_node` (later the camera and `mediapipe_node`) with agreed values:
+A package with a launch file and a parameter YAML that starts `gesture_node`, `intent_node` (with `input_source: topic`) and `mission_node` with agreed values:
 
 ```bash
 ros2 launch gesture_bringup gestures.launch.py

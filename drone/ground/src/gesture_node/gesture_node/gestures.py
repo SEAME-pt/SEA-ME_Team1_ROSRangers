@@ -1,6 +1,6 @@
 import cv2 as opencv
-from hand_processing import create_hands, detect_gesture, draw_hand
-from gesture_sender import send_gesture
+from .hand_processing import create_hands, detect_gesture, draw_hand
+from .gesture_sender import send_gesture
 
 def main():
     cap = opencv.VideoCapture(0)  # /dev/video*
