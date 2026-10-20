@@ -53,6 +53,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 ## Git workflow
 
 - `main` (stable) and `dev` (integration) are protected. Never push to them directly.
+- **Reuse before creating.** Before opening a new issue, branch or PR, check what's already open (`gh pr list`, `gh issue list`, `git branch -r`). If an open PR or branch covers the same topic or the same files, push the change there, note it in the PR (description or a comment), and reference the existing issue. Create a new issue + branch + PR only when nothing related is open.
 - Branch from `dev`: `feature/<issue>-<topic>` or `bugfix/<issue>-<topic>`. Every branch has an issue, and every feature goes through a PR into `dev`.
 - PR into `dev` using `.github/pull_request_template.md`. Put `Closes #N` in the description, or `Refs #N` if the issue must stay open (for example a spike that still needs bench results).
 - Feature → `dev`: squash merge. `dev` → `main`: merge commit + tag (`v0.1.0` at Module 1 end).
