@@ -50,7 +50,7 @@ UDP RTT (median/p99/max), loss %, ESP loop jitter, ESP CPU cost of the MAC ([[AD
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |

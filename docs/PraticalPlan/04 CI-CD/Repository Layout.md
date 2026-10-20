@@ -80,7 +80,7 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |

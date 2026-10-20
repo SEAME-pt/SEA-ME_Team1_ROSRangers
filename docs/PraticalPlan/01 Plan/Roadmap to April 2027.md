@@ -67,7 +67,7 @@ See [[Study Plan v2]].
 | Term | Meaning |
 | --- | --- |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
