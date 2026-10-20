@@ -37,6 +37,14 @@ tags:
    - **Measure first:** baro noise and drift at known heights in the cage, together with the week-5 velocity test ([[Study Plan v2]] §7).
 5. Estimation runs on the ground (TF-13).
 
+### Update 2026-10-20 (proposed): position-hold acceptance and fallback
+
+Module 1 needs "holds position" in SITL and in the cage. The numbers below are proposals. Confirm them after the week-5 baro and flow measurements ([[Study Plan v2]] §7).
+
+- **Acceptance:** [[Requirements|REQ-NAV-001]] (SITL: 0.25 m, ±0.15 m, 60 s) and [[Requirements|REQ-NAV-002]] (cage: 0.5 m radius for 30 s, 3 of 3 runs; ±0.3 m height only when height is automatic). The cage tolerance is wider than the SITL one because the baro height (§2.4) scales the flow velocity error.
+- **Decide-by 2026-11-13** (Sprint 2 demo, end of the week-4 SoftwareSerial experiment): does Option B deliver flow frames within the agreed loss threshold (TF-10)?
+- **Fallback if it doesn't:** position hold is shown in SITL against REQ-NAV-001. In the cage, the ground controller streams velocity setpoints with the pilot correcting drift, and the gap is reported in the sim-to-real report. This ADR is re-opened (§2.3) for the next sensor path. The fallback does not change any safety rule: the pilot keeps the radio and the kill switch.
+
 ## 3. Consequences
 
 - The parser stays a portable library ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]), whichever reader wins.

@@ -142,9 +142,9 @@ tags: [plan]
 - [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-NAV-001: 0.25 m for 60 s in SITL; REQ-NAV-002: 0.5 m radius for 30 s in the cage; REQ-CTL-001 limits the gesture speeds).
 - [ ] Link loss → drone holds position (neutral sticks) and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20; REQ-SAF-009, REQ-SAF-013, REQ-SAF-014, REQ-SAF-017). Betaflight's own RX failsafe (DROP on radio loss) is a separate failsafe.
 - [ ] Green CI: build, unit tests, static analysis, coverage > 80%, HIL job.
-- [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection.
+- [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection (REQ-SAF-002, REQ-SAF-005).
 
-See also [[Weekly Rituals]].
+Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 
 ## 12. Glossary
 

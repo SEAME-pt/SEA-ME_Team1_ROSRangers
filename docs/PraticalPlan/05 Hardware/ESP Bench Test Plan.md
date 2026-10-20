@@ -39,7 +39,7 @@ tags:
 | ESP-S1-07 | TCP session open + UDP stream at the same time | TCP does not stall control | No UDP gap above the S1-05 max | [[ADR-005 TCP Session\|ADR-005]] |
 | ESP-S1-08 | Current draw with a USB power meter during Wi-Fi transmit | Whether the FC 5V rail can feed it | Peak and average mA recorded | FC-05, [[ADR-013 Wiring and Power\|ADR-013]] |
 | ESP-S1-09 | Range: laptop in the coding room, D1 mini in the cage | The link reaches through the building | S1-05 repeated at the real distance; loss and RTT recorded | ADR-006 |
-| ESP-S1-10 | Watchdog: hang the loop on purpose | The ESP recovers on its own, in a safe state | Reboot + reset reason logged; no control output after reboot | REQ-FS-04 in [[PC_to_ESP]] |
+| ESP-S1-10 | Watchdog: hang the loop on purpose | The ESP recovers on its own, in a safe state | Reboot + reset reason logged; no control output after reboot | REQ-SAF-016 (was REQ-FS-04) in [[PC_to_ESP]] |
 
 > [!tip] Reuse
 > S1-05 to S1-07 are the first version of the protocol code. Write them against the portable library so they become unit/HIL tests later ([[Testing Strategy]]).

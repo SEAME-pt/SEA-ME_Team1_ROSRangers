@@ -176,7 +176,7 @@ The mission node never disarms. Touchdown and disarm stay with the pilot or the 
 
 ### 4.5 Things it never does
 
-- It never arms, disarms or touches any AUX channel or the override switch (SAF-03/04, [[ADR-015 Gesture Input Source|ADR-015]]).
+- It never arms, disarms or touches any AUX channel or the override switch (REQ-SAF-003 (was SAF-03), REQ-SAF-004 (was SAF-04), [[ADR-015 Gesture Input Source|ADR-015]]).
 - It never keeps moving on stale or unknown input.
 - It never sends a target above the limits, even if a parameter is set higher. A hard-coded ceiling applies (proposal: 0.5 m/s, 45 °/s).
 
@@ -255,10 +255,10 @@ To be registered in [[Dev_Strategy]] §15 style:
 
 | ID | Requirement |
 |---|---|
-| REQ-SAF-0xx | The mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. |
-| REQ-SAF-0xx | The mission node never commands an axis outside the active override mask. |
-| REQ-CTL-0xx | Gesture speeds are limited to 0.3 m/s lateral, 0.2 m/s vertical and 20 °/s yaw (parameters, with a hard ceiling). |
-| REQ-SW-0xx | `/mission/velocity_target` is published at 20 Hz in every mode. |
+| REQ-SAF-017 (was REQ-SAF-0xx) | The mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. |
+| REQ-SAF-018 (was REQ-SAF-0xx) | The mission node never commands an axis outside the active override mask. |
+| REQ-CTL-001 (was REQ-CTL-0xx) | Gesture speeds are limited to 0.3 m/s lateral, 0.2 m/s vertical and 20 °/s yaw (parameters, with a hard ceiling). |
+| REQ-SW-001 (was REQ-SW-0xx) | `/mission/velocity_target` is published at 20 Hz in every mode. |
 
 ## ❓ 10. Open points (decide before coding)
 
@@ -297,4 +297,4 @@ To be registered in [[Dev_Strategy]] §15 style:
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
 | **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
 | **JSON** | A text format for structured data. |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008 (was SAF-08)) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |

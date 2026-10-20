@@ -52,7 +52,7 @@ set msp_override_failsafe = OFF
 save
 ```
 
-UART2 (ELRS) and UART3 (Tramp) are **left untouched** (SAF-08). Set the modes in the **Modes tab**: ARM, ANGLE, **MSP OVERRIDE** (on its own 2-position switch), and ALTHOLD if built. Masks: 8 = yaw, 11 = roll+pitch+yaw, 15 = all four ([[ADR-010 MSP Override|ADR-010]]).
+UART2 (ELRS) and UART3 (Tramp) are **left untouched** (REQ-SAF-008 (was SAF-08)). Set the modes in the **Modes tab**: ARM, ANGLE, **MSP OVERRIDE** (on its own 2-position switch), and ALTHOLD if built. Masks: 8 = yaw, 11 = roll+pitch+yaw, 15 = all four ([[ADR-010 MSP Override|ADR-010]]).
 
 ## 5. Failsafe defaults (verified in 4.5.1 source)
 
@@ -79,4 +79,4 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |

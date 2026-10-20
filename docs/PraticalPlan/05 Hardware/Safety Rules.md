@@ -11,7 +11,7 @@ tags:
 # Safety Rules (all weeks, no exceptions)
 
 > [!danger] These rules apply to every bench session and every flight
-> They implement SAF-01 to SAF-08 in [[ESP_to_FC]] §8 and [[Dev_Strategy]] §22.
+> They implement REQ-SAF-001 (was SAF-01) to REQ-SAF-008 (was SAF-08) in [[ESP_to_FC]] §8 and [[Dev_Strategy]] §22.
 
 ---
 
@@ -62,4 +62,4 @@ tags:
 | **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
 | **Bridge** | The transparent UART↔UDP bridge: the ESP forwards bytes between the FC UART and the ground over Wi-Fi without parsing them. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
