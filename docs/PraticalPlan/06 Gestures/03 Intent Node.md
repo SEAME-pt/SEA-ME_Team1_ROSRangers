@@ -107,6 +107,57 @@ Type `std_msgs/msg/String`, 20 Hz. `data` holds one JSON object:
 
 Receivers parse the JSON. A typed custom message would be cleaner (§9).
 
+### 👀 How to read `/gesture/intent`
+
+Run these in a terminal with both `source` lines:
+
+| Command | Shows |
+| :--- | :--- |
+| `ros2 topic info /gesture/intent` | type `std_msgs/msg/String`, 1 publisher (this node; 2 means `fake_intent` is running too, [[04 Mission Node]] §7.2), and the subscribers |
+| `ros2 topic echo /gesture/intent --field data` | only the JSON text, 20 messages a second |
+| `ros2 topic echo --once /gesture/intent --field data` | one message, then exits |
+| `ros2 topic hz /gesture/intent` | the rate: ~20 Hz **always**, also with no hand and no recogniser |
+| `python3 ~/gesture_watch.py` | one line per change of `intent` or `reason`, next to the `/gesture/raw` line that caused it ([[01 ROS2 Nodes Installation\|01]] §9) |
+| the `intent_node` terminal | `Intent -> ... (reason: ...)` on every change, and the link report every 5 s |
+
+> [!TIP] Prefer the watcher or the log
+> At 20 Hz `echo` scrolls fast and the messages look the same. `gesture_watch.py` and the `Intent ->` log lines only show changes.
+
+Read **`intent`** to know what the operator asks for, and **`reason`** to know why. The reason tells you where a problem is:
+
+| `intent` / `reason` | What it tells you |
+| :--- | :--- |
+| `MOVE_RIGHT` (or any mapped intent) / `ok` | the gesture was seen 5 packets in a row and accepted |
+| `NEUTRAL` / `unconfirmed` | a gesture arrived, but not yet 5 in a row. Normal for ~0.4 s after each change; if it stays, the gesture name flickers (look at `/gesture/raw`) |
+| `NEUTRAL` / `unmapped_gesture` | the recogniser sends a name that is not in the table of §5. `gesture` shows `null`; the name is on `/gesture/raw` |
+| `NEUTRAL` / `no_hand` | packets arrive with `"gesture": null` for more than 0.3 s: the hand is out of view |
+| `HOVER_LAND_REQUEST` / `no_hand_long` | no hand for more than 2 s |
+| `HOVER_LAND_REQUEST` / `no_packets` | packets stopped for more than 2 s: `gesture_node` stopped or crashed |
+| `HOVER_LAND_REQUEST` / `no_packets_yet` | nothing received since start: `gesture_node` not started, wrong `raw_topic`, or `input_source` still `udp` (§7) |
+
+`gesture` is the **accepted** gesture, not the latest one: while you switch from `INDEX_RIGHT` to `CLOSED_HAND`, it keeps saying `INDEX_RIGHT` until the new one is accepted. To see the latest raw name, read `/gesture/raw` ([[02 Gesture Node]] §8).
+
+Reading it in code (as `mission_node` does):
+
+```python
+import json
+from std_msgs.msg import String
+
+
+def on_intent(msg: String) -> None:
+    try:
+        packet = json.loads(msg.data)
+    except json.JSONDecodeError:
+        return                       # treat as NEUTRAL
+    intent = packet.get("intent")    # "MOVE_RIGHT", "NEUTRAL", ...
+    reason = packet.get("reason")    # "ok", "no_hand", ...
+
+
+node.create_subscription(String, "/gesture/intent", on_intent, 10)
+```
+
+A reader should also treat **silence** on this topic as a fault (it is published at 20 Hz on purpose, §2).
+
 ---
 
 ## 🛡️ 5. Rules

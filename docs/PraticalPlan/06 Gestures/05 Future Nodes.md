@@ -131,7 +131,7 @@ drone/ground/src/drone_msgs/
 
 ## 🎛️ 5. Velocity controller + estimator
 
-Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[04 Mission Node]] §6.4. Open question there: keep mission and controller as two nodes, or one.
+Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[04 Mission Node]] §6.5. Open question there: keep mission and controller as two nodes, or one.
 
 ---
 

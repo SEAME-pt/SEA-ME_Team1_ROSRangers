@@ -282,6 +282,50 @@ No hand or nothing recognised:
 | one extra message at once | the gesture changes |
 | silence | the node stopped, crashed, or the camera loop stalled |
 
+### 👀 How to read `/gesture/raw`
+
+Run these in a terminal with both `source` lines (system Python, no venv needed to **read**):
+
+| Command | Shows |
+| :--- | :--- |
+| `ros2 topic info /gesture/raw` | type `std_msgs/msg/String`, 1 publisher (this node), and the subscribers (`intent_node` if it runs) |
+| `ros2 topic echo /gesture/raw --field data` | only the JSON text, one message after another (separated by `---`) |
+| `ros2 topic echo --once /gesture/raw --field data` | one message, then exits |
+| `ros2 topic hz /gesture/raw` | the rate: ~10 Hz while the window is open |
+| `python3 ~/gesture_watch.py` | one line per **change** of gesture, with the time ([[01 ROS2 Nodes Installation\|01]] §9) |
+
+> [!TIP] Use `--field data`
+> Without it, `ros2 topic echo /gesture/raw` prints `data: '{"gesture": ...}'`: the JSON wrapped in a YAML string, sometimes with escaped quotes. `--field data` prints the JSON text itself.
+
+What you see, and what it means:
+
+| You see | Meaning |
+| :--- | :--- |
+| `"gesture": "INDEX_RIGHT"` repeated ~10 times a second | the hand is held still in that pose |
+| the name changes | the pose changed (one message at once, then the 10 Hz repeats again) |
+| `"gesture": null` | the camera works but sees no hand, or the pose could not be named |
+| `"t"` growing by about 0.1 each message | the keep-alive is running |
+| nothing at all, `hz` shows no new messages | the node is not running, or the camera loop is stuck. Check its terminal |
+| a name that is not in the vocabulary (for example `INDEX_PINKY_UP`) | normal: `gesture_node` names every pose. `intent_node` turns unknown names into `NEUTRAL` |
+
+Reading it in code (a new node that wants the raw gesture): the message is a `String`, so parse `msg.data` as JSON.
+
+```python
+import json
+from std_msgs.msg import String
+
+
+def on_raw(msg: String) -> None:
+    packet = json.loads(msg.data)
+    gesture = packet["gesture"]   # str or None
+    xy = packet.get("xy")         # None today
+
+
+node.create_subscription(String, "/gesture/raw", on_raw, 10)
+```
+
+To read it later from a recording: `ros2 bag record -o raw_test /gesture/raw`, then `ros2 bag play raw_test` and the same `echo` commands.
+
 ---
 
 ## 📁 9. Code layout, and what changed from `drone/tools/gesture/`

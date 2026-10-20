@@ -48,7 +48,7 @@ flowchart LR
 | `flight_interface` | "How do I send it safely?" | protocol, session, watchdog, sim or real backend |
 
 Why it is separate from `intent_node`:
-- `/gesture/intent` stays drone-independent, so the same intents can drive a car or an arm in Module 2 ([[00 Gesture Pipeline|Gesture Pipeline]] §8).
+- `/gesture/intent` stays drone-independent, so the same intents can drive a car or an arm in Module 2 ([[00 Gesture Pipeline|Gesture Pipeline]] §9).
 - All drone-specific limits live in one place, which makes them easy to review and test.
 
 ---
@@ -308,7 +308,51 @@ The node logs every mode change (`LAND_REQUEST` as a warning), every intent chan
 
 The health report is a warning when one of the two inputs got no messages in the last 5 s.
 
-### 6.4 What happens downstream (not this node's job)
+### 6.4 How to read the outputs
+
+Run these in a terminal with both `source` lines:
+
+| Command | Shows |
+| :--- | :--- |
+| `ros2 topic echo /mission/state --field data` | the JSON of §6.2: mode, intent, reason, limits. Start here |
+| `ros2 topic echo /mission/velocity_target --field twist` | the numbers only (`linear` in m/s, `angular` in rad/s), without the header |
+| `ros2 topic echo /mission/velocity_target --field twist.linear.y` | one axis, one number per message (good for watching a ramp) |
+| `ros2 topic echo --once /mission/velocity_target` | one full message, with `header.stamp` and `frame_id` |
+| `ros2 topic hz /mission/velocity_target` | ~20 Hz in every mode, zeros included |
+| `ros2 topic echo /flight/state --field data` | the pretend drone state from `fake_flight_state` (§7.1) |
+| the `mission_node` terminal | `Mode ->` and `Intent ->` on every change, the health report every 5 s (§6.3) |
+
+**Reading `/mission/velocity_target`.** The axes follow §5.2 (x forward, y **left**, z up, yaw positive = left), so the signs look reversed for "right":
+
+| You see | Means |
+| :--- | :--- |
+| all zeros | hold position, or not `ENGAGED` (check `mode` on `/mission/state`) |
+| `linear.y` negative (down to −0.3) | moving **right** |
+| `linear.y` positive (up to +0.3) | moving **left** |
+| `linear.z` +0.2 / −0.2 | climbing / descending (only with mask 15) |
+| `angular.z` +0.349 / −0.349 | yaw left / right (20 °/s) |
+| a value growing by 0.025 per message | the ramp (§5.5), not a bug |
+
+**Reading `/mission/state`.** Look at `mode` and `mode_reason` first: if the mode is not `ENGAGED`, the velocity is zero whatever the gesture. If it is `ENGAGED` but an axis stays zero, `limited` says why (`axis_not_owned:z` = the mask does not give us that stick). `intent` and `reason` are what this node accepted from `/gesture/intent` (§3.1).
+
+Reading the velocity in code (as the controller will):
+
+```python
+from geometry_msgs.msg import TwistStamped
+
+
+def on_target(msg: TwistStamped) -> None:
+    vy = msg.twist.linear.y        # m/s, + = left
+    vz = msg.twist.linear.z        # m/s, + = up
+    yaw_rate = msg.twist.angular.z  # rad/s, + = left
+
+
+node.create_subscription(TwistStamped, "/mission/velocity_target", on_target, 10)
+```
+
+`/mission/state` is read like `/gesture/intent`: `json.loads(msg.data)` ([[03 Intent Node]] §4). It is for people and logs; control code should only use `/mission/velocity_target`.
+
+### 6.5 What happens downstream (not this node's job)
 
 1. **Velocity controller** (week 5, tracks C + E, [[Study Plan v2]] §7) reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle.
 2. **`flight_interface`** packs those into `SETPOINT` (0x60): `mode 1` (attitude), `roll`, `pitch`, `yaw_rate` in −1000..1000, `throttle` 0..1000 ([[Protocol Spec v0]] §3). It sends at 50 Hz and its own watchdog sends `mode 0` (neutral) if the controller goes silent.
