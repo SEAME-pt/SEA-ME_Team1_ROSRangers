@@ -48,7 +48,7 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 |---|---|---|
 | ELRS receiver | **UART2**, unchanged | 1 |
 | Tramp VTX | **UART3**, unchanged | 2 |
-| **D1 mini (MSP)** | **UART4 (T4/R4)** | 3 |
+| **ESP (MSP)** | **UART4 (T4/R4)** | 3 |
 | Spare / fallback for the ESP | UART1 (T1/R1) | 0 |
 
 ## 3. Consequences

@@ -23,7 +23,7 @@ tags:
 > This page records agreed design directions and *proposes* further detail. Nothing described here has been implemented or tested. Exact packet formats, port numbers, timeouts, rates and numerical limits are deliberately **not** specified and are listed as open decisions in [§12](#12-open-decisions).
 
 > [!info] Update 2026-10-20: bench state
-> The banner above is the 2026-10-12 state. The ESP-12F (ESP8266, Wemos D1 mini class) now runs the stock AT firmware in the production SoftAP scenario, soldered to FC UART4 since 2026-10-19. Latency and loss were measured with the AT bridge ([[ESP Bench Test Plan]] §4). The custom firmware, the protocol on the ESP and the failsafe are not implemented or tested yet.
+> The banner above is the 2026-10-12 state. The ESP-12F (ESP8266) now runs the stock AT firmware in the production SoftAP scenario, soldered to FC UART4 since 2026-10-19. Latency and loss were measured with the AT bridge ([[ESP Bench Test Plan]] §4). The custom firmware, the protocol on the ESP and the failsafe are not implemented or tested yet.
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
 > The team accepted the proposals on this page. Rows marked **Accepted (ADR-0xx)** below are decided. See the linked ADR for the reasoning, and the [[Decision Register]] for the full list. Where an ADR differs from the earlier "Recommended" text, **the ADR wins** (it supersedes it).
@@ -77,7 +77,7 @@ Define the architecture and requirements for communication between the **ground 
 | Component | Role in this link |
 |---|---|
 | **Ground computer** | Runs ROS 2, perception, mission logic and outer control loops. Originates control setpoints, configuration and diagnostic requests; consumes telemetry. |
-| **ESP8266** (ESP-12F, Wemos D1 mini class) | Bridges Wi-Fi communication to the flight controller. Receives and validates messages from the ground computer, detects loss of valid control updates, and relays data to/from the FC. |
+| **ESP8266** (ESP-12F) | Bridges Wi-Fi communication to the flight controller. Receives and validates messages from the ground computer, detects loss of valid control updates, and relays data to/from the FC. |
 | **Flight controller** | OddityRC F722AIO running Betaflight 4.5.1. Its interface to the ESP8266 is documented separately. |
 
 ### Architecture overview
@@ -91,7 +91,7 @@ flowchart LR
     end
 
     subgraph AIR["Drone"]
-        ESP["ESP8266 (D1 mini-style)<br/>Wi-Fi bridge<br/>AT firmware today · custom C++ under consideration"]
+        ESP["ESP8266<br/>Wi-Fi bridge<br/>AT firmware today · custom C++ under consideration"]
         FC["Flight controller<br/>OddityRC F722AIO · Betaflight 4.5.1"]
         ESP <-. "FC link<br/>(separate document)" .-> FC
     end
@@ -146,7 +146,7 @@ flowchart LR
 ### 3.2 Project facts (context, not design decisions)
 
 - Ground computer runs ROS 2, perception, mission logic and outer control loops.
-- ESP8266 is a D1 mini-style board intended to bridge Wi-Fi to the FC.
+- The ESP8266 (ESP-12F) bridges Wi-Fi to the FC.
 - FC is an OddityRC F722AIO running Betaflight 4.5.1.
 - ESP8266 currently runs AT firmware; custom C++ firmware is *being considered* (not decided).
 - Development spans six months with a small team.
@@ -575,7 +575,7 @@ The communication design is accepted for a given phase only when the relevant cr
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **AT command** | Text command used to configure or control a modem or microcontroller module. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |

@@ -28,8 +28,8 @@ tags:
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |
 | 3 Simulation | controller + flight interface | PX4 SITL + Gazebo | square path, link-loss injection |
-| 4 HIL | real D1 mini + FC, Wi-Fi, no battery | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
-| 4 Bench (manual) | D1 mini alone, then with the FC on temporary wires | lab | [[ESP Bench Test Plan]] Stages 1–2 |
+| 4 HIL | real ESP + FC, Wi-Fi, no battery | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
+| 4 Bench (manual) | ESP alone, then with the FC on temporary wires | lab | [[ESP Bench Test Plan]] Stages 1–2 |
 | 4 Bench (manual) | props off, battery on | lab | [[ESP_to_FC]] §11 Phases 1–6 |
 | 5 Flight | cage, safety pilot | lab | staged masks ([[ADR-010 MSP Override\|ADR-010]]) |
 

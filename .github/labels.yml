@@ -32,7 +32,7 @@
   description: "Betaflight, ELRS, failsafe, flight tests"
 - name: "track: B embedded-link"
   color: "fef2c0"
-  description: "D1 mini firmware, MSP, C++ protocol lib"
+  description: "ESP firmware, MSP, C++ protocol lib"
 - name: "track: C ground-ros2"
   color: "c2e0c6"
   description: "flight_interface node, Python protocol, controller"

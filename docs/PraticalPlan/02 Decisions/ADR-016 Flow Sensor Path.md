@@ -28,7 +28,7 @@ tags:
 ## 2. Decision
 
 1. **Characterise first:** sensor alone on a USB-serial adapter ([[ThoneFlow]] §9.2). Week 3 of [[Study Plan v2]].
-2. **Option B as a time-boxed experiment (1 week):** ThoneFlow TX → D1 mini **D5 (GPIO14)** with EspSoftwareSerial at 19200. Measure with Wi-Fi and the FC link running. Agree the frame-loss threshold **before** testing (TF-10).
+2. **Option B as a time-boxed experiment (1 week):** ThoneFlow TX → ESP **D5 (GPIO14)** with EspSoftwareSerial at 19200. Measure with Wi-Fi and the FC link running. Agree the frame-loss threshold **before** testing (TF-10).
 3. **No extra MCU (Option C rejected, 2026-10-14).** The program rules out a companion computer on the drone (seame-2.0 drone README), so the team adds no second processor. **If B fails, re-open this ADR.** Candidates then: tune the SoftwareSerial reader, accept a higher frame-loss threshold if the estimator copes, or move to a Betaflight version with a CX-OF driver if one appears.
 4. **Height (TF-12): the FC's DPS310 barometer** (2026-10-14). The lab has no ToF rangefinder, and the ThoneFlow cannot measure height (image motion ≈ speed ÷ height, so one camera can't separate the two). The baro is detected and responds to height ([[ADR-014 Betaflight Version|ADR-014]]).
    - **Relative height:** zero the baro on the ground before each flight; use the change from that point, not absolute altitude.
@@ -61,7 +61,7 @@ Module 1 needs "holds position" in SITL and in the cage. The numbers below are p
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |

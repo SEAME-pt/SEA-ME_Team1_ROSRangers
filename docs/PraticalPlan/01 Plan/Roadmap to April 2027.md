@@ -59,7 +59,7 @@ See [[Study Plan v2]].
 ## 5. Module 3 (1 Mar – 30 Apr) · Multi-agent
 
 - Likely scenario **A (Drone + Car)** or **E (Drone + Humanoid)**: the drone publishes target coordinates in a shared frame.
-- Security package: threat model (`[[Drone Link Threat Model]]`, suggested), SROS 2, and a **signed OTA** update on the D1 mini (the ESP8266 core supports RSA-2048 signed updates), with a tampered one rejected. This resolves OD-23 in [[PC_to_ESP]].
+- Security package: threat model (`[[Drone Link Threat Model]]`, suggested), SROS 2, and a **signed OTA** update on the ESP (the ESP8266 core supports RSA-2048 signed updates), with a tampered one rejected. This resolves OD-23 in [[PC_to_ESP]].
 - Interface contract with the partner team, enforced by contract tests in CI.
 
 ## 6. Glossary
@@ -67,7 +67,7 @@ See [[Study Plan v2]].
 | Term | Meaning |
 | --- | --- |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |

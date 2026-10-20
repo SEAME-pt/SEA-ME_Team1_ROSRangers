@@ -3,7 +3,7 @@
 The flash images are **not** in Git. The first one contains Wi-Fi credentials saved by `AT+CWJAP` / `AT+CWSAP`.
 They are kept outside the repositories, on the machine that made them.
 
-Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev board with an FTDI FT232R and micro-USB. **Not a Wemos D1 mini.**
+Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev board with an FTDI FT232R and micro-USB.
 
 | Item | Value |
 |---|---|

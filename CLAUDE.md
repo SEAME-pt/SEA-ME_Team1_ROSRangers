@@ -1,6 +1,6 @@
 # SEA-ME Team 1 (ROS Rangers): Code and docs repo
 
-Software and documentation for the SEA:ME 2026/27 autonomous drone: ESP8266 (D1 mini) firmware, C++ protocol library, ROS 2 ground nodes, simulation, CI and HIL tests, plus the plan, decisions (ADRs), architecture, hardware notes and team process.
+Software and documentation for the SEA:ME 2026/27 autonomous drone: ESP8266 firmware, C++ protocol library, ROS 2 ground nodes, simulation, CI and HIL tests, plus the plan, decisions (ADRs), architecture, hardware notes and team process.
 
 The documentation is an Obsidian vault in `docs/`. It was written in the team's docs repo (`ptorrao-git/SeameDocumentation`, folder `vaultSeame/`) and is copied here under issue #36. Check the relevant ADR before changing a design decision.
 
@@ -9,7 +9,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | Path | What |
 |---|---|
 | `docs/` | Documentation vault (see "Where to look in the docs") |
-| `drone/firmware/esp8266/` | D1 mini firmware (PlatformIO, env `d1_mini`, `d1_mini_ota`) |
+| `drone/firmware/esp8266/` | ESP firmware (PlatformIO, env `d1_mini`, `d1_mini_ota`) |
 | `drone/lib/protocol/` | C++ protocol library (CMake + GoogleTest, shared with firmware) |
 | `drone/ground/src/sd_protocol_py/` | Python implementation of the same protocol |
 | `drone/ground/src/flight_interface/` | ROS 2 lifecycle node (ground ↔ drone) |

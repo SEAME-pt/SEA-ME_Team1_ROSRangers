@@ -25,7 +25,7 @@ tags:
 6. Switch MSP Override on only when telemetry shows the ESP is `STREAMING` ([[ADR-010 MSP Override|ADR-010]]).
 7. Pre-arm checklist: battery charged and inspected, props tight and in the right direction, failsafe tested today, zone clear, nobody in the cage.
 8. LiPo: charge only at the lab station/bags, never unattended, land at 3.5 V/cell.
-9. ESP8266 GPIOs are 3.3 V. Feed 5 V only to the D1 mini **5V** pin. Never connect USB and the FC to the D1 mini at the same time ([[ADR-012 ESP UART Pins|ADR-012]]).
+9. ESP8266 GPIOs are 3.3 V. Feed 5 V only to the ESP **5V** pin. Never connect USB and the FC to the ESP at the same time ([[ADR-012 ESP UART Pins|ADR-012]]).
 10. HIL bench: **no LiPo** connected, ever.
 11. **Nothing is soldered to the FC** until the [[ESP Bench Test Plan]] Stages 1–2 and the [[ESP_to_FC]] §10 checklist have passed. (2026-10-20: the ESP was soldered on 2026-10-19 before these passed; logged as incident GitHub #69. The rule still applies to every new joint.)
 12. Every crash, incident or fault goes in GitHub Issues with cause and fix (program rule; spares are limited).
@@ -51,7 +51,7 @@ tags:
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |

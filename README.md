@@ -2,7 +2,7 @@
 
 Autonomous indoor drone for SEA:ME 2026/2027 (Portugal). A 2.5" Betaflight
 cinewhoop is controlled from a ground laptop running ROS 2 over Wi-Fi, through
-a D1 mini (ESP8266) soldered to the flight controller. The goal is
+a ESP8266 soldered to the flight controller. The goal is
 **gesture control**: a ground webcam and MediaPipe turn hand gestures into
 flight commands. The safety pilot's radio always has the last word.
 
@@ -24,7 +24,7 @@ flowchart LR
     MISSION --> FI["flight_interface<br/>lifecycle node"]
   end
   subgraph Drone["Drone (cage)"]
-    ESP["D1 mini ESP8266<br/>gateway + failsafe"]
+    ESP["ESP8266<br/>gateway + failsafe"]
     FC["OddityRC F7 AIO<br/>Betaflight"]
     ELRS[ELRS receiver]
   end
@@ -45,7 +45,7 @@ Authority order: safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe >
 |---|---|
 | Frame | Pilotix Brook 2.5" Cinewhoop 4S |
 | FC + ESC | OddityRC F7 40A AIO (STM32F722), Betaflight 4.5.1 |
-| Wi-Fi bridge | Wemos D1 mini (ESP8266) on FC UART4 |
+| Wi-Fi bridge | ESP8266 (ESP-12F) on FC UART4 |
 | Radio | BETAFPV ELRS Nano + RadioMaster Pocket |
 | Video | Ratel 2 camera, PandaRC VT5804 VTX |
 | Battery | CNHL 4S 850 mAh |
@@ -59,7 +59,7 @@ Full list: [Hardware Inventory](./docs/PraticalPlan/05%20Hardware/Hardware%20Inv
 | [`docs/`](./docs) | Documentation vault (plan, ADRs, architecture, hardware, process) |
 | [`scripts/`](./scripts) | Bench tools for the FC, the ESP and the Wi-Fi bridge |
 | [`firmware/esp8266/`](./firmware/esp8266) | Backup of the stock ESP8266 AT firmware |
-| [`drone/firmware/esp8266/`](./drone/firmware/esp8266) | Custom D1 mini firmware (PlatformIO, `d1_mini`) |
+| [`drone/firmware/esp8266/`](./drone/firmware/esp8266) | Custom ESP firmware (PlatformIO, `d1_mini`) |
 | [`drone/lib/protocol/`](./drone/lib/protocol) | C++ ground ↔ drone protocol library, shared with the firmware |
 | [`drone/ground/src/`](./drone/ground/src) | ROS 2 packages: `flight_interface`, `gesture_node`, `sd_protocol_py` |
 | [`drone/config/betaflight/`](./drone/config/betaflight) | Betaflight `diff all` / `status` baselines per version |

@@ -53,7 +53,7 @@ jobs:
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
 
-      - name: Flash the bench D1 mini over the air
+      - name: Flash the bench ESP over the air
         run: |
           . .venv/bin/activate
           pio run -d drone/firmware/esp8266 -e d1_mini_ota -t upload

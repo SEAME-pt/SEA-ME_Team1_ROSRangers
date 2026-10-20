@@ -34,7 +34,7 @@ tags:
 | [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions | FC-09, P2 (FC page) |
 | [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2 | ✅ Accepted | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
-| [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → D1 mini 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
+| [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
 | [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |

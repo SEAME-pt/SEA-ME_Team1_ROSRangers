@@ -6,7 +6,7 @@ date: 2026-10-12
 project: SEA autonomous drone
 aliases:
   - ESP8266 Bench Tests
-  - D1 mini tests
+  - ESP tests
 tags:
   - testing
   - esp8266
@@ -20,13 +20,13 @@ tags:
 > The original rule was: nothing is soldered to the flight controller until Stage 1 and Stage 2 have passed and the [[ESP_to_FC]] §10 checklist is complete. **On 2026-10-19 the ESP was soldered to FC UART4 (wires that are easy to remove) before that was complete**: S2-02 and S2-06 had only been rehearsed through a PC USB relay, and the §10 evidence on the soldered joints is still to be posted (GitHub #30). Fill in the result tables as you go and commit them.
 
 > [!info] Why test before soldering
-> Desoldering a D1 mini from a 2.5" AIO risks lifting the FC pads. Testing first also separates hardware problems from software problems.
+> Desoldering an ESP from a 2.5" AIO risks lifting the FC pads. Testing first also separates hardware problems from software problems.
 
 ---
 
-## 1. Stage 1 — D1 mini alone (USB, no drone)
+## 1. Stage 1 — ESP alone (USB, no drone)
 
-**Setup:** D1 mini on the laptop's USB. No FC connected. Tools: `esptool.py`, PlatformIO, a USB power meter.
+**Setup:** ESP on the laptop's USB. No FC connected. Tools: `esptool.py`, PlatformIO, a USB power meter.
 
 | ID | Test | What it proves | Pass criterion | Links |
 |---|---|---|---|---|
@@ -38,19 +38,19 @@ tags:
 | ESP-S1-06 | Same as S1-05 with sleep enabled | Why ADR-006 disables sleep | Difference recorded | ADR-006 |
 | ESP-S1-07 | TCP session open + UDP stream at the same time | TCP does not stall control | No UDP gap above the S1-05 max | [[ADR-005 TCP Session\|ADR-005]] |
 | ESP-S1-08 | Current draw with a USB power meter during Wi-Fi transmit | Whether the FC 5V rail can feed it | Peak and average mA recorded | FC-05, [[ADR-013 Wiring and Power\|ADR-013]] |
-| ESP-S1-09 | Range: laptop in the coding room, D1 mini in the cage | The link reaches through the building | S1-05 repeated at the real distance; loss and RTT recorded | ADR-006 |
+| ESP-S1-09 | Range: laptop in the coding room, ESP in the cage | The link reaches through the building | S1-05 repeated at the real distance; loss and RTT recorded | ADR-006 |
 | ESP-S1-10 | Watchdog: hang the loop on purpose | The ESP recovers on its own, in a safe state | Reboot + reset reason logged; no control output after reboot | REQ-SAF-016 (was REQ-FS-04) in [[PC_to_ESP]] |
 
 > [!tip] Reuse
 > S1-05 to S1-07 are the first version of the protocol code. Write them against the portable library so they become unit/HIL tests later ([[Testing Strategy]]).
 
-## 2. Stage 2 — D1 mini + FC on the bench, temporary wiring
+## 2. Stage 2 — ESP + FC on the bench, temporary wiring
 
 **Setup**
 
 - FC powered **by USB only**. **No battery, no props**: the motors cannot spin.
-- D1 mini connected to the FC with **temporary** wires (pogo pins, or wires held by tape and a clip). UART4 (T4/R4), or UART1 (T1/R1) if easier to reach ([[ADR-011 FC UART Allocation|ADR-011]]).
-- **The D1 mini's USB is never connected while the FC wires are attached** ([[ADR-012 ESP UART Pins|ADR-012]]). Power it from a USB power bank or the 5V pin. Logs go over Wi-Fi.
+- ESP connected to the FC with **temporary** wires (pogo pins, or wires held by tape and a clip). UART4 (T4/R4), or UART1 (T1/R1) if easier to reach ([[ADR-011 FC UART Allocation|ADR-011]]).
+- **The ESP's USB is never connected while the FC wires are attached** ([[ADR-012 ESP UART Pins|ADR-012]]). Power it from a USB power bank or the 5V pin. Logs go over Wi-Fi.
 - MSP enabled on the chosen UART at 115200, with the pre-change `diff all` saved ([[Betaflight Setup]]).
 
 | ID | Test | What it proves | Pass criterion | Links |
@@ -143,7 +143,7 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
