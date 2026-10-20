@@ -42,7 +42,7 @@ The program evaluates **individual** contributions, and everyone must understand
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

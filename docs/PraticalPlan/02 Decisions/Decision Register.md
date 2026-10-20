@@ -42,7 +42,7 @@ tags:
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner | ✅ Accepted | n/a |
-| [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | 🟡 Proposed (pending team approval) | n/a |
+| [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -65,7 +65,7 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |

@@ -511,6 +511,9 @@ Evidence (captures, logs, test records) is required for each.
 
 ## 11. Current recommendation and remaining decisions
 
+> [!warning] Superseded by [[ADR-016 Flow Sensor Path|ADR-016]] (2026-10-14)
+> The recommendation and the open list below are the 2026-10-12 state. ADR-016 supersedes them: no extra processor (Option C rejected, TF-11), the ESP SoftwareSerial experiment with a threshold agreed beforehand, and height from the FC DPS310 baro (TF-12). Read ADR-016 and the TF table in §10 first.
+
 ### Current recommendation (proposed, not decided)
 
 1. **Do not design around ESP8266 software serial.** Keep it as an experiment that must pass §9.3 before anyone depends on it.
@@ -541,8 +544,8 @@ Evidence (captures, logs, test records) is required for each.
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |

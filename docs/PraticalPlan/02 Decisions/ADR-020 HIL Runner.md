@@ -43,6 +43,6 @@ Details in [[HIL Runner]].
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

@@ -24,7 +24,7 @@ tags:
 | Target | `ODDITYRCF7AIO` (STM32F722) | [[2.5Drone]] |
 | UART2 | Serial RX (ELRS, CRSF) | [[ESP_to_FC]] §2 |
 | UART3 | IRC Tramp VTX | [[ESP_to_FC]] §2 |
-| UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). Nothing wired yet | [[ADR-011 FC UART Allocation\|ADR-011]] |
+| UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). The ESP is soldered to UART4 since 2026-10-19 | [[ADR-011 FC UART Allocation\|ADR-011]] |
 | UART1 / UART6 | unassigned | [[ESP_to_FC]] §2 |
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
 
@@ -76,7 +76,7 @@ Start with **DROP** in the cage (low altitude). Re-evaluate for the program's "h
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |

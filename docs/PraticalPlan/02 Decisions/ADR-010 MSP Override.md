@@ -64,7 +64,7 @@ MSP Override (mode ID 50), with these **mandatory conditions**:
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
