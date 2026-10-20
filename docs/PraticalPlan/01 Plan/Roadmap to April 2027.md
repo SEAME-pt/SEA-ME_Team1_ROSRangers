@@ -71,3 +71,5 @@ See [[Study Plan v2]].
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

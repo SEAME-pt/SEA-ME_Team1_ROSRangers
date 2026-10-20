@@ -3,6 +3,7 @@ title: Open Questions
 type: tracking
 status: active
 date: 2026-10-12
+updated: 2026-10-16
 project: SEA autonomous drone
 tags:
   - questions
@@ -73,3 +74,7 @@ tags:
 | **OSD** | On-Screen Display: the chip that draws flight data over the analog camera video. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
+| **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -1,5 +1,7 @@
 ---
 title: ESP8266 AT Commands and TCP/UDP for the Autonomous Drone
+type: guide
+status: draft
 date: 2026-10-13
 tags:
   - esp8266
@@ -542,7 +544,7 @@ flowchart LR
 ## 12. Project notes for the Brook drone
 
 > [!warning] Suggestions to verify
-> This section is **new**. It connects the ESP8266 notes to the hardware described in the [[README.en|Hardware README]]. None of it has been tested on the Brook.
+> This section is **new**. It connects the ESP8266 notes to the hardware described in the [[2.5Drone|Hardware README]]. None of it has been tested on the Brook.
 
 ### What our hardware already tells us
 
@@ -662,3 +664,8 @@ flowchart LR
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **RC** | Radio Control: the stick and switch channel values the FC receives. |
+| **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
+| **DHCP** | Dynamic Host Configuration Protocol: hands out IP addresses automatically (the ESP SoftAP uses static IPs instead). |

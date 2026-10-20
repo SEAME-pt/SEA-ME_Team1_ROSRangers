@@ -52,7 +52,7 @@ tags:
 
 - The ROS 2 / PX4 / Ubuntu version pairing in [[ADR-018 Ground OS and ROS 2|ADR-018]]: check the official pages before installing.
 - CLI command syntax in [[Betaflight Setup]]: confirm with `help` on your version.
-- The GitHub Actions workflows have not run on GitHub yet.
+- The GitHub Actions workflows run on every PR (see the Actions tab). The SITL and HIL jobs skip until their files exist.
 
 ## 5. Glossary
 
@@ -68,3 +68,8 @@ tags:
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **GND** | Ground: the common 0 V reference wire. |

@@ -30,7 +30,7 @@ tags:
 | Area | Notes |
 |---|---|
 | Plan | [[Study Plan v2]] · [[Roadmap to April 2027]] · [[Team Tracks]] · [[Weekly Rituals]] |
-| Decisions | [[Decision Register]] (ADR-001 to ADR-020) |
+| Decisions | [[Decision Register]] (ADR-001 to ADR-021; ADR-021 is proposed) |
 | Architecture | [[System Overview]] · [[Protocol Spec v0]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
 | Hardware | [[Hardware Inventory]] · [[Safety Rules]] |
@@ -68,3 +68,4 @@ tags:
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |

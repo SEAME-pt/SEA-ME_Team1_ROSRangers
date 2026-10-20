@@ -1,3 +1,12 @@
+---
+title: SEA:ME — Development Plan
+type: plan
+status: active
+date: 2026-10-15
+project: SEA autonomous drone
+tags: [plan]
+---
+
 # SEA:ME — Development Plan
 
 ## 1. Project Development Strategy
@@ -192,3 +201,6 @@ See [[Dev_Strategy]] §23. Project-specific additions:
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

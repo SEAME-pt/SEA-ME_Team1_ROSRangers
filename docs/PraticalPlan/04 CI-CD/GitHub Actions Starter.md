@@ -12,11 +12,11 @@ tags:
 # GitHub Actions Starter
 
 > [!warning] Status: STARTER. Adapt as the software repo grows.
-> Both workflow files parse as valid YAML (checked 2026-10-12). They have not run on GitHub yet. Jobs reference folders from [[Repository Layout]], so add each job when its folder exists: a job for a missing folder fails.
+> Both workflow files parse as valid YAML (checked 2026-10-12). The real files are `.github/workflows/ci.yaml` and `hil.yaml` and they have run on GitHub; they have drifted from this first draft (paths now start with `drone/`, and each job is gated by a component check). Treat the repo files as the source of truth.
 
 ---
 
-## 1. `.github/workflows/ci.yml`
+## 1. `.github/workflows/ci.yaml`
 
 Runs on PRs into `dev` and `main` and on pushes to both, as required by [[Dev_Strategy]] §11.
 
@@ -117,7 +117,7 @@ jobs:
           pytest tests/sitl -v
 ```
 
-## 2. `.github/workflows/hil.yml`
+## 2. `.github/workflows/hil.yaml`
 
 Runs on pushes to `dev`/`main` and manually. It **never** runs on PRs from forks: a self-hosted runner executes the workflow's code on our Pi ([[HIL Runner]]).
 
@@ -252,3 +252,4 @@ Anything reviewers should know?
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

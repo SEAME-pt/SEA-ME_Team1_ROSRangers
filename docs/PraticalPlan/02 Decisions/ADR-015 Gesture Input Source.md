@@ -45,3 +45,5 @@ Gestures come from a **webcam on the ground computer**. The drone's video is use
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |

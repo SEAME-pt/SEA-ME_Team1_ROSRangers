@@ -230,13 +230,11 @@ Only `__init__.py`, `gesture_filter.py` and `gesture_node.py` go in the inner `g
 
 | Term | Meaning |
 | --- | --- |
-| **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
 | **JSON** | A text format for structured data, used inside the UDP packets and the `String` messages. |
 | **Keep-alive** | A small periodic message that proves the sender is still running. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
-| **rclpy** | The ROS 2 Python client library used to write nodes. |
+| **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
-| **Stability filter** | The rule that a gesture must be seen in several packets in a row before it counts. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |

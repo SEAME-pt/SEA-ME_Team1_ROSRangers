@@ -56,3 +56,5 @@ tags:
 | **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

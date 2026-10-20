@@ -58,3 +58,5 @@ If permission is refused: stay on 4.5.1, use masks 8/11 only, the ESP streams ne
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -87,7 +87,7 @@ A 4-pin locking connector between the FC pads and the D1 mini. Pin order to reco
 | D8 (GPIO15) | boot strapping (must be low at boot) |
 | TX / RX | shared with USB: never connect USB and the FC together ([[ADR-012 ESP UART Pins\|ADR-012]]) |
 
-Free for later: D1 (GPIO5) / D2 (GPIO4) as I2C (ToF rangefinder or flow-bridge MCU, [[ADR-016 Flow Sensor Path|ADR-016]]), D6, D7.
+Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flow-bridge MCU were rejected on 2026-10-14, [[ADR-016 Flow Sensor Path|ADR-016]].)
 
 ## 4. Glossary
 
@@ -102,3 +102,7 @@ Free for later: D1 (GPIO5) / D2 (GPIO4) as I2C (ToF rangefinder or flow-bridge M
 | **OSD** | On-Screen Display: the chip that draws flight data over the analog camera video. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **GND** | Ground: the common 0 V reference wire. |

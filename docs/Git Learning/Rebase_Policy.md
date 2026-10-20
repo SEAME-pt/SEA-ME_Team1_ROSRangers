@@ -1,5 +1,8 @@
 ---
 title: Rebase Policy
+type: guide
+status: active
+date: 2026-10-15
 tags:
   - git
   - rebase

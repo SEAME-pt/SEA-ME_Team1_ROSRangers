@@ -1,16 +1,18 @@
 ---
 title: Study Plan v2 — Sprint 0 and Module 1
+type: plan
+date: 2026-10-15
 status: active
 version: 2.1
 project: SEA autonomous drone
 covers: Sprint 0 (7–16 Oct 2026) + Module 1 (19 Oct – 11 Dec 2026)
-replaces: "[[plano_de_estudo]] (v1, single learner, 8 weeks)"
+replaces: "v1 plan (single learner, 8 weeks; archived in Outdated/)"
 tags: [plan]
 ---
 
 # Study Plan v2 — Sprint 0 and Module 1
 
-> [!summary] What changed from v1 ([[plano_de_estudo]])
+> [!summary] What changed from v1 (single learner, 8 weeks; archived in `Outdated/`)
 > - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner.
 > - Aligned to the **Module 1 deliverables**: architecture document, green CI (>80% coverage + HIL), real-time profile, sim-to-real report, E-stop under fault injection, sprint demos every 2 weeks.
 > - **Gestures are part of the plan.** The webcam prototype already exists ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
@@ -54,7 +56,7 @@ tags: [plan]
 - [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
 - [x] Decisions accepted ([[Decision Register]])
 
-### 2.2 To do this week (12–16 Oct)
+### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-16)
 
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
@@ -62,7 +64,7 @@ tags: [plan]
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
 - [ ] Back up the D1 mini **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
-- [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU still open.
+- [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU answered on 2026-10-14: neither ([[ADR-016 Flow Sensor Path|ADR-016]]).
 - [x] XT30 → XT60 adapter received; battery checked (2026-10-16, [[Battery Log]], GitHub #19)
 
 ---
@@ -166,3 +168,17 @@ See also [[Weekly Rituals]].
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
+| **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **RTT** | Round-trip time: how long a packet takes to go out and come back. |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |
+| **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
+| **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

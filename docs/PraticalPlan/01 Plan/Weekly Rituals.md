@@ -31,7 +31,7 @@ tags:
 - [ ] Incidents and crashes logged as GitHub Issues (program rule)
 - [ ] Measurements saved (latency, jitter, flow error)
 - [ ] Safety reviewed
-- [ ] Vault updated, [[To Do]] refreshed
+- [ ] Vault updated, board refreshed (Status, Sprint, Phase fields)
 
 ## 3. Glossary
 

@@ -46,7 +46,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK.
 5. Store the PSK as the repo secret `SD_PSK_HIL`.
 
-## 4. First HIL tests (`tests/hil/`)
+## 4. First HIL tests (`drone/tests/hil/`)
 
 1. **Smoke:** OTA flash → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received.
 2. **Passthrough:** send a SETPOINT → read `MSP_RC` from the FC over USB → expected channel values (checks the AETR mapping end to end).
@@ -71,3 +71,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
 | **ESC** | Electronic Speed Controller: hardware that drives a motor. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
+| **RTT** | Round-trip time: how long a packet takes to go out and come back. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

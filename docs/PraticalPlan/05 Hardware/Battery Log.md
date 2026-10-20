@@ -47,3 +47,5 @@ tags:
 | **LiPo** | Lithium-polymer battery. |
 | **Storage voltage** | Per-cell voltage at which a LiPo is kept when not in use, to slow ageing. |
 | **XT30 / XT60** | Common power connectors for small and medium drone batteries. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |

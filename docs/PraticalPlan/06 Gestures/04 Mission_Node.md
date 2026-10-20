@@ -292,3 +292,9 @@ To be registered in [[Dev_Strategy]] §15 style:
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **TwistStamped** | Standard ROS 2 message holding a linear and angular velocity with a timestamp and frame. |
 | **Watchdog** | A timer that triggers a safe action when expected messages stop arriving. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
+| **JSON** | A text format for structured data. |
+| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |

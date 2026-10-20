@@ -49,3 +49,4 @@ Use a small locking 4-pin connector (e.g. JST-SH or JST-GH), with the pin order 
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

@@ -535,7 +535,7 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 | **BGR / RGB** | Orders of the three colour channels. OpenCV uses BGR, MediaPipe RGB. |
 | **Landmark** | One of the 21 tracked points on a hand (wrist, knuckles, finger joints and tips). |
 | **MCP / PIP / IP** | Finger joints: knuckle, middle joint, and the thumb's single middle joint. |
-| **MediaPipe** | A Google framework used here to detect hands and their landmarks. |
+| **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **NumPy array** | The image format passed to MediaPipe: RGB, `uint8`, shape `(height, width, 3)`. |
 | **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
@@ -543,3 +543,4 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 | **Tasks API** | MediaPipe's newer API (`HandLandmarker`) that replaces the removed `mp.solutions`. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
+| **API** | Application Programming Interface: a defined way for software components to communicate. |
