@@ -25,6 +25,8 @@ The program evaluates **individual** contributions, and everyone must understand
 | D · CI/CD & Test | workflows, coverage gates, static analysis, SITL job, [[HIL Runner]] | B | green pipeline, HIL job |
 | E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline|Gesture Pipeline]] | C | sim-to-real report |
 
+**Owners (2026-10-20):** A · BrunoBMFT, C · Dot99. The team assigns B, D and E internally.
+
 ## 2. Rules
 
 - Every PR is reviewed by people **outside** the author's track (knowledge spreads): **1 approving review** on PRs into `dev`, **2** on `dev` → `main` (team decision 2026-10-20, [[ADR-017 Branching Model|ADR-017]]). Merge rules follow [[Dev_Strategy]] §8–§9.

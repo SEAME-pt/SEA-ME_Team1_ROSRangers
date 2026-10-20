@@ -113,7 +113,16 @@ Autonomous Flight
 
 Document significant test results.
 
-**Exit criterion (proposed, 2026-10-20):** each stage above passes with its results documented before the next one starts. Nothing moves past bench testing without the checks in [[Safety Rules]] and the safety pilot's approval, and autonomous flight needs a documented controlled flight first.
+**Exit criterion (proposed, 2026-10-20).** Each stage has a gate. A stage starts only when the previous gate has passed and its results are written down (test report, log or video linked from the issue). Any incident sends the work back one stage until its issue is closed ([[Safety Rules]] #12).
+
+| Gate | Before moving on, all of this holds |
+|---|---|
+| Simulation → bench | The feature passes in SITL or unit tests in CI, and the related requirements in [[Requirements]] have a test. |
+| Bench → controlled hardware | [[ESP Bench Test Plan]] stages for the feature pass, props off. The radio failsafe (TX off) is tested on the current firmware. |
+| Controlled hardware → controlled flight | Pilot takeover works on the bench under fault injection (REQ-SAF-002, REQ-SAF-005). Pre-flight checklist done. Safety pilot plus a second person present (Safety Rules #4, #15). No open safety-critical incident. |
+| Controlled flight → autonomous flight | At least 3 controlled cage flights without incident on the same firmware and `diff all`. Link loss tested in the cage (REQ-SAF-009, REQ-SAF-013, REQ-SAF-014). Position hold meets REQ-NAV-002. |
+
+Phase 5 is done when an autonomous flight in the cage has passed with every `REQ-SAF` requirement verified, and the results are in the vault.
 
 ---
 
