@@ -23,7 +23,7 @@ Follows the Module 1 reference layering: mission → ROS 2 → hardware abstract
 flowchart LR
   subgraph Room["Coding room (ground)"]
     CAM[Webcam] --> GEST["gesture recogniser<br/>MediaPipe, own venv"]
-    GEST --> GN[gesture_node]
+    GEST --> GN[intent_node]
     GN -->|/gesture/intent| MISSION[mission / controller]
     EST["estimator<br/>flow + IMU + height"] --> MISSION
     MISSION -->|setpoints| FI["flight_interface<br/>lifecycle node"]
@@ -59,7 +59,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
-| Webcam + MediaPipe | ≥ 20 FPS | [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] |
+| Webcam + MediaPipe | ≥ 20 FPS | [[02 Gesture Node|Gesture Recognition Program]] |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.
 

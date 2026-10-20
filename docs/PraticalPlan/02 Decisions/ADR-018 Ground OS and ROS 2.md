@@ -20,7 +20,7 @@ tags:
 ## 1. Decision
 
 - **Ubuntu 24.04 LTS + ROS 2 Jazzy (LTS)**, the same image on every laptop and in CI (`ros:jazzy` container).
-- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] (`mediapipe==0.10.21`).
+- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[02 Gesture Node|Gesture Recognition Program]] (`mediapipe==0.10.21`).
 
 ## 2. Consequences
 
