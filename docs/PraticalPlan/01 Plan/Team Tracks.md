@@ -30,7 +30,7 @@ The program evaluates **individual** contributions, and everyone must understand
 - Every PR is reviewed by two people **outside** the author's track (knowledge spreads). Merge rules follow [[Dev_Strategy]] §8–§9.
 - Each person gives one 20-min **teach-back** per sprint on their track.
 - Rotate one person between tracks each sprint. CI (D) and Safety (A) keep one stable owner.
-- Safety pilot: at least 2 trained people. Nobody flies alone.
+- Safety pilot: at least 2 trained people. Nobody flies alone ([[Safety Rules]] #15). The safety induction is done (GitHub #13, closed, 2026-10-20). Named safety pilot: BrunoBMFT. Second safety pilot: to be named.
 
 ## 3. Glossary
 

@@ -60,6 +60,11 @@ tags:
 - [x] What exactly are the CAM and DV5V pads used for on this board? → camera video in, receiver 5 V (#17 above)
 - [x] Is the ELRS red (5 V) wire on **DV5V** or on a **5V** pad? → **5V** (team, 2026-10-16). Moving it to DV5V: GitHub #41.
 
+### Safety
+- [ ] **Network isolation for the transparent bridge:** is an isolated network needed, or is the shared SEAME Wi-Fi acceptable? Under evaluation (team, 2026-10-20). Not a rule yet ([[Safety Rules]] §2).
+- [ ] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Team to decide (2026-10-20).
+- [ ] Name the second trained safety pilot (BrunoBMFT is the first).
+
 ### Tests
 - [ ] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? (week 2)
 - [ ] ThoneFlow frame rate (66 vs 25 Hz), byte order and checksum (week 3, [[ThoneFlow]] §9.2).

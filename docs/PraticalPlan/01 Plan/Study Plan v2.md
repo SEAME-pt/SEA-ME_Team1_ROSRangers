@@ -58,7 +58,7 @@ tags: [plan]
 
 ### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-16)
 
-- [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
+- [x] Safety induction done ([[Safety Rules]]); props-off rule agreed by all (GitHub #13, closed). Safety pilot: BrunoBMFT
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
@@ -140,7 +140,7 @@ tags: [plan]
 ## 11. Exit criteria for Module 1 (from the program README)
 
 - [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage.
-- [ ] Link loss → hover or controlled landing.
+- [ ] Link loss → drone holds position (neutral sticks) and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20). Betaflight's own RX failsafe (DROP on radio loss) is a separate failsafe.
 - [ ] Green CI: build, unit tests, static analysis, coverage > 80%, HIL job.
 - [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection.
 

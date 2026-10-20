@@ -63,7 +63,7 @@ UART2 (ELRS) and UART3 (Tramp) are **left untouched** (SAF-08). Set the modes in
 | `failsafe_recovery_delay` | 5 | 0.5 s of valid data to recover |
 | RX loss detection | ~100 ms, then the last values are held for 300 ms | then Stage 1 values (sticks centred, throttle low) |
 
-Start with **DROP** in the cage (low altitude). Re-evaluate for the program's "hover or controlled landing" requirement after the upgrade.
+Start with **DROP** in the cage (low altitude). These values are Betaflight's own RX failsafe (radio loss). The program's link-loss requirement is a different failsafe: on **ESP link loss** the drone holds position with neutral sticks and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20). Re-evaluate the DROP choice after the upgrade.
 
 ## 6. Glossary
 
