@@ -536,7 +536,7 @@ flowchart LR
 ## 11. Open questions from the test notes
 
 - [ ] Which camera hardware will be used: an ESP32-CAM or another module?
-- [ ] Which flight controller and software stack (ArduPilot, PX4, other)? *(See section 12: our board runs Betaflight.)*
+- [x] Which flight controller and software stack (ArduPilot, PX4, other)? **Answered 2026-10-20: Betaflight 4.5.1** on the OddityRC F7 40A AIO (section 12).
 - [ ] Will the links carry your own structured messages or an existing protocol such as MAVLink?
 
 ---

@@ -5,7 +5,7 @@ date: 2026-10-15
 status: active
 version: 2.1
 project: SEA autonomous drone
-covers: Sprint 0 (7–16 Oct 2026) + Module 1 (19 Oct – 11 Dec 2026)
+covers: Sprint 0 (7–18 Oct 2026) + Module 1 (19 Oct – 11 Dec 2026)
 replaces: "v1 plan (single learner, 8 weeks; archived in Outdated/)"
 tags: [plan]
 ---
@@ -44,7 +44,7 @@ tags: [plan]
 
 ---
 
-## 2. Sprint 0 — status (7–16 Oct)
+## 2. Sprint 0 — status (7–18 Oct)
 
 ### 2.1 Done in week 1 (7–9 Oct) and so far
 
@@ -56,7 +56,7 @@ tags: [plan]
 - [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
 - [x] Decisions accepted ([[Decision Register]])
 
-### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-16)
+### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-18)
 
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
@@ -90,7 +90,7 @@ tags: [plan]
 | A | Upgrade to **2026.6.2** ([[Betaflight Setup]]). Re-enter the configuration by hand (don't paste the 4.5 diff). Try a cloud build with ALTHOLD if the baro works and it fits. Re-test failsafe, re-fly hover. Save the new `diff all`. |
 | B | **Stage 2 of the [[ESP Bench Test Plan]]**: D1 mini ↔ FC with **temporary wires** (no soldering), FC on USB only. Enable MSP 115200. **Transparent UART↔UDP bridge spike** (props off, isolated network only). Measure RTT, max and loss. **Solder only after Stage 2 passes** and the [[ESP_to_FC]] §10 checklist is done ([[Wiring and Pinout]]). |
 | C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. |
-| D | C++ protocol library skeleton + GoogleTest + gcovr gate (start at 50%, rise to 80%). PlatformIO build job for `d1_mini`. |
+| D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `d1_mini`. |
 | E | Measure Wi-Fi ↔ ELRS coexistence with Track A: Wi-Fi channels 1/6/11, watch ELRS LQ in the OSD. |
 
 **Demo:** FC attitude visible in ROS 2 over Wi-Fi with measured latency. The upgraded drone flies. ESP bench results (Stages 1–2) committed.

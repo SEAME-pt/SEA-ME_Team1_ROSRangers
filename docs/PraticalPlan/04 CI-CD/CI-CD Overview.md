@@ -46,7 +46,7 @@ flowchart LR
 
 1. Software repo with `main` + `dev` and protection ([[Branch_Protection]], [[Repository Layout]]).
 2. pre-commit: clang-format, ruff, end-of-file, trailing whitespace.
-3. Empty C++ lib + 1 GoogleTest, coverage gate at **50%** → raise to 80% by week 6.
+3. Empty C++ lib + 1 GoogleTest, coverage gate at **80%** from the start (as in `ci.yaml`). The target is 100%.
 4. pytest skeleton for the ground packages.
 5. PlatformIO build of a "hello" firmware for `d1_mini`.
 6. `drone/config/betaflight/` with the `diff all` files, reviewed like code.

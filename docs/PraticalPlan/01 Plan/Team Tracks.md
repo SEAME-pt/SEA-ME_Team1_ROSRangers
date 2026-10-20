@@ -27,7 +27,7 @@ The program evaluates **individual** contributions, and everyone must understand
 
 ## 2. Rules
 
-- Every PR is reviewed by two people **outside** the author's track (knowledge spreads). Merge rules follow [[Dev_Strategy]] §8–§9.
+- Every PR is reviewed by people **outside** the author's track (knowledge spreads): **1 approving review** on PRs into `dev`, **2** on `dev` → `main` (team decision 2026-10-20, [[ADR-017 Branching Model|ADR-017]]). Merge rules follow [[Dev_Strategy]] §8–§9.
 - Each person gives one 20-min **teach-back** per sprint on their track.
 - Rotate one person between tracks each sprint. CI (D) and Safety (A) keep one stable owner.
 - Safety pilot: at least 2 trained people. Nobody flies alone.

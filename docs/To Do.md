@@ -6,7 +6,7 @@ date: 2026-10-15
 tags: [legacy]
 ---
 
-> Legacy. Tasks live in GitHub Issues and the project board.
+> Legacy, archived 2026-10-20. Tasks live in GitHub Issues and the project board. Every item below is done (issue number in brackets) except the two personal study items, which stay open.
 
 # Dev_Strategy Document
 ---
@@ -18,16 +18,16 @@ tags: [legacy]
 - [ ] ==🔴 Deep Study of the following points (10 to 25)==
 - [ ] ==🟡Search about cherry pick github==
 
-# Sprint 0 — week 2 (12–16 Oct)
+# Sprint 0 — week 2 (12–18 Oct)
 ---
-- [ ] ==🔴 Safety induction for everyone== ([[Safety Rules]])
-- [ ] ==🔴 Save `diff all` + `status` (Betaflight 4.5.1)==
+- [x] ==🔴 Safety induction for everyone== ([[Safety Rules]]) (#13)
+- [x] ==🔴 Save `diff all` + `status` (Betaflight 4.5.1)== (#14)
 - [x] ==🔴 Re-check the barometer: DPS310 detected (2026-10-14)==
-- [ ] ==🟠 Create the software repo with `main` + `dev` and branch protection== ([[Repository Layout]])
-- [ ] ==🟠 Back up the D1 mini AT firmware (`esptool.py read_flash`)== ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]])
-- [ ] ==🟠 Ask instructors: reflash permission, lab HIL runners, ROS 2 distro, ToF/MCU for the flow sensor== ([[Open Questions]])
-- [ ] ==🟡 Confirm the ELRS wires on R2/T2 with a multimeter==
-- [ ] ==🟡 Review and merge `docs/vault-update-2026-10-12`== ([[Decision Register]])
+- [x] ==🟠 Create the software repo with `main` + `dev` and branch protection== ([[Repository Layout]]) (repo created)
+- [x] ==🟠 Back up the D1 mini AT firmware (`esptool.py read_flash`)== ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]) (#17)
+- [x] ==🟠 Ask instructors: reflash permission, lab HIL runners, ROS 2 distro, ToF/MCU for the flow sensor== ([[Open Questions]]) (#18)
+- [x] ==🟡 Confirm the ELRS wires on R2/T2 with a multimeter== (#16)
+- [x] ==🟡 Review and merge `docs/vault-update-2026-10-12`== ([[Decision Register]]) (vault merged via #36)
 
 
 ## Glossary

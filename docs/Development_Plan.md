@@ -21,7 +21,7 @@ The phases below map onto the program modules:
 
 | Phase | Program period | Plan |
 |---|---|---|
-| 1 Project Setup | Sprint 0 (7–16 Oct) + Module 1 weeks 1–2 | [[Study Plan v2]] §2–§4 |
+| 1 Project Setup | Sprint 0 (7–18 Oct) + Module 1 weeks 1–2 | [[Study Plan v2]] §2–§4 |
 | 2 Core Components | Module 1 weeks 2–4 | [[Study Plan v2]] §4–§6 |
 | 3 Integration | Module 1 weeks 5–8 | [[Study Plan v2]] §7–§10 |
 | 4 Autonomous Behavior | Module 2 (14 Dec – 26 Feb) | [[Roadmap to April 2027]] §4 |
@@ -113,6 +113,8 @@ Autonomous Flight
 
 Document significant test results.
 
+**Exit criterion (proposed, 2026-10-20):** each stage above passes with its results documented before the next one starts. Nothing moves past bench testing without the checks in [[Safety Rules]] and the safety pilot's approval, and autonomous flight needs a documented controlled flight first.
+
 ---
 
 ## Phase 6 — Stabilization
@@ -160,7 +162,7 @@ Promotion to `main` requires the additional validation appropriate to the releas
 In order. When time is short, cut from the bottom.
 
 1. **Safety:** pilot takeover, failsafe at every layer ([[ADR-004 ESP Failsafe|ADR-004]], [[ADR-010 MSP Override|ADR-010]]).
-2. **CI + HIL:** green pipeline, coverage > 80% (Module 1 deliverable).
+2. **CI + HIL:** green pipeline, coverage > 80% (Module 1 deliverable; the gate is 80%, the target is 100%).
 3. **End-to-end link:** ground ↔ ESP ↔ FC with measured latency ([[PC_to_ESP]], [[ESP_to_FC]]).
 4. **Position hold** in the cage (Module 1 demo).
 5. **Gesture control** ([[00 Gesture Pipeline|Gesture Pipeline]]).
@@ -170,7 +172,7 @@ In order. When time is short, cut from the bottom.
 
 | Date | Milestone | Version tag on `main` |
 |---|---|---|
-| 16 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction | – |
+| 18 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction | – |
 | 30 Oct 2026 | Sprint 1 demo: FC telemetry in ROS 2 over Wi-Fi; Betaflight upgraded | – |
 | 13 Nov 2026 | Sprint 2 demo: failsafe under fault injection (bench); HIL job green | – |
 | 27 Nov 2026 | Sprint 3 demo: position hold in the cage + PX4 SITL | – |
