@@ -1,6 +1,6 @@
 # SEA-ME Team 1 (ROS Rangers): Code and docs repo
 
-Software and documentation for the SEA:ME 2026/27 autonomous drone: ESP8266 (D1 mini) firmware, C++ protocol library, ROS 2 ground nodes, simulation, CI and HIL tests, plus the plan, decisions (ADRs), architecture, hardware notes and team process.
+Software and documentation for the SEA:ME 2026/27 autonomous drone: ESP8266 firmware, C++ protocol library, ROS 2 ground nodes, simulation, CI and HIL tests, plus the plan, decisions (ADRs), architecture, hardware notes and team process.
 
 The documentation is an Obsidian vault in `docs/`. It was written in the team's docs repo (`ptorrao-git/SeameDocumentation`, folder `vaultSeame/`) and is copied here under issue #36. Check the relevant ADR before changing a design decision.
 
@@ -9,7 +9,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | Path | What |
 |---|---|
 | `docs/` | Documentation vault (see "Where to look in the docs") |
-| `drone/firmware/esp8266/` | D1 mini firmware (PlatformIO, env `d1_mini`, `d1_mini_ota`) |
+| `drone/firmware/esp8266/` | ESP firmware (PlatformIO, env `d1_mini`, `d1_mini_ota`) |
 | `drone/lib/protocol/` | C++ protocol library (CMake + GoogleTest, shared with firmware) |
 | `drone/ground/src/sd_protocol_py/` | Python implementation of the same protocol |
 | `drone/ground/src/flight_interface/` | ROS 2 lifecycle node (ground ↔ drone) |
@@ -53,6 +53,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 ## Git workflow
 
 - `main` (stable) and `dev` (integration) are protected. Never push to them directly.
+- **Reuse before creating.** Before opening a new issue, branch or PR, check what's already open (`gh pr list`, `gh issue list`, `git branch -r`). If an open PR or branch covers the same topic or the same files, push the change there, note it in the PR (description or a comment), and reference the existing issue. Create a new issue + branch + PR only when nothing related is open.
 - Branch from `dev`: `feature/<issue>-<topic>` or `bugfix/<issue>-<topic>`. Every branch has an issue, and every feature goes through a PR into `dev`.
 - PR into `dev` using `.github/pull_request_template.md`. Put `Closes #N` in the description, or `Refs #N` if the issue must stay open (for example a spike that still needs bench results).
 - Feature → `dev`: squash merge. `dev` → `main`: merge commit + tag (`v0.1.0` at Module 1 end).

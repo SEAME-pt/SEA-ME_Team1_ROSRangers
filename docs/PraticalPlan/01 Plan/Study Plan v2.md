@@ -31,7 +31,7 @@ tags: [plan]
 | Rhythm | 5 days/week, about 8 h/day per person |
 | Daily split | 1 h review + goal, 2 h study, 4 h practice, 1 h documentation |
 | Records | English (code, notes, this vault) |
-| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, D1 mini, ThoneFlow-3901U (not installed), MS210x USB video grabber |
+| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, ThoneFlow-3901U (not installed), MS210x USB video grabber |
 | Flight | Netted cage only, safety pilot on the radio ([[Safety Rules]]) |
 
 ### Tracks (details in [[Team Tracks]])
@@ -63,7 +63,7 @@ tags: [plan]
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
-- [ ] Back up the D1 mini **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
+- [ ] Back up the ESP **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
 - [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU answered on 2026-10-14: neither ([[ADR-016 Flow Sensor Path|ADR-016]]).
 - [x] XT30 → XT60 adapter received; battery checked (2026-10-16, [[Battery Log]], GitHub #19)
 
@@ -76,7 +76,7 @@ tags: [plan]
 | Track | Practice |
 |---|---|
 | A | Bind ELRS, ARM + kill switches, props-off motor test, failsafe test with the TX off (props off), first short Angle-mode hover in the cage on **4.5.1** (baseline). |
-| B | Read `MSP_API_VERSION`, `MSP_STATUS`, `MSP_ATTITUDE` over the FC's USB in Python (pyserial). **D1 mini alone: Stage 1 of the [[ESP Bench Test Plan]]** (backup, blink, SoftAP, UDP latency, current draw, range, watchdog). |
+| B | Read `MSP_API_VERSION`, `MSP_STATUS`, `MSP_ATTITUDE` over the FC's USB in Python (pyserial). **ESP alone: Stage 1 of the [[ESP Bench Test Plan]]** (backup, blink, SoftAP, UDP latency, current draw, range, watchdog). |
 | C | Install Ubuntu 24.04 + ROS 2 Jazzy, do the CLI/rclpy tutorials. Create the `flight_interface` package skeleton (lifecycle node). |
 | D | Software repo skeleton, pre-commit, first workflow green on `dev`: lint + empty C++ test + pytest ([[GitHub Actions Starter]]). |
 | E | Install PX4 SITL + Gazebo, run the default quad, fly offboard from the ROS 2 example. |
@@ -157,7 +157,7 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |

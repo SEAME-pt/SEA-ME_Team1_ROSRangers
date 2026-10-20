@@ -67,7 +67,7 @@ The decision above is unchanged. This entry fixes what "safe" means for the **ES
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |

@@ -44,7 +44,7 @@ tags:
 ## 4. CLI for the ESP link (after approval)
 
 ```text
-# UART4 = MSP for the D1 mini (serial id 3), function MSP (1), 115200
+# UART4 = MSP for the ESP (serial id 3), function MSP (1), 115200
 serial 3 1 115200 57600 0 115200
 # MSP Override, stage 1 = yaw only (raw AETR bit 3)
 set msp_override_channels_mask = 8

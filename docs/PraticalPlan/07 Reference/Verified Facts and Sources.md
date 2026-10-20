@@ -60,7 +60,7 @@ tags:
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |

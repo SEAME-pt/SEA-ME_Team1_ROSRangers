@@ -20,7 +20,7 @@ The program evaluates **individual** contributions, and everyone must understand
 | Track | Owns | Pairs with | Module 1 evidence |
 |---|---|---|---|
 | A · Flight & Safety | Betaflight config + upgrade, ELRS, failsafe, flight tests, safety-pilot rota, [[Safety Rules]] | B (override tests) | failsafe videos, `diff all` history, flight log |
-| B · Embedded Link | D1 mini firmware, MSP, C++ protocol lib, ThoneFlow reader | A, D | [[ESP Link State Machine]], unit tests, HIL passing, [[ESP_to_FC]] §11 results |
+| B · Embedded Link | ESP firmware, MSP, C++ protocol lib, ThoneFlow reader | A, D | [[ESP Link State Machine]], unit tests, HIL passing, [[ESP_to_FC]] §11 results |
 | C · Ground & ROS 2 | `flight_interface` lifecycle node, Python protocol, controller | E | node graph, message contracts |
 | D · CI/CD & Test | workflows, coverage gates, static analysis, SITL job, [[HIL Runner]] | B | green pipeline, HIL job |
 | E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline|Gesture Pipeline]] | C | sim-to-real report |

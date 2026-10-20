@@ -22,7 +22,7 @@ tags:
 > This page describes a **proposed** serial link. **No wiring or firmware change has been approved based solely on this proposal.** Nothing here has been physically validated: not UART4, not MSP override, not any pin or pad connection. Pad locations, protocol payloads, baud rate and timeout values are deliberately **not** specified and appear as open decisions in [§12](#12-acceptance-criteria-and-unresolved-decisions).
 
 > [!info] Update 2026-10-20: hardware state
-> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266, Wemos D1 mini class) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
+> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
 > The team accepted the proposals on this page. Rows marked **Accepted (ADR-0xx)** below are decided. See the linked ADR for the reasoning, and the [[Decision Register]] for the full list. Where an ADR differs from the earlier "Recommended" text, **the ADR wins** (it supersedes it).
@@ -80,7 +80,7 @@ Describe the **proposed** serial link between the ESP8266 Wi-Fi bridge and the O
 | FC MCU | STM32F722 |
 | Installed FC firmware | Betaflight 4.5.1 |
 | FC role | Inner attitude/rate stabilisation |
-| ESP8266 board | D1 mini-style board |
+| ESP8266 board | ESP-12F (ESP8266) dev board |
 | ESP8266 firmware | AT firmware version 1.7.4.0, SDK 3.0.5 |
 | Ground computer | Intended to run ROS 2 and higher-level control logic |
 | FC CLI: UART2 | Configured for Serial RX |
@@ -134,7 +134,7 @@ Describe the **proposed** serial link between the ESP8266 Wi-Fi bridge and the O
 flowchart LR
     GC["Ground computer<br/>ROS 2 · mission logic"]
     subgraph DRONE["Drone"]
-        ESP["ESP8266 (D1 mini-style)<br/>UART0: GPIO1 TX / GPIO3 RX<br/>(proposed; AT firmware today)"]
+        ESP["ESP8266<br/>UART0: GPIO1 TX / GPIO3 RX<br/>(proposed; AT firmware today)"]
         subgraph FC["OddityRC F722AIO · Betaflight 4.5.1 · target ODDITYRCF7AIO"]
             U4["UART4<br/>MSP (PROVISIONAL, UNVALIDATED)"]
             U2["UART2<br/>Serial RX"]
@@ -172,7 +172,7 @@ Betaflight UART numbering and board silkscreen labels may not match; do not assu
 ### 4.3 ESP8266 side
 
 - **Proposed port:** UART0 on GPIO1 (TX) and GPIO3 (RX). This is the main full-duplex hardware UART.
-- **Shared with USB-to-serial:** on a D1 mini-style board the onboard USB-to-serial adapter shares these UART0 pins. If both the adapter (USB connected) and the FC drive the line, **electrical contention may occur**. How to avoid this during bench work and in the final installation is an open decision (§10, §12). Do not connect the FC to UART0 while USB is connected until the team has decided and verified how to handle this.
+- **Shared with USB-to-serial:** on an ESP8266 dev board the onboard USB-to-serial adapter shares these UART0 pins. If both the adapter (USB connected) and the FC drive the line, **electrical contention may occur**. How to avoid this during bench work and in the final installation is an open decision (§10, §12). Do not connect the FC to UART0 while USB is connected until the team has decided and verified how to handle this.
 - **Boot-time behaviour (to verify):** ESP8266 modules are generally understood to emit boot-time output on UART0 at start-up, which could present unexpected bytes to the FC's UART during ESP power-up or reset. Verify on the actual board by observation, and confirm the FC tolerates it.
 - **Alternative to consider (not decided):** ESP8266 UART0 pins can reportedly be remapped to alternate GPIOs. Whether that is useful for avoiding USB contention should be investigated against the ESP8266 documentation; it is listed only as an option.
 - **Firmware implication (observation, not a decision):** the ESP8266's current AT firmware is built around the ESP acting as a *peripheral controlled by an AT host* over UART0. An FC speaking MSP is not an AT host. Whether the AT firmware can serve as a bridge to the FC at all is therefore **unverified**, and may bear on the AT-vs-custom-C++ decision tracked on the companion page.
@@ -331,7 +331,7 @@ The ground computer produces high-level control commands (see companion page for
 > This is a **verification checklist**, not an approval to wire. Pad identification is not done. No part of this checklist has been performed. Proceed only with explicit team approval, with propellers removed and with **no battery connected until each step permits**.
 
 > [!info] Update 2026-10-12: test before soldering
-> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (D1 mini alone, then with the FC on temporary wires). A removable connector is proposed in [[ADR-021 Removable ESP Connector|ADR-021]].
+> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (ESP alone, then with the FC on temporary wires). A removable connector is proposed in [[ADR-021 Removable ESP Connector|ADR-021]].
 
 ### 10.1 Identification (documentation first)
 
@@ -382,7 +382,7 @@ The ground computer produces high-level control commands (see companion page for
 - [ ] Propellers physically removed and verified by a second team member.
 - [ ] Pilot's ELRS transmitter bound and working; ARM and MSP-override-off switches identified and exercised **before** the ESP8266 link is involved.
 - [ ] Pre-change FC configuration saved.
-- [ ] [[ESP Bench Test Plan]] Stage 1 passed (D1 mini alone).
+- [ ] [[ESP Bench Test Plan]] Stage 1 passed (ESP alone).
 
 ### Phase 1 — Baseline without the ESP8266 link
 
@@ -471,7 +471,7 @@ Evidence (logs, test records, photographs) is required for each.
 | FC-02 | Confirm UART4 is usable for MSP on this target; otherwise choose fallback (UART1/UART6) | Any wiring/config |  | Accepted | UART4 for the ESP; UART1 (T1/R1, free) is the fallback. ELRS stays on UART2, Tramp on UART3. [[ADR-011 FC UART Allocation\|ADR-011]] |
 | FC-03 | MSP baud rate and port settings | Bench testing |  | Accepted | 115200 8N1 (Betaflight MSP default); change only on measured need. [[ADR-009 ESP to FC Link\|ADR-009]] |
 | FC-04 | FC logic level and level-compatibility handling | Any wiring |  | Partly resolved | Both MCUs are 3.3 V logic devices; **measure** the T4 idle level before connecting. [[ADR-013 Wiring and Power\|ADR-013]] |
-| FC-05 | ESP8266 power source and supply arrangement | Any wiring |  | Partly resolved | FC 5V pad → D1 mini 5V pin; the FC 5V rail current is still to be measured. [[ADR-013 Wiring and Power\|ADR-013]] |
+| FC-05 | ESP8266 power source and supply arrangement | Any wiring |  | Partly resolved | FC 5V pad → ESP 5V pin; the FC 5V rail current is still to be measured. [[ADR-013 Wiring and Power\|ADR-013]] |
 | FC-06 | How UART0/USB-serial contention is avoided (procedure vs alternate pins vs other) | Any wiring |  | Accepted | Procedure: USB and FC never connected to UART0 together; OTA for the HIL bench; `Serial.swap()` rejected (GPIO15 boot strap). [[ADR-012 ESP UART Pins\|ADR-012]] |
 | FC-07 | ESP8266 firmware path: whether AT firmware can bridge MSP, or custom firmware is needed (shared with companion page OD-01) | Implementation |  | Accepted | Custom ESP8266 firmware. [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
 | FC-08 | Command-to-channel mapping (M1–M9) | Implementation |  | Partly resolved | Normalised commands → 1000–2000 µs, 8 channels in AETR order, AUX never driven, clamps on ground and ESP: [[Protocol Spec v0]] §5. |
@@ -529,7 +529,7 @@ Evidence (logs, test records, photographs) is required for each.
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |

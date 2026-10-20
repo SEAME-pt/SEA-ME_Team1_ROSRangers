@@ -16,7 +16,7 @@ tags:
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
 
 > [!warning] No spare FC or ESP (2026-10-20)
-> There is no spare FC and no spare D1 mini ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-20, GitHub #34). The bench below assumes dedicated hardware, so **how HIL runs on the flight unit, possibly with simulation (Gazebo / SITL), is open**. It is the spike in GitHub #61. The runner setup is GitHub #48. Until #61 closes, treat §2 and §4 as the target, not the plan.
+> There is no spare FC and no spare ESP ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-20, GitHub #34). The bench below assumes dedicated hardware, so **how HIL runs on the flight unit, possibly with simulation (Gazebo / SITL), is open**. It is the spike in GitHub #61. The runner setup is GitHub #48. Until #61 closes, treat §2 and §4 as the target, not the plan.
 
 ---
 
@@ -28,7 +28,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 
 ```text
         5V + GND only            Wi-Fi: OTA flash + tests (joins ESP SoftAP)
-   Pi ─────────────► D1 mini ◄───────────────────────────── Pi wlan0
+   Pi ─────────────► ESP ◄───────────────────────────── Pi wlan0
      │  (power, no USB data) │ UART4 (MSP)
      │ USB              ▼
      └──────────────► FC (USB power only: NO battery → ESCs unpowered, motors cannot spin)
@@ -39,7 +39,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 - The VTX is also battery-powered, so it stays off. That respects the "antenna before battery" rule in [[2.5Drone]].
 - Use a **dedicated** Pi, not the Raspberry Pi 5 meant as the ground computer.
 - Stable device names with udev rules (`/dev/hil-esp`, `/dev/hil-fc`).
-- **USB data is never connected to the D1 mini in the loop** ([[ADR-012 ESP UART Pins|ADR-012]]): the FC drives UART0 RX, so USB flashing would collide with it. The Pi powers the D1 mini through its **5V pin**, and CI flashes it **over the air** (`upload_protocol = espota`). The very first flash, or a recovery, is done by hand over USB with the FC wires unplugged.
+- **USB data is never connected to the ESP in the loop** ([[ADR-012 ESP UART Pins|ADR-012]]): the FC drives UART0 RX, so USB flashing would collide with it. The Pi powers the ESP through its **5V pin**, and CI flashes it **over the air** (`upload_protocol = espota`). The very first flash, or a recovery, is done by hand over USB with the FC wires unplugged.
 
 ## 3. Setup steps
 

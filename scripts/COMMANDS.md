@@ -483,13 +483,13 @@ Kept for reference and for a re-run with the ESP on its own USB (needs
 | S1-06 | `msp cycle1a --stream --sleep modem --duration 600 --csv s1-06.csv` | Same, with modem sleep. Sleep only matters in station mode (the test scenario). |
 | S1-07 | Not possible | AT transparent mode has a single link. Needs the custom firmware (ADR-007). |
 | S1-08 | Manual | USB power meter. Record peak and average mA. |
-| S1-09 | `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv` | Production scenario (the PC talks to the ESP directly). The ESP is far from the PC, so no fake FC: a jumper from the D1 mini TX pin to its RX pin echoes every request. See below. |
+| S1-09 | `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv` | Production scenario (the PC talks to the ESP directly). The ESP is far from the PC, so no fake FC: a jumper from the ESP TX pin to its RX pin echoes every request. See below. |
 | S1-10 | Not possible | Needs the custom firmware. |
 
 ### S1-09 range test with a TX-RX jumper (before soldering)
 
 1. ESP on USB, in the lab: `network production setup` (once).
-2. Unplug the USB. Power the D1 mini from a power bank and wait about 10 s, until
+2. Unplug the USB. Power the ESP from a power bank and wait about 10 s, until
    it has booted into the bridge. **Then** put a jumper between the TX and RX pins.
    With the jumper on at power-up, the AT firmware reads its own boot messages
    back as commands and may never reach the bridge.

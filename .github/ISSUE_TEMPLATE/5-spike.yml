@@ -6,7 +6,7 @@ body:
     id: question
     attributes:
       label: Question to answer
-      placeholder: "Can SoftwareSerial on the D1 mini read ThoneFlow frames at 66 Hz without dropping MSP?"
+      placeholder: "Can SoftwareSerial on the ESP read ThoneFlow frames at 66 Hz without dropping MSP?"
     validations:
       required: true
   - type: input

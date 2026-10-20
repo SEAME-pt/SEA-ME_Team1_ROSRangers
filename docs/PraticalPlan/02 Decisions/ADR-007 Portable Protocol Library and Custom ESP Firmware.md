@@ -32,7 +32,7 @@ tags:
 
 > [!tip] Before the first flash
 > Back up the original AT firmware so it can be restored at any time:
-> `esptool.py --port /dev/ttyUSB0 read_flash 0 0x400000 d1mini_at_1.7.4.0_backup.bin` (4 MB flash on the D1 mini; check with `esptool.py flash_id`).
+> `esptool.py --port /dev/ttyUSB0 read_flash 0 0x400000 d1mini_at_1.7.4.0_backup.bin` (4 MB flash on the ESP; check with `esptool.py flash_id`).
 
 ## 3. Consequences
 
@@ -48,7 +48,7 @@ tags:
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |

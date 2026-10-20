@@ -17,24 +17,24 @@ tags:
 
 > [!info] Update 2026-10-20: accepted (GitHub #55)
 > - The team accepted the proposal: use a removable connector, so we stop soldering and desoldering.
-> - **Where the install stands:** since 2026-10-19 the ESP-12F (ESP8266, Wemos D1 mini class) is soldered to FC UART4 with wires that are easy to remove, so the install is not permanent. The connector is **not fitted yet**; the connector type and pin order are still to be chosen and recorded in [[Wiring and Pinout]].
+> - **Where the install stands:** since 2026-10-19 the ESP-12F (ESP8266) is soldered to FC UART4 with wires that are easy to remove, so the install is not permanent. The connector is **not fitted yet**; the connector type and pin order are still to be chosen and recorded in [[Wiring and Pinout]].
 > - The ESP's USB stays disconnected while the FC link is wired ([[ADR-012 ESP UART Pins|ADR-012]]). Until the connector is fitted, this is a procedure, not something the hardware enforces.
 
 ## 1. Context
 
-- On the D1 mini, USB flashing and the FC link share UART0, so they can never be connected together ([[ADR-012 ESP UART Pins|ADR-012]]).
-- Desoldering a D1 mini from a 2.5" AIO risks lifting FC pads. Spares are limited.
+- On the ESP, USB flashing and the FC link share UART0, so they can never be connected together ([[ADR-012 ESP UART Pins|ADR-012]]).
+- Desoldering an ESP from a 2.5" AIO risks lifting FC pads. Spares are limited.
 
 ## 2. Options considered
 
 | Option | Pros | Cons |
 |---|---|---|
-| Solder the D1 mini wires straight to the FC | Lightest, no extra contact | Hard to remove for USB flashing or replacement; repeated soldering on the FC |
-| **4-pin connector** (5V, GND, TX, RX) soldered to the FC pads, plug on the D1 mini | Unplug for USB flashing (removes the UART0/USB conflict by construction), swap a dead D1 mini in minutes, solder the FC only once | 1–2 g extra; one more contact that can loosen (vibration) |
+| Solder the ESP wires straight to the FC | Lightest, no extra contact | Hard to remove for USB flashing or replacement; repeated soldering on the FC |
+| **4-pin connector** (5V, GND, TX, RX) soldered to the FC pads, plug on the ESP | Unplug for USB flashing (removes the UART0/USB conflict by construction), swap a dead ESP in minutes, solder the FC only once | 1–2 g extra; one more contact that can loosen (vibration) |
 
 ## 3. Decision (accepted 2026-10-20)
 
-Use a small locking 4-pin connector (e.g. JST-SH or JST-GH; the exact part is still to be chosen), with the pin order recorded in [[Wiring and Pinout]]. Secure the D1 mini mechanically (tape or a 3D-printed holder) so the connector carries no load.
+Use a small locking 4-pin connector (e.g. JST-SH or JST-GH; the exact part is still to be chosen), with the pin order recorded in [[Wiring and Pinout]]. Secure the ESP mechanically (tape or a 3D-printed holder) so the connector carries no load.
 
 ## 4. Consequences
 
@@ -51,7 +51,7 @@ Use a small locking 4-pin connector (e.g. JST-SH or JST-GH; the exact part is st
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F, Wemos D1 mini class). It bridges the ground PC to the FC over UART4. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |

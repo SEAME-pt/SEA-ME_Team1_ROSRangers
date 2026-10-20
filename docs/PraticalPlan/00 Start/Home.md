@@ -19,7 +19,7 @@ tags:
 
 > [!info] Where we are (2026-10-20)
 > - SEA:ME started on **7 Oct 2026**. Sprint 0 ran **7–18 Oct**. **Module 1 started 19 Oct**: we are in week 1 of Sprint 1.
-> - Closed GitHub issues so far: safety induction (#13), Betaflight 4.5.1 `diff all` baseline (#14), barometer re-check (#15), FC multimeter checks (#16), D1 mini AT firmware backup (#17), instructor questions (#18), XT30 to XT60 adapter and battery check (#19), PX4 SITL + Gazebo default quad (#29), docs vault in the repo (#36), `MSP_API_VERSION` / `MSP_STATUS` / `MSP_ATTITUDE` read over the FC USB (#24, closed 2026-10-19). See [[Study Plan v2#2. Sprint 0 — status (7–18 Oct)]].
+> - Closed GitHub issues so far: safety induction (#13), Betaflight 4.5.1 `diff all` baseline (#14), barometer re-check (#15), FC multimeter checks (#16), ESP AT firmware backup (#17), instructor questions (#18), XT30 to XT60 adapter and battery check (#19), PX4 SITL + Gazebo default quad (#29), docs vault in the repo (#36), `MSP_API_VERSION` / `MSP_STATUS` / `MSP_ATTITUDE` read over the FC USB (#24, closed 2026-10-19). See [[Study Plan v2#2. Sprint 0 — status (7–18 Oct)]].
 > - Open: the Module 1 week 1 board issues (for example #21 to #23, #25 to #28), the HIL runner (#48) and the HIL-without-spare-hardware spike (#61). Tasks live on the board, not here.
 > - Decisions are **accepted** as ADRs, except ADR-021 (proposed). See [[Decision Register]].
 > - Project: **gesture control** with MediaPipe, accepted by instructors as our Module 2 "edge inference in the loop".
