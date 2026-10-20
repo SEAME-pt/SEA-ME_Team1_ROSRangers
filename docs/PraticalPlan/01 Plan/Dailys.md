@@ -43,6 +43,18 @@ Thiago - Avançar com a documentação do FPV e testes relacionados com ele
 Bruno - Avanço nos nodes e talvez radio
 Guilherme - Verificar motores, acrescentar CI/CD pipelines.
 
+20/Oct - 09:06/09:30
+Planeamento de sprint Overview
+	Tiago vai verificar o Gazebo
+	Bruno vai entrar no Gazebo tambem, continuar a trabalhar nos fail safes
+	Guilherme CI/CD e ajudar malta, melhorar o readme.
+Paulo - Juntar o grupo em pares, Guilherme e Bruno trabalhar nos nodes e Paulo e Thiago trabalhar diretamente no drone.
+Guilherme - Atrasar o HIL para a próxima sprint.
+Guilherme - Estudar mais um pouco a AI, avançar com multi-agent.
+Objetivos da semana
+Paulo - Investigar diff de latencias
+Bruno - Mais sinais.
+
 
 ---
 
