@@ -19,7 +19,7 @@ tags:
 > Accepts **P4** and resolves **FC-06** in [[ESP_to_FC]].
 
 > [!info] Update 2026-10-20: the board and the install (GitHub #55)
-> - The board is an **ESP-12F** module (ESP8266, Wemos D1 mini class). The backup notes record it as an ESP-12F on a dev board with an FTDI FT232R USB-serial chip, not as a genuine Wemos D1 mini (`firmware/esp8266/backup/README.md`). The UART0 analysis below applies to it: its USB-serial chip shares UART0.
+> - The board is an **ESP-12F** module (ESP8266, Wemos D1 mini class). The team treats "D1 mini" and "ESP8266" as the same board in these notes (2026-10-20). The backup notes record its USB-serial chip as an FTDI FT232R (`drone/firmware/esp8266/backup/README.md`). The UART0 analysis below applies to it: its USB-serial chip shares UART0.
 > - Since 2026-10-19 the ESP is **soldered to FC UART4** with wires that are easy to remove. The install is not permanent ([[ADR-021 Removable ESP Connector|ADR-021]] replaces it with a connector).
 > - Since then the ESP's USB is never connected, as this ADR requires (its USB chip and FC T4 would both drive the ESP RX). It stays on the production SoftAP until the custom firmware ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]); the first flash of that firmware needs a written procedure.
 > - The decision does not change.

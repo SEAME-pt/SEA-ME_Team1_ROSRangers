@@ -30,7 +30,7 @@ tags:
 
 | ID | Test | What it proves | Pass criterion | Links |
 |---|---|---|---|---|
-| ESP-S1-01 | Back up the AT firmware: `esptool.py flash_id`, then `read_flash 0 ALL esp8266_AT1.7.4_<station-MAC>_<date>.bin` (backup names and checksums: `firmware/esp8266/backup/README.md`) | We can always go back to the original firmware | File is exactly the flash size reported by `flash_id` | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
+| ESP-S1-01 | Back up the AT firmware: `esptool.py flash_id`, then `read_flash 0 ALL esp8266_AT1.7.4_<station-MAC>_<date>.bin` (backup names and checksums: `drone/firmware/esp8266/backup/README.md`) | We can always go back to the original firmware | File is exactly the flash size reported by `flash_id` | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
 | ESP-S1-02 | Flash a blink sketch, then restore the backup once, then flash blink again | Board, USB chip and flash are OK; restore works | Blink runs; AT firmware answers `AT` after the restore | ADR-007 |
 | ESP-S1-03 | Capture boot output at **74880 baud** | What the FC will see on its RX at ESP power-up | Bytes recorded here | [[ADR-012 ESP UART Pins\|ADR-012]], F5 in [[ESP_to_FC]] |
 | ESP-S1-04 | SoftAP up with WPA2-PSK; laptop connects, 20 reboots | The network design works on this board | 20/20 connects; time-to-connect recorded | [[ADR-006 Network\|ADR-006]] |
@@ -85,7 +85,7 @@ Recorded from GitHub #30 (comments of 2026-10-16 and 2026-10-19) and #25 (sessio
 
 | Test ID | Date | Who | Result (pass/fail + numbers) | Notes / issue # |
 |---|---|---|---|---|
-| ESP-S1-01 | 2026-10-16 | ptorrao-git (comment on #30) | PASS. 4,194,304-byte image = flash size, verified. FC firmware also backed up over DFU (524,288 bytes, two reads identical). | #30. Image: `esp8266_flash_2026-10-16_164249.bin` (current restore point, contains Wi-Fi credentials, kept outside Git). Earlier images of 2026-10-13: `esp8266_AT1.7.4_807d3a1d0850_2026-10-13.bin` and `..._factory-reset.bin`. See `firmware/esp8266/backup/README.md` |
+| ESP-S1-01 | 2026-10-16 | ptorrao-git (comment on #30) | PASS. 4,194,304-byte image = flash size, verified. FC firmware also backed up over DFU (524,288 bytes, two reads identical). | #30. Image: `esp8266_flash_2026-10-16_164249.bin` (current restore point, contains Wi-Fi credentials, kept outside Git). Earlier images of 2026-10-13: `esp8266_AT1.7.4_807d3a1d0850_2026-10-13.bin` and `..._factory-reset.bin`. See `drone/firmware/esp8266/backup/README.md` |
 | ESP-S1-02 | 2026-10-14 | Dot99 (body of #25) | Not done. The LED blinked in use, but that is serial activity; the blink → restore → blink sequence was not run. | #25. Superseded by the 2026-10-16 row |
 | ESP-S1-02 | 2026-10-16 | ptorrao-git (comment on #30) | PASS. Blink flashed and ran; backup written back and verified; boot output identical before and after (AT `ready`). | #30 |
 | ESP-S1-03 | 2026-10-16 | ptorrao-git (comment on #30) | PASS. 731 bytes at 115200 for each ESP power-up: 0 `$M` headers, 0 MSP frames, so Betaflight's MSP parser never sees a frame start. | #30. The test plan says 74880 baud; the record states 115200 |

@@ -17,7 +17,7 @@ tags:
 > Accepts **P5** and partly resolves **FC-04** and **FC-05** in [[ESP_to_FC]].
 
 > [!info] Update 2026-10-20: the install (GitHub #55)
-> - The board is an **ESP-12F** module (ESP8266, Wemos D1 mini class). The backup notes record it as an ESP-12F on a dev board with an FTDI FT232R USB-serial chip, not as a genuine Wemos D1 mini (`firmware/esp8266/backup/README.md`).
+> - The board is an **ESP-12F** module (ESP8266, Wemos D1 mini class). The team treats "D1 mini" and "ESP8266" as the same board in these notes (2026-10-20). The backup notes record its USB-serial chip as an FTDI FT232R (`drone/firmware/esp8266/backup/README.md`).
 > - Since 2026-10-19 the ESP is **soldered to FC UART4** (T4/R4, 5V, GND) with wires that are easy to remove. It is not a permanent install, and the removable connector of [[ADR-021 Removable ESP Connector|ADR-021]] is not fitted yet.
 > - S2-01 passed on the soldered link on 2026-10-19: the FC answers MSP through UART4, so the crossover is right ([[ESP Bench Test Plan]] §4).
 > - **Still open:** the ESP current (S1-08, FC-05) is not recorded, and the [[ESP_to_FC]] §10 evidence on the soldered joints is still to be posted (GitHub #30).
