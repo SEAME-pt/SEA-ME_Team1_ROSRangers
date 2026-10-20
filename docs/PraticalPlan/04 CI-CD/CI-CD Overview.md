@@ -2,7 +2,7 @@
 title: CI/CD Overview
 type: ci-cd
 status: draft
-date: 2026-10-12
+date: 2026-10-20
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -42,9 +42,11 @@ flowchart LR
 | 4 Hardware / bench | **HIL runner** (automated) + manual props-off bench |
 | 5 Flight | Cage, with a flight-test report in Obsidian |
 
+Each job is gated by `check-components` and turns on when its component exists (details in [[GitHub Actions Starter]]). The workflow files are `ci.yaml`, `hil.yaml` and `close-linked-issues.yaml` in `.github/workflows/`.
+
 ## 2. Start now (no open decisions)
 
-1. Software repo with `main` + `dev` and protection ([[Branch_Protection]], [[Repository Layout]]).
+1. Software repo with `main` + `dev` and protection ([[Branch_Protection]]). The tree is in [[Repository Layout]]; the workflow files are summarised in [[GitHub Actions Starter]].
 2. pre-commit: clang-format, ruff, end-of-file, trailing whitespace.
 3. Empty C++ lib + 1 GoogleTest, coverage gate at **50%** → raise to 80% by week 6.
 4. pytest skeleton for the ground packages.
@@ -90,12 +92,10 @@ pre-commit run --all-files
 
 - [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
 
+
+- [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[PX4 SITL Setup]] · [[Dev_Strategy]]
+
 ## 5. Glossary
-## 3. Related pages
-
-- [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[Dev_Strategy]]
-
-## 4. Glossary
 
 | Term | Meaning |
 | --- | --- |

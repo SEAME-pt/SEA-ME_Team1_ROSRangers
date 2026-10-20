@@ -131,26 +131,6 @@ jobs:
           name: esp-firmware
           path: drone/firmware/esp8266/.pio/build/d1_mini/firmware.bin
 
-  check-sitl:
-    runs-on: ubuntu-latest
-    outputs:
-      enabled: ${{ steps.check.outputs.enabled }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check SITL prerequisites
-        id: check
-        shell: bash
-        run: |
-          if [[ -f drone/lib/protocol/CMakeLists.txt &&
-                -f drone/ground/src/sd_protocol_py/pyproject.toml &&
-                -d drone/tests/sitl ]] &&
-            find drone/tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          fi
-
   betaflight-sitl:
     needs: [lint, protocol-cpp, ground-python, check-components]
     if: >-

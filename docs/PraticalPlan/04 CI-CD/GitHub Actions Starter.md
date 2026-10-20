@@ -2,7 +2,7 @@
 title: GitHub Actions Starter
 type: ci-cd
 status: draft
-date: 2026-10-12
+date: 2026-10-20
 project: SEA autonomous drone
 tags:
   - ci
