@@ -27,11 +27,11 @@ tags:
 8. LiPo: charge only at the lab station/bags, never unattended, land at 3.5 V/cell.
 9. ESP8266 GPIOs are 3.3 V. Feed 5 V only to the D1 mini **5V** pin. Never connect USB and the FC to the D1 mini at the same time ([[ADR-012 ESP UART Pins|ADR-012]]).
 10. HIL bench: **no LiPo** connected, ever.
-11. **Nothing is soldered to the FC** until the [[ESP Bench Test Plan]] Stages 1–2 and the [[ESP_to_FC]] §10 checklist have passed.
+11. **Nothing is soldered to the FC** until the [[ESP Bench Test Plan]] Stages 1–2 and the [[ESP_to_FC]] §10 checklist have passed. (2026-10-20: the ESP was soldered on 2026-10-19 before these passed; logged as incident GitHub #69. The rule still applies to every new joint.)
 12. Every crash, incident or fault goes in GitHub Issues with cause and fix (program rule; spares are limited).
 13. **Transparent UART↔UDP bridge: props off only** (added 2026-10-20). A battery is allowed, because the drone needs it to power the FC and the ESP. The existing LiPo rules still apply (#2, #3, #8). Network isolation is **not a rule yet**: see §2.
 14. **MSP Override is bench-only until Betaflight 2026.6.2** (added 2026-10-20). It stays props-off on 4.5.1 ([[ADR-010 MSP Override|ADR-010]] condition 6).
-15. **Nobody flies alone** (added 2026-10-20). A flight needs the pilot at the cage plus at least one more person present ([[Team Tracks]] §2).
+15. **Nobody flies alone** (added 2026-10-20). Nobody powers up, arms, test-runs or flies the drone alone. A pilot and at least one other person are always present ([[Team Tracks]] §2).
 
 ---
 
@@ -42,7 +42,7 @@ tags:
 
 ## 3. Safety roles
 
-- **Safety pilot:** BrunoBMFT. The safety induction is done (GitHub #13, closed). The second trained safety pilot is **to be named** ([[Team Tracks]] §2).
+- **Safety pilot:** BrunoBMFT. The safety induction is done (GitHub #13, closed). The second person is **rotated** among trained team members per session, so no fixed name ([[Team Tracks]] §2, rule #15).
 
 ---
 
