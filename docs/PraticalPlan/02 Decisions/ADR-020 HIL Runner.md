@@ -33,6 +33,14 @@ If the lab provides a runner, use it. Otherwise:
 
 Details in [[HIL Runner]].
 
+### Update 2026-10-20: no spare FC or ESP
+
+There is **no spare FC and no spare D1 mini** (GitHub #34, 2026-10-20). The "spare D1 mini and the FC (or a spare FC)" in §2 therefore cannot be built as written. The HIL bench has to use the **flight unit**, possibly together with simulation (PX4 SITL / Gazebo, Betaflight SITL). The plan is not decided here: it is the spike in GitHub #61. The runner itself is GitHub #48. The rules stay: **no LiPo on the HIL bench, ever** ([[Safety Rules]]). See [[HIL Runner]].
+
+### Correction 2026-10-20: USB to the ESP
+
+§2 says the ESP is "attached by USB". This conflicts with [[ADR-012 ESP UART Pins|ADR-012]]: the ESP's USB is never connected while the FC is wired to UART0. The Pi powers the D1 mini on its 5V pin and CI flashes it over the air, as [[HIL Runner]] §2 already says. Only the FC is attached by USB. Read §2 with this correction.
+
 ## 3. Related pages
 
 - [[HIL Runner]] · [[CI-CD Overview]] · [[Decision Register]]

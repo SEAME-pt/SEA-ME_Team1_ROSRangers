@@ -30,7 +30,7 @@ aliases:
 
 > [!important] How this applies to our project (SEA:ME Autonomous Drone)
 > We protect **both permanent branches**, with **stricter rules on `main`**:
-> - **`dev`**: PR required, CI must pass, at least 1 reviewer where practical, no force pushes, **squash merge only**
+> - **`dev`**: PR required, CI must pass, **1 approval**, no force pushes, **squash merge only**
 > - **`main`**: PR required, CI must pass, **2 approvals**, conversations resolved, no force pushes, **merge commit only**, plus simulation/hardware validation when appropriate
 >
 > Feature and bug-fix branches are **not** protected, so they can be rebased. See [[Dev_Strategy]].
@@ -203,7 +203,7 @@ remote: error: Changes must be made through a pull request.
 | Setting                                        | `dev`                  | `main`                 | Notes                                                              |
 | ---------------------------------------------- | ---------------------- | ---------------------- | ------------------------------------------------------------------ |
 | Require a pull request                         | ✅ On                  | ✅ On                  | Direct pushes disabled on both                                     |
-| Required approvals                             | **1** (where practical)| **2**                  | Stronger review on `main`                                          |
+| Required approvals                             | **1**                  | **2**                  | Stronger review on `main`                                          |
 | Dismiss stale approvals on new commits         | ✅ On                  | ✅ On                  | Prevents "approve, then sneak in changes"                          |
 | Require conversation resolution                | ✅ On                  | ✅ On                  | No forgotten review comments                                       |
 | Require status checks to pass                  | ✅ On                  | ✅ On                  | Build, unit tests, integration tests, static analysis, formatting  |
@@ -228,7 +228,7 @@ remote: error: Changes must be made through a pull request.
 
 | Document                                                      | Decision                                              | Enforced by this setting                                          |
 | ------------------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------- |
-| [[Pull_Request_Workflow\|Pull Request Workflow]]              | Every change goes through a reviewed PR (1 or 2 reviewers) | Require PR + approvals + conversation resolution              |
+| [[Pull_Request_Workflow\|Pull Request Workflow]]              | Every change goes through a reviewed PR (1 approval on `dev`, 2 on `main`) | Require PR + approvals + conversation resolution              |
 | [[Rebase_Policy\|Rebase Policy]]                              | Never rebase or force-push `dev` and `main`; feature branches are rebased | Block force pushes on `dev` and `main` (feature branches stay unprotected) |
 | [[Merge_Strategy\|Merge Strategy]]                            | Squash into `dev`, merge commit into `main`          | Allowed merge methods per branch + linear history on `dev` only   |
 | [[Feature_and_Bugfix_Branches\|Feature and Bug-Fix Branches]] | Always work on a branch                               | Require PR on both permanent branches (direct pushes blocked)     |
@@ -385,7 +385,7 @@ Production is down and a fix can't wait for the normal process. What now?
 ### Setting up protection on a new repository
 
 - [x] Rules created for **both** `dev` and `main`
-- [x] `dev`: 1 approval where practical. `main`: 2 approvals
+- [x] `dev`: 1 approval. `main`: 2 approvals
 - [x] Pull request required, direct pushes blocked
 - [x] Approvals required, stale approvals dismissed
 - [x] Required status checks selected

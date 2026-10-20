@@ -1,5 +1,4 @@
 .obsidian/
-CLAUDE.md
 .venv/
 __pycache__/
 *.csv

@@ -45,7 +45,7 @@ flowchart LR
 | 4 | `mission_node` | "What should the **drone** do now?" | ==🔴design only== | [[04 Mission_Node\|04]] |
 | 5 | controller, `flight_interface`, … | "How do we fly it safely?" | ==🔴planned== | [[05 Future Nodes\|05]], [[System Overview]] |
 
-Only steps 1 to 3 exist in code today. Everything after `/gesture/intent` is design or plan.
+Only steps 1 to 3 exist in code today, and that code is on the branch **`feature/ros2nodes`**, which is **not in `dev` yet** (2026-10-20). On `dev` the folders under `drone/tools/gesture/` and `drone/ground/src/gesture_node/` hold only an `info.md` placeholder. On that branch the ROS 2 package is named `intent_node` (not `gesture_node`). Everything after `/gesture/intent` is design or plan.
 
 ---
 
@@ -99,6 +99,9 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 ---
 
 ## 📁 5. Where the files live
+
+> [!NOTE] Branch
+> The paths below are where the files are on `feature/ros2nodes` (or planned). They are not in `dev` yet (2026-10-20). The ROS 2 package there is `drone/ground/src/intent_node/`.
 
 | File or folder | Repo path | Runs in |
 | :--- | :--- | :--- |

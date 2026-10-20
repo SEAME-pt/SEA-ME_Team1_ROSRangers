@@ -15,6 +15,9 @@ tags:
 > [!info] Decision: [[ADR-020 HIL Runner|ADR-020]]
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
 
+> [!warning] No spare FC or ESP (2026-10-20)
+> There is no spare FC and no spare D1 mini ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-20, GitHub #34). The bench below assumes dedicated hardware, so **how HIL runs on the flight unit, possibly with simulation (Gazebo / SITL), is open**. It is the spike in GitHub #61. The runner setup is GitHub #48. Until #61 closes, treat §2 and §4 as the target, not the plan.
+
 ---
 
 ## 1. What a HIL runner is

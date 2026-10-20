@@ -22,12 +22,12 @@ gantt
     dateFormat  YYYY-MM-DD
     title SEA:ME drone roadmap
     section Program
-    Sprint 0            :active, 2026-10-07, 2026-10-16
+    Sprint 0            :active, 2026-10-07, 2026-10-18
     Module 1            :m1, 2026-10-19, 2026-12-11
     Module 2            :m2, 2026-12-14, 2027-02-26
     Module 3            :m3, 2027-03-01, 2027-04-30
     section Drone
-    Docs, decisions, setup               :2026-10-07, 2026-10-16
+    Docs, decisions, setup               :2026-10-07, 2026-10-18
     Link, failsafe, CI+HIL, position hold :2026-10-19, 2026-12-11
     Gestures (custom model), detector     :2026-12-14, 2027-02-26
     Multi-agent scenario + security       :2027-03-01, 2027-04-30
