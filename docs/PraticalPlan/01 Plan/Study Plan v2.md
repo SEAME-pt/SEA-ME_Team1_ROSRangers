@@ -139,7 +139,7 @@ tags: [plan]
 
 ## 11. Exit criteria for Module 1 (from the program README)
 
-- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-CTL-001 limits the gesture speeds).
+- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-NAV-001: 0.25 m for 60 s in SITL; REQ-NAV-002: 0.5 m radius for 30 s in the cage; REQ-CTL-001 limits the gesture speeds).
 - [ ] Link loss → hover or controlled landing (REQ-SAF-009, REQ-SAF-013, REQ-SAF-017).
 - [ ] Green CI: build, unit tests, static analysis, coverage > 80%, HIL job.
 - [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection (REQ-SAF-002, REQ-SAF-005).
