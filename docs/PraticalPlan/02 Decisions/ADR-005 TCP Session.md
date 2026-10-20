@@ -49,3 +49,4 @@ tags:
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -1,3 +1,12 @@
+---
+title: SEA:ME — Development Plan
+type: plan
+status: active
+date: 2026-10-15
+project: SEA autonomous drone
+tags: [plan]
+---
+
 # SEA:ME — Development Plan
 
 ## 1. Project Development Strategy
@@ -12,7 +21,7 @@ The phases below map onto the program modules:
 
 | Phase | Program period | Plan |
 |---|---|---|
-| 1 Project Setup | Sprint 0 (7–16 Oct) + Module 1 weeks 1–2 | [[Study Plan v2]] §2–§4 |
+| 1 Project Setup | Sprint 0 (7–18 Oct) + Module 1 weeks 1–2 | [[Study Plan v2]] §2–§4 |
 | 2 Core Components | Module 1 weeks 2–4 | [[Study Plan v2]] §4–§6 |
 | 3 Integration | Module 1 weeks 5–8 | [[Study Plan v2]] §7–§10 |
 | 4 Autonomous Behavior | Module 2 (14 Dec – 26 Feb) | [[Roadmap to April 2027]] §4 |
@@ -104,6 +113,17 @@ Autonomous Flight
 
 Document significant test results.
 
+**Exit criterion (proposed, 2026-10-20).** Each stage has a gate. A stage starts only when the previous gate has passed and its results are written down (test report, log or video linked from the issue). Any incident sends the work back one stage until its issue is closed ([[Safety Rules]] #12).
+
+| Gate | Before moving on, all of this holds |
+|---|---|
+| Simulation → bench | The feature passes in SITL or unit tests in CI, and the related requirements in [[Requirements]] have a test. |
+| Bench → controlled hardware | [[ESP Bench Test Plan]] stages for the feature pass, props off. The radio failsafe (TX off) is tested on the current firmware. |
+| Controlled hardware → controlled flight | Pilot takeover works on the bench under fault injection (REQ-SAF-002, REQ-SAF-005). Pre-flight checklist done. Safety pilot plus a second person present (Safety Rules #4, #15). No open safety-critical incident. |
+| Controlled flight → autonomous flight | At least 3 controlled cage flights without incident on the same firmware and `diff all`. Link loss tested in the cage (REQ-SAF-009, REQ-SAF-013, REQ-SAF-014). Position hold meets REQ-NAV-002. |
+
+Phase 5 is done when an autonomous flight in the cage has passed with every `REQ-SAF` requirement verified, and the results are in the vault.
+
 ---
 
 ## Phase 6 — Stabilization
@@ -151,7 +171,7 @@ Promotion to `main` requires the additional validation appropriate to the releas
 In order. When time is short, cut from the bottom.
 
 1. **Safety:** pilot takeover, failsafe at every layer ([[ADR-004 ESP Failsafe|ADR-004]], [[ADR-010 MSP Override|ADR-010]]).
-2. **CI + HIL:** green pipeline, coverage > 80% (Module 1 deliverable).
+2. **CI + HIL:** green pipeline, coverage > 80% (Module 1 deliverable; the gate is 80%, the target is 100%).
 3. **End-to-end link:** ground ↔ ESP ↔ FC with measured latency ([[PC_to_ESP]], [[ESP_to_FC]]).
 4. **Position hold** in the cage (Module 1 demo).
 5. **Gesture control** ([[00 Gesture Pipeline|Gesture Pipeline]]).
@@ -161,7 +181,7 @@ In order. When time is short, cut from the bottom.
 
 | Date | Milestone | Version tag on `main` |
 |---|---|---|
-| 16 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction | – |
+| 18 Oct 2026 | Sprint 0 done: docs, decisions, repos, safety induction (done, GitHub #13) | – |
 | 30 Oct 2026 | Sprint 1 demo: FC telemetry in ROS 2 over Wi-Fi; Betaflight upgraded | – |
 | 13 Nov 2026 | Sprint 2 demo: failsafe under fault injection (bench); HIL job green | – |
 | 27 Nov 2026 | Sprint 3 demo: position hold in the cage + PX4 SITL | – |
@@ -184,11 +204,14 @@ See [[Dev_Strategy]] §23. Project-specific additions:
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **Branch** | An independent line of development in version control. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

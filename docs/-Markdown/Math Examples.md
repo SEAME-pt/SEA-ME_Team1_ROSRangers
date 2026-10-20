@@ -1,3 +1,11 @@
+---
+title: Math Examples
+type: reference
+status: active
+date: 2026-10-15
+tags: [obsidian]
+---
+
 # 🧮 Advanced Mathematics & LaTeX Reference
 
 This file demonstrates how Obsidian natively renders mathematical notation using LaTeX syntax.

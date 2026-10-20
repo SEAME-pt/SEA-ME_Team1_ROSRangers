@@ -1,24 +1,39 @@
-13/Oct - 10:50/11:17
-Guilherme - Começar Pipeline
-Paulo/Ale - Começar a trabalhar com o drone/ESP
-Paulo - Pesquisa mais a funda dos UARTS
-Bruno - Continua Gesture Recognition Program
-Ler Safety Rules
-Overview das Safety Rules
-Perguntas sobre "Cage" e Hélices
-Bruno Flight Pilot decidido
+---
+title: Dailys
+type: meeting-log
+status: active
+date: 2026-10-13
+project: SEA autonomous drone
+tags:
+  - process
+  - dailys
+---
 
-14/Oct - 11:58/12:11
-Guilherme - Progresso nas issues/PR
-Paulo - Possibilidade de live sync no obsidian
-Prep Weekly(14/Oct)
-- Como correu a semana + proxima semana
-- Falar das docs
-- Falar do CI/CD
-- Bruno esta a trabalhar com o Gesture Capture e ROS2
-- Paulo e Ale testar ESP(WIFI)
-- Thiago soldar modulo antena(ELRS)
-Ale - Perguntar como esta o progresso da equipa na weekly
+# Dailys
+
+## 2026-10-13 (10:50-11:17)
+
+- Guilherme: start the pipeline.
+- Paulo/Ale: start working with the drone/ESP.
+- Paulo: deeper research on the UARTs.
+- Bruno: continues the Gesture Recognition Program.
+- Read the Safety Rules.
+- Overview of the Safety Rules.
+- Questions about the "Cage" and propellers.
+- Bruno decided as Flight Pilot.
+
+## 2026-10-14 (11:58-12:11)
+
+- Guilherme: progress on issues/PRs.
+- Paulo: possibility of live sync in Obsidian.
+- Prep Weekly (2026-10-14):
+  - How the week went + next week
+  - Talk about the docs
+  - Talk about CI/CD
+  - Bruno is working with Gesture Capture and ROS 2
+  - Paulo and Ale: test the ESP (WiFi)
+  - Thiago: solder the antenna module (ELRS)
+- Ale: ask how the team's progress is going at the weekly.
 
 ---
 
@@ -31,6 +46,6 @@ Ale - Perguntar como esta o progresso da equipa na weekly
 | **CI/CD** | Continuous Integration and Delivery: automated build, test and release pipeline. |
 | **ESP** | The ESP8266 WiFi microcontroller used as the drone communication module. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
-| **ELRS** | ExpressLRS, the open source radio-control link used on our receiver. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |

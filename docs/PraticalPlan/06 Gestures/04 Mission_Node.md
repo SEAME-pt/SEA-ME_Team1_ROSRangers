@@ -2,7 +2,7 @@
 title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
-date: 2026-10-20
+date: 2026-10-16
 project: SEA autonomous drone
 tags:
   - gestures

@@ -30,10 +30,10 @@ PX4 SITL + Gazebo is the flight-behaviour backend of [[ADR-019 Sim Backends|ADR-
 
 ## 2. Build the image
 
-The `Dockerfile` is in the code repo under `simulation/px4/` (branch `feature/29-px4-sitl-gazebo`). It runs PX4's `ubuntu.sh --no-nuttx`, builds the ROS 2 workspace and pre-builds `px4_sitl_default`.
+The `Dockerfile` is in the code repo under `drone/simulation/px4/`. It runs PX4's `ubuntu.sh --no-nuttx`, builds the ROS 2 workspace and pre-builds `px4_sitl_default`.
 
 ```sh
-docker build -t seame-px4-sim:jazzy-1.17 simulation/px4
+docker build -t seame-px4-sim:jazzy-1.17 drone/simulation/px4
 ```
 
 Your user must be in the `docker` group (`sudo usermod -aG docker $USER`, then log in again).
@@ -112,3 +112,4 @@ Then start the agent and `make px4_sitl gz_x500` as in §3, **without** `HEADLES
 | **Offboard** | PX4 mode where an external computer streams setpoints. |
 | **NED** | North-East-Down frame: negative z is up. |
 | **GCS** | Ground Control Station, e.g. QGroundControl. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

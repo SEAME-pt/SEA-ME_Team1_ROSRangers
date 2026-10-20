@@ -15,6 +15,9 @@ tags:
 > [!info] Decision: [[ADR-020 HIL Runner|ADR-020]]
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
 
+> [!warning] No spare FC or ESP (2026-10-20)
+> There is no spare FC and no spare ESP ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-20, GitHub #34). The bench below assumes dedicated hardware, so **how HIL runs on the flight unit, possibly with simulation (Gazebo / SITL), is open**. It is the spike in GitHub #61. The runner setup is GitHub #48. Until #61 closes, treat §2 and §4 as the target, not the plan.
+
 ---
 
 ## 1. What a HIL runner is
@@ -25,7 +28,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 
 ```text
         5V + GND only            Wi-Fi: OTA flash + tests (joins ESP SoftAP)
-   Pi ─────────────► D1 mini ◄───────────────────────────── Pi wlan0
+   Pi ─────────────► ESP ◄───────────────────────────── Pi wlan0
      │  (power, no USB data) │ UART4 (MSP)
      │ USB              ▼
      └──────────────► FC (USB power only: NO battery → ESCs unpowered, motors cannot spin)
@@ -36,7 +39,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 - The VTX is also battery-powered, so it stays off. That respects the "antenna before battery" rule in [[2.5Drone]].
 - Use a **dedicated** Pi, not the Raspberry Pi 5 meant as the ground computer.
 - Stable device names with udev rules (`/dev/hil-esp`, `/dev/hil-fc`).
-- **USB data is never connected to the D1 mini in the loop** ([[ADR-012 ESP UART Pins|ADR-012]]): the FC drives UART0 RX, so USB flashing would collide with it. The Pi powers the D1 mini through its **5V pin**, and CI flashes it **over the air** (`upload_protocol = espota`). The very first flash, or a recovery, is done by hand over USB with the FC wires unplugged.
+- **USB data is never connected to the ESP in the loop** ([[ADR-012 ESP UART Pins|ADR-012]]): the FC drives UART0 RX, so USB flashing would collide with it. The Pi powers the ESP through its **5V pin**, and CI flashes it **over the air** (`upload_protocol = espota`). The very first flash, or a recovery, is done by hand over USB with the FC wires unplugged.
 
 ## 3. Setup steps
 
@@ -46,7 +49,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK.
 5. Store the PSK as the repo secret `SD_PSK_HIL`.
 
-## 4. First HIL tests (`tests/hil/`)
+## 4. First HIL tests (`drone/tests/hil/`)
 
 1. **Smoke:** OTA flash → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received.
 2. **Passthrough:** send a SETPOINT → read `MSP_RC` from the FC over USB → expected channel values (checks the AETR mapping end to end).
@@ -64,10 +67,14 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
 | **ESC** | Electronic Speed Controller: hardware that drives a motor. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
+| **RTT** | Round-trip time: how long a packet takes to go out and come back. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

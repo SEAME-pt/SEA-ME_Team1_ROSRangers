@@ -2,7 +2,7 @@
 title: What ROS 2 and nodes are, installing ROS 2 Jazzy, testing each node
 type: guide
 status: draft
-date: 2026-10-20
+date: 2026-10-16
 project: SEA autonomous drone
 tags:
   - gestures

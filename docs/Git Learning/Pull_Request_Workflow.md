@@ -1,5 +1,8 @@
 ---
 title: Pull Request Workflow
+type: guide
+status: active
+date: 2026-10-15
 tags:
   - git
   - pull-request
@@ -31,7 +34,7 @@ aliases:
 > | **Direction** | `feature/*` or `bugfix/*` → `dev` | `dev` → `main` |
 > | **How often** | Daily, small and focused | Deliberate, when `dev` is validated |
 > | **Merge method** | **Squash merge** | **Merge commit** (never squash) |
-> | **Review** | At least 1 reviewer where practical | **2 approvals** |
+> | **Review** | **1 approving review** | **2 approvals** |
 > | **Checks** | CI (build, tests, static analysis, formatting) | CI + simulation / hardware validation as appropriate |
 >
 > See [[Dev_Strategy]] for the full process.
@@ -228,7 +231,7 @@ A promotion PR is how a validated state of `dev` becomes the new stable `main`. 
 1. **Validate `dev`** to the level the changes require (CI, simulation, hardware bench test, flight test if appropriate)
 2. **Open a PR** with base `main` and compare `dev`
 3. **List what is included** (merged PRs, issues, requirement IDs) and what validation was done
-4. Get **2 approvals** and resolve all conversations
+4. Get **2 approving reviews** and resolve all conversations
 5. Merge with a **merge commit**. **Never squash** this PR, or `dev` and `main` will diverge and the next promotion will conflict
 6. Optionally **tag** the stable version (e.g. `v0.2.0`)
 
@@ -539,3 +542,4 @@ the version from dev
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |

@@ -256,6 +256,8 @@ flowchart LR
 
 ### 5.4 Option C: sensor read by another suitable processor
 
+> [!warning] Rejected on 2026-10-14 (TF-11, [[ADR-016 Flow Sensor Path|ADR-016]]). Kept for the record.
+
 **Idea [PROPOSED]:** a processor with a free hardware UART receives and validates frames, then passes measurements onward (e.g. to the ESP8266 over a link with spare capacity, or by replacing the ESP8266 bridge with a part that has more hardware UARTs). No specific part is selected or evaluated here.
 
 | Aspect | Notes |
@@ -290,7 +292,7 @@ flowchart LR
 
 - The ESP8266 effectively has **one** hardware serial receive path. If UART0 serves the FC link (which needs both TX and RX for MSP), then **no hardware RX remains** for the sensor.
 - Options on the ESP8266 are therefore limited to: (i) a **software-serial** receiver on a spare GPIO, (ii) sharing UART0 (conflicts with the proposed FC link, **not proposed**), or (iii) moving the sensor to a different processor or the FC (§5.2, §5.4). Remapping UART0's pins would not create a second hardware receiver.
-- The USB-to-serial adapter on a D1 mini-style board shares UART0 pins (see the FC-interface page); that issue is separate and unchanged by the sensor.
+- The USB-to-serial adapter on an ESP8266 dev board shares UART0 pins (see the FC-interface page); that issue is separate and unchanged by the sensor.
 
 ### 6.3 Software-serial risk under Wi-Fi load
 
@@ -479,7 +481,7 @@ Evidence (captures, logs, test records) is required for each.
 | # | Decision | Blocks | Owner | Status | Proposed resolution |
 |---|---|---|---|---|---|
 | TF-01 | Does Betaflight 4.5.1 / the ODDITYRCF7AIO target support this sensor, and in what form (UART frame, MSP, none)? | Option A |  | Resolved | **Unsupported.** Betaflight 4.5.1 has no optical-flow driver at all; 2026.6.2 supports MT and UPT1 only (not CX-OF); INAV has CX-OF but no `ODDITYRCF7AIO` target (source-verified). Option A dropped. [[ADR-016 Flow Sensor Path\|ADR-016]] |
-| TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, Option C (small 3.3 V MCU with a hardware UART, I2C slave to the ESP). [[ADR-016 Flow Sensor Path\|ADR-016]] |
+| TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, ADR-016 is re-opened (Option C, an extra MCU, was rejected on 2026-10-14, TF-11). [[ADR-016 Flow Sensor Path\|ADR-016]] |
 | TF-03 | Serial framing (data/parity/stop bits), TX logic level, whether the sensor RX pin is usable | Bench setup |  | Open | — |
 | TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Open | Not resolved by ArduPilot's CX-OF driver, which does not validate a checksum (its byte 6 is time motion). Determine from bench captures (§9.2). |
 | TF-05 | X/Y signedness, units, scaling; delta vs. accumulated | Estimation |  | Open | Datasheet order (high byte first) conflicts with ArduPilot's CX-OF driver (low byte first, signed 16-bit). ArduPilot uses an empirical scale factor. Determine byte order and signedness from bench captures; calibrate scaling. |
@@ -508,6 +510,9 @@ Evidence (captures, logs, test records) is required for each.
 ---
 
 ## 11. Current recommendation and remaining decisions
+
+> [!warning] Superseded by [[ADR-016 Flow Sensor Path|ADR-016]] (2026-10-14)
+> The recommendation and the open list below are the 2026-10-12 state. ADR-016 supersedes them: no extra processor (Option C rejected, TF-11), the ESP SoftwareSerial experiment with a threshold agreed beforehand, and height from the FC DPS310 baro (TF-12). Read ADR-016 and the TF table in §10 first.
 
 ### Current recommendation (proposed, not decided)
 
@@ -539,10 +544,12 @@ Evidence (captures, logs, test records) is required for each.
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

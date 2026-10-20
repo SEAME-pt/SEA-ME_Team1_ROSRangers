@@ -20,17 +20,19 @@ The program evaluates **individual** contributions, and everyone must understand
 | Track | Owns | Pairs with | Module 1 evidence |
 |---|---|---|---|
 | A · Flight & Safety | Betaflight config + upgrade, ELRS, failsafe, flight tests, safety-pilot rota, [[Safety Rules]] | B (override tests) | failsafe videos, `diff all` history, flight log |
-| B · Embedded Link | D1 mini firmware, MSP, C++ protocol lib, ThoneFlow reader | A, D | [[ESP Link State Machine]], unit tests, HIL passing, [[ESP_to_FC]] §11 results |
+| B · Embedded Link | ESP firmware, MSP, C++ protocol lib, ThoneFlow reader | A, D | [[ESP Link State Machine]], unit tests, HIL passing, [[ESP_to_FC]] §11 results |
 | C · Ground & ROS 2 | `flight_interface` lifecycle node, Python protocol, controller | E | node graph, message contracts |
 | D · CI/CD & Test | workflows, coverage gates, static analysis, SITL job, [[HIL Runner]] | B | green pipeline, HIL job |
 | E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline|Gesture Pipeline]] | C | sim-to-real report |
 
+**Owners (2026-10-20):** A · BrunoBMFT, C · Dot99. The team assigns B, D and E internally.
+
 ## 2. Rules
 
-- Every PR is reviewed by two people **outside** the author's track (knowledge spreads). Merge rules follow [[Dev_Strategy]] §8–§9.
+- Every PR is reviewed by people **outside** the author's track (knowledge spreads): **1 approving review** on PRs into `dev`, **2** on `dev` → `main` (team decision 2026-10-20, [[ADR-017 Branching Model|ADR-017]]). Merge rules follow [[Dev_Strategy]] §8–§9.
 - Each person gives one 20-min **teach-back** per sprint on their track.
 - Rotate one person between tracks each sprint. CI (D) and Safety (A) keep one stable owner.
-- Safety pilot: at least 2 trained people. Nobody flies alone.
+- Safety pilot: at least 2 trained people. Nobody flies alone ([[Safety Rules]] #15). The safety induction is done (GitHub #13, closed, 2026-10-20). Named safety pilot: BrunoBMFT. The second person rotates among trained team members each session.
 
 ## 3. Glossary
 
@@ -42,4 +44,7 @@ The program evaluates **individual** contributions, and everyone must understand
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

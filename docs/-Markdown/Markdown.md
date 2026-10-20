@@ -1,9 +1,17 @@
+---
+title: Markdown
+type: reference
+status: active
+date: 2026-10-15
+tags: [obsidian]
+---
+
 # 🚀 Obsidian Test Note
 
 This is a sample **Markdown** note designed to test your theme's appearance and Obsidian's features.
 
 ## 📌 Links and Connections
-* **Internal Link:** [[Another Note]] (Hold `Ctrl` or `Cmd` and click to create this note)
+* **Internal Link:** `[[Another Note]]` (Hold `Ctrl` or `Cmd` and click to create this note)
 * **External Link:** [Obsidian Official Website](https://obsidian.md)
 
 ---

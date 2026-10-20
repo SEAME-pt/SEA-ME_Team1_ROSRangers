@@ -1,5 +1,8 @@
 ---
 title: Merge Strategy
+type: guide
+status: active
+date: 2026-10-15
 tags:
   - git
   - merge
@@ -452,7 +455,6 @@ git revert -m 1 <merge-commit-hash>
 | **Revert**             | Creating a new commit that undoes an earlier commit                              |
 | **Promotion**          | Merging a validated `dev` into `main` to publish a new stable state            |
 | **Parent (commit)**    | The commit(s) a commit is built on; a merge commit has two                       |
-| **Upstream branch**    | The branch you merge into (e.g. `dev`)                                          |
 | **Branch** | An independent line of development in version control. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |

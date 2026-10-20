@@ -1,5 +1,8 @@
 ---
 title: Feature and Bug-Fix Branches
+type: guide
+status: active
+date: 2026-10-15
 tags:
   - git
   - branching

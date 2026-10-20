@@ -37,6 +37,14 @@ tags:
 
 **Resume:** never automatic. The ground sends `RESUME_REQUEST` inside a valid session, then streams neutral setpoints for ≥ 500 ms before control returns ([[ESP Link State Machine]]).
 
+### 2.1 Link-loss safe state (clarification, 2026-10-20)
+
+The decision above is unchanged. This entry fixes what "safe" means for the **ESP link** failsafe (the open point in OD-12):
+
+- On link loss the drone **holds its position**: the ESP keeps neutral sticks (roll/pitch/yaw 1500, throttle left to the pilot), as in the table above. The drone does **not** land or return by itself.
+- The **pilot takes over with the radio** (ELRS and the override switch). This stays the only guaranteed mitigation.
+- This is **not** Betaflight's own RX failsafe (`failsafe_procedure` = DROP on ELRS radio loss, layer 1 below). That one is a different failsafe and is not changed here ([[Betaflight Setup]] §5).
+
 ## 3. Safety layers (inner → outer)
 
 1. Betaflight ELRS failsafe (radio loss → Stage 1 → Stage 2).
@@ -59,7 +67,9 @@ tags:
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -1,16 +1,18 @@
 ---
 title: Study Plan v2 — Sprint 0 and Module 1
+type: plan
+date: 2026-10-15
 status: active
 version: 2.1
 project: SEA autonomous drone
-covers: Sprint 0 (7–16 Oct 2026) + Module 1 (19 Oct – 11 Dec 2026)
-replaces: "[[plano_de_estudo]] (v1, single learner, 8 weeks)"
+covers: Sprint 0 (7–18 Oct 2026) + Module 1 (19 Oct – 11 Dec 2026)
+replaces: "v1 plan (single learner, 8 weeks; archived in Outdated/)"
 tags: [plan]
 ---
 
 # Study Plan v2 — Sprint 0 and Module 1
 
-> [!summary] What changed from v1 ([[plano_de_estudo]])
+> [!summary] What changed from v1 (single learner, 8 weeks; archived in `Outdated/`)
 > - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner.
 > - Aligned to the **Module 1 deliverables**: architecture document, green CI (>80% coverage + HIL), real-time profile, sim-to-real report, E-stop under fault injection, sprint demos every 2 weeks.
 > - **Gestures are part of the plan.** The webcam prototype already exists ([[01 Gesture Node|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
@@ -29,7 +31,7 @@ tags: [plan]
 | Rhythm | 5 days/week, about 8 h/day per person |
 | Daily split | 1 h review + goal, 2 h study, 4 h practice, 1 h documentation |
 | Records | English (code, notes, this vault) |
-| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, D1 mini, ThoneFlow-3901U (not installed), MS210x USB video grabber |
+| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, ThoneFlow-3901U (not installed), MS210x USB video grabber |
 | Flight | Netted cage only, safety pilot on the radio ([[Safety Rules]]) |
 
 ### Tracks (details in [[Team Tracks]])
@@ -42,7 +44,7 @@ tags: [plan]
 
 ---
 
-## 2. Sprint 0 — status (7–16 Oct)
+## 2. Sprint 0 — status (7–18 Oct)
 
 ### 2.1 Done in week 1 (7–9 Oct) and so far
 
@@ -51,18 +53,31 @@ tags: [plan]
 - [x] Exposed pads listed: T1, R1, R2, R3, T4, R4, CAM, SCL, SDA, 5V, 3.3V, GND, DV5V
 - [x] Development process and Git workflow documented ([[Dev_Strategy]], Git Learning notes)
 - [x] Communication drafts written ([[PC_to_ESP]], [[ESP_to_FC]], [[ThoneFlow]])
+<<<<<<< HEAD
 - [x] Static-gesture webcam prototype working ([[01 Gesture Node|Gesture Recognition Program]])
+=======
+- [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
+>>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] Decisions accepted ([[Decision Register]])
 
-### 2.2 To do this week (12–16 Oct)
+### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-18)
 
+<<<<<<< HEAD
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
+=======
+- [x] Safety induction done ([[Safety Rules]]); props-off rule agreed by all (GitHub #13, closed). Safety pilot: BrunoBMFT
+>>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
+<<<<<<< HEAD
 - [ ] Back up the D1 mini **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
 - [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU still open.
+=======
+- [ ] Back up the ESP **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
+- [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU answered on 2026-10-14: neither ([[ADR-016 Flow Sensor Path|ADR-016]]).
+>>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] XT30 → XT60 adapter received; battery checked (2026-10-16, [[Battery Log]], GitHub #19)
 
 ---
@@ -74,7 +89,7 @@ tags: [plan]
 | Track | Practice |
 |---|---|
 | A | Bind ELRS, ARM + kill switches, props-off motor test, failsafe test with the TX off (props off), first short Angle-mode hover in the cage on **4.5.1** (baseline). |
-| B | Read `MSP_API_VERSION`, `MSP_STATUS`, `MSP_ATTITUDE` over the FC's USB in Python (pyserial). **D1 mini alone: Stage 1 of the [[ESP Bench Test Plan]]** (backup, blink, SoftAP, UDP latency, current draw, range, watchdog). |
+| B | Read `MSP_API_VERSION`, `MSP_STATUS`, `MSP_ATTITUDE` over the FC's USB in Python (pyserial). **ESP alone: Stage 1 of the [[ESP Bench Test Plan]]** (backup, blink, SoftAP, UDP latency, current draw, range, watchdog). |
 | C | Install Ubuntu 24.04 + ROS 2 Jazzy, do the CLI/rclpy tutorials. Create the `flight_interface` package skeleton (lifecycle node). |
 | D | Software repo skeleton, pre-commit, first workflow green on `dev`: lint + empty C++ test + pytest ([[GitHub Actions Starter]]). |
 | E | Install PX4 SITL + Gazebo, run the default quad, fly offboard from the ROS 2 example. |
@@ -85,13 +100,14 @@ tags: [plan]
 
 | Track | Practice |
 |---|---|
-| A | Upgrade to **2026.6.2** ([[Betaflight Setup]]). Re-enter the configuration by hand (don't paste the 4.5 diff). Try a cloud build with ALTHOLD if the baro works and it fits. Re-test failsafe, re-fly hover. Save the new `diff all`. |
-| B | **Stage 2 of the [[ESP Bench Test Plan]]**: D1 mini ↔ FC with **temporary wires** (no soldering), FC on USB only. Enable MSP 115200. **Transparent UART↔UDP bridge spike** (props off, isolated network only). Measure RTT, max and loss. **Solder only after Stage 2 passes** and the [[ESP_to_FC]] §10 checklist is done ([[Wiring and Pinout]]). |
-| C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. |
-| D | C++ protocol library skeleton + GoogleTest + gcovr gate (start at 50%, rise to 80%). PlatformIO build job for `d1_mini`. |
-| E | Measure Wi-Fi ↔ ELRS coexistence with Track A: Wi-Fi channels 1/6/11, watch ELRS LQ in the OSD. |
+| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). |
+| B | *Changed 2026-10-20: the ESP is already soldered (incident #69), and the soldered link loses 0.7–3.7 % against 0 % before (#30).* **Find the cause of the loss, cheapest check first** (10 min each, near): FC on USB with the radio off → radio on and bound → ESP antenna turned away from the frame. Finish S2-02, S2-06 and S1-08 (ESP current) on the soldered link. Post the [[ESP_to_FC]] §10 joint evidence (#69). Agree the pass threshold (OD-22, #63). Props off ([[Safety Rules]] #13). |
+| C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. Decide the telemetry set (FC-12, #63) by 2026-10-23. Develop against the FC USB link or a recorded log, so C does not wait for B's fix. |
+| D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `d1_mini`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |
+| E | Measure Wi-Fi ↔ ELRS coexistence **with Track B, as part of the #30 runs**: Wi-Fi channels 1/6/11, log ELRS LQ from the OSD. Keep the PX4 SITL work going in parallel. |
+| All | **One drone for A, B and D.** Book it with the daily drone schedule in [[Weekly Rituals]]. |
 
-**Demo:** FC attitude visible in ROS 2 over Wi-Fi with measured latency. The upgraded drone flies. ESP bench results (Stages 1–2) committed.
+**Demo (changed 2026-10-20):** failsafe video and the 4.5.1 hover. FC attitude in ROS 2, over Wi-Fi or USB, with measured latency. Results of the link-loss investigation (#30) and the ESP bench results committed. The demo no longer depends on the upgrade or on the link fix.
 
 ## 5. Week 3 · 2–6 Nov · Protocol v0 and the architecture document
 
@@ -107,7 +123,11 @@ tags: [plan]
 - **C:** `flight_interface` lifecycle node: activate/deactivate, watchdog, an E-stop transition that cuts setpoints. Unit tests.
 - **A + B (props off):** run [[ESP_to_FC]] §11 Phases 1–5. MSP Override with mask **8** (yaw). Readback via `MSP_RC`. Pilot takeover. F1–F9 results recorded.
 - **D:** **HIL runner online**: flash the ESP from CI, run the props-off passthrough and failsafe-timing tests.
+<<<<<<< HEAD
 - **E:** wrap the existing `gestures.py` into the recogniser process + `intent_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
+=======
+- **E:** wrap the existing `gestures.py` into the recogniser process + `gesture_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
+>>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 
 **Demo:** fault injection on the bench: kill the ground node, drop Wi-Fi, send garbage. Each must end in the defined safe state.
 
@@ -137,12 +157,12 @@ tags: [plan]
 
 ## 11. Exit criteria for Module 1 (from the program README)
 
-- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage.
-- [ ] Link loss → hover or controlled landing.
+- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-NAV-001: 0.25 m for 60 s in SITL; REQ-NAV-002: 0.5 m radius for 30 s in the cage; REQ-CTL-001 limits the gesture speeds).
+- [ ] Link loss → drone holds position (neutral sticks) and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20; REQ-SAF-009, REQ-SAF-013, REQ-SAF-014, REQ-SAF-017). Betaflight's own RX failsafe (DROP on radio loss) is a separate failsafe.
 - [ ] Green CI: build, unit tests, static analysis, coverage > 80%, HIL job.
-- [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection.
+- [ ] Real-time profile plotted. Sim-to-real report. E-stop under fault injection (REQ-SAF-002, REQ-SAF-005).
 
-See also [[Weekly Rituals]].
+Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 
 ## 12. Glossary
 
@@ -154,9 +174,9 @@ See also [[Weekly Rituals]].
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
@@ -166,3 +186,17 @@ See also [[Weekly Rituals]].
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
+| **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **RTT** | Round-trip time: how long a packet takes to go out and come back. |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |
+| **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
+| **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
