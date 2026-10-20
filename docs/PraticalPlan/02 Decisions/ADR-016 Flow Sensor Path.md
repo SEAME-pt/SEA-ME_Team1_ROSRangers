@@ -28,7 +28,7 @@ tags:
 ## 2. Decision
 
 1. **Characterise first:** sensor alone on a USB-serial adapter ([[ThoneFlow]] §9.2). Week 3 of [[Study Plan v2]].
-2. **Option B as a time-boxed experiment (1 week):** ThoneFlow TX → D1 mini **D5 (GPIO14)** with EspSoftwareSerial at 19200. Measure with Wi-Fi and the FC link running. Agree the frame-loss threshold **before** testing (TF-10).
+2. **Option B as a time-boxed experiment (1 week):** ThoneFlow TX → ESP **D5 (GPIO14)** with EspSoftwareSerial at 19200. Measure with Wi-Fi and the FC link running. Agree the frame-loss threshold **before** testing (TF-10).
 3. **No extra MCU (Option C rejected, 2026-10-14).** The program rules out a companion computer on the drone (seame-2.0 drone README), so the team adds no second processor. **If B fails, re-open this ADR.** Candidates then: tune the SoftwareSerial reader, accept a higher frame-loss threshold if the estimator copes, or move to a Betaflight version with a CX-OF driver if one appears.
 4. **Height (TF-12): the FC's DPS310 barometer** (2026-10-14). The lab has no ToF rangefinder, and the ThoneFlow cannot measure height (image motion ≈ speed ÷ height, so one camera can't separate the two). The baro is detected and responds to height ([[ADR-014 Betaflight Version|ADR-014]]).
    - **Relative height:** zero the baro on the ground before each flight; use the change from that point, not absolute altitude.
@@ -36,6 +36,14 @@ tags:
    - **Smooth it** with the accelerometer (complementary filter) on the ground; avoid flying below ~0.5 m (ground effect and prop wash disturb the pressure).
    - **Measure first:** baro noise and drift at known heights in the cage, together with the week-5 velocity test ([[Study Plan v2]] §7).
 5. Estimation runs on the ground (TF-13).
+
+### Update 2026-10-20 (proposed): position-hold acceptance and fallback
+
+Module 1 needs "holds position" in SITL and in the cage. The numbers below are proposals. Confirm them after the week-5 baro and flow measurements ([[Study Plan v2]] §7).
+
+- **Acceptance:** [[Requirements|REQ-NAV-001]] (SITL: 0.25 m, ±0.15 m, 60 s) and [[Requirements|REQ-NAV-002]] (cage: 0.5 m radius for 30 s, 3 of 3 runs; ±0.3 m height only when height is automatic). The cage tolerance is wider than the SITL one because the baro height (§2.4) scales the flow velocity error.
+- **Decide-by 2026-11-13** (Sprint 2 demo, end of the week-4 SoftwareSerial experiment): does Option B deliver flow frames within the agreed loss threshold (TF-10)?
+- **Fallback if it doesn't:** position hold is shown in SITL against REQ-NAV-001. In the cage, the ground controller streams velocity setpoints with the pilot correcting drift, and the gap is reported in the sim-to-real report. This ADR is re-opened (§2.3) for the next sensor path. The fallback does not change any safety rule: the pilot keeps the radio and the kill switch.
 
 ## 3. Consequences
 
@@ -53,6 +61,8 @@ tags:
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

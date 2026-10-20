@@ -11,7 +11,7 @@ tags:
 # System Overview
 
 > [!warning] Status: DRAFT
-> This is the architecture we are building towards. Nothing in the drone-side chain has been wired or tested yet.
+> This is the architecture we are building towards. State on 2026-10-20: the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The rest of the chain (control, failsafe, gestures) is not built or tested yet.
 
 Follows the Module 1 reference layering: mission → ROS 2 → hardware abstraction → real-time layer → sensors/actuators.
 
@@ -23,14 +23,14 @@ Follows the Module 1 reference layering: mission → ROS 2 → hardware abstract
 flowchart LR
   subgraph Room["Coding room (ground)"]
     CAM[Webcam] --> GEST["gesture recogniser<br/>MediaPipe, own venv"]
-    GEST --> GN[intent_node]
+    GEST --> GN[gesture_node]
     GN -->|/gesture/intent| MISSION[mission / controller]
     EST["estimator<br/>flow + IMU + height"] --> MISSION
     MISSION -->|setpoints| FI["flight_interface<br/>lifecycle node"]
     FI -->|state| EST
   end
   subgraph Air["Drone (cage)"]
-    ESP["D1 mini ESP8266<br/>custom firmware: gateway + failsafe"]
+    ESP["ESP8266<br/>custom firmware: gateway + failsafe"]
     FC["OddityRC F7 AIO<br/>Betaflight: attitude/rate loops"]
     FLOW["ThoneFlow-3901U<br/>(not installed)"]
     ELRS["ELRS BETAFPV Nano"]
@@ -59,7 +59,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
-| Webcam + MediaPipe | ≥ 20 FPS | [[01 Gesture Node|Gesture Recognition Program]] |
+| Webcam + MediaPipe | ≥ 20 FPS | [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.
 
@@ -78,9 +78,9 @@ Telemetry echoes the **last applied control seq and its send timestamp**, so the
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
@@ -90,3 +90,5 @@ Telemetry echoes the **last applied control seq and its send timestamp**, so the
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -34,14 +34,15 @@ tags:
 | [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions | FC-09, P2 (FC page) |
 | [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2 | ✅ Accepted | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
-| [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → D1 mini 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
+| [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-12 (direction) |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner | ✅ Accepted | n/a |
+| [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -64,7 +65,7 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
@@ -72,3 +73,9 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

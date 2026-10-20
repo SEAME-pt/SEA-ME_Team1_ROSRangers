@@ -24,7 +24,7 @@ tags:
 | Target | `ODDITYRCF7AIO` (STM32F722) | [[2.5Drone]] |
 | UART2 | Serial RX (ELRS, CRSF) | [[ESP_to_FC]] §2 |
 | UART3 | IRC Tramp VTX | [[ESP_to_FC]] §2 |
-| UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). Nothing wired yet | [[ADR-011 FC UART Allocation\|ADR-011]] |
+| UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). The ESP is soldered to UART4 since 2026-10-19 | [[ADR-011 FC UART Allocation\|ADR-011]] |
 | UART1 / UART6 | unassigned | [[ESP_to_FC]] §2 |
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
 
@@ -44,7 +44,7 @@ tags:
 ## 4. CLI for the ESP link (after approval)
 
 ```text
-# UART4 = MSP for the D1 mini (serial id 3), function MSP (1), 115200
+# UART4 = MSP for the ESP (serial id 3), function MSP (1), 115200
 serial 3 1 115200 57600 0 115200
 # MSP Override, stage 1 = yaw only (raw AETR bit 3)
 set msp_override_channels_mask = 8
@@ -52,7 +52,7 @@ set msp_override_failsafe = OFF
 save
 ```
 
-UART2 (ELRS) and UART3 (Tramp) are **left untouched** (SAF-08). Set the modes in the **Modes tab**: ARM, ANGLE, **MSP OVERRIDE** (on its own 2-position switch), and ALTHOLD if built. Masks: 8 = yaw, 11 = roll+pitch+yaw, 15 = all four ([[ADR-010 MSP Override|ADR-010]]).
+UART2 (ELRS) and UART3 (Tramp) are **left untouched** (REQ-SAF-008 (was SAF-08)). Set the modes in the **Modes tab**: ARM, ANGLE, **MSP OVERRIDE** (on its own 2-position switch), and ALTHOLD if built. Masks: 8 = yaw, 11 = roll+pitch+yaw, 15 = all four ([[ADR-010 MSP Override|ADR-010]]).
 
 ## 5. Failsafe defaults (verified in 4.5.1 source)
 
@@ -63,7 +63,7 @@ UART2 (ELRS) and UART3 (Tramp) are **left untouched** (SAF-08). Set the modes in
 | `failsafe_recovery_delay` | 5 | 0.5 s of valid data to recover |
 | RX loss detection | ~100 ms, then the last values are held for 300 ms | then Stage 1 values (sticks centred, throttle low) |
 
-Start with **DROP** in the cage (low altitude). Re-evaluate for the program's "hover or controlled landing" requirement after the upgrade.
+Start with **DROP** in the cage (low altitude). These values are Betaflight's own RX failsafe (radio loss). The program's link-loss requirement is a different failsafe: on **ESP link loss** the drone holds position with neutral sticks and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20). Re-evaluate the DROP choice after the upgrade.
 
 ## 6. Glossary
 
@@ -76,4 +76,7 @@ Start with **DROP** in the cage (low altitude). Re-evaluate for the program's "h
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |

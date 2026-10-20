@@ -58,5 +58,7 @@ tags:
 | Term | Meaning |
 | --- | --- |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

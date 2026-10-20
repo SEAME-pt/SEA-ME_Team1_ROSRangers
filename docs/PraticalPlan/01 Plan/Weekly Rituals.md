@@ -22,6 +22,7 @@ tags:
 | Wed 30 min | Decision review | New or updated ADRs in the [[Decision Register]] |
 | Fri (every 2nd) | Sprint demo + retrospective | Demo video, retro notes |
 | Every flight day | Pre-flight checklist ([[Safety Rules]]) | Flight-test report (Obsidian, per [[Dev_Strategy]] §3) |
+| Daily, at stand-up | **Drone schedule.** There is one drone for A (flights), B (link tests) and D (HIL). Book slots, e.g. A in the morning and B/E in the afternoon. After a B or D session, restore the config from `drone/config/betaflight` and check it with `compare-diffs` before anyone flies. | Slots in the stand-up notes |
 
 ## 2. Weekly checklist
 
@@ -31,7 +32,7 @@ tags:
 - [ ] Incidents and crashes logged as GitHub Issues (program rule)
 - [ ] Measurements saved (latency, jitter, flow error)
 - [ ] Safety reviewed
-- [ ] Vault updated, [[To Do]] refreshed
+- [ ] Vault updated, board refreshed (Status, Sprint, Phase fields)
 
 ## 3. Glossary
 

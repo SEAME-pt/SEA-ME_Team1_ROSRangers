@@ -66,7 +66,7 @@ tags:
 
 ## 4. Receive rules
 
-1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-VAL-01 to 04).
+1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004 (were REQ-COM-001 to 04)).
 2. `session_id` must equal the current session.
 3. Control (0x60) is accepted only if `seq > last_ctrl_seq` ([[ADR-003 Sequence Acceptance|ADR-003]]). Otherwise drop and count.
 4. Values are clamped. The ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs.
@@ -85,7 +85,7 @@ Clamps apply on the ground **and** on the ESP, the last point under team control
 
 ## 6. Test vectors
 
-Stored in `protocol/test/vectors/*.json` in the software repo. The C++ and Python implementations must both pass them ([[Testing Strategy]]).
+Stored in `drone/tests/vectors/*.json` in the software repo. The C++ and Python implementations must both pass them ([[Testing Strategy]]).
 
 ## 7. Still open
 
@@ -98,8 +98,10 @@ Stored in `protocol/test/vectors/*.json` in the software repo. The C++ and Pytho
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

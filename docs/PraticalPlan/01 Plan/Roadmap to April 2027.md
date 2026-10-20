@@ -22,12 +22,12 @@ gantt
     dateFormat  YYYY-MM-DD
     title SEA:ME drone roadmap
     section Program
-    Sprint 0            :active, 2026-10-07, 2026-10-16
+    Sprint 0            :active, 2026-10-07, 2026-10-18
     Module 1            :m1, 2026-10-19, 2026-12-11
     Module 2            :m2, 2026-12-14, 2027-02-26
     Module 3            :m3, 2027-03-01, 2027-04-30
     section Drone
-    Docs, decisions, setup               :2026-10-07, 2026-10-16
+    Docs, decisions, setup               :2026-10-07, 2026-10-18
     Link, failsafe, CI+HIL, position hold :2026-10-19, 2026-12-11
     Gestures (custom model), detector     :2026-12-14, 2027-02-26
     Multi-agent scenario + security       :2027-03-01, 2027-04-30
@@ -51,15 +51,15 @@ See [[Study Plan v2]].
 
 ## 4. Module 2 (14 Dec – 26 Feb) · Perception, Edge AI
 
-- **Gestures as edge inference** (accepted by instructors). Grow [[01 Gesture Node|Gesture Recognition Program]] from rule-based static gestures to a **trained classifier on hand landmarks**: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget.
+- **Gestures as edge inference** (accepted by instructors). Grow [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] from rule-based static gestures to a **trained classifier on hand landmarks**: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget.
 - Drone camera (MS210x grabber) **detector producing target coordinates** (e.g., a marker or object) for the inspection-sweep milestone.
-- **Portability proof:** run the gesture pipeline (`intent_node` and an adapter) on a second hardware class (e.g., command the car's `cmd_vel` or the arm). See [[00 Gesture Pipeline|Gesture Pipeline]].
+- **Portability proof:** run the gesture node on a second hardware class (e.g., command the car's `cmd_vel` or the arm). See [[00 Gesture Pipeline|Gesture Pipeline]].
 - Calibration report (camera intrinsics, time offsets). VIO experiments.
 
 ## 5. Module 3 (1 Mar – 30 Apr) · Multi-agent
 
 - Likely scenario **A (Drone + Car)** or **E (Drone + Humanoid)**: the drone publishes target coordinates in a shared frame.
-- Security package: threat model (`[[Drone Link Threat Model]]`, suggested), SROS 2, and a **signed OTA** update on the D1 mini (the ESP8266 core supports RSA-2048 signed updates), with a tampered one rejected. This resolves OD-23 in [[PC_to_ESP]].
+- Security package: threat model (`[[Drone Link Threat Model]]`, suggested), SROS 2, and a **signed OTA** update on the ESP (the ESP8266 core supports RSA-2048 signed updates), with a tampered one rejected. This resolves OD-23 in [[PC_to_ESP]].
 - Interface contract with the partner team, enforced by contract tests in CI.
 
 ## 6. Glossary
@@ -67,7 +67,9 @@ See [[Study Plan v2]].
 | Term | Meaning |
 | --- | --- |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

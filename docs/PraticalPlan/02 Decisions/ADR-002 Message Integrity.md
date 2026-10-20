@@ -58,6 +58,8 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

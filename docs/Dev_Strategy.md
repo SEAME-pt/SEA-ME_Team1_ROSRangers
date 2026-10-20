@@ -1,3 +1,12 @@
+---
+title: SEA:ME — Software Development & Git Workflow
+type: process
+status: active
+date: 2026-10-15
+project: SEA autonomous drone
+tags: [process, git, ci]
+---
+
 # SEA:ME — Software Development & Git Workflow
 
 > [!info] Project
@@ -6,7 +15,7 @@
 > **Duration:** 6 months
 > **Development model:** GitHub + GitHub Actions
 > **Documentation:** Obsidian
-> **Repository model:** Separate code and documentation repositories
+> **Repository model:** One repository. Code lives in the code folders and the Obsidian vault is `docs/` (decision 2026-10-20)
 
 ---
 
@@ -32,11 +41,11 @@ The process should **not become an administrative burden**. Practices should be 
 
 # 2. Repository Structure
 
-The project uses two separate repositories.
+The project uses **one repository** (decision 2026-10-20). Code and the documentation vault live together: the vault is the `docs/` folder. The layout is in [[Repository Layout]].
 
-### Software Repository
+### Code folders
 
-Contains the actual implementation:
+Contain the actual implementation:
 
 - source code
 - tests
@@ -65,9 +74,9 @@ sea-me-drone/
 └── README.md
 ```
 
-### Documentation Repository
+### Documentation vault (`docs/`)
 
-The Obsidian repository contains:
+The Obsidian vault contains:
 
 - requirements
 - architecture
@@ -81,25 +90,25 @@ The Obsidian repository contains:
 - project planning
 - links to GitHub implementation work
 
-The documentation repository is **not intended to contain the source code**.
+The vault `docs/` is **not intended to contain the source code**. Code stays in the code folders.
 
 ---
 
-# 3. Responsibilities of Each Repository
+# 3. Where Each Kind of Information Lives
 
 | Information | Location |
 |---|---|
-| Source code | GitHub software repository |
-| Unit tests | GitHub software repository |
-| Integration tests | GitHub software repository |
-| CI configuration | GitHub software repository |
-| Build configuration | GitHub software repository |
-| Requirements | Obsidian |
-| System architecture | Obsidian |
-| Design decisions | Obsidian |
-| Test plans | Obsidian |
-| Test results requiring documentation | Obsidian |
-| Flight-test reports | Obsidian |
+| Source code | Code folders (`drone/`) |
+| Unit tests | Code folders (`drone/`) |
+| Integration tests | Code folders (`drone/`) |
+| CI configuration | `.github/` |
+| Build configuration | Code folders (`drone/`) |
+| Requirements | `docs/` (Obsidian) |
+| System architecture | `docs/` (Obsidian) |
+| Design decisions | `docs/` (Obsidian) |
+| Test plans | `docs/` (Obsidian) |
+| Test results requiring documentation | `docs/` (Obsidian) |
+| Flight-test reports | `docs/` (Obsidian) |
 | Issues / implementation tasks | GitHub Issues |
 | Code review | GitHub Pull Requests |
 | Stable source code | `main` |
@@ -396,7 +405,7 @@ Recommended requirements:
 - Pull Request required
 - Direct pushes disabled
 - CI checks required
-- At least one reviewer where practical
+- **One approving review** (team decision 2026-10-20, see [[ADR-017 Branching Model|ADR-017]])
 - Branch must pass automated tests before merging
 - No force pushes
 
@@ -407,7 +416,7 @@ Stricter requirements:
 - Pull Request required
 - Direct pushes disabled
 - CI checks required
-- **Two approvals**
+- **Two approving reviews** (team decision 2026-10-20)
 - No force pushes
 - Conversations must be resolved
 - Required checks must pass
@@ -416,7 +425,7 @@ Stricter requirements:
 The exact requirements can be adjusted depending on team size and project workload.
 
 > [!note]
-> Two reviewers on every single `dev` PR may create unnecessary delays for a small team. The stronger review requirement belongs on `main`.
+> Two reviewers on every single `dev` PR may create unnecessary delays for a small team. The stronger review requirement belongs on `main`. Reviewers come from outside the author's track ([[Team Tracks]] §2).
 
 >*Note: Check [[Branch_Protection|Branch Protection]] documentation in case of any doubt*
 
@@ -702,7 +711,7 @@ Simulation / Flight Test
 
 # 15. Requirement IDs
 
-Requirement IDs should be stable.
+Requirement IDs should be stable. All requirements are listed in the register [[Requirements]]; the IDs in the examples below are illustrative.
 
 Suggested categories:
 
@@ -1065,7 +1074,7 @@ The complete development process can be summarized as:
 The development process exists to help the team build a reliable autonomous drone within six months.
 
 The process itself should never become more complicated than the problem it is solving.
-## 2. Glossary
+## 26. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -1074,4 +1083,5 @@ The process itself should never become more complicated than the problem it is s
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **REQ** | Requirement ID of the form REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN, used for traceability. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |

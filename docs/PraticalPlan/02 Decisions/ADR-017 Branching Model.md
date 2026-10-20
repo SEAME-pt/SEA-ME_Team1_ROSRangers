@@ -35,6 +35,10 @@ Follow [[Dev_Strategy]] §4–§9 exactly:
 - The HIL job runs on pushes to `dev` and `main`, never on PRs from forks ([[HIL Runner]]).
 - Track rule in [[Team Tracks]]: reviewers come from outside the author's track.
 
+### Update 2026-10-20: review counts
+
+Team decision: **1 approving review** on PRs into `dev`, **2 approving reviews** on PRs from `dev` into `main`. Reviewers still come from outside the author's track ([[Team Tracks]] §2). This replaces the earlier wording "two reviewers on every PR" in [[Team Tracks]] and "a reviewer where practical" in [[Dev_Strategy]] §9. Aligned in [[Branch_Protection]] and [[Pull_Request_Workflow]]. The GitHub branch-protection settings must match (`dev`: 1 required approval, `main`: 2).
+
 ## 3. Related pages
 
 - [[Dev_Strategy]] · [[Pull_Request_Workflow]] · [[Decision Register]]

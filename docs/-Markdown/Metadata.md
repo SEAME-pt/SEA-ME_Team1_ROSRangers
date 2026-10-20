@@ -1,4 +1,6 @@
 ---
+title: Metadata
+date: 2026-10-07
 type: permanent-note
 status: in-progress
 project: Website Redesign 2026

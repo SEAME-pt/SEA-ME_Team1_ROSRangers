@@ -1,3 +1,11 @@
+---
+title: Diagrams
+type: reference
+status: active
+date: 2026-10-15
+tags: [obsidian]
+---
+
 # 🧬 System Architecture & Mermaid Diagrams
 
 This file showcases how Obsidian natively compiles code-based text into dynamic visual flowcharts using the Mermaid framework.

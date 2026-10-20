@@ -1,5 +1,7 @@
 ---
 title: ESP8266 AT Commands and TCP/UDP for the Autonomous Drone
+type: guide
+status: draft
 date: 2026-10-13
 tags:
   - esp8266
@@ -534,7 +536,7 @@ flowchart LR
 ## 11. Open questions from the test notes
 
 - [ ] Which camera hardware will be used: an ESP32-CAM or another module?
-- [ ] Which flight controller and software stack (ArduPilot, PX4, other)? *(See section 12: our board runs Betaflight.)*
+- [x] Which flight controller and software stack (ArduPilot, PX4, other)? **Answered 2026-10-20: Betaflight 4.5.1** on the OddityRC F7 40A AIO (section 12).
 - [ ] Will the links carry your own structured messages or an existing protocol such as MAVLink?
 
 ---
@@ -542,7 +544,7 @@ flowchart LR
 ## 12. Project notes for the Brook drone
 
 > [!warning] Suggestions to verify
-> This section is **new**. It connects the ESP8266 notes to the hardware described in the [[README.en|Hardware README]]. None of it has been tested on the Brook.
+> This section is **new**. It connects the ESP8266 notes to the hardware described in the [[2.5Drone|Hardware README]]. None of it has been tested on the Brook.
 
 ### What our hardware already tells us
 
@@ -656,9 +658,14 @@ flowchart LR
 | **MSP**             | MultiWii Serial Protocol, the serial protocol Betaflight uses                        |
 | **ELRS**            | ExpressLRS, the open source radio-control link used on our receiver                  |
 | **AT command** | Text command used to configure or control a modem or microcontroller module. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **RC** | Radio Control: the stick and switch channel values the FC receives. |
+| **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
+| **DHCP** | Dynamic Host Configuration Protocol: hands out IP addresses automatically (the ESP SoftAP uses static IPs instead). |

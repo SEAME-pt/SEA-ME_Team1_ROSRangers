@@ -22,7 +22,13 @@ tags:
 > - ELRS wires confirmed on **R2/T2** with a multimeter. UART2 certainty is now High.
 > - **T4/R4**: continuity to the MCU side, no shorts to neighbouring pads. The continuity condition in §3 is met.
 > - The UART decision does not change.
-> - The ELRS red wire is on **5V**, not on DV5V (the receiver pad in the vendor wiring diagram). The team will move it to **DV5V** to free the 5V pad and to keep radio interference low. This changes the ELRS wiring, so it is an exception to "no change to the existing ELRS wiring" below and is reviewed on its own under SAF-08 (GitHub #41). UART2, R2/T2 and the receiver configuration stay the same.
+> - The ELRS red wire is on **5V**, not on DV5V (the receiver pad in the vendor wiring diagram). The team will move it to **DV5V** to free the 5V pad and to keep radio interference low. This changes the ELRS wiring, so it is an exception to "no change to the existing ELRS wiring" below and is reviewed on its own under REQ-SAF-008 (was SAF-08) (GitHub #41). UART2, R2/T2 and the receiver configuration stay the same.
+
+> [!info] Update 2026-10-20: ELRS and ESP state (GitHub #55)
+> - The ESP is soldered to **UART4** (T4/R4) since 2026-10-19, with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]).
+> - The ELRS antenna is soldered, and the ELRS 5 V wire is on **DV5V** (GitHub #41).
+> - **The failsafe has not been tested yet.** The ELRS failsafe re-test under the SAF-08 review is still open (GitHub #22 and #41 stay open).
+> - The UART decision does not change.
 
 ## 1. Context (team inspection + Betaflight CLI)
 
@@ -42,12 +48,12 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 |---|---|---|
 | ELRS receiver | **UART2**, unchanged | 1 |
 | Tramp VTX | **UART3**, unchanged | 2 |
-| **D1 mini (MSP)** | **UART4 (T4/R4)** | 3 |
+| **ESP (MSP)** | **UART4 (T4/R4)** | 3 |
 | Spare / fallback for the ESP | UART1 (T1/R1) | 0 |
 
 ## 3. Consequences
 
-- No change to the existing ELRS or VTX wiring (SAF-08). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
+- No change to the existing ELRS or VTX wiring (REQ-SAF-008). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
 - Before soldering: continuity-check T4/R4 to the MCU side and check for shorts to neighbouring pads ([[ESP_to_FC]] §10.1). **Done 2026-10-16, passed** (GitHub #16).
 - The ThoneFlow does not go on an FC UART: Betaflight 4.5.1 has no optical-flow driver ([[ADR-016 Flow Sensor Path|ADR-016]]).
 
@@ -55,13 +61,20 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 
 - [[Wiring and Pinout]] · [[Betaflight Setup]] · [[Decision Register]]
 
+> 2026-10-20: requirement IDs renumbered to the `REQ-<cat>-NNN` scheme (see [[Requirements]], issue #57). Old IDs are kept in brackets. The decision is unchanged.
+
 ## 5. Glossary
 
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

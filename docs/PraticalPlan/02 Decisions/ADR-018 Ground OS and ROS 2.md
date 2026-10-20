@@ -20,7 +20,7 @@ tags:
 ## 1. Decision
 
 - **Ubuntu 24.04 LTS + ROS 2 Jazzy (LTS)**, the same image on every laptop and in CI (`ros:jazzy` container).
-- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[01 Gesture Node|Gesture Recognition Program]] (`mediapipe==0.10.21`).
+- Ubuntu 24.04 ships Python **3.12**, which fits the **3.10–3.12** requirement of [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] (`mediapipe==0.10.21`).
 
 ## 2. Consequences
 
@@ -39,3 +39,7 @@ tags:
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
+| **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |

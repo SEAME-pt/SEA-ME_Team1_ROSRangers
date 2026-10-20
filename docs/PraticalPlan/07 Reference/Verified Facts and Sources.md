@@ -52,7 +52,7 @@ tags:
 
 - The ROS 2 / PX4 / Ubuntu version pairing in [[ADR-018 Ground OS and ROS 2|ADR-018]]: check the official pages before installing.
 - CLI command syntax in [[Betaflight Setup]]: confirm with `help` on your version.
-- The GitHub Actions workflows have not run on GitHub yet.
+- The GitHub Actions workflows run on every PR (see the Actions tab). The SITL and HIL jobs skip until their files exist.
 
 ## 5. Glossary
 
@@ -60,11 +60,16 @@ tags:
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **GND** | Ground: the common 0 V reference wire. |

@@ -21,6 +21,9 @@ tags:
 > [!warning] Status: DRAFT / PROPOSED / PROVISIONAL
 > This page describes a **proposed** serial link. **No wiring or firmware change has been approved based solely on this proposal.** Nothing here has been physically validated: not UART4, not MSP override, not any pin or pad connection. Pad locations, protocol payloads, baud rate and timeout values are deliberately **not** specified and appear as open decisions in [§12](#12-acceptance-criteria-and-unresolved-decisions).
 
+> [!info] Update 2026-10-20: hardware state
+> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
+
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
 > The team accepted the proposals on this page. Rows marked **Accepted (ADR-0xx)** below are decided. See the linked ADR for the reasoning, and the [[Decision Register]] for the full list. Where an ADR differs from the earlier "Recommended" text, **the ADR wins** (it supersedes it).
 
@@ -77,7 +80,7 @@ Describe the **proposed** serial link between the ESP8266 Wi-Fi bridge and the O
 | FC MCU | STM32F722 |
 | Installed FC firmware | Betaflight 4.5.1 |
 | FC role | Inner attitude/rate stabilisation |
-| ESP8266 board | D1 mini-style board |
+| ESP8266 board | ESP-12F (ESP8266) dev board |
 | ESP8266 firmware | AT firmware version 1.7.4.0, SDK 3.0.5 |
 | Ground computer | Intended to run ROS 2 and higher-level control logic |
 | FC CLI: UART2 | Configured for Serial RX |
@@ -131,7 +134,7 @@ Describe the **proposed** serial link between the ESP8266 Wi-Fi bridge and the O
 flowchart LR
     GC["Ground computer<br/>ROS 2 · mission logic"]
     subgraph DRONE["Drone"]
-        ESP["ESP8266 (D1 mini-style)<br/>UART0: GPIO1 TX / GPIO3 RX<br/>(proposed; AT firmware today)"]
+        ESP["ESP8266<br/>UART0: GPIO1 TX / GPIO3 RX<br/>(proposed; AT firmware today)"]
         subgraph FC["OddityRC F722AIO · Betaflight 4.5.1 · target ODDITYRCF7AIO"]
             U4["UART4<br/>MSP (PROVISIONAL, UNVALIDATED)"]
             U2["UART2<br/>Serial RX"]
@@ -169,7 +172,7 @@ Betaflight UART numbering and board silkscreen labels may not match; do not assu
 ### 4.3 ESP8266 side
 
 - **Proposed port:** UART0 on GPIO1 (TX) and GPIO3 (RX). This is the main full-duplex hardware UART.
-- **Shared with USB-to-serial:** on a D1 mini-style board the onboard USB-to-serial adapter shares these UART0 pins. If both the adapter (USB connected) and the FC drive the line, **electrical contention may occur**. How to avoid this during bench work and in the final installation is an open decision (§10, §12). Do not connect the FC to UART0 while USB is connected until the team has decided and verified how to handle this.
+- **Shared with USB-to-serial:** on an ESP8266 dev board the onboard USB-to-serial adapter shares these UART0 pins. If both the adapter (USB connected) and the FC drive the line, **electrical contention may occur**. How to avoid this during bench work and in the final installation is an open decision (§10, §12). Do not connect the FC to UART0 while USB is connected until the team has decided and verified how to handle this.
 - **Boot-time behaviour (to verify):** ESP8266 modules are generally understood to emit boot-time output on UART0 at start-up, which could present unexpected bytes to the FC's UART during ESP power-up or reset. Verify on the actual board by observation, and confirm the FC tolerates it.
 - **Alternative to consider (not decided):** ESP8266 UART0 pins can reportedly be remapped to alternate GPIOs. Whether that is useful for avoiding USB contention should be investigated against the ESP8266 documentation; it is listed only as an option.
 - **Firmware implication (observation, not a decision):** the ESP8266's current AT firmware is built around the ESP acting as a *peripheral controlled by an AT host* over UART0. An FC speaking MSP is not an AT host. Whether the AT firmware can serve as a bridge to the FC at all is therefore **unverified**, and may bear on the AT-vs-custom-C++ decision tracked on the companion page.
@@ -285,14 +288,14 @@ The ground computer produces high-level control commands (see companion page for
 > [!danger] Non-negotiable requirements
 > These are design requirements, not recommendations. They must hold before any thought of autonomous operation, and must be verified (§11).
 
-- **SAF-01 — Independent receiver path.** The ELRS receiver → FC path (UART2 per the CLI) shall remain independent of the ESP8266. Nothing about the ESP8266 link may be required for the pilot to control the aircraft.
-- **SAF-02 — Pilot retains takeover authority.** The pilot must be able to take over at any time by switching MSP override **off** using an ELRS transmitter switch.
-- **SAF-03 — Independent ARM.** ARM shall be controlled by a receiver-originated channel. The ESP8266/MSP path must not be able to arm the FC. Whether the FC configuration can actually *guarantee* this must be confirmed by test.
-- **SAF-04 — Takeover channel not overridable.** The channel(s) used for ARM and for the MSP-override switch must not be among those overridable via MSP (see M7). How this is enforced in configuration is TBD and must be verified.
-- **SAF-05 — Takeover is effective when the ESP8266 is misbehaving.** Switching override off must restore pilot control even if the ESP8266 is still sending, has crashed, or is flooding the UART. To be demonstrated, not assumed.
-- **SAF-06 — Takeover works across link events.** The behaviour of takeover during ESP8266 reboot, UART disconnection and receiver loss must be known (§9).
-- **SAF-07 — Pilot awareness.** The pilot (or safety observer) must be able to tell whether override is active. Mechanism (OSD, switch position convention, other) is TBD.
-- **SAF-08 — Unchanged ELRS configuration.** Adding the ESP8266 link must not require disabling or weakening any receiver failsafe or arming safeguard. Any proposed change must be explicitly reviewed.
+- **REQ-SAF-001 (was SAF-01) — Independent receiver path.** The ELRS receiver → FC path (UART2 per the CLI) shall remain independent of the ESP8266. Nothing about the ESP8266 link may be required for the pilot to control the aircraft.
+- **REQ-SAF-002 (was SAF-02) — Pilot retains takeover authority.** The pilot must be able to take over at any time by switching MSP override **off** using an ELRS transmitter switch.
+- **REQ-SAF-003 (was SAF-03) — Independent ARM.** ARM shall be controlled by a receiver-originated channel. The ESP8266/MSP path must not be able to arm the FC. Whether the FC configuration can actually *guarantee* this must be confirmed by test.
+- **REQ-SAF-004 (was SAF-04) — Takeover channel not overridable.** The channel(s) used for ARM and for the MSP-override switch must not be among those overridable via MSP (see M7). How this is enforced in configuration is TBD and must be verified.
+- **REQ-SAF-005 (was SAF-05) — Takeover is effective when the ESP8266 is misbehaving.** Switching override off must restore pilot control even if the ESP8266 is still sending, has crashed, or is flooding the UART. To be demonstrated, not assumed.
+- **REQ-SAF-006 (was SAF-06) — Takeover works across link events.** The behaviour of takeover during ESP8266 reboot, UART disconnection and receiver loss must be known (§9).
+- **REQ-SAF-007 (was SAF-07) — Pilot awareness.** The pilot (or safety observer) must be able to tell whether override is active. Mechanism (OSD, switch position convention, other) is TBD.
+- **REQ-SAF-008 (was SAF-08) — Unchanged ELRS configuration.** Adding the ESP8266 link must not require disabling or weakening any receiver failsafe or arming safeguard. Any proposed change must be explicitly reviewed.
 
 ---
 
@@ -303,7 +306,7 @@ The ground computer produces high-level control commands (see companion page for
 
 | # | Scenario | What may happen (risk) | Required behaviour | Known? |
 |---|---|---|---|---|
-| F1 | **ESP8266 crash/hang** | Override values may remain held (§5.2) | Pilot can take over by switching override off (SAF-02/05); the held values must not prevent takeover; the system must not rely on the ESP8266 recovering | Unknown; test |
+| F1 | **ESP8266 crash/hang** | Override values may remain held (§5.2) | Pilot can take over by switching override off (REQ-SAF-002, REQ-SAF-005); the held values must not prevent takeover; the system must not rely on the ESP8266 recovering | Unknown; test |
 | F2 | **UART disconnection** (wire fault, connector, solder joint) | Same as F1 for the FC; ESP8266 may not realise | Pilot takeover remains effective; ESP8266 detects missing FC responses (readback/poll) and reports to the ground | Unknown; test |
 | F3 | **Stale commands** (ground link lost, ESP8266 keeps replaying last values, or ground stops sending) | FC may keep acting on outdated values | ESP8266 shall not keep forwarding unrefreshed commands as if current (companion page §6/§7); behaviour on loss must be agreed with the FC-side behaviour here | Unknown; policy undecided |
 | F4 | **Receiver (ELRS) loss** while override active | Interaction between receiver failsafe and MSP override is unknown | Behaviour must be understood and acceptable; must not leave the aircraft acting unexpectedly on held override values | **Unknown; highest priority to test** |
@@ -315,6 +318,7 @@ The ground computer produces high-level control commands (see companion page for
 
 ### 9.1 Principles (proposed)
 
+- **Link-loss safe state (team, 2026-10-20, [[ADR-004 ESP Failsafe|ADR-004]]):** when the ground link is lost (F3), the ESP streams neutral sticks so the drone holds its position, and the pilot takes over with the radio. This is separate from Betaflight's own receiver failsafe (F4, DROP on ELRS loss), which is not changed.
 - **Assume the worst case for held values** until tested otherwise: the FC may continue acting on the last override.
 - **Pilot takeover must not depend on any component on the ESP8266 path.**
 - Every failure scenario above must have a recorded props-off test result before the design is considered acceptable (§12).
@@ -327,7 +331,7 @@ The ground computer produces high-level control commands (see companion page for
 > This is a **verification checklist**, not an approval to wire. Pad identification is not done. No part of this checklist has been performed. Proceed only with explicit team approval, with propellers removed and with **no battery connected until each step permits**.
 
 > [!info] Update 2026-10-12: test before soldering
-> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (D1 mini alone, then with the FC on temporary wires). A removable connector is proposed in [[ADR-021 Removable ESP Connector|ADR-021]].
+> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (ESP alone, then with the FC on temporary wires). A removable connector is proposed in [[ADR-021 Removable ESP Connector|ADR-021]].
 
 ### 10.1 Identification (documentation first)
 
@@ -378,7 +382,7 @@ The ground computer produces high-level control commands (see companion page for
 - [ ] Propellers physically removed and verified by a second team member.
 - [ ] Pilot's ELRS transmitter bound and working; ARM and MSP-override-off switches identified and exercised **before** the ESP8266 link is involved.
 - [ ] Pre-change FC configuration saved.
-- [ ] [[ESP Bench Test Plan]] Stage 1 passed (D1 mini alone).
+- [ ] [[ESP Bench Test Plan]] Stage 1 passed (ESP alone).
 
 ### Phase 1 — Baseline without the ESP8266 link
 
@@ -402,8 +406,8 @@ The ground computer produces high-level control commands (see companion page for
 ### Phase 4 — Pilot takeover
 
 - [ ] With override active and test values being sent, switch override **off** from the transmitter. Confirm via MSP_RC that the FC values return to receiver values, and that the ESP8266's continued sending has no effect.
-- [ ] Repeat with the ESP8266 flooding or sending conflicting values (SAF-05).
-- [ ] Confirm ARM and the override-off switch **cannot** be driven from MSP (SAF-03/04).
+- [ ] Repeat with the ESP8266 flooding or sending conflicting values (REQ-SAF-005).
+- [ ] Confirm ARM and the override-off switch **cannot** be driven from MSP (REQ-SAF-003, REQ-SAF-004).
 - [ ] Confirm that arming cannot be achieved via the ESP8266 path.
 
 ### Phase 5 — Failure scenarios (§9), each with readback
@@ -412,7 +416,7 @@ For each of F1–F9 that can be safely reproduced on the bench:
 
 - [ ] Reproduce the failure (e.g. stop sending, disconnect the UART wire in a controlled way, reset the ESP8266, power-cycle the FC, power off the ESP8266, power off the transmitter to simulate receiver loss).
 - [ ] Observe via MSP_RC/Configurator **what the FC does with held values**, and record it.
-- [ ] Confirm pilot takeover works in the failure state (SAF-02/06).
+- [ ] Confirm pilot takeover works in the failure state (REQ-SAF-002, REQ-SAF-006).
 - [ ] Record results in a table: scenario, observation, takeover works (y/n), notes.
 
 ### Phase 6 — Review
@@ -445,9 +449,9 @@ Evidence (logs, test records, photographs) is required for each.
 
 **Safety**
 
-- [ ] ELRS path independent of the ESP8266 (SAF-01).
-- [ ] Pilot takeover by override-off works in normal and failure states (SAF-02, 05, 06).
-- [ ] ARM cannot be commanded via MSP/ESP8266 (SAF-03/04).
+- [ ] ELRS path independent of the ESP8266 (REQ-SAF-001).
+- [ ] Pilot takeover by override-off works in normal and failure states (REQ-SAF-002, REQ-SAF-005, REQ-SAF-006).
+- [ ] ARM cannot be commanded via MSP/ESP8266 (REQ-SAF-003, REQ-SAF-004).
 - [ ] Behaviour for each failure scenario F1–F9 is observed, recorded and judged acceptable, in particular **held override values** and **receiver loss with override active**.
 - [ ] Any unacceptable behaviour has a documented mitigation and has been re-tested.
 
@@ -467,7 +471,7 @@ Evidence (logs, test records, photographs) is required for each.
 | FC-02 | Confirm UART4 is usable for MSP on this target; otherwise choose fallback (UART1/UART6) | Any wiring/config |  | Accepted | UART4 for the ESP; UART1 (T1/R1, free) is the fallback. ELRS stays on UART2, Tramp on UART3. [[ADR-011 FC UART Allocation\|ADR-011]] |
 | FC-03 | MSP baud rate and port settings | Bench testing |  | Accepted | 115200 8N1 (Betaflight MSP default); change only on measured need. [[ADR-009 ESP to FC Link\|ADR-009]] |
 | FC-04 | FC logic level and level-compatibility handling | Any wiring |  | Partly resolved | Both MCUs are 3.3 V logic devices; **measure** the T4 idle level before connecting. [[ADR-013 Wiring and Power\|ADR-013]] |
-| FC-05 | ESP8266 power source and supply arrangement | Any wiring |  | Partly resolved | FC 5V pad → D1 mini 5V pin; the FC 5V rail current is still to be measured. [[ADR-013 Wiring and Power\|ADR-013]] |
+| FC-05 | ESP8266 power source and supply arrangement | Any wiring |  | Partly resolved | FC 5V pad → ESP 5V pin; the FC 5V rail current is still to be measured. [[ADR-013 Wiring and Power\|ADR-013]] |
 | FC-06 | How UART0/USB-serial contention is avoided (procedure vs alternate pins vs other) | Any wiring |  | Accepted | Procedure: USB and FC never connected to UART0 together; OTA for the HIL bench; `Serial.swap()` rejected (GPIO15 boot strap). [[ADR-012 ESP UART Pins\|ADR-012]] |
 | FC-07 | ESP8266 firmware path: whether AT firmware can bridge MSP, or custom firmware is needed (shared with companion page OD-01) | Implementation |  | Accepted | Custom ESP8266 firmware. [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
 | FC-08 | Command-to-channel mapping (M1–M9) | Implementation |  | Partly resolved | Normalised commands → 1000–2000 µs, 8 channels in AETR order, AUX never driven, clamps on ground and ESP: [[Protocol Spec v0]] §5. |
@@ -525,9 +529,9 @@ Evidence (logs, test records, photographs) is required for each.
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
@@ -535,3 +539,14 @@ Evidence (logs, test records, photographs) is required for each.
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **OSD** | On-Screen Display: the chip that draws flight data over the analog camera video. |
+| **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
+| **GPIO** | General-purpose input/output: a configurable pin on a microcontroller. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **ARM** | Arming: enabling the motors. Only the pilot arms, never code or gestures. |
+| **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -2,7 +2,7 @@
 title: GitHub Actions Starter
 type: ci-cd
 status: draft
-date: 2026-10-12
+date: 2026-10-20
 project: SEA autonomous drone
 tags:
   - ci
@@ -12,11 +12,11 @@ tags:
 # GitHub Actions Starter
 
 > [!warning] Status: STARTER. Adapt as the software repo grows.
-> Both workflow files parse as valid YAML (checked 2026-10-12). They have not run on GitHub yet. Jobs reference folders from [[Repository Layout]], so add each job when its folder exists: a job for a missing folder fails.
+> Both workflow files parse as valid YAML (checked 2026-10-12). The real files are `.github/workflows/ci.yaml` and `hil.yaml` and they have run on GitHub; they have drifted from this first draft (paths now start with `drone/`, and each job is gated by a component check). Treat the repo files as the source of truth.
 
 ---
 
-## 1. `.github/workflows/ci.yml`
+## 1. `.github/workflows/ci.yaml`
 
 Runs on PRs into `dev` and `main` and on pushes to both, as required by [[Dev_Strategy]] §11.
 
@@ -117,7 +117,7 @@ jobs:
           pytest tests/sitl -v
 ```
 
-## 2. `.github/workflows/hil.yml`
+## 2. `.github/workflows/hil.yaml`
 
 Runs on pushes to `dev`/`main` and manually. It **never** runs on PRs from forks: a self-hosted runner executes the workflow's code on our Pi ([[HIL Runner]]).
 
@@ -145,7 +145,7 @@ jobs:
           pio run -d firmware/esp8266 -e d1_mini
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
-      - name: Flash the bench D1 mini over the air (USB data never touches UART0)
+      - name: Flash the bench ESP over the air (USB data never touches UART0)
         run: |
           . .venv/bin/activate
           pio run -d firmware/esp8266 -e d1_mini_ota -t upload
@@ -245,10 +245,11 @@ Anything reviewers should know?
 | **Branch** | An independent line of development in version control. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
+| **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
