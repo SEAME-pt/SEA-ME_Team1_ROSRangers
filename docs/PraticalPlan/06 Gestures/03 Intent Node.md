@@ -17,13 +17,13 @@ aliases:
 `intent_node` (v0.2) is the ROS 2 node after the recogniser in the [[00 Gesture Pipeline|Gesture Pipeline]]. It receives gesture names from `gesture_node` on `/gesture/raw` (or, the old way, over UDP), filters them with safety rules, and publishes what the operator wants on `/gesture/intent`.
 
 > [!NOTE] Related notes
-> Who sends the gesture names and how they are made: [[01 Gesture Node]]. How to build, run and test this node: [[02 ROS 2 Nodes - Install and Test|02]] §6–9. Who reads its output: [[04 Mission_Node]].
+> Who sends the gesture names and how they are made: [[02 Gesture Node]]. How to build, run and test this node: [[01 ROS2 Nodes Installation|01]] §6–9. Who reads its output: [[04 Mission Node]].
 
 > [!INFO] Renamed on 2026-10-20
-> This node was called `gesture_node` until 2026-10-20 (package, executable and node name). Later the same day the name `gesture_node` was given to the **recogniser** node (camera + MediaPipe → `/gesture/raw`), first proposed as `mediapipe_node` ([[01 Gesture Node]], [[05 Future Nodes]] §2). Old logs that say `gesture_node` before 2026-10-20 mean this node.
+> This node was called `gesture_node` until 2026-10-20 (package, executable and node name). Later the same day the name `gesture_node` was given to the **recogniser** node (camera + MediaPipe → `/gesture/raw`), first proposed as `mediapipe_node` ([[02 Gesture Node]], [[05 Future Nodes]] §2). Old logs that say `gesture_node` before 2026-10-20 mean this node.
 
 > [!WARNING] Status: DRAFT
-> 17 unit tests pass. On 2026-10-19 the node was built with `colcon build` on Pop!_OS 24.04 + ROS 2 Jazzy and ran with the UDP fake camera, feeding `mission_node` ([[02 ROS 2 Nodes - Install and Test|02]] §12). On 2026-10-20 the topic input (`input_source:=topic`, §3) was added for `gesture_node`. Real webcam gestures through the built node are not recorded yet.
+> 17 unit tests pass. On 2026-10-19 the node was built with `colcon build` on Pop!_OS 24.04 + ROS 2 Jazzy and ran with the UDP fake camera, feeding `mission_node` ([[01 ROS2 Nodes Installation|01]] §12). On 2026-10-20 the topic input (`input_source:=topic`, §3) was added for `gesture_node`. Real webcam gestures through the built node are not recorded yet.
 
 ---
 
@@ -52,7 +52,7 @@ Keeping drone knowledge out of this node means `/gesture/intent` can also drive 
 1. **Receives** gesture packets (§3): from `/gesture/raw` with `input_source:=topic`, or from UDP with `input_source:=udp` (the default), where a timer drains the socket 100 times a second. Both go through the same `_handle_datagram()`. There are no threads.
 2. **Filters** them with the safety rules of §5.
 3. **Publishes** the result on `/gesture/intent` at 20 Hz: a steady heartbeat even when nothing changes, so the next node can detect silence.
-4. **Logs** the first packet, every intent change and a link report every 5 s. That is how you prove it works ([[02 ROS 2 Nodes - Install and Test|02]] §9).
+4. **Logs** the first packet, every intent change and a link report every 5 s. That is how you prove it works ([[01 ROS2 Nodes Installation|01]] §9).
 
 > [!TIP] Testable without ROS
 > The decision logic is in `gesture_filter.py`, which has **no ROS imports**, so it can be unit-tested anywhere. `intent_node.py` is only the ROS wrapper (subscriber or socket, timers, publisher, parameters).
@@ -65,7 +65,7 @@ The parameter `input_source` picks where they come from (§7):
 
 | `input_source` | Source | Sender |
 | :--- | :--- | :--- |
-| `topic` | `/gesture/raw` (`std_msgs/msg/String`, JSON in `data`) | `gesture_node` ([[01 Gesture Node]]): use this |
+| `topic` | `/gesture/raw` (`std_msgs/msg/String`, JSON in `data`) | `gesture_node` ([[02 Gesture Node]]): use this |
 | `udp` (default) | UDP datagrams on `127.0.0.1:5005` | the old `gestures.py` + `gesture_sender.py`, removed on 2026-10-20. Kept so the default behaviour did not change |
 
 Both carry the **same JSON** and are handled by the same code. One packet when the gesture **changes**, then a repeat every 0.1 s while it stays the same (the keep-alive; `gesture_sender.py` does this, §6).
@@ -157,7 +157,7 @@ Three details that matter:
 - While you switch from one gesture to another, the old intent stays until the new gesture has 5 consecutive packets (about 0.4 s at the 10 Hz keep-alive).
 
 > [!WARNING] What this node never does
-> It only filters and relays intent. It never arms or disarms and never touches the override switch ([[Safety Rules]], rule 5). `mission_node` must treat the start-up `HOVER_LAND_REQUEST` / `no_packets_yet` as "no recogniser yet", not as a real land request ([[04 Mission_Node]] §5.4).
+> It only filters and relays intent. It never arms or disarms and never touches the override switch ([[Safety Rules]], rule 5). `mission_node` must treat the start-up `HOVER_LAND_REQUEST` / `no_packets_yet` as "no recogniser yet", not as a real land request ([[04 Mission Node]] §5.4).
 
 ---
 
@@ -180,7 +180,7 @@ send_gesture(gesture, None)
 
 `send_gesture` publishes immediately when the gesture **changes** and repeats every 0.1 s while it stays the same. If the frame loop stalls (for example waiting for the camera), this node treats the silence as "hand gone" after 0.3 s. That is intended.
 
-Until 2026-10-20 the sender was a standalone file in `drone/tools/gesture/` that sent the same JSON over UDP to `127.0.0.1:5005`. Only the transport changed ([[01 Gesture Node]] §9). To test without a camera, publish on `/gesture/raw` from a small script that uses `send_gesture` ([[02 ROS 2 Nodes - Install and Test|02]] §9, Level 0).
+Until 2026-10-20 the sender was a standalone file in `drone/tools/gesture/` that sent the same JSON over UDP to `127.0.0.1:5005`. Only the transport changed ([[02 Gesture Node]] §9). To test without a camera, publish on `/gesture/raw` from a small script that uses `send_gesture` ([[01 ROS2 Nodes Installation|01]] §9, Level 0).
 
 ---
 
@@ -231,7 +231,7 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 ## ❓ 9. Open points
 
 - [ ] **Message type.** `std_msgs/String` holding JSON works but is untyped. A custom message package (`drone_msgs`) is proposed in [[05 Future Nodes]].
-- [x] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` treats it as `NEUTRAL`, also when airborne ([[04 Mission_Node]] §5.4).
+- [x] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` treats it as `NEUTRAL`, also when airborne ([[04 Mission Node]] §5.4).
 - [ ] **Shutdown traceback.** Stopping `mission_with_gestures.launch.py` with Ctrl+C makes `intent_node` print a `KeyboardInterrupt` traceback: Ctrl+C reaches it twice (terminal + launch) and the second one lands in `destroy_node()`. Harmless, but noisy. `mission_node` handles it by ignoring further SIGINTs once shutdown starts (seen 2026-10-19).
 - [ ] **Keep-alive rate.** The code uses 10 Hz (accept in about 0.4 s). An earlier version of the pipeline page said 5 Hz. Confirm 10 Hz with the team.
 - [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).

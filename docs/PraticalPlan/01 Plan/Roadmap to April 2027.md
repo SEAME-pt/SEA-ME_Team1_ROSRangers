@@ -51,7 +51,7 @@ See [[Study Plan v2]].
 
 ## 4. Module 2 (14 Dec – 26 Feb) · Perception, Edge AI
 
-- **Gestures as edge inference** (accepted by instructors). Grow [[01 Gesture Node|Gesture Recognition Program]] from rule-based static gestures to a **trained classifier on hand landmarks**: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget.
+- **Gestures as edge inference** (accepted by instructors). Grow [[02 Gesture Node|Gesture Recognition Program]] from rule-based static gestures to a **trained classifier on hand landmarks**: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget.
 - Drone camera (MS210x grabber) **detector producing target coordinates** (e.g., a marker or object) for the inspection-sweep milestone.
 - **Portability proof:** run the gesture pipeline (`intent_node` and an adapter) on a second hardware class (e.g., command the car's `cmd_vel` or the arm). See [[00 Gesture Pipeline|Gesture Pipeline]].
 - Calibration report (camera intrinsics, time offsets). VIO experiments.

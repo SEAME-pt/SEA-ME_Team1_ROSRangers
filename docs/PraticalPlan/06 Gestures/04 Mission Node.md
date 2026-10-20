@@ -17,10 +17,10 @@ aliases:
 
 # 🎯 Mission_Node: gesture intent → velocity target
 
-`mission_node` (v0.1) is the second ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It reads what the operator wants from `/gesture/intent` ([[03 Intent_node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
+`mission_node` (v0.1) is the second ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It reads what the operator wants from `/gesture/intent` ([[03 Intent Node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
 
 > [!WARNING] Status: DRAFT. Built and tested on real ROS 2 Jazzy, not reviewed yet
-> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[02 ROS 2 Nodes - Install and Test|02]] §12). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[01 Gesture Node]]); that chain has not run with `mission_node` yet.
+> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[01 ROS2 Nodes Installation|01]] §12). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[02 Gesture Node]]); that chain has not run with `mission_node` yet.
 > - It lives in **`MISSION_NODE_PACKAGE/`** at the repo root **for now**. Its final place is `drone/ground/src/mission_node/` ([[00 Gesture Pipeline]] §5). Only the folder moves. The package name stays `mission_node`.
 > - Topic names, `/flight/state` fields and every number are still **proposals**. The team must agree them (§13). Choices made while coding are listed in §11 for review. Nothing here changes an accepted ADR.
 > - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). Never use it with a real drone.
@@ -86,7 +86,7 @@ MISSION_NODE_PACKAGE/                 # later: drone/ground/src/mission_node/
     └── test_mission_logic.py         # 35 unit tests, incl. the demo script played through the logic
 ```
 
-Same pattern as `intent_node` ([[03 Intent_node]] §8): the decisions live in a ROS-free module (`mission_logic.py`), so they can be unit-tested anywhere. `mission_node.py` only wires them to ROS.
+Same pattern as `intent_node` ([[03 Intent Node]] §8): the decisions live in a ROS-free module (`mission_logic.py`), so they can be unit-tested anywhere. `mission_node.py` only wires them to ROS.
 
 ---
 
@@ -94,7 +94,7 @@ Same pattern as `intent_node` ([[03 Intent_node]] §8): the decisions live in a 
 
 ### 3.1 `/gesture/intent` (from `intent_node`)
 
-Type `std_msgs/msg/String`, 20 Hz. Format: [[03 Intent_node]] §4.
+Type `std_msgs/msg/String`, 20 Hz. Format: [[03 Intent Node]] §4.
 
 ```json
 {"intent":"MOVE_RIGHT","gesture":"INDEX_RIGHT","reason":"ok","t":1791976551.56,"xy":[0.51,0.42]}
@@ -235,7 +235,7 @@ So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15.
 
 | Situation | Action |
 |---|---|
-| `intent_node` start-up (`HOVER_LAND_REQUEST` / `no_packets_yet`) | treated as `NEUTRAL`: "no recogniser yet", never a land request ([[03 Intent_node]] §5) |
+| `intent_node` start-up (`HOVER_LAND_REQUEST` / `no_packets_yet`) | treated as `NEUTRAL`: "no recogniser yet", never a land request ([[03 Intent Node]] §5) |
 | No intent ever received since `mission_node` started | `NEUTRAL` / `no_intent_yet`, never `intent_topic_lost`: `intent_node` hasn't started, it didn't crash |
 | Not `airborne` | ignored. `READY` stays `READY`, `ENGAGED` goes to `READY` (`land_request_on_ground`). Never "land" a drone that is on the ground |
 | Airborne, mask 8 or 11 | zero velocity (hover) and `land_request: true` in `/mission/state`. The **pilot** lands, because they own throttle |
@@ -377,7 +377,7 @@ The unit test `test_demo_sequence` plays this same script through `mission_logic
 
 ## 🔨 8. Build
 
-Same steps as `intent_node` ([[02 ROS 2 Nodes - Install and Test|02]] §5–6). The workspace `~/ros2_ws` lives outside the repo and `src/` holds symlinks:
+Same steps as `intent_node` ([[01 ROS2 Nodes Installation|01]] §5–6). The workspace `~/ros2_ws` lives outside the repo and `src/` holds symlinks:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
@@ -392,7 +392,7 @@ ros2 pkg executables mission_node
 ```
 
 > [!NOTE] Using bash?
-> Replace `setup.zsh` with `setup.bash` everywhere on this page ([[02 ROS 2 Nodes - Install and Test|02]] §4).
+> Replace `setup.zsh` with `setup.bash` everywhere on this page ([[01 ROS2 Nodes Installation|01]] §4).
 
 Expected: `Summary: 2 packages finished`, then:
 
@@ -405,7 +405,7 @@ mission_node mission_node
 - `~/ROSRangers` is wherever you cloned the repo.
 - When the package moves to `drone/ground/src/mission_node/`, delete the symlink and point a new one there. Nothing else changes.
 - Rebuild after changing `setup.py` or `package.xml`, or after **adding** a launch file. Edits to existing Python and launch files take effect without a rebuild (`--symlink-install`).
-- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[02 ROS 2 Nodes - Install and Test|02]] §6.3).
+- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[01 ROS2 Nodes Installation|01]] §6.3).
 
 Every ROS terminal below starts with:
 
@@ -468,7 +468,7 @@ ros2 param set /fake_flight_state override_active false   # -> IDLE
 | :---: | :--- |
 | 1 | `ros2 launch mission_node mission_with_gestures.launch.py` |
 | 2 | `ros2 topic echo /mission/state --field data` |
-| 3 | the scripted fake camera of [[02 ROS 2 Nodes - Install and Test\|02]] §9, Level 0 (publishes on `/gesture/raw`) |
+| 3 | the scripted fake camera of [[01 ROS2 Nodes Installation\|01]] §9, Level 0 (publishes on `/gesture/raw`) |
 
 The launch file starts `intent_node`, `fake_flight_state` and `mission_node`. It accepts the same `mask:=` and `airborne:=` arguments. Don't start `fake_intent` here.
 
@@ -477,7 +477,7 @@ The launch file starts `intent_node`, `fake_flight_state` and `mission_node`. It
 
 ### 9.3 With `intent_node` and the webcam (`gesture_node`)
 
-As 9.2, but terminal 3 is the real recogniser, built as in [[02 ROS 2 Nodes - Install and Test|02]] §6.3:
+As 9.2, but terminal 3 is the real recogniser, built as in [[01 ROS2 Nodes Installation|01]] §6.3:
 
 ```bash
 ros2 run gesture_node gesture_node    # on Wayland: QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node
@@ -523,7 +523,7 @@ Run §9.1 (the demo). **Pass:**
 
 ### Level 2: full chain, no camera
 
-Run §9.2. The Level 0 fake-camera sequence ([[02 ROS 2 Nodes - Install and Test|02]] §9) should give (checked on 2026-10-19 with the UDP sender; the topic version sends the same sequence):
+Run §9.2. The Level 0 fake-camera sequence ([[01 ROS2 Nodes Installation|01]] §9) should give (checked on 2026-10-19 with the UDP sender; the topic version sends the same sequence):
 
 | Fake camera | `intent_node` intent | `mission_node` mode | Velocity |
 | :--- | :--- | :--- | :--- |
@@ -564,7 +564,7 @@ Real-drone use is a **stretch** goal (week 7), only at low limits, with the pilo
 | Goes `LAND_REQUEST` between manual commands | gaps over 2 s between `ros2 topic pub` runs | use `fake_intent` `constant` mode (§9.1) |
 | Intents jump between two values | `fake_intent` and `intent_node` both running | run only one of them |
 | `ros2 topic echo` says `Could not determine the type` | the echo started before the node | start it after, or give the type: `ros2 topic echo /mission/velocity_target geometry_msgs/msg/TwistStamped` |
-| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals | export the same value everywhere ([[02 ROS 2 Nodes - Install and Test\|02]] §4.7) |
+| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals | export the same value everywhere ([[01 ROS2 Nodes Installation\|01]] §4.7) |
 
 ---
 
@@ -577,7 +577,7 @@ These fill gaps in the original design, or change it. Each needs a team review b
 | 1 | Only **speeding up** is ramped. Slowing down and stopping are immediate | The design said motion "starts and stops smoothly", but REQ-SAF (§12) needs zero within 0.25 s of losing input. A 0.5 m/s² stop from 0.3 m/s takes 0.6 s |
 | 2 | New parameter `max_yaw_accel_dps2` (40 °/s²) | The design had no ramp for yaw |
 | 3 | Engage = `HOLD_POSITION` **starting** while `READY`, from real messages only | Answers the open point "must `OPEN_HAND_UP` be re-shown after every `STOP_HOVER`?" with **yes**. The first real run had a 0.43 s delivery gap while DDS discovered new nodes. With a "level" rule that gap could have engaged the drone without a deliberate gesture |
-| 4 | `intent_node`'s start-up `HOVER_LAND_REQUEST` / `no_packets_yet` → `NEUTRAL` | Required by [[03 Intent_node]] §5, also when airborne |
+| 4 | `intent_node`'s start-up `HOVER_LAND_REQUEST` / `no_packets_yet` → `NEUTRAL` | Required by [[03 Intent Node]] §5, also when airborne |
 | 5 | No intent **ever** received → `NEUTRAL` / `no_intent_yet`, never `intent_topic_lost` | The watchdog is there to catch a `intent_node` that **died**. Without this, starting `mission_node` 2 s before `intent_node` gave a land request |
 | 6 | Land request on the ground while `ENGAGED` → `READY` | Operator gone: require a new engage, but nothing to land |
 | 7 | `LAND_REQUEST` → `READY` when `airborne` goes false (`landed`) | The design only had "until the estimator reports the ground" |
@@ -607,7 +607,7 @@ To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each 
 
 - [ ] **Review §11** and agree the numbers: `max_vertical_mps`, `max_yaw_rate_dps`, `max_accel_mps2`, `max_yaw_accel_dps2`, `land_hover_sec`, the ceilings, `flight_state_timeout_sec`.
 - [ ] **Move the package** from `MISSION_NODE_PACKAGE/` to `drone/ground/src/mission_node/` (and update the symlink in §8 and the paths on this page).
-- [ ] **Topic names and types.** `/mission/velocity_target` (TwistStamped), `/mission/state` and `/flight/state` (JSON strings). A typed message package (`drone_msgs`) would also fix `/gesture/intent` ([[03 Intent_node]] §9, [[05 Future Nodes]] §4).
+- [ ] **Topic names and types.** `/mission/velocity_target` (TwistStamped), `/mission/state` and `/flight/state` (JSON strings). A typed message package (`drone_msgs`) would also fix `/gesture/intent` ([[03 Intent Node]] §9, [[05 Future Nodes]] §4).
 - [ ] **Who publishes `/flight/state`** (planned: `flight_interface`), and how `airborne` is decided (baro height threshold?). Until then, `fake_flight_state`.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
 - [ ] **Forward/back.** Vocabulary v0 has no gesture for it. Add one, or keep `linear.x = 0` for Module 1.
@@ -621,7 +621,7 @@ To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each 
 
 ## 🔗 14. Related pages
 
-[[00 Gesture Pipeline]] · [[02 ROS 2 Nodes - Install and Test]] · [[03 Intent_node]] · [[05 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
+[[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[03 Intent Node]] · [[05 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
 
 ---
 

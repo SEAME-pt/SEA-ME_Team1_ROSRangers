@@ -90,8 +90,8 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-014 | Failsafe action toward the FC follows [[ADR-004 ESP Failsafe|ADR-004]] (2026-10-20 entry): neutral sticks on the overridden axes, throttle stays with the pilot, no automatic landing or return; the drone holds and the pilot takes over with the radio. | [[PC_to_ESP]] (loss and failsafe) · [[ADR-004 ESP Failsafe|ADR-004]] | test | HIL, then cage | accepted |
 | REQ-SAF-015 | Failsafe state is observable by the ground side when the link allows. | [[PC_to_ESP]] (loss and failsafe) | test | HIL | accepted |
 | REQ-SAF-016 | ESP8266 is safe and deterministic at power-up, reset and watchdog; no control forwarding until the start-up conditions are met. | [[PC_to_ESP]] (loss and failsafe) | test | HIL (power cycle, reset, watchdog) | accepted |
-| REQ-SAF-017 | Mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. | [[04 Mission_Node]] (acceptance) | test | unit + SITL | draft |
-| REQ-SAF-018 | Mission node never commands an axis outside the active override mask. | [[04 Mission_Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-SAF-017 | Mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-SAF-018 | Mission node never commands an axis outside the active override mask. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
 
 ### Navigation (`REQ-NAV`)
 
@@ -106,13 +106,13 @@ Values proposed 2026-10-20 ([[ADR-016 Flow Sensor Path|ADR-016]] update). The te
 
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
-| REQ-CTL-001 | Gesture speeds limited to 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw (parameters, with a hard ceiling). | [[04 Mission_Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-CTL-001 | Gesture speeds limited to 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw (parameters, with a hard ceiling). | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
 
 ### Software (`REQ-SW`)
 
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
-| REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode. | [[04 Mission_Node]] (acceptance) | test | SITL | draft |
+| REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode. | [[04 Mission Node]] (acceptance) | test | SITL | draft |
 
 ### Power (`REQ-PWR`)
 
@@ -124,7 +124,7 @@ Categories `REQ-SYS`, `REQ-SEN` and `REQ-HW` have no requirement yet. The IDs in
 
 ## 3. Legacy ID mapping
 
-Old IDs came from [[PC_to_ESP]], [[ESP_to_FC]] and [[04 Mission_Node]], and from the notes that cite them. Those notes keep the old ID in brackets on first use. `REQ-PWR-001` in [[Battery Log]] already fits the scheme and is unchanged.
+Old IDs came from [[PC_to_ESP]], [[ESP_to_FC]] and [[04 Mission Node]], and from the notes that cite them. Those notes keep the old ID in brackets on first use. `REQ-PWR-001` in [[Battery Log]] already fits the scheme and is unchanged.
 
 | Old ID | New ID |
 |---|---|

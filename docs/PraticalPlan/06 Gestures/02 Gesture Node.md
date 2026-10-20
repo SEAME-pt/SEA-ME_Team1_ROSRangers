@@ -17,20 +17,20 @@ aliases:
 
 # 📷 Gesture Node: webcam + OpenCV + MediaPipe → `/gesture/raw`
 
-`gesture_node` (v0.1) is the recogniser of the [[00 Gesture Pipeline|Gesture Pipeline]] as a ROS 2 node. It opens the webcam with **OpenCV**, finds the hand with **MediaPipe**, turns it into a gesture name such as `THUMB_UP` or `INDEX_MIDDLE_LEFT`, and publishes that name on `/gesture/raw`. `intent_node` reads that topic ([[03 Intent_node]]).
+`gesture_node` (v0.1) is the recogniser of the [[00 Gesture Pipeline|Gesture Pipeline]] as a ROS 2 node. It opens the webcam with **OpenCV**, finds the hand with **MediaPipe**, turns it into a gesture name such as `THUMB_UP` or `INDEX_MIDDLE_LEFT`, and publishes that name on `/gesture/raw`. `intent_node` reads that topic ([[03 Intent Node]]).
 
 This page covers everything about the recogniser: why it is a ROS 2 node (§2), how OpenCV and MediaPipe find the hand and how our code names the gesture (§3–7), what it publishes (§8), the code (§9), installing and running it (§10–11), tuning and troubleshooting (§12–15). It covers **static gestures**: which fingers are extended and which way they point.
 
 It replaces the standalone prototype `gestures.py` + `gesture_sender.py` (UDP), which used to live in `drone/tools/gesture/` and was removed on 2026-10-20. It is the `mediapipe_node` idea of [[05 Future Nodes]] §2, renamed. This page also replaces the old note *01 Gesture Recognition with OpenCV and MediaPipe* (merged here on 2026-10-20).
 
 > [!NOTE] Related notes
-> How to build, run and test this node with the others: [[02 ROS 2 Nodes - Install and Test|02]] §5–9. Who reads its output: [[03 Intent_node]].
+> How to build, run and test this node with the others: [[01 ROS2 Nodes Installation|01]] §5–9. Who reads its output: [[03 Intent Node]].
 
 > [!INFO] Same name, new node
-> Until 2026-10-20 `intent_node` was called `gesture_node` ([[03 Intent_node]]). Since 2026-10-20 the name `gesture_node` means **this** recogniser node.
+> Until 2026-10-20 `intent_node` was called `gesture_node` ([[03 Intent Node]]). Since 2026-10-20 the name `gesture_node` means **this** recogniser node.
 
 > [!WARNING] Status: DRAFT
-> - Code written on 2026-10-20 (package `drone/ground/src/gesture_node/`). The 6 unit tests of the sender pass (no ROS needed). A first build on Pop!_OS 24.04 + Jazzy found the venv problem in §10; a full run with the webcam and `intent_node` is not recorded yet ([[02 ROS 2 Nodes - Install and Test|02]] §12).
+> - Code written on 2026-10-20 (package `drone/ground/src/gesture_node/`). The 6 unit tests of the sender pass (no ROS needed). A first build on Pop!_OS 24.04 + Jazzy found the venv problem in §10; a full run with the webcam and `intent_node` is not recorded yet ([[01 ROS2 Nodes Installation|01]] §12).
 > - Running MediaPipe inside a ROS 2 node changes a consequence of [[ADR-018 Ground OS and ROS 2|ADR-018]] ("keep the recogniser in its own venv/process, talk to ROS 2 through a thin node"). A new ADR that amends ADR-018 is still needed (§16).
 
 ---
@@ -65,7 +65,7 @@ Before 2026-10-20 the recogniser was a plain Python program in its own venv. It 
 | Recognition bugs can't be replayed | `ros2 bag record /gesture/raw /gesture/intent` records input **and** output of `intent_node` together, and `ros2 bag play` replays them without a camera |
 | A second world to start by hand (`cd`, venv, `python3 gestures.py`) | `ros2 run gesture_node gesture_node`, and later one launch file for the whole chain ([[05 Future Nodes]] §11) |
 | A UDP port to keep free and in sync on both sides (`PORT` = `udp_port`) | A topic name. Several readers can listen at once, and nothing fails because a port is taken |
-| A test sender needed its own UDP code | A test can publish on `/gesture/raw` with `ros2 topic pub` or a few lines of `rclpy` ([[02 ROS 2 Nodes - Install and Test\|02]] §9) |
+| A test sender needed its own UDP code | A test can publish on `/gesture/raw` with `ros2 topic pub` or a few lines of `rclpy` ([[01 ROS2 Nodes Installation\|01]] §9) |
 | Packets only on this PC (localhost) | ROS 2 discovery: the recogniser could run on another machine on the same `ROS_DOMAIN_ID` later |
 
 ### Why the camera is read inside the node
@@ -83,7 +83,7 @@ MediaPipe itself costs about 10–30 ms per frame on a laptop CPU, so the work t
 
 ### What it costs
 
-- MediaPipe now runs inside a ROS 2 process. A MediaPipe crash ends `gesture_node`, but not `intent_node`: that is a separate process and treats the silence as "recogniser gone" (`HOVER_LAND_REQUEST` after 2 s, [[03 Intent_node]] §5). The safety rules do not change.
+- MediaPipe now runs inside a ROS 2 process. A MediaPipe crash ends `gesture_node`, but not `intent_node`: that is a separate process and treats the silence as "recogniser gone" (`HOVER_LAND_REQUEST` after 2 s, [[03 Intent Node]] §5). The safety rules do not change.
 - The node needs a venv that sees **both** ROS 2 and MediaPipe, and colcon must use that venv's Python (§10). This is the part that broke on the first build.
 - `mediapipe` and `opencv-python` come from pip (`requirements.txt`), not from `rosdep`.
 
@@ -306,7 +306,7 @@ drone/ground/src/gesture_node/
 | :--- | :--- | :--- |
 | `hand_processing.py` | Everything that uses MediaPipe, plus the math, the finger logic and the gesture names. It never imports OpenCV, so it accepts any RGB image. | **none** (byte-for-byte copy) |
 | `gestures.py` | The OpenCV part: camera loop and window. Imports `create_hands`, `detect_gesture` and `draw_hand` from `.hand_processing` and `send_gesture` from `.gesture_sender`. | only the two imports: `from hand_processing import ...` → `from .hand_processing import ...`, and the same for `gesture_sender`. Inside a Python package the plain form can't find the file next to it. |
-| `gesture_sender.py` | Publishes the JSON of §8 (on change, then every 0.1 s). Also explained in [[03 Intent_node]] §6. | same `send_gesture(gesture, xy)` call, same JSON, same 0.1 s keep-alive. The UDP socket is replaced by a publish function that `gesture_node.py` sets with `set_publisher()`. It has no ROS imports, so it is unit-tested without ROS. |
+| `gesture_sender.py` | Publishes the JSON of §8 (on change, then every 0.1 s). Also explained in [[03 Intent Node]] §6. | same `send_gesture(gesture, xy)` call, same JSON, same 0.1 s keep-alive. The UDP socket is replaced by a publish function that `gesture_node.py` sets with `set_publisher()`. It has no ROS imports, so it is unit-tested without ROS. |
 | `gesture_node.py` | The ROS 2 node around the camera loop (§4). | new |
 
 ---
@@ -319,7 +319,7 @@ drone/ground/src/gesture_node/
 2. Python 3.12, the ROS 2 Jazzy Python (3.10+ for the `match` statement; MediaPipe 0.10.21 has no package above 3.12, and Jazzy is built for 3.12)
 3. A webcam that shows up as `/dev/video*`
 4. Packages: `mediapipe==0.10.21` and `opencv-python` (in `requirements.txt`)
-5. ROS 2 Jazzy ([[02 ROS 2 Nodes - Install and Test|02]] §4)
+5. ROS 2 Jazzy ([[01 ROS2 Nodes Installation|01]] §4)
 
 ### ✅ Install checklist
 
@@ -328,7 +328,7 @@ drone/ground/src/gesture_node/
 - [ ] Create the venv `~/gesture-venv` with `--system-site-packages`
 - [ ] Install `requirements.txt`
 - [ ] Verify the install
-- [ ] Build `gesture_node` with the venv's Python ([[02 ROS 2 Nodes - Install and Test|02]] §6.3)
+- [ ] Build `gesture_node` with the venv's Python ([[01 ROS2 Nodes Installation|01]] §6.3)
 
 ### 1. System packages
 
@@ -382,7 +382,7 @@ python3 -m colcon build --symlink-install --packages-select gesture_node
 head -1 ~/ros2_ws/install/gesture_node/lib/gesture_node/gesture_node   # must name ~/gesture-venv/bin/python3
 ```
 
-The full workspace steps are in [[02 ROS 2 Nodes - Install and Test|02]] §6. `intent_node` keeps its plain `colcon build` (no venv).
+The full workspace steps are in [[01 ROS2 Nodes Installation|01]] §6. `intent_node` keeps its plain `colcon build` (no venv).
 
 > [!NOTE] The old rule changed
 > The earlier pages said "never activate the MediaPipe venv in a ROS terminal". That was for the UDP setup, where the two worlds never met. `gesture_node` needs both in one process, so it is built from the venv on purpose. All the other ROS packages still use the system Python.
@@ -391,7 +391,7 @@ The full workspace steps are in [[02 ROS 2 Nodes - Install and Test|02]] §6. `i
 
 ## ▶️ 11. Run and parameters
 
-After building the workspace ([[02 ROS 2 Nodes - Install and Test|02]] §6):
+After building the workspace ([[01 ROS2 Nodes Installation|01]] §6):
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
@@ -399,7 +399,7 @@ source ~/ros2_ws/install/setup.zsh
 ros2 run gesture_node gesture_node     # on Wayland: QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node
 ```
 
-Press `q` in the video window to quit, or `Ctrl+C` in the terminal. With no `intent_node` running, the messages on `/gesture/raw` are simply not read, so the node also works on its own: `ros2 topic echo /gesture/raw --field data` shows what it sends ([[02 ROS 2 Nodes - Install and Test|02]] §9, Level 1). With `intent_node`: [[02 ROS 2 Nodes - Install and Test|02]] §7.
+Press `q` in the video window to quit, or `Ctrl+C` in the terminal. With no `intent_node` running, the messages on `/gesture/raw` are simply not read, so the node also works on its own: `ros2 topic echo /gesture/raw --field data` shows what it sends ([[01 ROS2 Nodes Installation|01]] §9, Level 1). With `intent_node`: [[01 ROS2 Nodes Installation|01]] §7.
 
 | Parameter | Default | Meaning |
 | :--- | :--- | :--- |
@@ -454,7 +454,7 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 | Camera won't open or empty frames | wrong index or busy camera | check `ls /dev/video*` and change the index in `VideoCapture(...)` |
 | Permission denied on `/dev/video0` | not in the `video` group | add your user to it, then log out and back in |
 | `Could not load the Qt platform plugin "xcb"` | Wayland / missing library | install `libxcb-cursor0`; run with `QT_QPA_PLATFORM=xcb` |
-| Window works, `intent_node` says `No packets` | `intent_node` still on UDP | start it with `-p input_source:=topic` ([[03 Intent_node]] §7) |
+| Window works, `intent_node` says `No packets` | `intent_node` still on UDP | start it with `-p input_source:=topic` ([[03 Intent Node]] §7) |
 | Thumb counted as out when it is tucked (or the other way) | threshold | tune `THUMB_OUT_RATIO` (§12) |
 | Bent fingers counted as extended | threshold | raise `EXTENDED_ANGLE` |
 | Gesture name flickers between two values | the hand is near a threshold or a 45° direction boundary | hold the pose more clearly, or tune |
@@ -465,7 +465,7 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 
 ## ➕ 15. Adding new gestures
 
-1. **Static:** hold the gesture and read its name in the terminal or with `ros2 topic echo /gesture/raw --field data` (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `intent_node` ([[03 Intent_node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` in `hand_processing.py`, above `case _`.
+1. **Static:** hold the gesture and read its name in the terminal or with `ros2 topic echo /gesture/raw --field data` (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `intent_node` ([[03 Intent Node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` in `hand_processing.py`, above `case _`.
 2. **Distance based (pinch, OK sign):** compare the distance between two landmarks with `dist()`, for example thumb tip (4) and index tip (8), divided by `hand_size(lm)` so it does not depend on the distance to the camera:
 
 $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
@@ -475,9 +475,9 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 ## ❓ 16. Open points
 
 - [ ] **ADR.** Write the ADR that amends [[ADR-018 Ground OS and ROS 2|ADR-018]]: recogniser inside ROS 2, camera read in the node, venv with `--system-site-packages`, no `cv_bridge`. Never edit ADR-018 silently.
-- [ ] **First full run** with the webcam, `intent_node` and `mission_node`, recorded in [[02 ROS 2 Nodes - Install and Test|02]] §12.
+- [ ] **First full run** with the webcam, `intent_node` and `mission_node`, recorded in [[01 ROS2 Nodes Installation|01]] §12.
 - [ ] **CPU numbers.** Measure CPU and frame time against the old `gestures.py` instead of the estimates in §2.
-- [ ] **Launch file.** `mission_with_gestures.launch.py` starts `intent_node` with the default `input_source` (`udp`). It must pass `input_source: topic` ([[04 Mission_Node]] §9.2).
+- [ ] **Launch file.** `mission_with_gestures.launch.py` starts `intent_node` with the default `input_source` (`udp`). It must pass `input_source: topic` ([[04 Mission Node]] §9.2).
 - [ ] **Headless run.** `gestures.py` always opens a window; on a PC without a display the node fails. Add a parameter if the recogniser moves to the Raspberry Pi.
 - [ ] **Ctrl+C** skips `cap.release()` / `destroyAllWindows()` in `gestures.py`. The OS frees the camera when the process exits, so it is harmless.
 - [ ] **Formatting.** `pre-commit` (ruff-format) will probably add one blank line in the copied `gestures.py`. Whitespace only.

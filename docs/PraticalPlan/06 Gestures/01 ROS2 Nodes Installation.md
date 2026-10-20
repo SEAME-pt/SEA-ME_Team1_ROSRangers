@@ -1,25 +1,27 @@
 ---
-title: What ROS 2 and nodes are, installing ROS 2 Jazzy, testing each node
+title: ROS 2 Nodes Installation (ROS 2 Jazzy, workspace, build, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
+updated: 2026-10-20
 project: SEA autonomous drone
 tags:
   - gestures
   - ros2
   - guide
 aliases:
-  - Ros Jazzy and Intent_node
-  - ROS 2 and Intent Node
+  - ROS 2 Nodes Installation
+  - ROS 2 Nodes - Install and Test
 ---
 
 # 🤖 ROS 2 and nodes: install ROS 2 Jazzy, then build, run and test each node
 
-This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, how to set up the workspace `~/ros2_ws`, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[01 Gesture Node]], [[03 Intent_node]], [[04 Mission_Node]].
+This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, how to set up the workspace `~/ros2_ws`, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[02 Gesture Node]], [[03 Intent Node]], [[04 Mission Node]].
 
 > [!WARNING] Status: DRAFT
 > - On 2026-10-19 `intent_node` and `mission_node` were built with `colcon build` on Pop!_OS 24.04 + Jazzy, and the chain fake sender → `intent_node` → `mission_node` ran (test log in §12). At that time the recogniser still sent UDP.
 > - Since 2026-10-20 the recogniser is the ROS 2 node `gesture_node`, and `intent_node` reads `/gesture/raw` with `input_source:=topic`. The steps in §5–9 describe this new setup. Its first build found the venv problem fixed in §6.3. A full run with the webcam is not recorded yet.
+> - Where the code is (2026-10-20): `gesture_node` and `intent_node` are on the branch `feature/ros2nodes`, not in `dev` yet. Check out that branch before §6. `mission_node` (`MISSION_NODE_PACKAGE/`) is not committed to any branch yet (§10).
 
 ### Node status (2026-10-20)
 
@@ -27,7 +29,7 @@ This is the practical guide. It explains what ROS 2 and nodes are, how to instal
 | :--- | :--- | :---: | :---: | :---: |
 | `gesture_node` | webcam + MediaPipe → `/gesture/raw` | §6.3 | §7 | §9 |
 | `intent_node` | `/gesture/raw` → filter → `/gesture/intent` | §6.2 | §7 | §9 |
-| `mission_node` | `/gesture/intent` → `/mission/velocity_target` | §10 ([[04 Mission_Node\|04]] §8) | [[04 Mission_Node\|04]] §9 | [[04 Mission_Node\|04]] §10 |
+| `mission_node` | `/gesture/intent` → `/mission/velocity_target` | §10 ([[04 Mission Node\|04]] §8) | [[04 Mission Node\|04]] §9 | [[04 Mission Node\|04]] §10 |
 
 ---
 
@@ -99,7 +101,7 @@ Until 2026-10-20 the recogniser (`gestures.py`) was **not** a node. It ran in it
 - **No extra CPU cost.** The camera is read inside the node with `cv2.VideoCapture(0)`, as before. No image is sent between nodes and `cv_bridge` is not needed, so the clash ADR-018 feared does not happen.
 - **The price** is a venv that sees both ROS 2 and MediaPipe, and building `gesture_node` with that venv's Python (§6.3).
 
-Details, the comparison with a separate camera node, and the open ADR: [[01 Gesture Node]] §2.
+Details, the comparison with a separate camera node, and the open ADR: [[02 Gesture Node]] §2.
 
 ---
 
@@ -230,7 +232,7 @@ A **workspace** is the folder where colcon builds packages. It lives on your PC,
 
 ### 6.1 The MediaPipe venv (once)
 
-`gesture_node` needs Python **3.12** with MediaPipe **and** access to the apt ROS packages, and some system packages for the camera and the window ([[01 Gesture Node]] §10):
+`gesture_node` needs Python **3.12** with MediaPipe **and** access to the apt ROS packages, and some system packages for the camera and the window ([[02 Gesture Node]] §10):
 
 ```bash
 sudo apt install python3.12-venv python3-pip libgl1 libglib2.0-0 v4l-utils libxcb-cursor0
@@ -329,7 +331,7 @@ source ~/ros2_ws/install/setup.zsh
 | 2 | venv (via the shebang, §6.3) | `ros2 run gesture_node gesture_node` (on Wayland: `QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node`) |
 | 3 | system | `ros2 topic echo /gesture/intent --field data` |
 
-- `input_source:=topic` is required: without it `intent_node` listens on UDP 5005, and nothing sends there any more ([[03 Intent_node]] §7).
+- `input_source:=topic` is required: without it `intent_node` listens on UDP 5005, and nothing sends there any more ([[03 Intent Node]] §7).
 - Press `q` in the "Gestures" window to stop `gesture_node`.
 
 ### What to expect
@@ -364,14 +366,14 @@ source ~/ros2_ws/install/setup.zsh
 | `ros2 param get <node> <name>` | Reads a parameter | `ros2 param get /intent_node input_source` |
 | `ros2 param set <node> <name> <value>` | Changes a parameter while running | see the warning below |
 | `ros2 bag record <topics>` / `ros2 bag play <file>` | Records topics and replays them | record `/gesture/raw` + `/gesture/intent`, replay without a camera (§9, Level 5) |
-| `ros2 launch <package> <file>` | Starts several nodes from one file | `ros2 launch mission_node mission_demo.launch.py` ([[04 Mission_Node]] §9) |
+| `ros2 launch <package> <file>` | Starts several nodes from one file | `ros2 launch mission_node mission_demo.launch.py` ([[04 Mission Node]] §9) |
 | `ros2 pkg executables <package>` | Lists a package's executables | `ros2 pkg executables mission_node` |
 | `ros2 service` / `ros2 action` | Same idea for services and actions | not used yet |
 
 Add `--help` to any command, for example `ros2 topic --help`.
 
 > [!WARNING] Parameters are safety settings
-> `ros2 param set` changes a value while the node runs, but `intent_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[03 Intent_node]] §7). Agree changes with the team first.
+> `ros2 param set` changes a value while the node runs, but `intent_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[03 Intent Node]] §7). Agree changes with the team first.
 
 ### The CLI and `rclpy`
 
@@ -387,7 +389,7 @@ Add `--help` to any command, for example `ros2 topic --help`.
 | `get_logger().info(...)` | the messages in the terminal where the node runs |
 | `rclpy.spin(node)` | the node stays alive until Ctrl+C |
 
-`gesture_node` spins in a background thread, because its camera loop owns the main thread ([[01 Gesture Node]] §4). `flight_interface` will be the first lifecycle node.
+`gesture_node` spins in a background thread, because its camera loop owns the main thread ([[02 Gesture Node]] §4). `flight_interface` will be the first lifecycle node.
 
 ---
 
@@ -453,7 +455,7 @@ Run it with the system Python (no venv): `python3 ~/gesture_watch.py`. Example o
    3.46 s  intent  {"intent":"MOVE_RIGHT","gesture":"INDEX_RIGHT","reason":"ok","t":1792483203.5,"xy":null}
 ```
 
-The gap between the `raw` line and the `ok` intent line is the stability filter (5 packets, ~0.4 s, [[03 Intent_node]] §5).
+The gap between the `raw` line and the `ok` intent line is the stability filter (5 packets, ~0.4 s, [[03 Intent Node]] §5).
 
 ### Level 0: no camera (fake `/gesture/raw` → `intent_node`)
 
@@ -538,7 +540,7 @@ ros2 topic info /gesture/raw                            # once: type std_msgs/ms
 | Check | Pass |
 | :--- | :--- |
 | Format | every message is `{"gesture": ..., "t": ..., "xy": null}` |
-| Gesture names | the name matches your hand and the name printed by `gesture_node` ([[01 Gesture Node\|01]] §7) |
+| Gesture names | the name matches your hand and the name printed by `gesture_node` ([[02 Gesture Node\|02]] §7) |
 | No hand | `"gesture": null` when the hand leaves the picture (it never just stops) |
 | Rate | ~10 Hz while the gesture stays the same; `hz` never drops to 0 while the window is open |
 | Stop | `q` in the window → `hz` shows no new messages |
@@ -603,11 +605,11 @@ Attach the bag info and the log to the GitHub issue (Test session form).
 
 ## 🧪 10. Build, run and test `mission_node`
 
-What the node does, and every detail of running and testing it, is in [[04 Mission_Node]] §8–10. The short version:
+What the node does, and every detail of running and testing it, is in [[04 Mission Node]] §8–10. The short version:
 
 ### 10.1 Build
 
-The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`):
+The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`). It is not committed yet (2026-10-20), so it only exists on the machine where it was written:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh                  # no venv active
@@ -623,12 +625,12 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | Level | Command | Pass when |
 | :--- | :--- | :--- |
 | 0: unit | `cd ~/ROSRangers/MISSION_NODE_PACKAGE && python3 -m unittest discover -s test -v` (or `colcon test --packages-select mission_node`) | 35 tests OK |
-| 1: alone, pretend values | `ros2 launch mission_node mission_demo.launch.py` + `ros2 topic echo /mission/state --field data` | the mode sequence of [[04 Mission_Node\|04]] §7.2 |
-| 2: with `intent_node`, no camera | `ros2 launch mission_node mission_with_gestures.launch.py`, then the scripted sequence of §9 Level 0 | the table in [[04 Mission_Node\|04]] §10, Level 2 |
-| 3: real gestures | same launch, then `ros2 run gesture_node gesture_node` | [[04 Mission_Node\|04]] §10, Level 3 |
+| 1: alone, pretend values | `ros2 launch mission_node mission_demo.launch.py` + `ros2 topic echo /mission/state --field data` | the mode sequence of [[04 Mission Node\|04]] §7.2 |
+| 2: with `intent_node`, no camera | `ros2 launch mission_node mission_with_gestures.launch.py`, then the scripted sequence of §9 Level 0 | the table in [[04 Mission Node\|04]] §10, Level 2 |
+| 3: real gestures | same launch, then `ros2 run gesture_node gesture_node` | [[04 Mission Node\|04]] §10, Level 3 |
 
 > [!WARNING] The launch file still starts `intent_node` on UDP
-> `mission_with_gestures.launch.py` starts `intent_node` with its default `input_source` (`udp`). Until the launch file passes `input_source: topic`, levels 2 and 3 get no gestures ([[04 Mission_Node]] §9.2).
+> `mission_with_gestures.launch.py` starts `intent_node` with its default `input_source` (`udp`). Until the launch file passes `input_source: topic`, levels 2 and 3 get no gestures ([[04 Mission Node]] §9.2).
 
 `/flight/state` comes from the pretend node `fake_flight_state` until `flight_interface` exists. Never use it with a real drone.
 
@@ -660,8 +662,8 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | 2026-10-14 | | host, ROS 2 stubbed | 17 unit tests OK; real `gesture_sender.py` into real node code gave the Level 0 sequence | not a real ROS 2 run; UDP version |
 | 2026-10-19 | Bruno (with Claude Code) | Pop!_OS 24.04 + Jazzy: `colcon build` | `intent_node` and `mission_node` built (`2 packages finished`) | first real build of both |
 | 2026-10-19 | Bruno (with Claude Code) | Pop!_OS 24.04 + Jazzy: `colcon test` | `mission_node`: 35 tests, 0 failures | |
-| 2026-10-19 | Bruno (with Claude Code) | `mission_demo.launch.py` (pretend inputs) | mode sequence as in [[04 Mission_Node\|04]] §7.2, 20.0 Hz, ramp 0.025 per message | found and fixed: a log call crashed the node on `LAND_REQUEST`; a 0.43 s DDS delivery gap could re-engage ([[04 Mission_Node\|04]] §11 #3) |
-| 2026-10-19 | Bruno (with Claude Code) | UDP fake camera + `mission_with_gestures.launch.py` | intent and mode sequence as in [[04 Mission_Node\|04]] §10 Level 2 | `intent_node` prints a `KeyboardInterrupt` traceback when the launch is stopped with Ctrl+C ([[03 Intent_node]] §9) |
+| 2026-10-19 | Bruno (with Claude Code) | `mission_demo.launch.py` (pretend inputs) | mode sequence as in [[04 Mission Node\|04]] §7.2, 20.0 Hz, ramp 0.025 per message | found and fixed: a log call crashed the node on `LAND_REQUEST`; a 0.43 s DDS delivery gap could re-engage ([[04 Mission Node\|04]] §11 #3) |
+| 2026-10-19 | Bruno (with Claude Code) | UDP fake camera + `mission_with_gestures.launch.py` | intent and mode sequence as in [[04 Mission Node\|04]] §10 Level 2 | `intent_node` prints a `KeyboardInterrupt` traceback when the launch is stopped with Ctrl+C ([[03 Intent Node]] §9) |
 | 2026-10-20 | Claude Code | no ROS (unit tests only) | `gesture_node`: 6 tests OK; `intent_node`: 17 tests OK after adding `input_source` | `gesture_node` created; `drone/tools/gesture/` removed |
 | 2026-10-20 | Bruno (with Claude Code) | Pop!_OS 24.04 + Jazzy: first `ros2 run gesture_node gesture_node` | failed: `No module named 'mediapipe'` | shebang `/usr/bin/python3` and venv without system packages; fixed by §6.1 + §6.3 |
 | 2026-10-20 | Bruno | `gesture_node`: shutdown | `terminate called without an active exception` on exit | fixed in `gesture_node.py`: stop ROS 2 and join the spin thread before closing |
