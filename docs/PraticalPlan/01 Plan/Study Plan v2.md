@@ -107,7 +107,7 @@ tags: [plan]
 - **C:** `flight_interface` lifecycle node: activate/deactivate, watchdog, an E-stop transition that cuts setpoints. Unit tests.
 - **A + B (props off):** run [[ESP_to_FC]] §11 Phases 1–5. MSP Override with mask **8** (yaw). Readback via `MSP_RC`. Pilot takeover. F1–F9 results recorded.
 - **D:** **HIL runner online**: flash the ESP from CI, run the props-off passthrough and failsafe-timing tests.
-- **E:** wrap the existing `gestures.py` into the recogniser process + `gesture_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
+- **E:** wrap the existing `gestures.py` into the recogniser process + `intent_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
 
 **Demo:** fault injection on the bench: kill the ground node, drop Wi-Fi, send garbage. Each must end in the defined safe state.
 

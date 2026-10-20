@@ -18,7 +18,7 @@ aliases:
 This note explains how the webcam program turns a hand into a gesture name such as `THUMB_UP` or `INDEX_MIDDLE_LEFT`. It covers **static gestures**: which fingers are extended and which way they point. It also explains how to install and run the program on Linux.
 
 > [!NOTE] Where this fits
-> This is step 1 of the [[00 Gesture Pipeline|Gesture Pipeline]]. What happens to the gesture name after it leaves this program is in [[03 Gesture_node]].
+> This is step 1 of the [[00 Gesture Pipeline|Gesture Pipeline]]. What happens to the gesture name after it leaves this program is in [[03 Intent_node]].
 
 ---
 
@@ -51,7 +51,7 @@ graph TD
     G --> H[Direction logic: which way do they point?]
     H --> I[match statement: build gesture name]
     I --> S2[send_gesture name]
-    S --> N[gesture_node over UDP]
+    S --> N[intent_node over UDP]
     S2 --> N
 ```
 
@@ -62,7 +62,7 @@ graph TD
 5. **Interpret** (`hand_processing.py`): `is_finger_extended` decides which fingers are extended.
 6. **Direction** (`hand_processing.py`): `pointing_direction` works out which way the extended fingers point.
 7. **Classify** (`hand_processing.py`): `recognize` builds the gesture name with a `match` statement.
-8. **Output** (`gestures.py`): `draw_hand` draws the landmarks, the name is printed when it changes, and `send_gesture` sends it to `gesture_node` on **every** frame (§7).
+8. **Output** (`gestures.py`): `draw_hand` draws the landmarks, the name is printed when it changes, and `send_gesture` is called on **every** frame (§7). It sends a packet to `intent_node` at once when the gesture changes, and otherwise repeats it every 0.1 s as a keep-alive ([[03 Intent_node]] §6).
 
 ### 🖼️ Frames and NumPy
 
@@ -243,7 +243,7 @@ python3 -c "import cv2, mediapipe; print(cv2.__version__, mediapipe.__version__)
 
 ---
 
-## 💻 7. The program
+## ▶️ 7. Running it
 
 ### 🗂️ Files
 
@@ -251,7 +251,7 @@ python3 -c "import cv2, mediapipe; print(cv2.__version__, mediapipe.__version__)
 drone/tools/gesture/
 ├── gestures.py          # OpenCV: camera loop, window, sends each frame's gesture
 ├── hand_processing.py   # MediaPipe + math + finger logic + gesture names
-├── gesture_sender.py    # sends the gesture to gesture_node over UDP (standard library only)
+├── gesture_sender.py    # sends the gesture to intent_node over UDP (standard library only)
 ├── requirements.txt     # mediapipe==0.10.21, opencv-python
 └── .venv/               # your virtual environment (not committed)
 ```
@@ -260,209 +260,11 @@ drone/tools/gesture/
 | :--- | :--- |
 | `hand_processing.py` | Everything that uses MediaPipe, plus the math, the finger logic and the gesture names. It never imports OpenCV, so it accepts any RGB image. |
 | `gestures.py` | The OpenCV part: camera loop and window. Imports `create_hands`, `detect_gesture` and `draw_hand` from `hand_processing.py` and `send_gesture` from `gesture_sender.py`. |
-| `gesture_sender.py` | Sends JSON over UDP to `gesture_node`. Explained in [[03 Gesture_node]] §6. |
+| `gesture_sender.py` | Sends JSON over UDP to `intent_node`. Explained in [[03 Intent_node]] §6. |
 
-All three must be in the same folder. The three functions `gestures.py` uses from `hand_processing.py`:
+All three must be in the same folder.
 
-- `create_hands(static_image_mode=False)`: creates the MediaPipe detector.
-- `detect_gesture(hands, rgb_image)`: returns `(gesture, hand)`, or `(None, None)` if no hand was found.
-- `draw_hand(image, hand)`: draws the landmarks on an image.
-
-### `hand_processing.py`
-
-```python
-import math
-
-import mediapipe as mp
-
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-
-# Landmark cheat sheet (MCP = knuckle, PIP = middle joint):
-#   0 wrist
-#   thumb:  2 MCP, 3 IP,  4 tip
-#   index:  5 MCP, 6 PIP, 8 tip
-#   middle: 9 MCP, 10 PIP, 12 tip
-#   ring:   13 MCP, 14 PIP, 16 tip
-#   pinky:  17 MCP, 18 PIP, 20 tip
-
-THUMB = (2, 3, 4)
-INDEX = (5, 6, 8)
-MIDDLE = (9, 10, 12)
-RING = (13, 14, 16)
-PINKY = (17, 18, 20)
-
-FINGERS = {"THUMB": THUMB, "INDEX": INDEX, "MIDDLE": MIDDLE, "RING": RING, "PINKY": PINKY}
-
-EXTENDED_ANGLE = 140     # degrees at the middle joint; above this the finger is extended
-THUMB_OUT_RATIO = 0.5    # how far the thumb tip sticks out past the palm edge, in hand sizes (a guess)
-
-
-# ---------- MediaPipe ----------
-def create_hands(static_image_mode=False):
-    """False = video (tracks the hand between frames), True = single unrelated images."""
-    return mp_hands.Hands(
-        static_image_mode=static_image_mode,
-        max_num_hands=2,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.5,
-    )
-
-
-def detect_gesture(hands, rgb_image):
-    """rgb_image: NumPy array, shape (height, width, 3), dtype uint8, RGB order.
-    Returns (gesture, hand): the gesture string and the MediaPipe hand object
-    (needed for drawing), or (None, None) if no hand was found."""
-    results = hands.process(rgb_image)
-    if not results.multi_hand_landmarks:
-        return None, None
-
-    hand = results.multi_hand_landmarks[0]
-    height, width = rgb_image.shape[:2]
-    lm = [(p.x * width, p.y * height) for p in hand.landmark]
-    return recognize(lm), hand
-
-
-def draw_hand(image, hand):
-    """Draw the landmarks and connections onto the image (in place)."""
-    mp_draw.draw_landmarks(image, hand, mp_hands.HAND_CONNECTIONS)
-
-
-# ---------- Math ----------
-def dist(a, b):
-    return math.hypot(a[0] - b[0], a[1] - b[1])
-
-
-def angle(a, b, c):
-    """Angle in degrees at point b, between the lines b->a and b->c."""
-    v1 = (a[0] - b[0], a[1] - b[1])
-    v2 = (c[0] - b[0], c[1] - b[1])
-    norm = math.hypot(*v1) * math.hypot(*v2)
-    if norm == 0:
-        return 0
-    cos = (v1[0] * v2[0] + v1[1] * v2[1]) / norm
-    return math.degrees(math.acos(max(-1, min(1, cos))))
-
-
-def hand_size(lm):
-    return max(dist(lm[0], lm[9]), 1e-6)  # wrist to middle knuckle
-
-
-def thumb_out(lm):
-    """How far the thumb tip sticks out past the index knuckle, along the palm's width axis.
-    Negative or near 0 = tucked, clearly positive = out."""
-    ux = lm[5][0] - lm[17][0]   # axis from the pinky knuckle toward the index knuckle
-    uy = lm[5][1] - lm[17][1]
-    palm_width = max(math.hypot(ux, uy), 1e-6)
-    along = ((lm[4][0] - lm[5][0]) * ux + (lm[4][1] - lm[5][1]) * uy) / palm_width
-    return along / hand_size(lm)
-
-
-def is_finger_extended(lm, finger):
-    """finger is one of THUMB, INDEX, MIDDLE, RING, PINKY."""
-    mcp, pip, tip = finger
-
-    if finger == THUMB:
-        return thumb_out(lm) > THUMB_OUT_RATIO
-
-    return angle(lm[mcp], lm[pip], lm[tip]) > EXTENDED_ANGLE
-
-
-def pointing_direction(lm, fingers):
-    """Direction the given fingers point (knuckle to tip, added together):
-    UP, DOWN, LEFT or RIGHT."""
-    dx = sum(lm[tip][0] - lm[mcp][0] for mcp, pip, tip in fingers)
-    dy = sum(lm[tip][1] - lm[mcp][1] for mcp, pip, tip in fingers)
-    a = math.degrees(math.atan2(dx, -dy))  # 0 = up, 90 = right, -90 = left, 180 = down
-    if -45 <= a < 45:
-        return "UP"
-    if 45 <= a < 135:
-        return "RIGHT"
-    if -135 <= a < -45:
-        return "LEFT"
-    return "DOWN"
-
-
-# ---------- Gesture recognition ----------
-def recognize(lm):
-    # Names of the fingers that are extended, e.g. ["INDEX", "MIDDLE"]
-    extended = [name for name, finger in FINGERS.items() if is_finger_extended(lm, finger)]
-
-    # Which way the extended fingers point (not used when the hand is closed)
-    direction = pointing_direction(lm, [FINGERS[name] for name in extended])
-
-    match extended:
-        case []:
-            return "CLOSED_HAND"
-        case ["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"]:
-            return "OPEN_HAND_" + direction
-        case _:
-            return "_".join(extended) + "_" + direction  # e.g. "INDEX_MIDDLE_LEFT"
-```
-
-### `gestures.py` (repo version, 2026-10-16)
-
-```python
-import cv2 as opencv
-from hand_processing import create_hands, detect_gesture, draw_hand
-from gesture_sender import send_gesture
-
-
-def execute(gesture):
-    match gesture:
-        case "OPEN_HAND_UP":
-            print("Gesture: Open Hand Up -> Enable / Hold Position (check doc)")
-        case "CLOSED_HAND":
-            print("Gesture: Closed Hand -> Stop / Hover in place")
-        # ... one case per gesture of the vocabulary
-
-
-def main():
-    cap = opencv.VideoCapture(2)  # /dev/video*
-    last_gesture = None
-
-    with create_hands() as hands:
-        while cap.isOpened():
-            ok, frame = cap.read()
-            if not ok:
-                break
-
-            frame = opencv.flip(frame, 1)  # mirror view
-            rgb = opencv.cvtColor(frame, opencv.COLOR_BGR2RGB)
-
-            gesture, hand = detect_gesture(hands, rgb)
-            if hand:
-                draw_hand(frame, hand)
-
-            if gesture and gesture != last_gesture:
-                print(gesture)
-                last_gesture = gesture
-            send_gesture(gesture, None)
-
-            opencv.imshow("Gestures", frame)
-            if opencv.waitKey(1) & 0xFF == ord("q"):
-                break
-
-    cap.release()
-    opencv.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    main()
-```
-
-> [!NOTE] Reading the code
-> - The `match` statement is the switch case. `case _` is the default for every pattern not listed above it.
-> - `recognize` matches on the **list of finger names**, so a case like `["THUMB", "INDEX", "MIDDLE", "RING", "PINKY"]` must list them in the order of `FINGERS`.
-> - The name is printed only when it changes, otherwise it would print about 30 times per second.
-> - `send_gesture` is called on **every** frame, including `None` when there is no hand. It decides itself when to send (on change, plus a repeat every 0.1 s), and `gesture_node` needs those repeats to know the hand is still there.
-> - `VideoCapture(2)` is the camera index on the machine where it was last tested. Change it to `0` or `1` to match your `ls /dev/video*`.
-> - `execute()` is kept for local debugging but is no longer called. The real action now happens in `gesture_node` and `mission_node`.
-> - The palm position is sent as `None` for now. `gesture_node` accepts an `[x, y]` there if we add it later.
-
----
-
-## ▶️ 8. Running it
+### ▶️ Run
 
 ```bash
 cd ~/ROSRangers/drone/tools/gesture
@@ -470,11 +272,11 @@ source .venv/bin/activate
 python3 gestures.py              # on Wayland: QT_QPA_PLATFORM=xcb python3 gestures.py
 ```
 
-Press `q` in the video window to quit, or `Ctrl+C` in the terminal. With no `gesture_node` running, the UDP packets are simply lost, so the program also works on its own. To run it with ROS 2, see [[02 ROS 2 Nodes - Install and Test]] §7.
+Press `q` in the video window to quit, or `Ctrl+C` in the terminal. With no `intent_node` running, the UDP packets are simply lost, so the program also works on its own. To run it with ROS 2, see [[02 ROS 2 Nodes - Install and Test]] §7.
 
 ---
 
-## 🎚️ 9. Tuning
+## 🎚️ 8. Tuning
 
 | Setting | Default | Effect |
 | :--- | :---: | :--- |
@@ -490,17 +292,17 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 
 ---
 
-## ⚠️ 10. Known limitations
+## ⚠️ 9. Known limitations
 
 - Thumb detection is the least reliable part. `THUMB_OUT_RATIO` needs tuning.
 - Lighting and camera quality affect accuracy.
 - Up to 2 hands are detected (`max_num_hands=2`), but only the **first** hand is recognized and drawn.
-- Gestures that depend on more than "extended or not" (pinch, OK sign) need extra logic using distances between landmarks (§12).
+- Gestures that depend on more than "extended or not" (pinch, OK sign) need extra logic using distances between landmarks (§11).
 - Only static poses. Movement (wave, swipe) needs a tracker over several frames ([[05 Future Nodes]]).
 
 ---
 
-## 🧯 11. Troubleshooting
+## 🧯 10. Troubleshooting
 
 | Problem | Likely cause / fix |
 | :--- | :--- |
@@ -511,7 +313,7 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 | Camera won't open or empty frames | Check `ls /dev/video*` and change the index in `VideoCapture(...)`. Make sure no other app uses the camera. |
 | Permission denied on `/dev/video0` | Add your user to the `video` group, then log out and back in. |
 | `Could not load the Qt platform plugin "xcb"` | Install `libxcb-cursor0`. On Wayland run with `QT_QPA_PLATFORM=xcb`. |
-| Thumb counted as out when it is tucked (or the other way) | Tune `THUMB_OUT_RATIO` (§9). |
+| Thumb counted as out when it is tucked (or the other way) | Tune `THUMB_OUT_RATIO` (§8). |
 | Bent fingers counted as extended | Raise `EXTENDED_ANGLE`. |
 | Gesture name flickers between two values | The hand is near a threshold or a 45° direction boundary. Hold the pose more clearly, or tune. |
 | No hand detected | Improve lighting, face the palm at the camera, lower `min_detection_confidence`. |
@@ -519,9 +321,9 @@ All four are in `hand_processing.py` (the first two at the top, the others in `c
 
 ---
 
-## ➕ 12. Adding new gestures
+## ➕ 11. Adding new gestures
 
-1. **Static:** hold the gesture and read its name in the terminal (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `gesture_node` ([[03 Gesture_node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` above `case _`.
+1. **Static:** hold the gesture and read its name in the terminal (for example `INDEX_PINKY_UP`). To make it do something, add it to the gesture → intent table in `intent_node` ([[03 Intent_node]] §5) and agree the meaning in [[00 Gesture Pipeline]] §3. If it needs a special name, add a `case` to `recognize()` in `hand_processing.py`, above `case _`.
 2. **Distance based (pinch, OK sign):** compare the distance between two landmarks with `dist()`, for example thumb tip (4) and index tip (8), divided by `hand_size(lm)` so it does not depend on the distance to the camera:
 
 $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$

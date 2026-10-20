@@ -36,7 +36,7 @@ sea-me-drone/
 │       ├── sd_protocol_py/  # Python twin of lib/protocol
 │       ├── flight_interface/# lifecycle node (real + PX4 backends)
 │       ├── estimator/
-│       └── gesture_node/    # talks to the MediaPipe recogniser process
+│       └── intent_node/    # talks to the MediaPipe recogniser process
 ├── tools/gesture/           # MediaPipe recogniser in its own venv (see 06 Gestures)
 ├── simulation/              # PX4/Gazebo worlds, launch files, Betaflight SITL scripts
 ├── tests/

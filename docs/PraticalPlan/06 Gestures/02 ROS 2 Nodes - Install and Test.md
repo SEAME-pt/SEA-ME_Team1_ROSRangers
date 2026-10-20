@@ -2,30 +2,30 @@
 title: What ROS 2 and nodes are, installing ROS 2 Jazzy, testing each node
 type: guide
 status: draft
-date: 2026-10-16
+date: 2026-10-19
 project: SEA autonomous drone
 tags:
   - gestures
   - ros2
   - guide
 aliases:
-  - Ros Jazzy and Gesture_node
-  - ROS 2 and Gesture Node
+  - Ros Jazzy and Intent_node
+  - ROS 2 and Intent Node
 ---
 
 # 🤖 ROS 2 and nodes: install ROS 2 Jazzy, then build, run and test each node
 
-This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[03 Gesture_node]], [[04 Mission_Node]].
+This is the practical guide. It explains what ROS 2 and nodes are, how to install ROS 2 Jazzy, and how to build, run and **prove** each gesture node that exists so far. What each node does inside is in its own note: [[03 Intent_node]], [[04 Mission_Node]].
 
-> [!WARNING] Status: DRAFT. Tested with ROS 2 stubbed on the host, not yet built on real Jazzy
-> The `gesture_node` filter has 17 unit tests, and the real `gesture_sender.py` fed into the real node code behaved as described in §9. Nobody has run `colcon build` on a real Jazzy install yet. Record the first real build in the test log (§12).
+> [!WARNING] Status: DRAFT
+> On 2026-10-19 both nodes were built with `colcon build` on Pop!_OS 24.04 + Jazzy, and the chain `gesture_sender.py` → `intent_node` → `mission_node` ran as described in §9 and [[04 Mission_Node]] §10 (test log in §12). Real webcam gestures through the whole chain are not recorded yet.
 
-### Node status (2026-10-16)
+### Node status (2026-10-19)
 
 | Node | Build | Run | Test |
 | :--- | :---: | :---: | :---: |
-| `gesture_node` | §6 | §7 | §9 |
-| `mission_node` | ==🔴not created yet== | | test plan in §10 |
+| `intent_node` | §6 | §7 | §9 |
+| `mission_node` | §10 ([[04 Mission_Node\|04]] §8) | [[04 Mission_Node\|04]] §9 | [[04 Mission_Node\|04]] §10 |
 
 ---
 
@@ -39,17 +39,17 @@ This is the practical guide. It explains what ROS 2 and nodes are, how to instal
 
 | Word | Meaning | In this project |
 | :--- | :--- | :--- |
-| **Node** | one running program with one job | `gesture_node`, `mission_node`, `flight_interface` |
+| **Node** | one running program with one job | `intent_node`, `mission_node`, `flight_interface` |
 | **Topic** | a named channel that carries messages | `/gesture/intent` |
 | **Message** | a typed piece of data on a topic | `std_msgs/msg/String` |
-| **Publisher** | a node that sends to a topic | `gesture_node` |
+| **Publisher** | a node that sends to a topic | `intent_node` |
 | **Subscriber** | a node that receives from a topic | `mission_node` |
-| **Package** | a folder of code that builds into nodes | `gesture_node` |
+| **Package** | a folder of code that builds into nodes | `intent_node` |
 | **Workspace** | the folder where packages are built | `~/ros2_ws` |
 
 ```mermaid
 flowchart LR
-  A["gesture_node<br/>(publisher)"] -->|"topic /gesture/intent<br/>message std_msgs/String"| B["mission_node<br/>(subscriber)"]
+  A["intent_node<br/>(publisher)"] -->|"topic /gesture/intent<br/>message std_msgs/String"| B["mission_node<br/>(subscriber)"]
   A -->|same topic| C["ros2 topic echo<br/>(any number of readers)"]
 ```
 
@@ -139,24 +139,24 @@ sudo apt install ros-jazzy-desktop     # ROS, RViz, demos, tutorials (recommende
 sudo apt install ros-dev-tools         # colcon, rosdep and other build tools
 ```
 
-`ros-jazzy-ros-base` is the smaller install (no GUI tools). It is enough to run `gesture_node`.
+`ros-jazzy-ros-base` is the smaller install (no GUI tools). It is enough to run `intent_node`.
 
 ### 4.4 Load the environment
 
 Every terminal must load ROS 2 before any `ros2` command works:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/jazzy/setup.zsh
 ```
 
 To do it automatically in new terminals:
 
 ```bash
-echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+echo "source /opt/ros/jazzy/setup.zsh" >> ~/.zshrc
 ```
 
-> [!NOTE] Using zsh?
-> Replace `setup.bash` with `setup.zsh` and `~/.bashrc` with `~/.zshrc` everywhere on this page.
+> [!NOTE] Using bash?
+> Replace `setup.zsh` with `setup.bash` and `~/.zshrc` with `~/.bashrc` everywhere on this page.
 
 ### 4.5 Initialise rosdep (once)
 
@@ -171,7 +171,7 @@ Terminal 1: `ros2 run demo_nodes_cpp talker`. Terminal 2: `ros2 run demo_nodes_p
 
 ### 4.7 Keep your lab neighbours out of your topics
 
-ROS 2 nodes on the same network find each other automatically, so a teammate's node could appear on your topics. In every terminal (or `~/.bashrc`):
+ROS 2 nodes on the same network find each other automatically, so a teammate's node could appear on your topics. In every terminal (or `~/.zshrc`):
 
 ```bash
 export ROS_DOMAIN_ID=42                         # your own number, 0-101, different from teammates
@@ -187,10 +187,10 @@ A **workspace** is the folder where colcon builds packages. It lives on your PC,
 ```text
 ~/ros2_ws/
 ├── src/
-│   ├── gesture_node -> ~/ROSRangers/drone/ground/src/gesture_node   (symlink)
-│   └── mission_node -> ~/ROSRangers/drone/ground/src/mission_node   (later)
+│   ├── intent_node -> ~/ROSRangers/drone/ground/src/intent_node   (symlink)
+│   └── mission_node -> ~/ROSRangers/MISSION_NODE_PACKAGE            (for now; later drone/ground/src/mission_node)
 ├── build/      # generated by colcon build
-├── install/    # generated: what `source install/setup.bash` loads
+├── install/    # generated: what `source install/setup.zsh` loads
 └── log/        # generated
 ```
 
@@ -202,31 +202,31 @@ A **workspace** is the folder where colcon builds packages. It lives on your PC,
 
 ---
 
-## 🔨 6. Build `gesture_node`
+## 🔨 6. Build `intent_node`
 
 ### 6.1 Where the files are
 
 | File or folder | Repo path | Notes |
 | :--- | :--- | :--- |
-| `package.xml`, `setup.py`, `setup.cfg`, `resource/gesture_node`, `gesture_node/` (`__init__.py`, `gesture_filter.py`, `gesture_node.py`), `test/test_gesture_filter.py` | `drone/ground/src/gesture_node/` | The ROS 2 package. `package.xml` must be directly in this folder. |
+| `package.xml`, `setup.py`, `setup.cfg`, `resource/intent_node`, `intent_node/` (`__init__.py`, `gesture_filter.py`, `intent_node.py`), `test/test_gesture_filter.py` | `drone/ground/src/intent_node/` | The ROS 2 package. `package.xml` must be directly in this folder. |
 | `gesture_sender.py` | `drone/tools/gesture/` | Plain Python for the MediaPipe side, next to `gestures.py`. |
 | `udp_listen.py` (proof tool without ROS) | not in the repo yet | Optional. If you add it, put it in `drone/tools/gesture/`. |
 
 ### 6.2 Build
 
 ```bash
-source /opt/ros/jazzy/setup.bash
+source /opt/ros/jazzy/setup.zsh
 mkdir -p ~/ros2_ws/src
-ln -s ~/ROSRangers/drone/ground/src/gesture_node ~/ros2_ws/src/gesture_node   # symlink, not a copy
+ln -s ~/ROSRangers/drone/ground/src/intent_node ~/ros2_ws/src/intent_node   # symlink, not a copy
 
 cd ~/ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select gesture_node --symlink-install
-source install/setup.bash
-ros2 pkg list | grep gesture_node      # must print gesture_node
+colcon build --packages-select intent_node --symlink-install
+source install/setup.zsh
+ros2 pkg list | grep intent_node      # must print intent_node
 ```
 
-- `~/ros2_ws/src/gesture_node/package.xml` must exist (through the symlink), not one folder deeper.
+- `~/ros2_ws/src/intent_node/package.xml` must exist (through the symlink), not one folder deeper.
 - Rebuild only after changing `setup.py` or `package.xml`. Python edits do not need it.
 - Setuptools deprecation warnings are common and harmless if the build ends with `Summary: 1 package finished`.
 - ==🔴Do not activate the MediaPipe venv in terminals that run ROS 2.==
@@ -237,13 +237,13 @@ With colcon:
 
 ```bash
 cd ~/ros2_ws
-colcon test --packages-select gesture_node && colcon test-result --verbose
+colcon test --packages-select intent_node && colcon test-result --verbose
 ```
 
 Or without ROS at all:
 
 ```bash
-cd ~/ROSRangers/drone/ground/src/gesture_node
+cd ~/ROSRangers/drone/ground/src/intent_node
 python3 -m unittest discover -s test -v      # 17 tests, all OK
 ```
 
@@ -256,18 +256,18 @@ Use three terminals and start the node first. The two ROS terminals use the **sy
 **Terminal 1: the node**
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
-ros2 run gesture_node gesture_node
+source /opt/ros/jazzy/setup.zsh
+source ~/ros2_ws/install/setup.zsh
+ros2 run intent_node intent_node
 ```
 
-`source ~/ros2_ws/install/setup.bash` makes ROS 2 find `gesture_node`. It must come after the `/opt/ros` line and be repeated in every new terminal and after every rebuild (or added to `~/.bashrc`). Expected: `Listening for gestures.py on UDP 127.0.0.1:5005`, then a warning `No packets from gestures.py` every 5 s until the recogniser starts.
+`source ~/ros2_ws/install/setup.zsh` makes ROS 2 find `intent_node`. It must come after the `/opt/ros` line and be repeated in every new terminal and after every rebuild (or added to `~/.zshrc`). Expected: `Listening for gestures.py on UDP 127.0.0.1:5005`, then a warning `No packets from gestures.py` every 5 s until the recogniser starts.
 
 **Terminal 2: watch the topic**
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/ros2_ws/install/setup.bash
+source /opt/ros/jazzy/setup.zsh
+source ~/ros2_ws/install/setup.zsh
 ros2 topic echo /gesture/intent
 ```
 
@@ -299,57 +299,75 @@ Press `q` in the window to quit.
 
 | Command | What it does | Example |
 | :--- | :--- | :--- |
-| `ros2 run <package> <executable>` | Starts a node | `ros2 run gesture_node gesture_node` |
-| `ros2 pkg list` | Lists installed packages | `ros2 pkg list \| grep gesture_node` |
-| `ros2 node list` | Lists running nodes | shows `/gesture_node` |
-| `ros2 node info <node>` | Shows a node's topics and parameters | `ros2 node info /gesture_node` |
+| `ros2 run <package> <executable>` | Starts a node | `ros2 run intent_node intent_node` |
+| `ros2 pkg list` | Lists installed packages | `ros2 pkg list \| grep intent_node` |
+| `ros2 node list` | Lists running nodes | shows `/intent_node` |
+| `ros2 node info <node>` | Shows a node's topics and parameters | `ros2 node info /intent_node` |
 | `ros2 topic list` | Lists all topics | shows `/gesture/intent` |
 | `ros2 topic echo <topic>` | Prints messages as they arrive | `ros2 topic echo /gesture/intent` |
 | `ros2 topic info <topic>` | Shows the type, publishers and subscribers | `ros2 topic info /gesture/intent` |
 | `ros2 topic hz <topic>` | Measures the publish rate | `ros2 topic hz /gesture/intent` (expect ~20 Hz) |
 | `ros2 topic pub <topic> <type> <data>` | Publishes a message by hand | fake an input to another node (§10) |
-| `ros2 param list <node>` | Lists a node's parameters | `ros2 param list /gesture_node` |
-| `ros2 param get <node> <name>` | Reads a parameter | `ros2 param get /gesture_node stable_packets` |
+| `ros2 param list <node>` | Lists a node's parameters | `ros2 param list /intent_node` |
+| `ros2 param get <node> <name>` | Reads a parameter | `ros2 param get /intent_node stable_packets` |
 | `ros2 param set <node> <name> <value>` | Changes a parameter while running | see the warning below |
 | `ros2 bag record <topics>` / `ros2 bag play <file>` | Records topics and replays them | record `/gesture/intent` once, replay it without a camera |
-| `ros2 launch <package> <file>` | Starts several nodes from one file | later, for `gesture_node` + `mission_node` ([[05 Future Nodes]]) |
+| `ros2 launch <package> <file>` | Starts several nodes from one file | `ros2 launch mission_node mission_demo.launch.py` ([[04 Mission_Node]] §9) |
+| `ros2 pkg executables <package>` | Lists a package's executables | `ros2 pkg executables mission_node` |
 | `ros2 service` / `ros2 action` | Same idea for services and actions | not used yet |
 
 Add `--help` to any command, for example `ros2 topic --help`.
 
 > [!WARNING] Parameters are safety settings
-> `ros2 param set` changes a value while the node runs, but `gesture_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[03 Gesture_node]] §7). Agree changes with the team first.
+> `ros2 param set` changes a value while the node runs, but `intent_node` reads its parameters only at start-up. To use new values, restart it with `--ros-args -p ...` ([[03 Intent_node]] §7). Agree changes with the team first.
 
 ### The CLI and `rclpy`
 
 `rclpy` is the Python library the nodes are written with. It creates the node, its publishers, timers and parameters, and `rclpy.spin()` keeps it running. `rclpy` has no commands of its own: you see its effects with `ros2`.
 
-| In `gesture_node.py` (`rclpy`) | What you see with `ros2` |
+| In `intent_node.py` (`rclpy`) | What you see with `ros2` |
 | :--- | :--- |
-| `super().__init__("gesture_node")` | the name in `ros2 node list` |
+| `super().__init__("intent_node")` | the name in `ros2 node list` |
 | `declare_parameter(...)` / `get_parameter(...)` | `ros2 param list` / `get`, and `--ros-args -p` |
 | `create_publisher(String, topic, 10)` | `ros2 topic list`, `info` and `echo` |
 | `create_timer(...)` | the 20 Hz rate in `ros2 topic hz` |
 | `get_logger().info(...)` | the messages in the terminal where the node runs |
 | `rclpy.spin(node)` | the node stays alive until Ctrl+C |
 
-`gesture_node` has no subscriber, service or lifecycle yet. `mission_node` will add the first subscriber (to `/gesture/intent`), and `flight_interface` will be a lifecycle node.
+`intent_node` has no subscriber, service or lifecycle. `mission_node` has the first subscribers (`/gesture/intent`, `/flight/state`), and `flight_interface` will be a lifecycle node.
 
 ---
 
-## 🧪 9. Test `gesture_node`: prove that `gestures.py` is processed
+## 🧪 9. Test `intent_node`: prove that `gestures.py` is processed
 
 Work through the levels in order. Each one proves one link of the chain, so a failure tells you where to look.
 
 ### Level 0: no camera at all (sender + node)
 
-Start the node (§7, terminal 1) and `ros2 topic echo /gesture/intent` (terminal 2). In terminal 3, run the fake camera. It uses only the standard library, so no venv is needed:
+Start the node (§7, terminal 1) and `ros2 topic echo /gesture/intent` (terminal 2). In terminal 3, play a scripted "fake camera". `gesture_sender.py` has no demo of its own (it only provides `send_gesture`), so the script below imports it and calls it in a loop, the way `gestures.py` does once per frame. It uses only the standard library, so no venv is needed. Run it from `drone/tools/gesture/` so the import works:
 
 ```bash
-cd ~/ROSRangers/drone/tools/gesture && python3 gesture_sender.py
+cd ~/ROSRangers/drone/tools/gesture
+python3 - <<'EOF'
+import time
+from gesture_sender import send_gesture
+
+def hold(gesture, seconds):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        send_gesture(gesture)
+        time.sleep(1 / 30)  # pretend 30 FPS
+
+hold("OPEN_HAND_UP", 2)
+hold("INDEX_RIGHT", 3)
+hold(None, 0.6)   # short gap
+hold("CLOSED_HAND", 2)
+hold(None, 3)     # long gap
+hold("INDEX_LEFT", 2)
+EOF
 ```
 
-About 13 s of scripted input should produce this sequence (`intent` / `reason`):
+`send_gesture` must be called repeatedly: one call sends one packet, and the node treats silence as "hand gone". About 13 s of scripted input should produce this sequence (`intent` / `reason`):
 
 | Time | Fake input | Expected intent |
 | :--- | :--- | :--- |
@@ -359,7 +377,7 @@ About 13 s of scripted input should produce this sequence (`intent` / `reason`):
 | 5 s | no hand for 0.6 s | `NEUTRAL` / `no_hand` |
 | 5.6 s | `CLOSED_HAND` | `NEUTRAL` / `unconfirmed`, then `STOP_HOVER` |
 | 7.6 s | no hand for 3 s | `NEUTRAL`, then `HOVER_LAND_REQUEST` / `no_hand_long` after 2 s |
-| 10.6 s | `INDEX_LEFT` | `MOVE_LEFT` |
+| 10.6 s | `INDEX_LEFT` | `NEUTRAL` / `unconfirmed`, then `MOVE_LEFT` |
 | end | sender stops | `NEUTRAL`, then `HOVER_LAND_REQUEST` / `no_packets` |
 
 ### Level 1: does `gestures.py` send? (no ROS)
@@ -383,8 +401,8 @@ Start `gestures.py`. Every packet is printed with a rate:
 Stop `udp_listen.py`, start the node and `gestures.py`. The node log must show:
 
 ```text
-[INFO] [gesture_node]: First packet from gestures.py: {'gesture': 'INDEX_RIGHT', ...}
-[INFO] [gesture_node]: Recogniser link OK: 52 packets in the last 5 s, last gesture seen: INDEX_RIGHT
+[INFO] [intent_node]: First packet from gestures.py: {'gesture': 'INDEX_RIGHT', ...}
+[INFO] [intent_node]: Recogniser link OK: 52 packets in the last 5 s, last gesture seen: INDEX_RIGHT
 ```
 
 **Pass:** the first-packet line once, then the link report every 5 s with roughly 50 packets. `No packets from gestures.py in the last 5 s` → back to Level 1.
@@ -420,17 +438,33 @@ Attach the result to the GitHub issue (Test session form).
 
 ---
 
-## 🧪 10. Test `mission_node` (when it exists)
+## 🧪 10. Build, run and test `mission_node`
 
-==🟠The package is not created yet.== Once it is, it is built and run the same way as `gesture_node` (symlink into `~/ros2_ws/src`, `colcon build --packages-select mission_node`). The rules it must pass are in [[04 Mission_Node]] §8. The first test needs no other node, only fake inputs:
+What the node does, and every detail of running and testing it, is in [[04 Mission_Node]] §8–10. The short version:
+
+### 10.1 Build
+
+The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`):
 
 ```bash
-ros2 topic pub -r 20 /gesture/intent std_msgs/msg/String \
-  "{data: '{\"intent\":\"MOVE_RIGHT\",\"reason\":\"ok\"}'}"
-ros2 topic echo /mission/velocity_target
+source /opt/ros/jazzy/setup.zsh
+ln -s ~/ROSRangers/MISSION_NODE_PACKAGE ~/ros2_ws/src/mission_node
+cd ~/ros2_ws
+colcon build --packages-select intent_node mission_node --symlink-install
+source install/setup.zsh
+ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission_node
 ```
 
-Fill this section in with real steps when the node is built.
+### 10.2 Run and test
+
+| Level | Command | Pass when |
+| :--- | :--- | :--- |
+| 0: unit | `cd ~/ROSRangers/MISSION_NODE_PACKAGE && python3 -m unittest discover -s test -v` (or `colcon test --packages-select mission_node`) | 35 tests OK |
+| 1: alone, pretend values | `ros2 launch mission_node mission_demo.launch.py` + `ros2 topic echo /mission/state --field data` | the mode sequence of [[04 Mission_Node\|04]] §7.2 |
+| 2: with `intent_node`, no camera | `ros2 launch mission_node mission_with_gestures.launch.py`, then `python3 gesture_sender.py` | the table in [[04 Mission_Node\|04]] §10, Level 2 |
+| 3: real gestures | same launch, then `gestures.py` in its venv | [[04 Mission_Node\|04]] §10, Level 3 |
+
+`/flight/state` comes from the pretend node `fake_flight_state` until `flight_interface` exists. Never use it with a real drone.
 
 ---
 
@@ -438,11 +472,11 @@ Fill this section in with real steps when the node is built.
 
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
-| `ros2: command not found` | ROS 2 not loaded | `source /opt/ros/jazzy/setup.bash` |
-| `Package 'gesture_node' not found` | workspace not loaded or not built | `source ~/ros2_ws/install/setup.bash`, rerun `colcon build` |
-| colcon finds no packages | `package.xml` one folder too deep | `src/gesture_node/package.xml` must exist |
+| `ros2: command not found` | ROS 2 not loaded | `source /opt/ros/jazzy/setup.zsh` |
+| `Package 'intent_node' not found` | workspace not loaded or not built | `source ~/ros2_ws/install/setup.zsh`, rerun `colcon build` |
+| colcon finds no packages | `package.xml` one folder too deep | `src/intent_node/package.xml` must exist |
 | `rosdep` cannot resolve a key | missing rosdep data | `rosdep update`; `-r` lets the build continue |
-| `Cannot listen on UDP 127.0.0.1:5005 ... in use` | another `gesture_node` or `udp_listen.py` runs | stop it, or use another port on **both** sides |
+| `Cannot listen on UDP 127.0.0.1:5005 ... in use` | another `intent_node` or `udp_listen.py` runs | stop it, or use another port on **both** sides |
 | Echo prints only `HOVER_LAND_REQUEST` / `no_packets_yet` | no UDP arrives | do Level 1 |
 | `No packets ... in the last 5 s` warning | sender stopped or wrong port | do Level 1 |
 | Intent stays `NEUTRAL` / `unconfirmed` | gesture changes every frame, or fewer than 5 packets | hold the gesture still; check the sender's rate at Level 1 |
@@ -456,8 +490,11 @@ Fill this section in with real steps when the node is built.
 | Date | Who | Environment | Result | Notes |
 | :--- | :--- | :--- | :--- | :--- |
 | 2026-10-14 | | host, ROS 2 stubbed | 17 unit tests OK; real `gesture_sender.py` into real node code gave the Level 0 sequence | not a real ROS 2 run |
-| | | Ubuntu 24.04 + Jazzy: `colcon build` | | |
-| | | Level 0 (fake camera) | | |
+| 2026-10-19 | Bruno (with Claude Code) | Pop!_OS 24.04 + Jazzy: `colcon build` | `intent_node` and `mission_node` built (`2 packages finished`) | first real build of both |
+| 2026-10-19 | Bruno (with Claude Code) | Pop!_OS 24.04 + Jazzy: `colcon test` | `mission_node`: 35 tests, 0 failures | |
+| 2026-10-19 | Bruno (with Claude Code) | `mission_demo.launch.py` (pretend inputs) | mode sequence as in [[04 Mission_Node\|04]] §7.2, 20.0 Hz, ramp 0.025 per message | found and fixed: a log call crashed the node on `LAND_REQUEST`; a 0.43 s DDS delivery gap could re-engage ([[04 Mission_Node\|04]] §11 #3) |
+| 2026-10-19 | Bruno (with Claude Code) | Level 0 (fake camera) + `mission_with_gestures.launch.py` | intent and mode sequence as in [[04 Mission_Node\|04]] §10 Level 2 | `intent_node` prints a `KeyboardInterrupt` traceback when the launch is stopped with Ctrl+C ([[03 Intent_node]] §9) |
+| | | Level 0 (fake camera) alone, `ros2 topic echo /gesture/intent` | | |
 | | | Level 1 (`gestures.py` sends) | | |
 | | | Levels 2 to 4 (real gestures) | | |
 

@@ -23,7 +23,7 @@ Follows the Module 1 reference layering: mission → ROS 2 → hardware abstract
 flowchart LR
   subgraph Room["Coding room (ground)"]
     CAM[Webcam] --> GEST["gesture recogniser<br/>MediaPipe, own venv"]
-    GEST --> GN[gesture_node]
+    GEST --> GN[intent_node]
     GN -->|/gesture/intent| MISSION[mission / controller]
     EST["estimator<br/>flow + IMU + height"] --> MISSION
     MISSION -->|setpoints| FI["flight_interface<br/>lifecycle node"]

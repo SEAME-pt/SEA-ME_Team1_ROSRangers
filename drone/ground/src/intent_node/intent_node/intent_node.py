@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gesture_node: gestures.py (UDP, JSON) -> filter -> /gesture/intent.
+"""intent_node: gestures.py (UDP, JSON) -> filter -> /gesture/intent.
 
 Single-threaded: one timer drains the UDP socket, another publishes.
 No threads, no locks.
@@ -13,16 +13,16 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-from gesture_node.gesture_filter import GestureFilter
+from intent_node.gesture_filter import GestureFilter
 
 POLL_PERIOD_SEC = 0.01  # drain the socket 100 times per second
 MAX_DATAGRAMS_PER_POLL = 200
 LINK_REPORT_SEC = 5.0
 
 
-class GestureNode(Node):
+class IntentNode(Node):
     def __init__(self):
-        super().__init__("gesture_node")
+        super().__init__("intent_node")
 
         self.declare_parameter("udp_host", "127.0.0.1")
         self.declare_parameter("udp_port", 5005)
@@ -71,7 +71,7 @@ class GestureNode(Node):
             sock.close()
             self.get_logger().fatal(
                 f"Cannot listen on UDP {host}:{port}: {exc}. "
-                "Is another gesture_node running, or is the port in use?"
+                "Is another intent_node running, or is the port in use?"
             )
             raise
         sock.setblocking(False)
@@ -150,7 +150,7 @@ def main(args=None):
     node = None
     exit_code = 0
     try:
-        node = GestureNode()
+        node = IntentNode()
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass

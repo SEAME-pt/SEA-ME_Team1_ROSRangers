@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>gesture_node</name>
+  <name>intent_node</name>
   <version>0.2.0</version>
   <description>Receives hand-gesture UDP datagrams from gestures.py, filters them safely and publishes an intent on /gesture/intent.</description>
   <maintainer email="you@example.com">Your Name</maintainer>

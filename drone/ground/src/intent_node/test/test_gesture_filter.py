@@ -1,13 +1,13 @@
 """Unit tests for the gesture filter. No ROS needed.
 
 Run with:  python3 -m unittest discover -s test -v      (from the package folder)
-or:        colcon test --packages-select gesture_node   (uses pytest)
+or:        colcon test --packages-select intent_node   (uses pytest)
 """
 
 import math
 import unittest
 
-from gesture_node.gesture_filter import (
+from intent_node.gesture_filter import (
     GESTURE_TO_INTENT,
     GestureFilter,
     clean_number,

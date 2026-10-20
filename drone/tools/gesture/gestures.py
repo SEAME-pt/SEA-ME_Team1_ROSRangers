@@ -2,29 +2,8 @@ import cv2 as opencv
 from hand_processing import create_hands, detect_gesture, draw_hand
 from gesture_sender import send_gesture
 
-
-def execute(gesture):
-    match gesture:
-        case "OPEN_HAND_UP":
-            print("Gesture: Open Hand Up -> Enable / Hold Position (check doc)")
-        case "CLOSED_HAND":
-            print("Gesture: Closed Hand -> Stop / Hover in place")
-        case "THUMB_UP":
-            print("Gesture: Thumb-up -> Climb Slowly")
-        case "THUMB_DOWN":
-            print("Gesture: Thumb-down -> Descend Slowly / Land Request")
-        case "INDEX_LEFT":
-            print("Gesture: Index Left -> Move Left")
-        case "INDEX_RIGHT":
-            print("Gesture: Index Right -> Move Right")
-        case "INDEX_MIDDLE_LEFT":
-            print("Gesture: Index Middle Left -> Yaw Left")
-        case "INDEX_MIDDLE_RIGHT":
-            print("Gesture: Index Middle Right -> Yaw Right")
-
-
 def main():
-    cap = opencv.VideoCapture(2)  # /dev/video*
+    cap = opencv.VideoCapture(0)  # /dev/video*
     last_gesture = None
 
     with create_hands() as hands:

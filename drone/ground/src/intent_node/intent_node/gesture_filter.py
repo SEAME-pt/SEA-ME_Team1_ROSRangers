@@ -1,4 +1,4 @@
-"""Decision logic of gesture_node, with NO ROS imports.
+"""Decision logic of intent_node, with NO ROS imports.
 
 Keeping this separate means the safety rules can be unit-tested on any
 machine (no ROS 2 needed) and the clock can be injected for tests.

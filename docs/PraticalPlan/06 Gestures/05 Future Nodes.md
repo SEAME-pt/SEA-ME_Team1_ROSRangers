@@ -2,7 +2,7 @@
 title: Future nodes to add
 type: architecture
 status: draft
-date: 2026-10-16
+date: 2026-10-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -12,7 +12,7 @@ tags:
 
 # 🔭 Future nodes to add
 
-Nodes and packages that the gesture chain will need after `gesture_node` and `mission_node`, and some that would make it better. Each one says why we would add it, what it reads and publishes, and what must be decided first.
+Nodes and packages that the gesture chain will need after `intent_node` and `mission_node`, and some that would make it better. Each one says why we would add it, what it reads and publishes, and what must be decided first.
 
 > [!WARNING] Status: ideas and proposals
 > Nothing on this page is decided or built. Topic names and message types are **proposals**. A node that changes an accepted decision (for example the MediaPipe node vs [[ADR-018 Ground OS and ROS 2|ADR-018]]) needs a new ADR first. Turn an item into work with the Spike or Task issue form, not here.
@@ -24,7 +24,7 @@ Nodes and packages that the gesture chain will need after `gesture_node` and `mi
 ```mermaid
 flowchart LR
   CAM["camera_node<br/>(§3)"] -->|/image_raw| MP["mediapipe_node<br/>(§2)"]
-  MP -->|/gesture/raw| GN[gesture_node]
+  MP -->|/gesture/raw| GN[intent_node]
   MT["motion tracker<br/>(§7)"] -.-> GN
   GN -->|/gesture/intent| MN[mission_node]
   GN -.->|/gesture/intent| AD["car / arm adapter<br/>(§9)"]
@@ -37,7 +37,7 @@ flowchart LR
 | :---: | :--- | :--- | :--- | :---: |
 | 2 | `mediapipe_node` | recogniser inside ROS 2 instead of UDP | after the chain works end to end | ==🟣idea, needs ADR== |
 | 3 | `camera_node` | camera frames as a ROS topic | with §2 | ==🟣idea== |
-| 4 | `drone_msgs` | typed messages instead of JSON strings | before `mission_node` is coded | ==🟠proposed== |
+| 4 | `drone_msgs` | typed messages instead of JSON strings | before the topics are frozen | ==🟠proposed== |
 | 5 | controller + estimator | velocity target → attitude setpoints | Module 1, week 5 | ==🟠planned== |
 | 6 | `flight_interface` | ground ↔ drone link, sim and real backends | Module 1 | ==🟠planned== |
 | 7 | motion tracker | wave / swipe gestures | after vocabulary v0 is stable | ==🟣idea== |
@@ -50,15 +50,15 @@ flowchart LR
 
 ## 🖐️ 2. `mediapipe_node`: MediaPipe inside ROS 2
 
-Today `gestures.py` runs in its own venv and talks to `gesture_node` over UDP ([[00 Gesture Pipeline]] §5). A `mediapipe_node` would make the recogniser a real ROS 2 node.
+Today `gestures.py` runs in its own venv and talks to `intent_node` over UDP ([[00 Gesture Pipeline]] §5). A `mediapipe_node` would make the recogniser a real ROS 2 node.
 
 ```mermaid
 flowchart LR
   subgraph today[Today]
-    W1[Webcam] --> G1["gestures.py (venv)"] -->|UDP| N1[gesture_node]
+    W1[Webcam] --> G1["gestures.py (venv)"] -->|UDP| N1[intent_node]
   end
   subgraph future[With mediapipe_node]
-    W2[Webcam] --> C2[camera_node] -->|/image_raw| M2[mediapipe_node] -->|/gesture/raw| N2[gesture_node]
+    W2[Webcam] --> C2[camera_node] -->|/image_raw| M2[mediapipe_node] -->|/gesture/raw| N2[intent_node]
   end
 ```
 
@@ -69,7 +69,7 @@ flowchart LR
 | **Reads** | `/image_raw` (`sensor_msgs/msg/Image`) from `camera_node` (§3), converted to an RGB NumPy array with `cv_bridge` |
 | **Does** | calls `create_hands()` and `detect_gesture()` from `hand_processing.py`, unchanged ([[01 Gesture Recognition with OpenCV and MediaPipe\|01]] §2: it accepts any RGB array) |
 | **Publishes** | `/gesture/raw`: gesture name, palm `xy`, timestamp, every frame. Optional `/gesture/landmarks` (21 points) for logging and the classifier (§8) |
-| **Then** | `gesture_node` subscribes to `/gesture/raw` instead of the UDP socket. `gesture_filter.py` is ROS-free, so the safety rules stay **exactly** the same |
+| **Then** | `intent_node` subscribes to `/gesture/raw` instead of the UDP socket. `gesture_filter.py` is ROS-free, so the safety rules stay **exactly** the same |
 
 ### Pros and cons
 
@@ -104,7 +104,7 @@ Needed by §2. No code to write: use an existing package.
 | `usb_cam` | `sudo apt install ros-jazzy-usb-cam` | `/image_raw`, `/camera_info` |
 
 ```bash
-ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:=/dev/video2
+ros2 run v4l2_camera v4l2_camera_node --ros-args -p video_device:=/dev/video0   # same camera as VideoCapture(0) in gestures.py
 ros2 run rqt_image_view rqt_image_view     # check the picture
 ```
 
@@ -114,7 +114,7 @@ Mirroring: `gestures.py` flips the frame so left and right match the operator ([
 
 ## 📨 4. `drone_msgs`: typed messages
 
-`/gesture/intent`, `/mission/state` and `/flight/state` are JSON inside `std_msgs/String` ([[03 Gesture_node]] §9, [[04 Mission_Node]] §10). A message package would make them typed and checked.
+`/gesture/intent`, `/mission/state` and `/flight/state` are JSON inside `std_msgs/String` ([[03 Intent_node]] §9, [[04 Mission_Node]] §13). A message package would make them typed and checked.
 
 ```text
 drone/ground/src/drone_msgs/
@@ -133,13 +133,13 @@ drone/ground/src/drone_msgs/
 
 ## 🎛️ 5. Velocity controller + estimator
 
-Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[04 Mission_Node]] §6. Open question there: keep mission and controller as two nodes, or one.
+Reads `/mission/velocity_target` and the estimator velocity (flow + IMU + baro), and outputs roll/pitch angles, yaw rate and throttle. Planned for Module 1 week 5 (tracks C + E, [[Study Plan v2]]). What it receives is in [[04 Mission_Node]] §6.4. Open question there: keep mission and controller as two nodes, or one.
 
 ---
 
 ## 📡 6. `flight_interface`: the link to the drone
 
-A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the ESP8266 ([[Protocol Spec v0]]), with its own watchdog, and a PX4 SITL backend for simulation ([[ADR-019 Sim Backends|ADR-019]]). The folder `drone/ground/src/flight_interface/` exists but holds only `info.md`. It would also publish `/flight/state` for `mission_node` ([[04 Mission_Node]] §2.2).
+A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the ESP8266 ([[Protocol Spec v0]]), with its own watchdog, and a PX4 SITL backend for simulation ([[ADR-019 Sim Backends|ADR-019]]). The folder `drone/ground/src/flight_interface/` exists but holds only `info.md`. It would also publish `/flight/state` for `mission_node` ([[04 Mission_Node]] §3.2). Until then the pretend node `fake_flight_state` in the `mission_node` package publishes it.
 
 ---
 
@@ -147,15 +147,15 @@ A ROS 2 **lifecycle** node that packs setpoints into `SETPOINT` packets for the 
 
 Static poses only cover "which fingers, which way". A tracker that follows the palm position over several frames could add movement gestures as **mode commands** (for example wave = land request), never as direct motion.
 
-- Needs the palm `xy`, which `gestures.py` does not send yet ([[03 Gesture_node]] §3).
-- Could live inside the recogniser, or as a small node between it and `gesture_node`.
+- Needs the palm `xy`, which `gestures.py` does not send yet ([[03 Intent_node]] §3).
+- Could live inside the recogniser, or as a small node between it and `intent_node`.
 - Any new gesture must go through the same stability filter and be added to the vocabulary ([[00 Gesture Pipeline]] §3).
 
 ---
 
 ## 🧠 8. Trained gesture classifier (Module 2)
 
-Replace the rule-based `recognize()` with a classifier trained on the 21 landmarks: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget ([[Roadmap to April 2027]] §4). It keeps the same output names, so `gesture_node` does not change. Recording `/gesture/landmarks` (§2) with `ros2 bag` is an easy way to build the dataset.
+Replace the rule-based `recognize()` with a classifier trained on the 21 landmarks: versioned dataset, reproducible training, model card, INT8 accuracy before/after, latency and power budget ([[Roadmap to April 2027]] §4). It keeps the same output names, so `intent_node` does not change. Recording `/gesture/landmarks` (§2) with `ros2 bag` is an easy way to build the dataset.
 
 ---
 
@@ -173,13 +173,15 @@ Shows the operator what the system thinks: current mode, intent, `reason`, land 
 
 ## 🚀 11. `gesture_bringup`: one launch file
 
-A package with a launch file and a parameter YAML that starts `gesture_node` and `mission_node` (later the camera and `mediapipe_node`) with agreed values:
+A package with a launch file and a parameter YAML that starts `intent_node` and `mission_node` (later the camera and `mediapipe_node`) with agreed values:
 
 ```bash
 ros2 launch gesture_bringup gestures.launch.py
 ```
 
-The safety parameters ([[03 Gesture_node]] §7, [[04 Mission_Node]] §2.3) then live in one reviewed YAML file instead of command lines.
+The safety parameters ([[03 Intent_node]] §7, [[04 Mission_Node]] §3.3) then live in one reviewed YAML file instead of command lines.
+
+For now, two launch files live inside the `mission_node` package: `mission_demo.launch.py` and `mission_with_gestures.launch.py` ([[04 Mission_Node]] §9). Move them here when this package is created.
 
 ---
 

@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = "gesture_node"
+package_name = "intent_node"
 
 setup(
     name=package_name,
@@ -19,7 +19,7 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "gesture_node = gesture_node.gesture_node:main",
+            "intent_node = intent_node.intent_node:main",
         ],
     },
 )
