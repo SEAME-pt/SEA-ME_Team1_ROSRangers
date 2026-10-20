@@ -711,7 +711,7 @@ Simulation / Flight Test
 
 # 15. Requirement IDs
 
-Requirement IDs should be stable.
+Requirement IDs should be stable. All requirements are listed in the register [[Requirements]]; the IDs in the examples below are illustrative.
 
 Suggested categories:
 

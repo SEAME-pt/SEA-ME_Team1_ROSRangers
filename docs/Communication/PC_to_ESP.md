@@ -245,31 +245,31 @@ All requirements apply to **control-setpoint UDP traffic** unless stated otherwi
 
 ### 6.1 Malformed packets *(agreed: must be handled)*
 
-- **REQ-VAL-01**: The receiver shall check every datagram for structural validity (e.g. length consistent with declared type, recognised protocol version, recognised message type) *before* interpreting its contents.
-- **REQ-VAL-02**: The receiver shall check field-level validity (values within the allowed range for that field) before any value is passed on toward the FC. Range limits are TBD.
-- **REQ-VAL-03**: The receiver shall verify an integrity check on each datagram. The mechanism (checksum/CRC vs. cryptographic authentication) is an open decision; see [§8](#8-security-considerations).
-- **REQ-VAL-04**: Datagrams failing any check shall be discarded without side effects on control state, and counted in a diagnostic counter (by failure category where practical).
-- **REQ-VAL-05**: Malformed input shall never cause a crash, hang, buffer overrun or undefined behaviour on the ESP8266.
+- **REQ-COM-001 (was REQ-VAL-01)**: The receiver shall check every datagram for structural validity (e.g. length consistent with declared type, recognised protocol version, recognised message type) *before* interpreting its contents.
+- **REQ-COM-002 (was REQ-VAL-02)**: The receiver shall check field-level validity (values within the allowed range for that field) before any value is passed on toward the FC. Range limits are TBD.
+- **REQ-COM-003 (was REQ-VAL-03)**: The receiver shall verify an integrity check on each datagram. The mechanism (checksum/CRC vs. cryptographic authentication) is an open decision; see [§8](#8-security-considerations).
+- **REQ-COM-004 (was REQ-VAL-04)**: Datagrams failing any check shall be discarded without side effects on control state, and counted in a diagnostic counter (by failure category where practical).
+- **REQ-COM-005 (was REQ-VAL-05)**: Malformed input shall never cause a crash, hang, buffer overrun or undefined behaviour on the ESP8266.
 
 ### 6.2 Sequence numbers
 
-- **REQ-SEQ-01** *(proposed)*: Each control-setpoint message shall carry a sequence number assigned by the sender, advancing for each new setpoint sent.
-- **REQ-SEQ-02**: The receiver shall track the sequence number of the most recently accepted control message.
-- **REQ-SEQ-03**: Sequence-number width and wrap-around behaviour shall be defined, and comparison shall be correct across wrap-around. Width is TBD.
-- **REQ-SEQ-04**: Sequence-number state shall be associated with a session so that a restarted sender is not confused with replayed old traffic. Session/epoch mechanism is TBD.
+- **REQ-COM-006 (was REQ-SEQ-01)** *(proposed)*: Each control-setpoint message shall carry a sequence number assigned by the sender, advancing for each new setpoint sent.
+- **REQ-COM-007 (was REQ-SEQ-02)**: The receiver shall track the sequence number of the most recently accepted control message.
+- **REQ-COM-008 (was REQ-SEQ-03)**: Sequence-number width and wrap-around behaviour shall be defined, and comparison shall be correct across wrap-around. Width is TBD.
+- **REQ-COM-009 (was REQ-SEQ-04)**: Sequence-number state shall be associated with a session so that a restarted sender is not confused with replayed old traffic. Session/epoch mechanism is TBD.
 
 ### 6.3 Duplicates and reordering
 
-- **REQ-ORD-01** *(proposed, P3)*: The receiver shall accept a control message only if it is *newer* than the latest accepted one under the wrap-aware comparison in REQ-SEQ-03.
-- **REQ-ORD-02**: A duplicate (same sequence as the latest accepted, or already seen) shall be discarded and counted.
-- **REQ-ORD-03**: A reordered (older) message arriving after a newer one has been accepted shall be discarded and counted. Control setpoints are state-like: old values are **not** replayed to "fill in" order.
-- **REQ-ORD-04**: Gaps in sequence numbers (missing packets) shall be detected and counted. A gap alone is not an error; the newest valid message is simply used. Whether a gap *size* triggers any action is an open decision.
+- **REQ-COM-010 (was REQ-ORD-01)** *(proposed, P3)*: The receiver shall accept a control message only if it is *newer* than the latest accepted one under the wrap-aware comparison in REQ-COM-008.
+- **REQ-COM-011 (was REQ-ORD-02)**: A duplicate (same sequence as the latest accepted, or already seen) shall be discarded and counted.
+- **REQ-COM-012 (was REQ-ORD-03)**: A reordered (older) message arriving after a newer one has been accepted shall be discarded and counted. Control setpoints are state-like: old values are **not** replayed to "fill in" order.
+- **REQ-COM-013 (was REQ-ORD-04)**: Gaps in sequence numbers (missing packets) shall be detected and counted. A gap alone is not an error; the newest valid message is simply used. Whether a gap *size* triggers any action is an open decision.
 
 ### 6.4 Freshness / staleness
 
-- **REQ-FRESH-01**: A control setpoint is only usable while it is *fresh*. The receiver shall treat a setpoint as stale once an age limit (`T_fresh`, TBD) has elapsed since it was accepted, and shall not keep forwarding an unrefreshed setpoint indefinitely.
-- **REQ-FRESH-02**: Freshness shall be determined using a time source the ESP8266 controls (e.g. its own receive-time clock). Whether sender timestamps are carried at all, and how clock offset would be handled, is an open decision.
-- **REQ-FRESH-03**: Timing evaluation shall not depend on the TCP connection being alive; control freshness is judged from valid UDP control traffic.
+- **REQ-COM-014 (was REQ-FRESH-01)**: A control setpoint is only usable while it is *fresh*. The receiver shall treat a setpoint as stale once an age limit (`T_fresh`, TBD) has elapsed since it was accepted, and shall not keep forwarding an unrefreshed setpoint indefinitely.
+- **REQ-COM-015 (was REQ-FRESH-02)**: Freshness shall be determined using a time source the ESP8266 controls (e.g. its own receive-time clock). Whether sender timestamps are carried at all, and how clock offset would be handled, is an open decision.
+- **REQ-COM-016 (was REQ-FRESH-03)**: Timing evaluation shall not depend on the TCP connection being alive; control freshness is judged from valid UDP control traffic.
 
 ### 6.5 Relationship to loss detection
 
@@ -277,9 +277,9 @@ Validation yields a stream of **accepted** control messages. [§7](#7-connection
 
 ### 6.6 TCP messages
 
-- **REQ-TCP-01**: TCP messages shall use explicit framing (length-delimited or equivalent) and be validated for structure, version and type before use.
-- **REQ-TCP-02**: Configuration requests shall be acknowledged, with success/failure reported to the ground side.
-- **REQ-TCP-03**: Malformed TCP input shall be rejected without corrupting state; handling of repeated malformed input (e.g. closing the connection) is TBD.
+- **REQ-COM-017 (was REQ-TCP-01)**: TCP messages shall use explicit framing (length-delimited or equivalent) and be validated for structure, version and type before use.
+- **REQ-COM-018 (was REQ-TCP-02)**: Configuration requests shall be acknowledged, with success/failure reported to the ground side.
+- **REQ-COM-019 (was REQ-TCP-03)**: Malformed TCP input shall be rejected without corrupting state; handling of repeated malformed input (e.g. closing the connection) is TBD.
 
 ---
 
@@ -287,24 +287,24 @@ Validation yields a stream of **accepted** control messages. [§7](#7-connection
 
 ### 7.1 Detecting loss *(agreed: A4)*
 
-- **REQ-LOSS-01**: The ESP8266 shall detect when **valid** control updates stop arriving, using a loss timeout (`T_loss`, TBD) measured from the last *accepted* control message.
-- **REQ-LOSS-02**: Loss detection shall not rely solely on Wi-Fi association status or TCP connection state, since either can be healthy while UDP control traffic has stopped (and vice versa).
-- **REQ-LOSS-03**: Reception of invalid, stale, duplicate or out-of-order packets shall not reset the loss timer.
-- **REQ-LOSS-04**: The ground side shall independently detect loss of link (e.g. telemetry freshness or TCP liveness) and inform mission logic, so that the system does not depend on the drone-side check alone.
+- **REQ-SAF-009 (was REQ-LOSS-01)**: The ESP8266 shall detect when **valid** control updates stop arriving, using a loss timeout (`T_loss`, TBD) measured from the last *accepted* control message.
+- **REQ-SAF-010 (was REQ-LOSS-02)**: Loss detection shall not rely solely on Wi-Fi association status or TCP connection state, since either can be healthy while UDP control traffic has stopped (and vice versa).
+- **REQ-SAF-011 (was REQ-LOSS-03)**: Reception of invalid, stale, duplicate or out-of-order packets shall not reset the loss timer.
+- **REQ-SAF-012 (was REQ-LOSS-04)**: The ground side shall independently detect loss of link (e.g. telemetry freshness or TCP liveness) and inform mission logic, so that the system does not depend on the drone-side check alone.
 
 ### 7.2 Failsafe behaviour (proposed, P4)
 
-- **REQ-FS-01**: When loss is detected the ESP8266 shall enter a defined **failsafe state** and shall stop forwarding the last control setpoint as if it were current.
-- **REQ-FS-02**: The *action* taken in failsafe (what the ESP8266 tells or does toward the FC) is **an open decision** and must be coordinated with the FC-side failsafe configuration documented separately. This page does not prescribe it.
-- **REQ-FS-03**: The failsafe state shall be observable by the ground side (diagnostics/telemetry) when the link allows.
-- **REQ-FS-04**: The ESP8266 shall behave safely and deterministically at power-up, after a reset, and after a watchdog event: control forwarding must not start until the conditions in §7.3 are met.
+- **REQ-SAF-013 (was REQ-FS-01)**: When loss is detected the ESP8266 shall enter a defined **failsafe state** and shall stop forwarding the last control setpoint as if it were current.
+- **REQ-SAF-014 (was REQ-FS-02)**: The *action* taken in failsafe (what the ESP8266 tells or does toward the FC) is **an open decision** and must be coordinated with the FC-side failsafe configuration documented separately. This page does not prescribe it.
+- **REQ-SAF-015 (was REQ-FS-03)**: The failsafe state shall be observable by the ground side (diagnostics/telemetry) when the link allows.
+- **REQ-SAF-016 (was REQ-FS-04)**: The ESP8266 shall behave safely and deterministically at power-up, after a reset, and after a watchdog event: control forwarding must not start until the conditions in §7.3 are met.
 
 ### 7.3 Reconnection and resumption (proposed)
 
-- **REQ-RECON-01**: After loss, control shall **not** resume merely because packets start arriving again. Resumption requires a defined, validated handshake (e.g. a fresh session established over TCP, then control traffic starting under that session). Exact handshake is TBD.
-- **REQ-RECON-02**: On reconnection the receiver shall not be fooled by replayed or old traffic (see REQ-SEQ-04).
-- **REQ-RECON-03**: The ground side shall be able to re-establish the TCP session and re-synchronise state (e.g. read back current configuration) after a Wi-Fi or TCP interruption.
-- **REQ-RECON-04**: Wi-Fi re-association behaviour of the ESP8266 (retry policy, backoff) shall be defined and shall not block the loss-detection logic from running.
+- **REQ-COM-020 (was REQ-RECON-01)**: After loss, control shall **not** resume merely because packets start arriving again. Resumption requires a defined, validated handshake (e.g. a fresh session established over TCP, then control traffic starting under that session). Exact handshake is TBD.
+- **REQ-COM-021 (was REQ-RECON-02)**: On reconnection the receiver shall not be fooled by replayed or old traffic (see REQ-COM-009).
+- **REQ-COM-022 (was REQ-RECON-03)**: The ground side shall be able to re-establish the TCP session and re-synchronise state (e.g. read back current configuration) after a Wi-Fi or TCP interruption.
+- **REQ-COM-023 (was REQ-RECON-04)**: Wi-Fi re-association behaviour of the ESP8266 (retry policy, backoff) shall be defined and shall not block the loss-detection logic from running.
 
 ### 7.4 Other failure cases to specify
 
@@ -339,7 +339,7 @@ The network is intended to be a **private drone control network**. "Private" red
 - **Wi-Fi encryption** with a strong, non-default pre-shared key. Confirm what security modes the chosen ESP8266 firmware/SDK actually supports before relying on any specific mode *(to be verified)*.
 - **No default or hard-coded shared secrets** committed to the repository.
 - **Application-level validation is mandatory regardless of Wi-Fi security** (§6): Wi-Fi encryption is not a substitute for message validation or freshness checking.
-- **Replay resistance**: sequence numbers plus session/epoch binding (REQ-SEQ-04); optionally combined with message authentication.
+- **Replay resistance**: sequence numbers plus session/epoch binding (REQ-COM-009); optionally combined with message authentication.
 - **Separation of privileges**: configuration commands should require an established TCP session; restriction of configuration while control is active is TBD.
 - **Minimal exposed surface**: only the endpoints required are open; unused services are disabled.
 - **Source restriction** (e.g. accept control only from the expected peer): useful as hygiene but **not** authentication, since addresses can be spoofed.
@@ -368,13 +368,13 @@ Goal: verify protocol logic without any ESP8266 or FC. Achieved by keeping the p
 | Area | What to verify |
 |---|---|
 | Parsing / serialisation | Round-trip of every message type; rejection of wrong length, unknown type, wrong version |
-| Malformed input | Truncated, oversized, zero-length, random and fuzzed inputs never crash or alter control state (REQ-VAL-05) |
-| Field validation | Out-of-range values rejected (REQ-VAL-02) |
-| Integrity check | Corrupted packets rejected; valid ones accepted (REQ-VAL-03) |
+| Malformed input | Truncated, oversized, zero-length, random and fuzzed inputs never crash or alter control state (REQ-COM-005) |
+| Field validation | Out-of-range values rejected (REQ-COM-002) |
+| Integrity check | Corrupted packets rejected; valid ones accepted (REQ-COM-003) |
 | Sequence handling | In-order, duplicate, reordered, gapped and **wrap-around** sequences behave per §6 |
-| Freshness | Stale setpoints are not treated as current (REQ-FRESH-01) using a **controllable/mock clock** |
-| Loss detection | State machine enters/exits failsafe correctly; invalid packets don't reset the timer (REQ-LOSS-03) |
-| Reconnection | Resumption only via defined handshake (REQ-RECON-01) |
+| Freshness | Stale setpoints are not treated as current (REQ-COM-014) using a **controllable/mock clock** |
+| Loss detection | State machine enters/exits failsafe correctly; invalid packets don't reset the timer (REQ-SAF-011) |
+| Reconnection | Resumption only via defined handshake (REQ-COM-020) |
 | Impaired-link simulation | A test harness that injects loss, delay, duplication, reordering and corruption between a simulated sender and receiver |
 | Ground-side bridge | ROS 2 ↔ wire-protocol mapping; behaviour when ROS 2 inputs stop |
 
@@ -394,7 +394,7 @@ Goal: verify behaviour on the real target with the real network stack. Hardware-
 | Loss detection on target | Actual `T_loss` behaviour measured on hardware, including when the Wi-Fi link is interrupted |
 | Resource limits | CPU load, RAM use and buffer behaviour under sustained control traffic plus diagnostics traffic; behaviour under flood/malformed bursts |
 | Real-network impairments | Behaviour with weak signal, interference, distance, obstacles, and Wi-Fi re-association |
-| Reset/brown-out | Safe start-up behaviour (REQ-FS-04) |
+| Reset/brown-out | Safe start-up behaviour (REQ-SAF-016) |
 | Watchdog | Confirm firmware cannot hang silently with control still forwarded |
 | Soak testing | Long-duration runs to expose leaks, counter wrap-around and timing drift |
 | Latency/jitter characterisation | Measure end-to-end behaviour so that `T_fresh`, `T_loss` and rates can be chosen from evidence, not guesswork |
@@ -487,7 +487,7 @@ The communication design is accepted for a given phase only when the relevant cr
 
 - [ ] All §11.1–11.3 criteria are met.
 - [ ] Failsafe behaviour is agreed jointly with the FC-side configuration (separate document) and demonstrated on the bench.
-- [ ] Ground-side loss detection is implemented and tested (REQ-LOSS-04).
+- [ ] Ground-side loss detection is implemented and tested (REQ-SAF-012).
 - [ ] Known limitations are written down and accepted by the team.
 - [ ] Open decisions marked **blocking-for-flight** in §12 are resolved.
 

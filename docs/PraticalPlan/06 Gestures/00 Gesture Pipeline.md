@@ -92,7 +92,7 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 | A deliberate `OPEN_HAND_UP` is needed before anything moves (engage) | `mission_node` ([[04 Mission_Node\|04]] §4.1) |
 | Hard speed limits (0.3 m/s lateral) and smooth ramps | `mission_node` ([[04 Mission_Node\|04]] §4) |
 | Only the axes in the override mask are commanded | `mission_node` ([[04 Mission_Node\|04]] §4.3) |
-| Never arm, disarm or change the override switch (SAF-03/04) | every node |
+| Never arm, disarm or change the override switch (REQ-SAF-003 (was SAF-03), REQ-SAF-004 (was SAF-04)) | every node |
 
 `gestures.py` has **no** safety logic. It only reports what it sees. The values for the filter (packet count, timeouts) have one source: [[03 Gesture_node|03]] §7.
 
@@ -153,4 +153,4 @@ Replacing the rule-based `recognize()` with a trained landmark classifier, and t
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
 | **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008 (was SAF-08)) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |

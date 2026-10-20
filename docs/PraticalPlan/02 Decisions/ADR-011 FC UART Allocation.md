@@ -22,7 +22,7 @@ tags:
 > - ELRS wires confirmed on **R2/T2** with a multimeter. UART2 certainty is now High.
 > - **T4/R4**: continuity to the MCU side, no shorts to neighbouring pads. The continuity condition in §3 is met.
 > - The UART decision does not change.
-> - The ELRS red wire is on **5V**, not on DV5V (the receiver pad in the vendor wiring diagram). The team will move it to **DV5V** to free the 5V pad and to keep radio interference low. This changes the ELRS wiring, so it is an exception to "no change to the existing ELRS wiring" below and is reviewed on its own under SAF-08 (GitHub #41). UART2, R2/T2 and the receiver configuration stay the same.
+> - The ELRS red wire is on **5V**, not on DV5V (the receiver pad in the vendor wiring diagram). The team will move it to **DV5V** to free the 5V pad and to keep radio interference low. This changes the ELRS wiring, so it is an exception to "no change to the existing ELRS wiring" below and is reviewed on its own under REQ-SAF-008 (was SAF-08) (GitHub #41). UART2, R2/T2 and the receiver configuration stay the same.
 
 ## 1. Context (team inspection + Betaflight CLI)
 
@@ -47,13 +47,15 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 
 ## 3. Consequences
 
-- No change to the existing ELRS or VTX wiring (SAF-08). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
+- No change to the existing ELRS or VTX wiring (REQ-SAF-008). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
 - Before soldering: continuity-check T4/R4 to the MCU side and check for shorts to neighbouring pads ([[ESP_to_FC]] §10.1). **Done 2026-10-16, passed** (GitHub #16).
 - The ThoneFlow does not go on an FC UART: Betaflight 4.5.1 has no optical-flow driver ([[ADR-016 Flow Sensor Path|ADR-016]]).
 
 ## 4. Related pages
 
 - [[Wiring and Pinout]] · [[Betaflight Setup]] · [[Decision Register]]
+
+> 2026-10-20: requirement IDs renumbered to the `REQ-<cat>-NNN` scheme (see [[Requirements]], issue #57). Old IDs are kept in brackets. The decision is unchanged.
 
 ## 5. Glossary
 
@@ -68,5 +70,5 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -285,14 +285,14 @@ The ground computer produces high-level control commands (see companion page for
 > [!danger] Non-negotiable requirements
 > These are design requirements, not recommendations. They must hold before any thought of autonomous operation, and must be verified (§11).
 
-- **SAF-01 — Independent receiver path.** The ELRS receiver → FC path (UART2 per the CLI) shall remain independent of the ESP8266. Nothing about the ESP8266 link may be required for the pilot to control the aircraft.
-- **SAF-02 — Pilot retains takeover authority.** The pilot must be able to take over at any time by switching MSP override **off** using an ELRS transmitter switch.
-- **SAF-03 — Independent ARM.** ARM shall be controlled by a receiver-originated channel. The ESP8266/MSP path must not be able to arm the FC. Whether the FC configuration can actually *guarantee* this must be confirmed by test.
-- **SAF-04 — Takeover channel not overridable.** The channel(s) used for ARM and for the MSP-override switch must not be among those overridable via MSP (see M7). How this is enforced in configuration is TBD and must be verified.
-- **SAF-05 — Takeover is effective when the ESP8266 is misbehaving.** Switching override off must restore pilot control even if the ESP8266 is still sending, has crashed, or is flooding the UART. To be demonstrated, not assumed.
-- **SAF-06 — Takeover works across link events.** The behaviour of takeover during ESP8266 reboot, UART disconnection and receiver loss must be known (§9).
-- **SAF-07 — Pilot awareness.** The pilot (or safety observer) must be able to tell whether override is active. Mechanism (OSD, switch position convention, other) is TBD.
-- **SAF-08 — Unchanged ELRS configuration.** Adding the ESP8266 link must not require disabling or weakening any receiver failsafe or arming safeguard. Any proposed change must be explicitly reviewed.
+- **REQ-SAF-001 (was SAF-01) — Independent receiver path.** The ELRS receiver → FC path (UART2 per the CLI) shall remain independent of the ESP8266. Nothing about the ESP8266 link may be required for the pilot to control the aircraft.
+- **REQ-SAF-002 (was SAF-02) — Pilot retains takeover authority.** The pilot must be able to take over at any time by switching MSP override **off** using an ELRS transmitter switch.
+- **REQ-SAF-003 (was SAF-03) — Independent ARM.** ARM shall be controlled by a receiver-originated channel. The ESP8266/MSP path must not be able to arm the FC. Whether the FC configuration can actually *guarantee* this must be confirmed by test.
+- **REQ-SAF-004 (was SAF-04) — Takeover channel not overridable.** The channel(s) used for ARM and for the MSP-override switch must not be among those overridable via MSP (see M7). How this is enforced in configuration is TBD and must be verified.
+- **REQ-SAF-005 (was SAF-05) — Takeover is effective when the ESP8266 is misbehaving.** Switching override off must restore pilot control even if the ESP8266 is still sending, has crashed, or is flooding the UART. To be demonstrated, not assumed.
+- **REQ-SAF-006 (was SAF-06) — Takeover works across link events.** The behaviour of takeover during ESP8266 reboot, UART disconnection and receiver loss must be known (§9).
+- **REQ-SAF-007 (was SAF-07) — Pilot awareness.** The pilot (or safety observer) must be able to tell whether override is active. Mechanism (OSD, switch position convention, other) is TBD.
+- **REQ-SAF-008 (was SAF-08) — Unchanged ELRS configuration.** Adding the ESP8266 link must not require disabling or weakening any receiver failsafe or arming safeguard. Any proposed change must be explicitly reviewed.
 
 ---
 
@@ -303,7 +303,7 @@ The ground computer produces high-level control commands (see companion page for
 
 | # | Scenario | What may happen (risk) | Required behaviour | Known? |
 |---|---|---|---|---|
-| F1 | **ESP8266 crash/hang** | Override values may remain held (§5.2) | Pilot can take over by switching override off (SAF-02/05); the held values must not prevent takeover; the system must not rely on the ESP8266 recovering | Unknown; test |
+| F1 | **ESP8266 crash/hang** | Override values may remain held (§5.2) | Pilot can take over by switching override off (REQ-SAF-002, REQ-SAF-005); the held values must not prevent takeover; the system must not rely on the ESP8266 recovering | Unknown; test |
 | F2 | **UART disconnection** (wire fault, connector, solder joint) | Same as F1 for the FC; ESP8266 may not realise | Pilot takeover remains effective; ESP8266 detects missing FC responses (readback/poll) and reports to the ground | Unknown; test |
 | F3 | **Stale commands** (ground link lost, ESP8266 keeps replaying last values, or ground stops sending) | FC may keep acting on outdated values | ESP8266 shall not keep forwarding unrefreshed commands as if current (companion page §6/§7); behaviour on loss must be agreed with the FC-side behaviour here | Unknown; policy undecided |
 | F4 | **Receiver (ELRS) loss** while override active | Interaction between receiver failsafe and MSP override is unknown | Behaviour must be understood and acceptable; must not leave the aircraft acting unexpectedly on held override values | **Unknown; highest priority to test** |
@@ -402,8 +402,8 @@ The ground computer produces high-level control commands (see companion page for
 ### Phase 4 — Pilot takeover
 
 - [ ] With override active and test values being sent, switch override **off** from the transmitter. Confirm via MSP_RC that the FC values return to receiver values, and that the ESP8266's continued sending has no effect.
-- [ ] Repeat with the ESP8266 flooding or sending conflicting values (SAF-05).
-- [ ] Confirm ARM and the override-off switch **cannot** be driven from MSP (SAF-03/04).
+- [ ] Repeat with the ESP8266 flooding or sending conflicting values (REQ-SAF-005).
+- [ ] Confirm ARM and the override-off switch **cannot** be driven from MSP (REQ-SAF-003, REQ-SAF-004).
 - [ ] Confirm that arming cannot be achieved via the ESP8266 path.
 
 ### Phase 5 — Failure scenarios (§9), each with readback
@@ -412,7 +412,7 @@ For each of F1–F9 that can be safely reproduced on the bench:
 
 - [ ] Reproduce the failure (e.g. stop sending, disconnect the UART wire in a controlled way, reset the ESP8266, power-cycle the FC, power off the ESP8266, power off the transmitter to simulate receiver loss).
 - [ ] Observe via MSP_RC/Configurator **what the FC does with held values**, and record it.
-- [ ] Confirm pilot takeover works in the failure state (SAF-02/06).
+- [ ] Confirm pilot takeover works in the failure state (REQ-SAF-002, REQ-SAF-006).
 - [ ] Record results in a table: scenario, observation, takeover works (y/n), notes.
 
 ### Phase 6 — Review
@@ -445,9 +445,9 @@ Evidence (logs, test records, photographs) is required for each.
 
 **Safety**
 
-- [ ] ELRS path independent of the ESP8266 (SAF-01).
-- [ ] Pilot takeover by override-off works in normal and failure states (SAF-02, 05, 06).
-- [ ] ARM cannot be commanded via MSP/ESP8266 (SAF-03/04).
+- [ ] ELRS path independent of the ESP8266 (REQ-SAF-001).
+- [ ] Pilot takeover by override-off works in normal and failure states (REQ-SAF-002, REQ-SAF-005, REQ-SAF-006).
+- [ ] ARM cannot be commanded via MSP/ESP8266 (REQ-SAF-003, REQ-SAF-004).
 - [ ] Behaviour for each failure scenario F1–F9 is observed, recorded and judged acceptable, in particular **held override values** and **receiver loss with override active**.
 - [ ] Any unacceptable behaviour has a documented mitigation and has been re-tested.
 
@@ -544,5 +544,5 @@ Evidence (logs, test records, photographs) is required for each.
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **ARM** | Arming: enabling the motors. Only the pilot arms, never code or gestures. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

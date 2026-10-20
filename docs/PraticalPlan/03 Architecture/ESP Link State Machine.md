@@ -13,7 +13,7 @@ tags:
 # ESP Link State Machine
 
 > [!warning] Status: DRAFT
-> Implements [[ADR-004 ESP Failsafe|ADR-004]] and [[ADR-005 TCP Session|ADR-005]], and REQ-LOSS / REQ-FS / REQ-RECON in [[PC_to_ESP]] §7.
+> Implements [[ADR-004 ESP Failsafe|ADR-004]] and [[ADR-005 TCP Session|ADR-005]], and REQ-SAF-009 to 016 (were REQ-LOSS and REQ-FS) and REQ-COM-020 to 023 (were REQ-RECON) in [[PC_to_ESP]] §7.
 
 ---
 
@@ -36,11 +36,11 @@ stateDiagram-v2
 
 | State | Sends to FC | Notes |
 |---|---|---|
-| BOOT | nothing | Wi-Fi sleep disabled, static IP. Safe at power-up and after a watchdog reset (REQ-FS-04). |
+| BOOT | nothing | Wi-Fi sleep disabled, static IP. Safe at power-up and after a watchdog reset (REQ-SAF-016 (was REQ-FS-04)). |
 | NO_SESSION | **neutral frames** (1500, throttle 1000) at 50 Hz | An early override switch-on never sees empty channels |
 | SESSION_IDLE | neutral frames | Telemetry flowing |
-| STREAMING | ground setpoints | `override_active` read from `MSP_STATUS` and reported (SAF-07) |
-| LINK_FAILSAFE | per [[ADR-004 ESP Failsafe\|ADR-004]] (4.5.1: neutral forever; 2026.6: neutral 1 s then stop) | Event over TCP when possible (REQ-FS-03) |
+| STREAMING | ground setpoints | `override_active` read from `MSP_STATUS` and reported (REQ-SAF-007 (was SAF-07)) |
+| LINK_FAILSAFE | per [[ADR-004 ESP Failsafe\|ADR-004]] (4.5.1: neutral forever; 2026.6: neutral 1 s then stop) | Event over TCP when possible (REQ-SAF-015 (was REQ-FS-03)) |
 
 > [!important] Neutral throttle
 > Throttle is only overridden from mask 15 onwards ([[ADR-010 MSP Override|ADR-010]]). Until then the FC ignores the throttle value because the pilot owns it.
@@ -48,7 +48,7 @@ stateDiagram-v2
 ## 3. Implementation rules
 
 - All timeouts take an injected `now_ms()`, so the logic is unit-testable on the host ([[PC_to_ESP]] §9.1).
-- Rejected packets never reset the loss timer (REQ-LOSS-03).
+- Rejected packets never reset the loss timer (REQ-SAF-011 (was REQ-LOSS-03)).
 - The main loop never blocks. UART reads are non-blocking. The ESP8266 hardware watchdog stays enabled.
 - Diagnostics traffic is rate-limited so control is never starved (OD-20, limits still to set).
 
@@ -68,5 +68,5 @@ stateDiagram-v2
 | **UART**      | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface.             |
 | **API**       | Application Programming Interface: a defined way for software components to communicate.   |
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
-| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008 (was SAF-08)) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
