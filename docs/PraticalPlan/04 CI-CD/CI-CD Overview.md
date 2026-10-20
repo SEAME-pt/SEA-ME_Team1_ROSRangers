@@ -108,3 +108,7 @@ pre-commit run --all-files
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **pre-commit** | Tool that runs lint and format hooks on the repo; the same checks run in CI as `lint`. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |

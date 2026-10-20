@@ -63,7 +63,10 @@ stateDiagram-v2
 | **Mermaid**   | A text-based diagram syntax rendered by compatible Markdown tools.                         |
 | **MSP**       | MultiWii Serial Protocol, used for communication with Betaflight flight controllers.       |
 | **TCP**       | Transmission Control Protocol: reliable, ordered, connection-oriented transport.           |
-| **Telemetry** | Periodic data sent from a system to report state, measurements, or health.                 |
+| **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP**       | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART**      | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface.             |
 | **API**       | Application Programming Interface: a defined way for software components to communicate.   |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

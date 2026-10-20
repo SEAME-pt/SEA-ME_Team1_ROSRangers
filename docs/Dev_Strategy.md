@@ -1,3 +1,12 @@
+---
+title: SEA:ME — Software Development & Git Workflow
+type: process
+status: active
+date: 2026-10-15
+project: SEA autonomous drone
+tags: [process, git, ci]
+---
+
 # SEA:ME — Software Development & Git Workflow
 
 > [!info] Project
@@ -1065,7 +1074,7 @@ The complete development process can be summarized as:
 The development process exists to help the team build a reliable autonomous drone within six months.
 
 The process itself should never become more complicated than the problem it is solving.
-## 2. Glossary
+## 26. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -1074,4 +1083,5 @@ The process itself should never become more complicated than the problem it is s
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **REQ** | Requirement ID of the form REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN, used for traceability. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |

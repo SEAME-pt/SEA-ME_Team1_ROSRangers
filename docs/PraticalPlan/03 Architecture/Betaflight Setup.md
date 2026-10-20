@@ -77,3 +77,6 @@ Start with **DROP** in the cage (low altitude). Re-evaluate for the program's "h
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
+| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |

@@ -51,3 +51,4 @@ Type ID ranges are defined in [[Protocol Spec v0]].
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

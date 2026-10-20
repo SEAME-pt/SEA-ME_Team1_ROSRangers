@@ -45,3 +45,4 @@ Details in [[HIL Runner]].
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
+| **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

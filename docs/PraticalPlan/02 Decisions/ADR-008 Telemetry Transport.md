@@ -50,3 +50,4 @@ Split by the **meaning** of the data:
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

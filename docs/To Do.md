@@ -1,3 +1,13 @@
+---
+title: To Do (legacy)
+type: legacy
+status: legacy
+date: 2026-10-15
+tags: [legacy]
+---
+
+> Legacy. Tasks live in GitHub Issues and the project board.
+
 # Dev_Strategy Document
 ---
 - [x] ==🟠5. Feature and Bug-Fix Branches Documentation and Know How==
@@ -28,3 +38,4 @@
 | **Branch** | An independent line of development in version control. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |

@@ -1,5 +1,8 @@
 ---
 title: Pull Request Workflow
+type: guide
+status: active
+date: 2026-10-15
 tags:
   - git
   - pull-request
@@ -539,3 +542,4 @@ the version from dev
 | **Commit** | A recorded snapshot of changes in a version-control repository. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |

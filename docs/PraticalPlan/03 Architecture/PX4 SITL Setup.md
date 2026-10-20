@@ -112,3 +112,4 @@ Then start the agent and `make px4_sitl gz_x500` as in §3, **without** `HEADLES
 | **Offboard** | PX4 mode where an external computer streams setpoints. |
 | **NED** | North-East-Down frame: negative z is up. |
 | **GCS** | Ground Control Station, e.g. QGroundControl. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

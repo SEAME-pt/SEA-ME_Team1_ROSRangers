@@ -256,6 +256,8 @@ flowchart LR
 
 ### 5.4 Option C: sensor read by another suitable processor
 
+> [!warning] Rejected on 2026-10-14 (TF-11, [[ADR-016 Flow Sensor Path|ADR-016]]). Kept for the record.
+
 **Idea [PROPOSED]:** a processor with a free hardware UART receives and validates frames, then passes measurements onward (e.g. to the ESP8266 over a link with spare capacity, or by replacing the ESP8266 bridge with a part that has more hardware UARTs). No specific part is selected or evaluated here.
 
 | Aspect | Notes |
@@ -479,7 +481,7 @@ Evidence (captures, logs, test records) is required for each.
 | # | Decision | Blocks | Owner | Status | Proposed resolution |
 |---|---|---|---|---|---|
 | TF-01 | Does Betaflight 4.5.1 / the ODDITYRCF7AIO target support this sensor, and in what form (UART frame, MSP, none)? | Option A |  | Resolved | **Unsupported.** Betaflight 4.5.1 has no optical-flow driver at all; 2026.6.2 supports MT and UPT1 only (not CX-OF); INAV has CX-OF but no `ODDITYRCF7AIO` target (source-verified). Option A dropped. [[ADR-016 Flow Sensor Path\|ADR-016]] |
-| TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, Option C (small 3.3 V MCU with a hardware UART, I2C slave to the ESP). [[ADR-016 Flow Sensor Path\|ADR-016]] |
+| TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, ADR-016 is re-opened (Option C, an extra MCU, was rejected on 2026-10-14, TF-11). [[ADR-016 Flow Sensor Path\|ADR-016]] |
 | TF-03 | Serial framing (data/parity/stop bits), TX logic level, whether the sensor RX pin is usable | Bench setup |  | Open | — |
 | TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Open | Not resolved by ArduPilot's CX-OF driver, which does not validate a checksum (its byte 6 is time motion). Determine from bench captures (§9.2). |
 | TF-05 | X/Y signedness, units, scaling; delta vs. accumulated | Estimation |  | Open | Datasheet order (high byte first) conflicts with ArduPilot's CX-OF driver (low byte first, signed 16-bit). ArduPilot uses an empirical scale factor. Determine byte order and signedness from bench captures; calibrate scaling. |
@@ -546,3 +548,5 @@ Evidence (captures, logs, test records) is required for each.
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

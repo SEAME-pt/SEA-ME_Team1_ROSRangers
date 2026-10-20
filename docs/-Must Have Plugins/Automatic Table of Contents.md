@@ -1,4 +1,9 @@
 ---
+title: Automatic Table of Contents
+type: reference
+status: active
+date: 2026-10-15
+tags: [obsidian]
 ---
 ---
 > An Obsidian plugin to create a table of contents in a note, that updates itself when the note changes

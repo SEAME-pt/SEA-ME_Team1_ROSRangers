@@ -42,3 +42,4 @@ Test before soldering: the [[ESP Bench Test Plan]] Stages 1–2 must pass first.
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

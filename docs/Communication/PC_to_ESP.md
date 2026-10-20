@@ -525,7 +525,7 @@ The communication design is accepted for a given phase only when the relevant cr
 | OD-16 | Restrictions on configuration while control is active | Bench testing |  | Accepted | Reject configuration while control is enabled, except disable-control ([[Protocol Spec v0]]). |
 | OD-17 | Wi-Fi topology (ESP8266 as access point vs station on a ground-side access point) and supported security mode | Implementation |  | Accepted (supersedes earlier rec.) | ESP8266 SoftAP, WPA2-PSK, static IPs, Wi-Fi sleep off; revisit if > 4 clients. [[ADR-006 Network\|ADR-006]] |
 | OD-18 | Key/credential provisioning and rotation | Bench testing |  | Partly resolved | PSK injected at build time from a secret, never committed. Rotation still open. [[ADR-002 Message Integrity\|ADR-002]] |
-| OD-19 | Where the shared message definitions live and how both ends stay in sync | Implementation |  | Accepted | Spec in this vault ([[Protocol Spec v0]]); code in `lib/protocol` of the software repo + shared golden vectors ([[Repository Layout]]). |
+| OD-19 | Where the shared message definitions live and how both ends stay in sync | Implementation |  | Accepted | Spec in this vault ([[Protocol Spec v0]]); code in `drone/lib/protocol` and `drone/ground/src/sd_protocol_py` of the software repo + shared golden vectors in `drone/tests/vectors` ([[Repository Layout]]). |
 | OD-20 | ESP8266 behaviour under overload (priorities, limits on non-control traffic) | Bench testing |  | Open | — |
 | OD-21 | Ground-side bridge form (ROS 2 node, library, other) | Implementation |  | Accepted | `flight_interface` ROS 2 lifecycle node ([[System Overview]]). |
 | OD-22 | Numerical acceptance thresholds for §11 | Bench testing |  | Open | — |
@@ -582,3 +582,7 @@ The communication design is accepted for a given phase only when the relevant cr
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

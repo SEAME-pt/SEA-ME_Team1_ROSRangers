@@ -44,3 +44,5 @@ REQ-SEQ-01 to 04 and REQ-ORD-01 to 04 in [[PC_to_ESP]] §6 require duplicates an
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

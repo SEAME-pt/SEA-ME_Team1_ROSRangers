@@ -60,3 +60,5 @@ tags:
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

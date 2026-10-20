@@ -145,9 +145,12 @@ Replacing the rule-based `recognize()` with a trained landmark classifier, and t
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8, 11 or 15). |
-| **MediaPipe** | A Google framework used here to find 21 hand landmarks in an image. |
-| **Mermaid** | A text-based diagram syntax rendered by Obsidian. |
-| **Node** | One ROS 2 program with one job. |
+| **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
+| **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
+| **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
+| **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
+| **API** | Application Programming Interface: a defined way for software components to communicate. |
+| **SAF-xx** | Safety requirement IDs SAF-01 to SAF-08 defined in ESP_to_FC section 8 (independent ELRS path, pilot takeover, no arming from code). |

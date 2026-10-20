@@ -471,13 +471,12 @@ Fill this section in with real steps when the node is built.
 | **colcon** | The build tool for ROS 2 workspaces. |
 | **Jazzy** | ROS 2 Jazzy Jalisco, the ROS 2 release we use (paired with Ubuntu 24.04). |
 | **LTS** | Long-term support: a release maintained for several years. |
-| **MediaPipe** | A framework used here for detecting hand landmarks. |
+| **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **Package** | A folder of ROS 2 code (`package.xml`, `setup.py`) that builds into one or more nodes. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ROS_DOMAIN_ID** | A number that separates ROS 2 networks, so teammates' nodes don't mix. |
-| **rosbag** | A file of recorded topic messages that can be replayed (`ros2 bag`). |
 | **rosdep** | A tool that installs the system dependencies a ROS 2 package declares. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |

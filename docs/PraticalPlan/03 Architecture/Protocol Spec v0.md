@@ -85,7 +85,7 @@ Clamps apply on the ground **and** on the ESP, the last point under team control
 
 ## 6. Test vectors
 
-Stored in `protocol/test/vectors/*.json` in the software repo. The C++ and Python implementations must both pass them ([[Testing Strategy]]).
+Stored in `drone/tests/vectors/*.json` in the software repo. The C++ and Python implementations must both pass them ([[Testing Strategy]]).
 
 ## 7. Still open
 
@@ -103,3 +103,5 @@ Stored in `protocol/test/vectors/*.json` in the software repo. The C++ and Pytho
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

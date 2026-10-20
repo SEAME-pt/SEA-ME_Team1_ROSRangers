@@ -43,3 +43,6 @@ The program evaluates **individual** contributions, and everyone must understand
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
+| **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
