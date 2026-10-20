@@ -53,31 +53,18 @@ tags: [plan]
 - [x] Exposed pads listed: T1, R1, R2, R3, T4, R4, CAM, SCL, SDA, 5V, 3.3V, GND, DV5V
 - [x] Development process and Git workflow documented ([[Dev_Strategy]], Git Learning notes)
 - [x] Communication drafts written ([[PC_to_ESP]], [[ESP_to_FC]], [[ThoneFlow]])
-<<<<<<< HEAD
 - [x] Static-gesture webcam prototype working ([[01 Gesture Node|Gesture Recognition Program]])
-=======
-- [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] Decisions accepted ([[Decision Register]])
 
 ### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-18)
 
-<<<<<<< HEAD
 - [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
-=======
-- [x] Safety induction done ([[Safety Rules]]); props-off rule agreed by all (GitHub #13, closed). Safety pilot: BrunoBMFT
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
 - [x] Create the **software repo** with `main` + `dev` and branch protection ([[Dev_Strategy]], [[Repository Layout]])
-<<<<<<< HEAD
-- [ ] Back up the D1 mini **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
-- [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU still open.
-=======
 - [ ] Back up the ESP **AT firmware** before any flashing (ESP-S1-01 in [[ESP Bench Test Plan]])
 - [x] Ask instructors the items in [[Open Questions]]: reflash allowed, no lab HIL runners (build our own), no mandated ROS 2 distro (2026-10-14). ToF/MCU answered on 2026-10-14: neither ([[ADR-016 Flow Sensor Path|ADR-016]]).
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - [x] XT30 → XT60 adapter received; battery checked (2026-10-16, [[Battery Log]], GitHub #19)
 
 ---
@@ -123,11 +110,7 @@ tags: [plan]
 - **C:** `flight_interface` lifecycle node: activate/deactivate, watchdog, an E-stop transition that cuts setpoints. Unit tests.
 - **A + B (props off):** run [[ESP_to_FC]] §11 Phases 1–5. MSP Override with mask **8** (yaw). Readback via `MSP_RC`. Pilot takeover. F1–F9 results recorded.
 - **D:** **HIL runner online**: flash the ESP from CI, run the props-off passthrough and failsafe-timing tests.
-<<<<<<< HEAD
 - **E:** wrap the existing `gestures.py` into the recogniser process + `intent_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
-=======
-- **E:** wrap the existing `gestures.py` into the recogniser process + `gesture_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 
 **Demo:** fault injection on the bench: kill the ground node, drop Wi-Fi, send garbage. Each must end in the defined safe state.
 

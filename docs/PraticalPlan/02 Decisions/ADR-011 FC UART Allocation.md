@@ -53,11 +53,7 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 
 ## 3. Consequences
 
-<<<<<<< HEAD
-- No change to the existing ELRS or VTX wiring (SAF-08). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
-=======
 - No change to the existing ELRS or VTX wiring (REQ-SAF-008). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - Before soldering: continuity-check T4/R4 to the MCU side and check for shorts to neighbouring pads ([[ESP_to_FC]] §10.1). **Done 2026-10-16, passed** (GitHub #16).
 - The ThoneFlow does not go on an FC UART: Betaflight 4.5.1 has no optical-flow driver ([[ADR-016 Flow Sensor Path|ADR-016]]).
 

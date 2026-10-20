@@ -42,13 +42,8 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
    bottom row:  R4   GND  3V3  SDA   GND  T2
 ```
 
-<<<<<<< HEAD
-- The diagram uses this row for a GPS on UART4 (T4, R4, 5V, GND). The D1 mini takes the same four pads.
-- The ELRS receiver in the diagram uses DV5V, GND, R2 and T2. **Our ELRS red wire is on 5V** (2026-10-16). The team moves it to DV5V to free the 5V pad and to keep radio interference low (GitHub #41, [[ADR-011 FC UART Allocation|ADR-011]]).
-=======
 - The diagram uses this row for a GPS on UART4 (T4, R4, 5V, GND). The ESP takes the same four pads.
 - The ELRS receiver in the diagram uses DV5V, GND, R2 and T2. Our ELRS red wire was on 5V (2026-10-16). **The team has moved it to DV5V** (reported 2026-10-20) to free the 5V pad and to keep radio interference low (GitHub #41, [[ADR-011 FC UART Allocation|ADR-011]]). The failsafe has **not** been re-tested since (GitHub #22, #41 stay open).
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 - The neighbours of T4 are 5V and R4; the neighbours of R4 are T4 and GND. The 2026-10-16 check found no short to any of them.
 
 ## 2. Connections
@@ -101,13 +96,8 @@ Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flo
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
 | **DV5V** | 5 V pad on this FC that the vendor diagram uses to power the receiver. |
-<<<<<<< HEAD
-| **ESP8266** | A WiFi-enabled microcontroller used as the drone communication module. |
-| **FC** | Flight Controller: the onboard controller responsible for stabilization and control. |
-=======
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **OSD** | On-Screen Display: the chip that draws flight data over the analog camera video. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |

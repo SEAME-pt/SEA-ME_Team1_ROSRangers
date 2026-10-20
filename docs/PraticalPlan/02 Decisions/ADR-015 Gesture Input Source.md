@@ -36,11 +36,7 @@ Gestures come from a **webcam on the ground computer**. The drone's video is use
 
 ## 4. Related pages
 
-<<<<<<< HEAD
 - [[00 Gesture Pipeline|Gesture Pipeline]] · [[01 Gesture Node|Gesture Recognition Program]] · [[Safety Rules]]
-=======
-- [[00 Gesture Pipeline|Gesture Pipeline]] · [[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]] · [[Safety Rules]]
->>>>>>> adbbf2b014e99e81e0a59c616cca9aeb382a88e3
 
 ## 5. Glossary
 
