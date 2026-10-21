@@ -11,7 +11,7 @@ tags:
 # System Overview
 
 > [!warning] Status: DRAFT
-> This is the architecture we are building towards. State on 2026-10-20: the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The rest of the chain (control, failsafe, gestures) is not built or tested yet.
+> This is the architecture we are building towards. State on 2026-10-20: the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The gesture nodes `gesture_node` and `intent_node` are built and tested in CI and Docker since 2026-10-21, without a drone ([[00 Gesture Pipeline]]). The rest of the chain (mission, control, failsafe, `flight_interface`) is not built or tested yet.
 
 Follows the Module 1 reference layering: mission → ROS 2 → hardware abstraction → real-time layer → sensors/actuators.
 
@@ -22,8 +22,8 @@ Follows the Module 1 reference layering: mission → ROS 2 → hardware abstract
 ```mermaid
 flowchart LR
   subgraph Room["Coding room (ground)"]
-    CAM[Webcam] --> GEST["gesture recogniser<br/>MediaPipe, own venv"]
-    GEST --> GN[intent_node]
+    CAM[Webcam] --> GEST["gesture_node<br/>MediaPipe, ROS 2"]
+    GEST -->|/gesture/raw| GN[intent_node]
     GN -->|/gesture/intent| MISSION[mission / controller]
     EST["estimator<br/>flow + IMU + height"] --> MISSION
     MISSION -->|setpoints| FI["flight_interface<br/>lifecycle node"]

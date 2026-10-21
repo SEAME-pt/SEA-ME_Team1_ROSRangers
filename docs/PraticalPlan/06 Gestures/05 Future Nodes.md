@@ -3,6 +3,7 @@ title: Future nodes to add
 type: architecture
 status: draft
 date: 2026-10-16
+updated: 2026-10-21
 project: SEA autonomous drone
 tags:
   - gestures
@@ -78,14 +79,15 @@ flowchart LR
 
 ### How the dependency clash was solved
 
-Option 1 of the spike list: **a venv with system packages** (`python3.12 -m venv --system-site-packages ~/gesture-venv`), MediaPipe from pip, ROS from apt, and `gesture_node` built with the venv's Python so `ros2 run` uses it ([[02 Gesture Node]] §10). `cv_bridge` is not used, so its `numpy` question does not apply.
+Option 1 of the spike list: **a venv with system packages** (`python3.12 -m venv --system-site-packages`, since 2026-10-21 `drone/ground/gesture-venv` made by `make ws`), MediaPipe from pip, ROS from apt, and `gesture_node` built with the venv's Python so `ros2 run` uses it ([[02 Gesture Node]] §10). `cv_bridge` is not used, so its `numpy` question does not apply.
 
 Not tried yet: option 2, **port to the Tasks API on MediaPipe 1.1.0** (needed anyway, because 0.10.21 is the last version with `mp.solutions`, [[00 Gesture Pipeline]] §6), and option 3, **a container** with ROS 2 Jazzy and MediaPipe pinned together.
 
 ### Still to do
 
 - [ ] New ADR that amends or supersedes [[ADR-018 Ground OS and ROS 2|ADR-018]] (never edit it silently)
-- [ ] Record the first full run with the webcam ([[01 ROS2 Nodes Installation|01]] §9, §12)
+- [x] Unit, node, process and pipeline tests, a Docker image and CI (#78, 2026-10-21, [[01 ROS2 Nodes Installation|01]] §4, §10)
+- [ ] Record the first full run with the webcam ([[01 ROS2 Nodes Installation|01]] §9, §13)
 - [ ] Optional `/gesture/landmarks` (21 points) for logging and the classifier (§8)
 
 The old `gestures.py` + UDP prototype (`drone/tools/gesture/`) was removed on 2026-10-20, before the node passed the tests of [[01 ROS2 Nodes Installation|01]] §9. Git history still has it.
@@ -179,7 +181,7 @@ ros2 launch gesture_bringup gestures.launch.py
 
 The safety parameters ([[03 Intent Node]] §7, [[04 Mission Node]] §3.3) then live in one reviewed YAML file instead of command lines.
 
-For now, two launch files live inside the `mission_node` package: `mission_demo.launch.py` and `mission_with_gestures.launch.py` ([[04 Mission Node]] §9). Move them here when this package is created.
+Until then, `drone/ground/docker-compose.yml` already starts `gesture_node` and `intent_node` (with `input_source:=topic`) together, in Docker (`make`, [[01 ROS2 Nodes Installation|01]] §4). Two launch files live inside the `mission_node` package: `mission_demo.launch.py` and `mission_with_gestures.launch.py` ([[04 Mission Node]] §9). Move them here when this package is created.
 
 ---
 

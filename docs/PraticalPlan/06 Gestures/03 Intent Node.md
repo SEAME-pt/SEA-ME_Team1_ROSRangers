@@ -3,6 +3,7 @@ title: Intent_node (gesture name → operator intent)
 type: architecture
 status: draft
 date: 2026-10-21
+updated: 2026-10-21
 project: SEA autonomous drone
 tags:
   - gestures
@@ -17,13 +18,13 @@ aliases:
 `intent_node` (v0.2) is the ROS 2 node after the recogniser in the [[00 Gesture Pipeline|Gesture Pipeline]]. It receives gesture names from `gesture_node` on `/gesture/raw` (or, the old way, over UDP), filters them with safety rules, and publishes what the operator wants on `/gesture/intent`.
 
 > [!NOTE] Related notes
-> Who sends the gesture names and how they are made: [[02 Gesture Node]]. How to build, run and test this node: [[01 ROS2 Nodes Installation|01]] §6–9. Who reads its output: [[04 Mission Node]].
+> Who sends the gesture names and how they are made: [[02 Gesture Node]]. How to run it in Docker (no local ROS 2): [[01 ROS2 Nodes Installation|01]] §4. How to build, run and test it natively: [[01 ROS2 Nodes Installation|01]] §6–10. Who reads its output: [[04 Mission Node]].
 
 > [!INFO] Renamed on 2026-10-20
 > This node was called `gesture_node` until 2026-10-20 (package, executable and node name). Later the same day the name `gesture_node` was given to the **recogniser** node (camera + MediaPipe → `/gesture/raw`), first proposed as `mediapipe_node` ([[02 Gesture Node]], [[05 Future Nodes]] §2). Old logs that say `gesture_node` before 2026-10-20 mean this node.
 
 > [!WARNING] Status: DRAFT
-> 17 unit tests pass. On 2026-10-19 the node was built with `colcon build` on Pop!_OS 24.04 + ROS 2 Jazzy and ran with the UDP fake camera, feeding `mission_node` ([[01 ROS2 Nodes Installation|01]] §12). On 2026-10-20 the topic input (`input_source:=topic`, §3) was added for `gesture_node`. Real webcam gestures through the built node are not recorded yet.
+> On 2026-10-19 the node was built with `colcon build` on Pop!_OS 24.04 + ROS 2 Jazzy and ran with the UDP fake camera, feeding `mission_node` ([[01 ROS2 Nodes Installation|01]] §13). On 2026-10-20 the topic input (`input_source:=topic`, §3) was added for `gesture_node`. On 2026-10-21 it was merged into `dev` (#78) with 48 tests (unit, node and process, §8), a Docker image and CI. Real webcam gestures through the node are not recorded yet.
 
 ---
 
@@ -41,7 +42,7 @@ flowchart LR
 | **Answers** | "What does the **operator** want?" |
 | **Knows about** | hands, the recogniser, timeouts. Nothing about drones. |
 | **Package** | `drone/ground/src/intent_node/` |
-| **Runs in** | System Python with ROS 2 Jazzy (no MediaPipe) |
+| **Runs in** | the Docker image `rosrangers/intent:jazzy` (no local ROS 2 needed, `input_source:=topic` already set), or natively the system Python with ROS 2 Jazzy (no MediaPipe) |
 
 Keeping drone knowledge out of this node means `/gesture/intent` can also drive the simulator, a car or an arm ([[Roadmap to April 2027]] §4).
 
@@ -49,10 +50,11 @@ Keeping drone knowledge out of this node means `/gesture/intent` can also drive 
 
 ## ⚙️ 2. What it does
 
-1. **Receives** gesture packets (§3): from `/gesture/raw` with `input_source:=topic`, or from UDP with `input_source:=udp` (the default), where a timer drains the socket 100 times a second. Both go through the same `_handle_datagram()`. There are no threads.
+1. **Receives** gesture packets (§3): from `/gesture/raw` with `input_source:=topic`, or from UDP with `input_source:=udp` (the default), where a timer drains the socket 100 times a second. Both go through the same `_handle_datagram()`. There are no threads: `main()` calls `executor.spin_once(timeout_sec=0.1)` in a loop.
 2. **Filters** them with the safety rules of §5.
 3. **Publishes** the result on `/gesture/intent` at 20 Hz: a steady heartbeat even when nothing changes, so the next node can detect silence.
-4. **Logs** the first packet, every intent change and a link report every 5 s. That is how you prove it works ([[01 ROS2 Nodes Installation|01]] §9).
+4. **Logs** the first packet, every intent change and a link report every 5 s, naming its sender (`gesture_node` on the topic, `gestures.py` on UDP). That is how you prove it works ([[01 ROS2 Nodes Installation|01]] §9).
+5. **Stops** cleanly on Ctrl+C or SIGTERM (`docker stop`), also on a second Ctrl+C from `ros2 launch`: exit code 0, no traceback. A bad configuration (unknown `input_source`, UDP port in use) logs a FATAL line and exits with code 1.
 
 > [!TIP] Testable without ROS
 > The decision logic is in `gesture_filter.py`, which has **no ROS imports**, so it can be unit-tested anywhere. `intent_node.py` is only the ROS wrapper (subscriber or socket, timers, publisher, parameters).
@@ -109,7 +111,7 @@ Receivers parse the JSON. A typed custom message would be cleaner (§9).
 
 ### 👀 How to read `/gesture/intent`
 
-Run these in a terminal with both `source` lines:
+Run these in a terminal with both `source` lines. Without a local ROS 2, put `docker compose run --rm echo` in front (from `drone/ground/`, [[01 ROS2 Nodes Installation|01]] §4.4); the `echo` service of `make` already prints this topic.
 
 | Command | Shows |
 | :--- | :--- |
@@ -118,7 +120,7 @@ Run these in a terminal with both `source` lines:
 | `ros2 topic echo --once /gesture/intent --field data` | one message, then exits |
 | `ros2 topic hz /gesture/intent` | the rate: ~20 Hz **always**, also with no hand and no recogniser |
 | `python3 ~/gesture_watch.py` | one line per change of `intent` or `reason`, next to the `/gesture/raw` line that caused it ([[01 ROS2 Nodes Installation\|01]] §9) |
-| the `intent_node` terminal | `Intent -> ... (reason: ...)` on every change, and the link report every 5 s |
+| the `intent_node` terminal (or the `intent-1` lines of `make`) | `Intent -> ... (reason: ...)` on every change, and the link report every 5 s |
 
 > [!TIP] Prefer the watcher or the log
 > At 20 Hz `echo` scrolls fast and the messages look the same. `gesture_watch.py` and the `Intent ->` log lines only show changes.
@@ -241,9 +243,11 @@ Until 2026-10-20 the sender was a standalone file in `drone/tools/gesture/` that
 ros2 run intent_node intent_node --ros-args -p input_source:=topic -p stable_packets:=3
 ```
 
+The Docker image starts `intent_node --ros-args -p input_source:=topic` (`docker/intent/Dockerfile`). To try other values there: `docker compose run --rm intent /ws/install/intent_node/lib/intent_node/intent_node --ros-args -p input_source:=topic -p stable_packets:=3`.
+
 | Parameter | Default | Meaning |
 | :--- | :--- | :--- |
-| `input_source` | `udp` | `topic` = read `/gesture/raw` from `gesture_node` (**use this**). `udp` = the old UDP input. Anything else stops the node with an error |
+| `input_source` | `udp` | `topic` = read `/gesture/raw` from `gesture_node` (**use this**; the Docker image sets it). `udp` = the old UDP input. Anything else stops the node with a FATAL log and exit code 1 |
 | `raw_topic` | `/gesture/raw` | topic to read when `input_source` is `topic` |
 | `udp_host` | `127.0.0.1` | address to listen on when `input_source` is `udp` |
 | `udp_port` | `5005` | UDP port when `input_source` is `udp` |
@@ -272,8 +276,14 @@ drone/ground/src/intent_node/
 │   ├── gesture_filter.py    # rules of §5, no ROS imports
 │   └── intent_node.py      # rclpy wrapper: /gesture/raw subscriber or UDP socket, timers, publisher, parameters
 └── test/
-    └── test_gesture_filter.py   # 17 unit tests
+    ├── test_gesture_filter.py       # unit: the rules of §5, no ROS
+    ├── test_intent_node_ros.py      # node: real IntentNode on real topics and UDP (needs rclpy)
+    └── test_intent_node_process.py  # process: exit codes for Ctrl+C, SIGTERM, bad config (needs rclpy)
 ```
+
+48 tests in total (2026-10-21); without ROS 2 the 21 node and process tests are skipped. What each file checks, and how to run them (`make unit`, `make test`, `make smoke`): [[01 ROS2 Nodes Installation|01]] §10. The tests with `gesture_node` (contract and pipeline) are in `drone/tests/ros/`.
+
+The Docker image is `drone/ground/docker/intent/Dockerfile`: `ros:jazzy-ros-base`, `colcon build` of this package, and the node as PID 1 so `docker stop` stops it cleanly.
 
 Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `intent_node/` folder.
 
@@ -283,10 +293,10 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 
 - [ ] **Message type.** `std_msgs/String` holding JSON works but is untyped. A custom message package (`drone_msgs`) is proposed in [[05 Future Nodes]].
 - [x] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` treats it as `NEUTRAL`, also when airborne ([[04 Mission Node]] §5.4).
-- [ ] **Shutdown traceback.** Stopping `mission_with_gestures.launch.py` with Ctrl+C makes `intent_node` print a `KeyboardInterrupt` traceback: Ctrl+C reaches it twice (terminal + launch) and the second one lands in `destroy_node()`. Harmless, but noisy. `mission_node` handles it by ignoring further SIGINTs once shutdown starts (seen 2026-10-19).
+- [x] **Shutdown traceback.** Stopping `mission_with_gestures.launch.py` with Ctrl+C made `intent_node` print a `KeyboardInterrupt` traceback (seen 2026-10-19). Fixed in #78: Ctrl+C and SIGTERM only set a stop flag, and further signals are ignored once shutdown starts (`test_double_ctrl_c_stops_cleanly`, `test_sigterm_stops_cleanly`).
 - [ ] **Keep-alive rate.** The code uses 10 Hz (accept in about 0.4 s). An earlier version of the pipeline page said 5 Hz. Confirm 10 Hz with the team.
-- [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
-- [ ] **Log wording.** The logs still say `First packet from gestures.py` and `No packets from gestures.py` with the topic input too.
+- [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. The Docker image passes `topic`; `ros2 run` and the `mission_node` launch file still need it by hand. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
+- [x] **Log wording.** The logs name the real sender: `gesture_node` with `input_source:=topic`, `gestures.py` with UDP (#78, `test_link_report_names_gesture_node`).
 - [x] **Tests.** The node wrapper (subscriber, socket and timers) has ROS node and process tests next to the filter's unit tests, with a 90 % coverage gate in CI ([[Testing Strategy]], 2026-10-21).
 - [ ] **Palm position.** `gesture_node` sends `xy = None`. Fill it if a later node needs it.
 - [x] **Maintainer fields** in `package.xml` and `setup.py` are filled in (2026-10-21).
@@ -310,6 +320,7 @@ Registered in [[Requirements]] on 2026-10-21. The tests that check each one are 
 | Term | Meaning |
 | --- | --- |
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
+| **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). `rosrangers/intent:jazzy` is this node's image. |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
 | **JSON** | A text format for structured data, used inside the `/gesture/raw` and `/gesture/intent` messages (and the old UDP packets). |
 | **Keep-alive** | A small periodic message that proves the sender is still running. |
