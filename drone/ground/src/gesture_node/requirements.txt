@@ -1,0 +1,4 @@
+mediapipe==0.10.21
+# Same version as the opencv-contrib-python that mediapipe pulls in: both
+# install the same cv2/ files, so they must not drift apart.
+opencv-python==4.11.0.86

@@ -1,0 +1,50 @@
+# One container per node: gesture_node -> /gesture/raw -> intent_node ->
+# /gesture/intent -> echo. No local Jazzy, OpenCV or MediaPipe needed.
+# Linux host with a webcam and X11 (Wayland with XWayland works too).
+#
+# Run from drone/ground/:
+#   xhost +local:                          # once per login: lets gesture open its window
+#   docker compose up --build              # all three, output prefixed per service
+# or one per terminal:
+#   docker compose up --build gesture      # terminal 1: camera + "Gestures" window (q to quit)
+#   docker compose up --build intent       # terminal 2: filter -> /gesture/intent
+#   docker compose up --build echo         # terminal 3: ros2 topic echo /gesture/intent
+#   docker compose down                    # stop everything
+
+# Shared by every service. Build context is this folder so the Dockerfiles can
+# COPY src/ and docker/entrypoint.sh.
+x-ros: &ros
+  network_mode: host   # DDS discovery between containers (and with a host ROS install)
+  ipc: host            # Fast DDS shared-memory transport
+  environment:
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+
+services:
+  gesture:
+    <<: *ros
+    build:
+      context: .
+      dockerfile: docker/gesture/Dockerfile
+    image: rosrangers/gesture:jazzy
+    devices:
+      - /dev/video0:/dev/video0
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+
+  intent:
+    <<: *ros
+    build:
+      context: .
+      dockerfile: docker/intent/Dockerfile
+    image: rosrangers/intent:jazzy
+
+  echo:
+    <<: *ros
+    build:
+      context: .
+      dockerfile: docker/echo/Dockerfile
+    image: rosrangers/echo:jazzy

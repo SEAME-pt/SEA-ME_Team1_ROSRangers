@@ -5,3 +5,7 @@ __pycache__/
 *.bin
 .pytest_cache/
 config/
+
+# drone/ground Makefile: native venv and colcon workspace
+drone/ground/gesture-venv/
+drone/ground/ros2_ws/
