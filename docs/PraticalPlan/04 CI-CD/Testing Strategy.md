@@ -2,7 +2,7 @@
 title: Testing Strategy
 type: test-plan
 status: draft
-date: 2026-10-12
+date: 2026-10-21
 project: SEA autonomous drone
 aliases:
   - Communication Test Plan
@@ -24,6 +24,8 @@ tags:
 |---|---|---|---|
 | 1 Unit (C++) | framing, MAC, sequence window, failsafe timers, AETR mapping, MSP encode/decode, ThoneFlow parser | GitHub runner, GoogleTest | stale seq rejected; 251 ms without control → failsafe; tag flip → reject; false `0xFE` header resync |
 | 1 Unit (Python) | same spec in `sd_protocol_py`, controller, gesture filter | GitHub runner, pytest | |
+| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`: unit, node, process and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent over real topics |
+| 2 Docker images | the ground images build; gesture container → intent container; clean stops | GitHub runner (job `ground-docker`, `drone/ground/docker/smoke_test.sh`) | `INDEX_RIGHT` → `MOVE_RIGHT`; stop gesture → `HOVER_LAND_REQUEST` |
 | 2 Cross-language | golden vectors (`drone/tests/vectors/*.json`) | both | C++ encoder and Python decoder agree byte for byte |
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |
@@ -63,3 +65,9 @@ UDP RTT (median/p99/max), loss %, ESP loop jitter, ESP CPU cost of the MAC ([[AD
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **colcon** | The build tool for ROS 2 workspaces; `colcon test` runs each package's tests. |
+| **Node** | A single ROS 2 process that does one job and talks to others through topics. |
+| **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
+| **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
+| **Smoke test** | A quick end-to-end check that the built thing starts and does its basic job. |

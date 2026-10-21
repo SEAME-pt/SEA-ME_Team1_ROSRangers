@@ -43,6 +43,7 @@ tags:
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner | ✅ Accepted | n/a |
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
+| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | 🟡 Proposed (2026-10-21, #73, PR #74) | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -55,11 +56,16 @@ tags:
 - ADR-016 was **revised** after reading [[ThoneFlow]]. SoftwareSerial is now an experiment, not the plan.
 - ADR-017 now follows the team's own [[Dev_Strategy]] instead of GitHub Flow.
 
-## 3. Still open
+## 3. What changed on 2026-10-21
+
+- New [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed, accepted when PR #74 merges): CI gates and lint rules, taken while preparing `ci.yaml` for the ROS 2 ground nodes (#73, PR #74).
+- [[ADR-017 Branching Model|ADR-017]] has an update. On a PR, `ground-ros2` and `ground-docker` run only when the PR touches the ground code or `ci.yaml`. Pushes are never path-filtered.
+
+## 4. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 4. Glossary
+## 5. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -78,4 +84,5 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **CI** | Continuous Integration: automated validation of proposed changes. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

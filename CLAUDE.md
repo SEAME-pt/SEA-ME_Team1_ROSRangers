@@ -76,10 +76,12 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 ## CI
 
 - `ci.yaml`: `lint` (pre-commit) always runs. `check-components` turns each job on only when its component exists:
-  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`. Skips print a `::notice`.
+  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `gesture_node` + `intent_node` `package.xml` → `ground-ros2` (colcon test + 90 % coverage gate), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test). Skips print a `::notice`.
+- `ground-ros2` and `ground-docker` also have a PR path filter: they run only when the PR changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`; pushes to `dev`/`main` always run them. Keep filters inside `check-components` (`if:`), never in `on: paths`: a workflow that never starts leaves required checks pending.
+- Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
-- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format).
+- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
 
 ## Gotchas
 

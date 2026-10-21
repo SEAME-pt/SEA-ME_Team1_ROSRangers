@@ -39,9 +39,13 @@ Follow [[Dev_Strategy]] §4–§9 exactly:
 
 Team decision: **1 approving review** on PRs into `dev`, **2 approving reviews** on PRs from `dev` into `main`. Reviewers still come from outside the author's track ([[Team Tracks]] §2). This replaces the earlier wording "two reviewers on every PR" in [[Team Tracks]] and "a reviewer where practical" in [[Dev_Strategy]] §9. Aligned in [[Branch_Protection]] and [[Pull_Request_Workflow]]. The GitHub branch-protection settings must match (`dev`: 1 required approval, `main`: 2).
 
+### Update 2026-10-21: path filter for the slow ground jobs
+
+§2 says CI runs on PRs and on pushes. That is still true for the workflow. Inside it, on a PR, `ground-ros2` and `ground-docker` now run only when the PR changes `drone/ground/`, `drone/tests/ros/` or `.github/workflows/ci.yaml`. On pushes to `dev` and `main` the path filter never skips a job; a job is skipped only when its component is missing. The filter is an `if:` on the job, not `on: paths`, so a skipped job still counts as passed for a required check. Decided in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (#73).
+
 ## 3. Related pages
 
-- [[Dev_Strategy]] · [[Pull_Request_Workflow]] · [[Decision Register]]
+- [[Dev_Strategy]] · [[Pull_Request_Workflow]] · [[ADR-022 CI Gates and Lint Rules|ADR-022]] · [[Decision Register]]
 
 ## 4. Glossary
 

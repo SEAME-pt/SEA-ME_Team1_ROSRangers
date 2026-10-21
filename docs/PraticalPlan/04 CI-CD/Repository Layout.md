@@ -2,7 +2,7 @@
 title: Software Repository Layout
 type: ci-cd
 status: accepted
-date: 2026-10-20
+date: 2026-10-21
 project: SEA autonomous drone
 tags:
   - ci
@@ -59,7 +59,8 @@ SEA-ME_Team1_ROSRangers/
 │   └── pull_request_template.md
 ├── .claude/
 │   └── agents/                # Claude Code subagents (docs-reviewer)
-├── .pre-commit-config.yaml
+├── .pre-commit-config.yaml    # lint hooks, run by the CI lint job
+├── ruff.toml                  # repo-wide ruff rules (E, W, F, B, I)
 └── README.md
 ```
 
@@ -86,3 +87,4 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |

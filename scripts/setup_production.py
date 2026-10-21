@@ -26,8 +26,8 @@ import argparse
 import csv
 import datetime
 import os
-import statistics
 import re
+import statistics
 import subprocess
 import sys
 import tempfile

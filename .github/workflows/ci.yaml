@@ -14,6 +14,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,13 +25,20 @@ jobs:
 
   check-components:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       cpp: ${{ steps.check.outputs.cpp }}
       python: ${{ steps.check.outputs.python }}
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
+      ros: ${{ steps.check.outputs.ros }}
+      docker: ${{ steps.check.outputs.docker }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # On a PR, HEAD is GitHub's merge commit and HEAD^1 the base branch,
+          # so `git diff HEAD^1 HEAD` lists the files the PR changes
+          fetch-depth: 2
 
       - name: Detect available components
         id: check
@@ -67,10 +75,44 @@ jobs:
             echo "::notice title=betaflight-sitl skipped::needs the C++ lib, the Python package and a test in drone/tests/sitl"
           fi
 
+          # The two slow ground jobs run on a PR only when it touches the ground
+          # code or this workflow. Pushes to dev/main always run them. Filtering
+          # here and not in `on: paths` keeps required checks working: a job
+          # skipped by `if:` counts as passed, a workflow never started does not.
+          ground_changed=true
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            if ! grep -qE '^(drone/ground/|drone/tests/ros/|\.github/workflows/ci\.yaml$)' <<<"$changed"; then
+              ground_changed=false
+            fi
+          fi
+
+          if [[ ! -f drone/ground/src/gesture_node/package.xml ||
+                ! -f drone/ground/src/intent_node/package.xml ]]; then
+            echo "ros=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=ground-ros2 skipped::gesture_node or intent_node package.xml not found"
+          elif [[ $ground_changed == false ]]; then
+            echo "ros=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=ground-ros2 skipped::PR changes nothing in drone/ground, drone/tests/ros or ci.yaml"
+          else
+            echo "ros=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          if [[ ! -f drone/ground/docker-compose.yml ]]; then
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=ground-docker skipped::drone/ground/docker-compose.yml not found"
+          elif [[ $ground_changed == false ]]; then
+            echo "docker=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=ground-docker skipped::PR changes nothing in drone/ground, drone/tests/ros or ci.yaml"
+          else
+            echo "docker=true" >> "$GITHUB_OUTPUT"
+          fi
+
   protocol-cpp:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.cpp == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -103,6 +145,7 @@ jobs:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.python == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -112,10 +155,80 @@ jobs:
       - run: pip install -e drone/ground/src/sd_protocol_py
       - run: pytest drone/ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
 
+  # gesture_node + intent_node: unit, node and pipeline tests in the ros:jazzy
+  # container (ADR-018). REQUIRE_ROS_TESTS makes a missing rclpy fail instead
+  # of skipping the ROS tests.
+  ground-ros2:
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.ros == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container: ros:jazzy-ros-base
+    env:
+      PIP_BREAK_SYSTEM_PACKAGES: "1"
+      REQUIRE_ROS_TESTS: "1"
+      ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends python3-pip python3-pytest python3-pytest-cov libgl1 libegl1 libglib2.0-0
+          pip3 install -r drone/ground/src/gesture_node/requirements.txt
+
+      - name: Build
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --base-paths drone/ground/src --packages-select gesture_node intent_node
+
+      # The packages' tests the way ROS runs them (writes build/<pkg>/pytest.xml)
+      - name: Package tests (unit + node)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          colcon test --base-paths drone/ground/src --packages-select gesture_node intent_node \
+            --event-handlers console_direct+ --return-code-on-test-failure
+          colcon test-result --verbose
+
+      # Once more with the pipeline tests, measured against the installed
+      # packages. pytest-cov also counts the tests that start a node as a
+      # subprocess.
+      - name: Coverage gate (package + pipeline tests)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          source install/setup.bash
+          python3 -m pytest drone/ground/src/gesture_node/test drone/ground/src/intent_node/test drone/tests/ros \
+            --cov=gesture_node --cov=intent_node --cov-report=term-missing --cov-fail-under=90 \
+            --junitxml=ground-ros2-report.xml
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ground-ros2-report
+          path: |
+            ground-ros2-report.xml
+            build/*/pytest.xml
+          if-no-files-found: ignore
+
+  # Docker images build, and the intent container turns INDEX_RIGHT into MOVE_RIGHT
+  ground-docker:
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.docker == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: drone/ground/docker/smoke_test.sh
+
   esp-firmware:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.esp == 'true' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -131,6 +244,27 @@ jobs:
           name: esp-firmware
           path: drone/firmware/esp8266/.pio/build/d1_mini/firmware.bin
 
+  check-sitl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check SITL prerequisites
+        id: check
+        shell: bash
+        run: |
+          if [[ -f drone/lib/protocol/CMakeLists.txt &&
+                -f drone/ground/src/sd_protocol_py/pyproject.toml &&
+                -d drone/tests/sitl ]] &&
+            find drone/tests/sitl -type f -name '*.py' -print -quit | grep -q .; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
   betaflight-sitl:
     needs: [lint, protocol-cpp, ground-python, check-components]
     if: >-
@@ -142,6 +276,7 @@ jobs:
         needs.check-components.outputs.sitl == 'true'
       }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
