@@ -101,7 +101,7 @@ pre-commit run --all-files
 
 ## 4. CI decisions for the ROS 2 ground nodes (2026-10-21)
 
-Taken in issue #73 (PR #74), from the review of `drone/ground` on 2026-10-21.
+Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed; issue #73, PR #74), from the review of `drone/ground` on 2026-10-21. This section is a summary; the ADR has the reasons and the options considered.
 
 **Done:**
 - **Time limits** on every `ci.yaml` job.
@@ -119,7 +119,7 @@ Taken in issue #73 (PR #74), from the review of `drone/ground` on 2026-10-21.
 
 ## 5. Related pages
 
-- [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[PX4 SITL Setup]] · [[Dev_Strategy]]
+- [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[PX4 SITL Setup]] · [[Dev_Strategy]] · [[ADR-022 CI Gates and Lint Rules|ADR-022]]
 
 ## 6. Glossary
 
