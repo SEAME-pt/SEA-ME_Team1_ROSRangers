@@ -39,8 +39,9 @@ except ImportError:
 # must not see these topics.
 TEST_DOMAIN_ID = 85
 FAKE_CAMERA = Path(__file__).with_name("fake_camera.py")
-# fake_camera.py runs as a script, so its sys.path starts at test/. Put the
-# package folder in front so `import gesture_node` works without colcon too.
+# fake_camera.py runs as a script, so its sys.path starts at test/. Add the
+# package folder last: an installed gesture_node (colcon, CI) still wins, so
+# coverage measures one copy, and `make unit` works without colcon.
 PACKAGE_DIR = FAKE_CAMERA.parent.parent
 
 
@@ -49,7 +50,7 @@ class NodeProcess:
 
     def __init__(self, cmd):
         pythonpath = os.pathsep.join(
-            p for p in (str(PACKAGE_DIR), os.environ.get("PYTHONPATH")) if p
+            p for p in (os.environ.get("PYTHONPATH"), str(PACKAGE_DIR)) if p
         )
         env = dict(
             os.environ,
