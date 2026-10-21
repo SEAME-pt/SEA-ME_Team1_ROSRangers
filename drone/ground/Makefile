@@ -10,7 +10,8 @@
 #   make test     every test: colcon test (unit + node) and drone/tests/ros
 #                 (pipeline). Without Jazzy: the unit tests only (= make unit)
 #   make unit     tests that need no ROS (ROS tests are skipped)
-#   make smoke    Docker smoke test (builds the images, intent -> MOVE_RIGHT)
+#   make smoke    Docker smoke test: builds the images, runs the package tests
+#                 inside them, gesture -> intent across containers, clean stops
 #
 # The native workspace follows docs/PraticalPlan/06 Gestures/00 Gesture Pipeline.md
 # (Step 0), but lives here instead of ~/ros2_ws and ~/gesture-venv:

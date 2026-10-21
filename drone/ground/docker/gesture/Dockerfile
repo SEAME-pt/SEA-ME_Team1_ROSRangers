@@ -23,4 +23,6 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select gesture_node
 
 COPY docker/entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["ros2", "run", "gesture_node", "gesture_node"]
+# The node itself is PID 1, not `ros2 run` (which neither handles nor forwards
+# SIGTERM), so `docker stop` stops it cleanly at once instead of killing it.
+CMD ["/ws/install/gesture_node/lib/gesture_node/gesture_node"]

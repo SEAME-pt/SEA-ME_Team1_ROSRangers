@@ -1,9 +1,10 @@
 """ROS 2 tests for intent_node: real node, real topics, no camera.
 
-Starts IntentNode with input_source:=topic, publishes prepared JSON on
-/gesture/raw and checks what it publishes on /gesture/intent.
-neutral_timeout_sec is raised to 1.0 s so the "unconfirmed" state can be
-observed without racing the timeout.
+Starts IntentNode, feeds it prepared JSON and checks what it publishes on
+/gesture/intent. Both inputs are tested: input_source:=topic (/gesture/raw,
+what gesture_node uses) and the default UDP socket (the standalone
+gestures.py). neutral_timeout_sec is raised to 1.0 s so the "unconfirmed"
+state can be observed without racing the timeout.
 
 Needs ROS 2 Jazzy sourced. Without rclpy the tests are skipped, unless
 REQUIRE_ROS_TESTS=1 is set (CI sets it), then the import error fails the run.
@@ -14,8 +15,10 @@ or:        python3 -m unittest test.test_intent_node_ros -v   (package folder, R
 
 import json
 import os
+import socket
 import time
 import unittest
+from unittest import mock
 
 try:
     import rclpy
@@ -28,16 +31,10 @@ except ImportError:
         raise
     rclpy = None
 
-ROS_ARGS = [
-    "--ros-args",
-    "-p", "input_source:=topic",
-    "-p", "neutral_timeout_sec:=1.0",
-    "-p", "stale_timeout_sec:=2.0",
-]  # fmt: skip
 KEYS = {"intent", "gesture", "reason", "t", "xy"}
-# Own ROS domain: colcon tests packages in parallel, and the other test files,
-# running containers or teammates must not see these topics. 81-83 are used
-# by gesture_node, intent_node and drone/tests/ros.
+# Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
+# colcon tests packages in parallel, and running containers or teammates
+# must not see these topics.
 TEST_DOMAIN_ID = 82
 
 
@@ -45,11 +42,30 @@ def packet(gesture, t=1.0, xy=None):
     return json.dumps({"gesture": gesture, "t": t, "xy": xy})
 
 
-@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
-class IntentNodeTopicTests(unittest.TestCase):
+def free_udp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class IntentProbe:
+    """IntentNode plus a probe node that feeds it and records /gesture/intent.
+
+    Subclasses provide the input: open_input(), input_ready(), send_raw(),
+    close_input().
+    """
+
+    @classmethod
+    def ros_args(cls):
+        return [
+            "--ros-args",
+            "-p", "neutral_timeout_sec:=1.0",
+            "-p", "stale_timeout_sec:=2.0",
+        ]  # fmt: skip
+
     @classmethod
     def setUpClass(cls):
-        rclpy.init(args=ROS_ARGS, domain_id=TEST_DOMAIN_ID)
+        rclpy.init(args=cls.ros_args(), domain_id=TEST_DOMAIN_ID)
 
     @classmethod
     def tearDownClass(cls):
@@ -58,22 +74,21 @@ class IntentNodeTopicTests(unittest.TestCase):
     def setUp(self):
         self.node = IntentNode()
         self.probe = rclpy.create_node("intent_node_test_probe")
-        self.pub = self.probe.create_publisher(String, "/gesture/raw", 10)
         self.intents = []
         self.probe.create_subscription(String, "/gesture/intent", self._on_intent, 10)
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
         self.executor.add_node(self.probe)
-        # Packets published before discovery would be lost
+        self.open_input()
+        # Packets sent before discovery would be lost
         self.assertTrue(
-            self.spin_until(
-                lambda: self.pub.get_subscription_count() > 0 and self.intents
-            ),
+            self.spin_until(lambda: self.input_ready() and self.intents),
             "intent_node and the test probe never discovered each other",
         )
 
     def tearDown(self):
         self.executor.shutdown()
+        self.close_input()
         self.node.destroy_node()
         self.probe.destroy_node()
 
@@ -94,9 +109,9 @@ class IntentNodeTopicTests(unittest.TestCase):
             self.executor.spin_once(timeout_sec=0.01)
         return bool(condition())
 
-    def send(self, text, n=1, dt=0.05):
+    def send(self, data, n=1, dt=0.05):
         for _ in range(n):
-            self.pub.publish(String(data=text))
+            self.send_raw(data)
             self.spin_for(dt)
 
     def latest(self):
@@ -112,7 +127,36 @@ class IntentNodeTopicTests(unittest.TestCase):
             f"expected {intent} ({reason}), last was {self.latest()}",
         )
 
-    # ---------- tests ----------
+    def link_report(self):
+        """Run the 5 s link report now; returns (level, text) of its log line."""
+        logger = mock.Mock()
+        with mock.patch.object(self.node, "get_logger", return_value=logger):
+            self.node._report_link()
+        for level in ("info", "warning"):
+            log = getattr(logger, level)
+            if log.called:
+                return level, log.call_args.args[0]
+        self.fail("the link report logged nothing")
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
+    @classmethod
+    def ros_args(cls):
+        return super().ros_args() + ["-p", "input_source:=topic"]
+
+    def open_input(self):
+        self.pub = self.probe.create_publisher(String, "/gesture/raw", 10)
+
+    def input_ready(self):
+        return self.pub.get_subscription_count() > 0
+
+    def send_raw(self, text):
+        self.pub.publish(String(data=text))
+
+    def close_input(self):
+        pass
+
     def test_starts_with_hover_land_before_any_packet(self):
         self.assertEqual(self.intents[0]["intent"], "HOVER_LAND_REQUEST")
         self.assertEqual(self.intents[0]["reason"], "no_packets_yet")
@@ -179,6 +223,64 @@ class IntentNodeTopicTests(unittest.TestCase):
         self.assertTrue(10 <= len(received) <= 30, f"{len(received)} messages in 1 s")
         for intent in received:
             self.assertEqual(set(intent), KEYS)
+
+    def test_link_report_names_gesture_node(self):
+        level, text = self.link_report()  # nothing received yet
+        self.assertEqual(level, "warning")
+        self.assertIn("gesture_node", text)
+        self.assertNotIn("gestures.py", text)
+
+    def test_link_report_counts_ignored_packets(self):
+        self.send("not json", n=2)
+        self.send(packet("INDEX_RIGHT"), n=3)
+        level, text = self.link_report()
+        self.assertEqual(level, "info")
+        self.assertIn("2 ignored", text)
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
+    """The default input: JSON datagrams on UDP from the standalone gestures.py."""
+
+    @classmethod
+    def ros_args(cls):
+        cls.port = free_udp_port()
+        return super().ros_args() + ["-p", f"udp_port:={cls.port}"]
+
+    def open_input(self):
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def input_ready(self):
+        return True
+
+    def send_raw(self, data):
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        self.sock.sendto(data, ("127.0.0.1", self.port))
+
+    def close_input(self):
+        self.sock.close()
+
+    def test_five_datagrams_give_move_right(self):
+        self.send(packet("INDEX_RIGHT"), n=5)
+        self.wait_intent("MOVE_RIGHT", "ok")
+
+    def test_bad_datagrams_are_ignored(self):
+        for data in (b"\xff\xfe not utf-8", b"not json", b"[1, 2]", b""):
+            self.send(data)
+        self.spin_for(0.2)
+        self.assertEqual(self.latest()["reason"], "no_packets_yet")
+        self.send(packet("INDEX_RIGHT"), n=5)
+        self.wait_intent("MOVE_RIGHT")
+
+    def test_second_node_on_the_same_port_fails(self):
+        with self.assertRaises(OSError):
+            IntentNode()
+
+    def test_link_report_names_gestures_py(self):
+        level, text = self.link_report()
+        self.assertEqual(level, "warning")
+        self.assertIn("gestures.py", text)
 
 
 if __name__ == "__main__":

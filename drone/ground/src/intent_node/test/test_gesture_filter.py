@@ -144,6 +144,65 @@ class FilterTests(unittest.TestCase):
         f = GestureFilter(neutral_timeout=1.0, stale_timeout=0.2, clock=self.clock)
         self.assertEqual(f.stale_timeout, 1.0)
 
+    def test_out_of_range_settings_are_clamped(self):
+        f = GestureFilter(
+            stable_packets=0, neutral_timeout=-1.0, stale_timeout=-5.0, clock=self.clock
+        )
+        self.assertEqual(f.stable_packets, 1)
+        self.assertEqual(f.neutral_timeout, 0.0)
+        self.assertEqual(f.stale_timeout, 0.0)
+
+    def test_stable_packets_1_accepts_at_once(self):
+        f = GestureFilter(stable_packets=1, clock=self.clock)
+        f.update(packet("THUMB_UP"))
+        self.assertEqual(f.decide()["intent"], "CLIMB_SLOWLY")
+
+    def test_dropout_exactly_at_neutral_timeout_keeps_gesture(self):
+        f = GestureFilter(neutral_timeout=0.5, clock=self.clock)
+        for _ in range(5):
+            f.update(packet("INDEX_RIGHT"))
+        self.clock.advance(0.5)  # "more than 0.5 s" means 0.5 s itself is fine
+        self.assertEqual(f.decide()["intent"], "MOVE_RIGHT")
+        self.clock.advance(0.01)
+        self.assertEqual(f.decide()["intent"], "NEUTRAL")
+
+    def test_packet_without_gesture_key_counts_as_no_hand(self):
+        self.accept_right()
+        for _ in range(6):
+            self.f.update({"t": 1.0})
+            self.clock.advance(0.1)
+        self.assertEqual(self.intent(), "NEUTRAL")
+        self.assertEqual(self.reason(), "no_hand")
+
+    def test_odd_gesture_values_are_unmapped_not_errors(self):
+        for value in (5, 2.5, True, ["INDEX_RIGHT"], {"name": "INDEX_RIGHT"}):
+            with self.subTest(value=value):
+                f = GestureFilter(clock=self.clock)
+                for _ in range(5):
+                    f.update({"gesture": value})
+                self.assertEqual(f.decide()["intent"], "NEUTRAL")
+
+    def test_unmapped_gesture_is_reported_by_name(self):
+        self.send("INDEX_PINKY_UP", 5)
+        out = self.f.decide()
+        self.assertEqual(out["reason"], "unmapped_gesture")
+        self.assertEqual(out["gesture"], "INDEX_PINKY_UP")
+
+    def test_t_and_xy_come_from_the_latest_packet(self):
+        self.f.update({"gesture": "INDEX_RIGHT", "t": 5.0, "xy": [0.1, 0.2]})
+        self.f.update({"gesture": "INDEX_RIGHT", "t": 6.0})
+        out = self.f.decide()
+        self.assertEqual(out["t"], 6.0)
+        self.assertIsNone(out["xy"])
+
+    def test_recogniser_starting_without_hand_after_idle_is_hover_land(self):
+        # intent_node ran > stale_timeout before the first packet, and that
+        # packet has no hand: the hand counts as gone since the node started
+        self.clock.advance(5.0)
+        self.f.update(packet(None))
+        self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
+        self.assertEqual(self.reason(), "no_hand_long")
+
 
 class HelperTests(unittest.TestCase):
     def test_normalize(self):
@@ -151,6 +210,10 @@ class HelperTests(unittest.TestCase):
         self.assertIsNone(normalize_gesture("none"))
         self.assertIsNone(normalize_gesture(" "))
         self.assertEqual(normalize_gesture("thumb_up"), "THUMB_UP")
+
+    def test_every_no_hand_word_is_no_hand(self):
+        for word in ("", "none", "No_Hand", " unknown ", "NEUTRAL"):
+            self.assertIsNone(normalize_gesture(word), word)
 
     def test_clean_number(self):
         self.assertEqual(clean_number(3), 3.0)

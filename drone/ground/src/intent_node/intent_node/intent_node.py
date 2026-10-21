@@ -6,14 +6,21 @@ input_source:=topic reads the same JSON from gesture_node on /gesture/raw
 
 Single-threaded: one timer drains the UDP socket (or the topic callback runs),
 another publishes. No threads, no locks.
+
+Ctrl+C and SIGTERM (docker stop) are a normal stop: exit code 0. An unknown
+input_source or a busy UDP port: FATAL log and exit code 1.
 """
 
 import json
+import signal
 import socket
 import sys
+import threading
 
 import rclpy
+from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
+from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import String
 
 from intent_node.gesture_filter import GestureFilter
@@ -58,9 +65,11 @@ class IntentNode(Node):
         self._sock = None
         if source == "udp":
             self._sock = self._open_socket(host, port)
+            self._sender = "gestures.py"
             where = f"gestures.py on UDP {host}:{port}"
         else:
             self.create_subscription(String, raw_topic, self._on_raw, 10)
+            self._sender = "gesture_node"
             where = f"gesture_node on {raw_topic}"
         self._pub = self.create_publisher(String, topic, 10)
 
@@ -126,7 +135,7 @@ class IntentNode(Node):
             return
 
         if self._packets_total == 0:
-            self.get_logger().info(f"First packet from gestures.py: {packet}")
+            self.get_logger().info(f"First packet from {self._sender}: {packet}")
         self._packets_total += 1
         self._packets_window += 1
         self._last_gesture_seen = packet.get("gesture")
@@ -149,16 +158,20 @@ class IntentNode(Node):
     def _report_link(self):
         count = self._packets_window
         self._packets_window = 0
+        ignored = ""
+        if self._bad_total:
+            ignored = f"; {self._bad_total} ignored since start (not JSON objects)"
         if count == 0:
             self.get_logger().warning(
-                "No packets from gestures.py in the last "
+                f"No packets from {self._sender} in the last "
                 f"{LINK_REPORT_SEC:.0f} s (total received: {self._packets_total})"
+                f"{ignored}"
             )
         else:
             self.get_logger().info(
                 f"Recogniser link OK: {count} packets in the last "
                 f"{LINK_REPORT_SEC:.0f} s, last gesture seen: "
-                f"{self._last_gesture_seen}"
+                f"{self._last_gesture_seen}{ignored}"
             )
 
     def destroy_node(self):
@@ -171,22 +184,33 @@ class IntentNode(Node):
 
 
 def main(args=None):
-    rclpy.init(args=args)
-    node = None
-    exit_code = 0
+    # Ctrl+C and SIGTERM (docker stop) only ask the spin loop below to stop.
+    # rclpy's own handler would shut rclpy down from another thread while the
+    # executor builds its next wait set, which then fails with an RCLError. A
+    # repeated signal (ros2 launch forwards Ctrl+C) changes nothing.
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda signum, frame: stop.set())
+    rclpy.init(args=args, signal_handler_options=SignalHandlerOptions.NO)
     try:
         node = IntentNode()
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
     except (OSError, ValueError):
-        exit_code = 1  # already logged by _open_socket / input_source check
+        rclpy.shutdown()
+        sys.exit(1)  # already logged by _open_socket / the input_source check
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    try:
+        while not stop.is_set():
+            executor.spin_once(timeout_sec=0.1)  # a signal is seen within 0.1 s
     finally:
-        if node is not None:
-            node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
-    sys.exit(exit_code)
+        # Stopping now: ignore more Ctrl+C / SIGTERM (ros2 launch forwards one
+        # more). A Python handler is removed while the interpreter exits, and a
+        # signal arriving then would kill the process (exit code -2).
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, signal.SIG_IGN)
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

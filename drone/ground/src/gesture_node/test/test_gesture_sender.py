@@ -74,6 +74,22 @@ class SenderTests(unittest.TestCase):
         gesture_sender.send_gesture("CLOSED_HAND")
         self.assertEqual(len(self.sent), 2)
 
+    def test_keepalive_is_10_hz_at_camera_frame_rates(self):
+        # Frames every 32 ms for 3 s. Keep-alives must average one per 0.1 s,
+        # not one every 4th frame (0.128 s, 7.8 Hz), whatever the frame period.
+        for _ in range(94):
+            gesture_sender.send_gesture("CLOSED_HAND")
+            self.clock.advance(0.032)
+        self.assertIn(len(self.sent), range(28, 33))
+
+    def test_no_burst_after_a_stall(self):
+        gesture_sender.send_gesture("CLOSED_HAND")
+        self.clock.advance(1.0)  # the camera loop hung for 1 s
+        gesture_sender.send_gesture("CLOSED_HAND")
+        self.clock.advance(0.032)
+        gesture_sender.send_gesture("CLOSED_HAND")
+        self.assertEqual(len(self.sent), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

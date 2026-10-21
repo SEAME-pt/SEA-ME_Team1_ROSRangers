@@ -28,11 +28,17 @@ from gesture_node.hand_processing import (  # noqa: E402
     INDEX,
     THUMB,
     angle,
+    create_hands,
+    detect_gesture,
+    draw_hand,
     is_finger_extended,
     pointing_direction,
     recognize,
     thumb_out,
 )
+
+# Another test module may have installed the stub first: check the module itself
+REAL_MEDIAPIPE = getattr(sys.modules["mediapipe"], "__file__", None) is not None
 
 DIRECTIONS = {"UP": 0, "RIGHT": 90, "DOWN": 180, "LEFT": -90}
 
@@ -42,7 +48,8 @@ def make_hand(extended=(), direction="UP", scale=200.0, origin=(320.0, 240.0)):
 
     Built pointing up with the wrist at (0, 0) and hand size 1 (wrist to
     middle knuckle), then rotated so the extended fingers point to
-    `direction`, scaled to pixels and moved to `origin`.
+    `direction` (a name, or degrees: 0 = up, 90 = right), scaled to pixels
+    and moved to `origin`.
     """
     lm = [(0.0, 0.0)] * 21
     # Thumb: 1 CMC, 2 MCP, 3 IP, 4 tip. Out = tip well past the index knuckle.
@@ -74,7 +81,8 @@ def make_hand(extended=(), direction="UP", scale=200.0, origin=(320.0, 240.0)):
     if extended:
         dx = sum(lm[tips[f][1]][0] - lm[tips[f][0]][0] for f in extended)
         dy = sum(lm[tips[f][1]][1] - lm[tips[f][0]][1] for f in extended)
-        rotation = math.radians(DIRECTIONS[direction]) - math.atan2(dx, -dy)
+        degrees = DIRECTIONS.get(direction, direction)
+        rotation = math.radians(degrees) - math.atan2(dx, -dy)
 
     c, s = math.cos(rotation), math.sin(rotation)
     ox, oy = origin
@@ -175,6 +183,73 @@ class MathTests(unittest.TestCase):
             lm = [(0.0, 0.0)] * 21
             lm[8] = (dx, dy)  # INDEX tip, MCP (5) at the origin
             self.assertEqual(pointing_direction(lm, [INDEX]), expected, (dx, dy))
+
+
+# ---------- detect_gesture() with a fake MediaPipe ----------
+WIDTH, HEIGHT = 640, 480
+IMAGE = types.SimpleNamespace(shape=(HEIGHT, WIDTH, 3))  # only .shape is read
+
+
+def mediapipe_results(*hands):
+    """What hands.process() returns: landmarks as 0..1 fractions of the image."""
+    found = [
+        types.SimpleNamespace(
+            landmark=[types.SimpleNamespace(x=x / WIDTH, y=y / HEIGHT) for x, y in lm]
+        )
+        for lm in hands
+    ]
+    return types.SimpleNamespace(multi_hand_landmarks=found or None)
+
+
+class FakeHands:
+    def __init__(self, results):
+        self.results = results
+
+    def process(self, image):
+        return self.results
+
+
+class DetectGestureTests(unittest.TestCase):
+    def test_no_hand(self):
+        hands = FakeHands(mediapipe_results())
+        self.assertEqual(detect_gesture(hands, IMAGE), (None, None))
+
+    def test_landmarks_are_scaled_to_pixels(self):
+        # Index finger at 50 deg in pixels = RIGHT. Read as raw 0..1 values on
+        # a 4:3 image it would be at 42 deg = UP, so this fails without scaling.
+        lm = make_hand(("INDEX",), 50, scale=100.0)
+        gesture, _ = detect_gesture(FakeHands(mediapipe_results(lm)), IMAGE)
+        self.assertEqual(gesture, "INDEX_RIGHT")
+
+    def test_first_hand_is_used_and_returned_for_drawing(self):
+        first = make_hand(("INDEX",), "LEFT", scale=60.0, origin=(200.0, 240.0))
+        second = make_hand((), "UP", scale=60.0, origin=(450.0, 240.0))
+        results = mediapipe_results(first, second)
+        gesture, hand = detect_gesture(FakeHands(results), IMAGE)
+        self.assertEqual(gesture, "INDEX_LEFT")
+        self.assertIs(hand, results.multi_hand_landmarks[0])
+
+
+# ---------- the real MediaPipe (venv, CI, gesture Docker image) ----------
+@unittest.skipUnless(REAL_MEDIAPIPE, "MediaPipe not installed (stub in use)")
+class RealMediaPipeTests(unittest.TestCase):
+    def test_blank_frame_has_no_hand(self):
+        import numpy as np
+
+        with create_hands(static_image_mode=True) as hands:
+            frame = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
+            self.assertEqual(detect_gesture(hands, frame), (None, None))
+
+    def test_draw_hand_draws_the_landmarks(self):
+        import numpy as np
+        from mediapipe.framework.formats import landmark_pb2
+
+        hand = landmark_pb2.NormalizedLandmarkList()
+        for x, y in make_hand(("INDEX",), "UP", scale=100.0):
+            hand.landmark.add(x=x / WIDTH, y=y / HEIGHT)
+        image = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
+        draw_hand(image, hand)
+        self.assertGreater(int(image.sum()), 0)
 
 
 if __name__ == "__main__":

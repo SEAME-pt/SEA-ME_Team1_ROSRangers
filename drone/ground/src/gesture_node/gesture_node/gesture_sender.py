@@ -27,26 +27,32 @@ import time
 KEEPALIVE_SEC = 0.1  # 10 packets/s -> a new gesture is accepted in ~0.4 s
 
 _publisher = {"publish": None}  # function taking the JSON text, set by the node
-_last = {"gesture": "<unset>", "time": 0.0}
+_last = {"gesture": "<unset>", "due": 0.0}  # due: when the next keep-alive is due
 
 
 def set_publisher(publish):
     """publish(text) sends one JSON packet. None stops sending."""
     _publisher["publish"] = publish
     _last["gesture"] = "<unset>"  # the first packet after this goes out at once
-    _last["time"] = 0.0
+    _last["due"] = 0.0
 
 
 def send_gesture(gesture, xy=None):
     """Call every frame. Sends on change, and as a keep-alive while unchanged."""
     now = time.monotonic()
     changed = gesture != _last["gesture"]
-    if not changed and now - _last["time"] < KEEPALIVE_SEC:
+    if not changed and now < _last["due"]:
         return
     publish = _publisher["publish"]
     if publish is None:
         return  # no node yet: like nobody listening on UDP, not an error
     packet = {"gesture": gesture, "t": time.time(), "xy": xy}
     publish(json.dumps(packet))
+    # The next keep-alive is due one period after this one was due, not after
+    # this frame: frames come every ~33 ms, and counting from the late frame
+    # stretches 0.1 s to 0.133 s (7.5 Hz). After a change or a stall, restart.
+    if changed or now - _last["due"] >= KEEPALIVE_SEC:
+        _last["due"] = now + KEEPALIVE_SEC
+    else:
+        _last["due"] += KEEPALIVE_SEC
     _last["gesture"] = gesture
-    _last["time"] = now

@@ -2,7 +2,7 @@
 
 Creates GestureNode without running the camera loop (gestures.main()) and
 calls send_gesture() the way the loop does once per frame, then checks the
-JSON that arrives on /gesture/raw.
+JSON that arrives on /gesture/raw (or on the topic set with raw_topic).
 
 Needs ROS 2 Jazzy sourced. MediaPipe and OpenCV are stubbed if missing (the
 camera is never opened). Without rclpy the tests are skipped, unless
@@ -18,6 +18,7 @@ import sys
 import time
 import types
 import unittest
+from unittest import mock
 
 for _name in ("mediapipe", "cv2"):
     try:
@@ -40,17 +41,21 @@ except ImportError:
     rclpy = None
 
 
-# Own ROS domain: colcon tests packages in parallel, and the other test files,
-# running containers or teammates must not see these topics. 81-83 are used
-# by gesture_node, intent_node and drone/tests/ros.
+# Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
+# colcon tests packages in parallel, and running containers or teammates
+# must not see these topics.
 TEST_DOMAIN_ID = 81
 
 
-@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
-class GestureNodeTopicTests(unittest.TestCase):
+class GestureProbe:
+    """GestureNode plus a probe node that records what arrives on TOPIC."""
+
+    TOPIC = "/gesture/raw"
+    ROS_ARGS = None  # rclpy.init(args=...)
+
     @classmethod
     def setUpClass(cls):
-        rclpy.init(domain_id=TEST_DOMAIN_ID)
+        rclpy.init(args=cls.ROS_ARGS, domain_id=TEST_DOMAIN_ID)
 
     @classmethod
     def tearDownClass(cls):
@@ -61,13 +66,13 @@ class GestureNodeTopicTests(unittest.TestCase):
         self.probe = rclpy.create_node("gesture_node_test_probe")
         self.raw = []
         self.probe.create_subscription(
-            String, "/gesture/raw", lambda m: self.raw.append(json.loads(m.data)), 10
+            String, self.TOPIC, lambda m: self.raw.append(json.loads(m.data)), 10
         )
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
         self.executor.add_node(self.probe)
         self.assertTrue(
-            self.spin_until(lambda: self.node.count_subscribers("/gesture/raw") > 0),
+            self.spin_until(lambda: self.node.count_subscribers(self.TOPIC) > 0),
             "gesture_node and the test probe never discovered each other",
         )
         self.destroyed = False
@@ -93,6 +98,9 @@ class GestureNodeTopicTests(unittest.TestCase):
             gesture_sender.send_gesture(gesture, None)
             self.executor.spin_once(timeout_sec=1.0 / fps)
 
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class GestureNodeTopicTests(GestureProbe, unittest.TestCase):
     def test_gesture_is_published_as_json(self):
         gesture_sender.send_gesture("CLOSED_HAND", [0.25, 0.75])
         self.assertTrue(self.spin_until(lambda: self.raw))
@@ -119,13 +127,46 @@ class GestureNodeTopicTests(unittest.TestCase):
         # 30 fps for 1 s, keep-alive every 0.1 s -> about 10 packets, not 30
         self.frames("THUMB_UP", 1.0)
         self.spin_until(lambda: False, timeout=0.1)
-        self.assertTrue(6 <= len(self.raw) <= 14, f"{len(self.raw)} packets in 1 s")
+        self.assertTrue(7 <= len(self.raw) <= 14, f"{len(self.raw)} packets in 1 s")
         self.assertTrue(all(m["gesture"] == "THUMB_UP" for m in self.raw))
 
     def test_destroy_stops_publishing(self):
         self.node.destroy_node()
         self.destroyed = True
         self.assertIsNone(gesture_sender._publisher["publish"])
+        gesture_sender.send_gesture("CLOSED_HAND")  # must not raise
+
+    def test_publish_error_is_raised_while_running(self):
+        with mock.patch.object(
+            self.node, "_pub", mock.Mock(publish=mock.Mock(side_effect=RuntimeError))
+        ):
+            with self.assertRaises(RuntimeError):
+                gesture_sender.send_gesture("CLOSED_HAND")
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class GestureNodeRawTopicParamTests(GestureProbe, unittest.TestCase):
+    TOPIC = "/test/gesture_raw"
+    ROS_ARGS = ["--ros-args", "-p", f"raw_topic:={TOPIC}"]
+
+    def test_publishes_on_the_configured_topic(self):
+        gesture_sender.send_gesture("CLOSED_HAND")
+        self.assertTrue(self.spin_until(lambda: self.raw))
+        self.assertEqual(self.raw[0]["gesture"], "CLOSED_HAND")
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class GestureNodeShutdownTests(unittest.TestCase):
+    """rclpy is shut down while the camera loop may still be sending."""
+
+    def setUp(self):
+        rclpy.init(domain_id=TEST_DOMAIN_ID)
+        self.node = GestureNode()
+        self.addCleanup(rclpy.try_shutdown)
+        self.addCleanup(self.node.destroy_node)
+
+    def test_packets_after_shutdown_are_dropped(self):
+        rclpy.shutdown()
         gesture_sender.send_gesture("CLOSED_HAND")  # must not raise
 
 

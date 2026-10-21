@@ -34,9 +34,9 @@ else:
     rclpy = None
 
 FPS = 30
-# Own ROS domain: colcon tests packages in parallel, and the other test files,
-# running containers or teammates must not see these topics. 81-83 are used
-# by gesture_node, intent_node and drone/tests/ros.
+# Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
+# colcon tests packages in parallel, and running containers or teammates
+# must not see these topics.
 TEST_DOMAIN_ID = 83
 
 
