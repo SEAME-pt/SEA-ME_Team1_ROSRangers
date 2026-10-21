@@ -294,7 +294,7 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 - [ ] **Message type.** `std_msgs/String` holding JSON works but is untyped. A custom message package (`drone_msgs`) is proposed in [[05 Future Nodes]].
 - [x] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` treats it as `NEUTRAL`, also when airborne ([[04 Mission Node]] §5.4).
 - [x] **Shutdown traceback.** Stopping `mission_with_gestures.launch.py` with Ctrl+C made `intent_node` print a `KeyboardInterrupt` traceback (seen 2026-10-19). Fixed in #78: Ctrl+C and SIGTERM only set a stop flag, and further signals are ignored once shutdown starts (`test_double_ctrl_c_stops_cleanly`, `test_sigterm_stops_cleanly`).
-- [ ] **Keep-alive rate.** The code uses 10 Hz (accept in about 0.4 s). An earlier version of the pipeline page said 5 Hz. Confirm 10 Hz with the team.
+- [ ] **Keep-alive rate.** The code and every gesture note use 10 Hz (accept in about 0.4 s). Confirm 10 Hz with the team.
 - [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. The Docker image passes `topic`; `ros2 run` and the `mission_node` launch file still need it by hand. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
 - [x] **Log wording.** The logs name the real sender: `gesture_node` with `input_source:=topic`, `gestures.py` with UDP (#78, `test_link_report_names_gesture_node`).
 - [x] **Tests.** The node wrapper (subscriber, socket and timers) has ROS node and process tests next to the filter's unit tests, with a 90 % coverage gate in CI ([[Testing Strategy]], 2026-10-21).
@@ -321,11 +321,13 @@ Registered in [[Requirements]] on 2026-10-21. The tests that check each one are 
 | --- | --- |
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). `rosrangers/intent:jazzy` is this node's image. |
+| **HOVER_LAND_REQUEST** | The safe fallback intent of `intent_node`: hover and ask to land. Published before the first packet and when the hand or the recogniser is gone for more than 2 s. |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
 | **JSON** | A text format for structured data, used inside the `/gesture/raw` and `/gesture/intent` messages (and the old UDP packets). |
 | **Keep-alive** | A small periodic message that proves the sender is still running. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Stability filter** | The rule that a gesture must be seen in several packets in a row before it counts. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |

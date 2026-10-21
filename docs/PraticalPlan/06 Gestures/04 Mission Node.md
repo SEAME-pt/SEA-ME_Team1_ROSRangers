@@ -254,7 +254,7 @@ The node never disarms. Touchdown and disarm stay with the pilot or the Betaflig
 
 ### 5.6 Things it never does
 
-- It never arms, disarms or touches any AUX channel or the override switch (SAF-03/04, [[ADR-015 Gesture Input Source|ADR-015]]).
+- It never arms, disarms or touches any AUX channel or the override switch (REQ-SAF-003/004, [[ADR-015 Gesture Input Source|ADR-015]]).
 - It never keeps moving on stale, unknown or bad input.
 - It never sends a target above the limits or the hard ceilings, whatever the parameters say.
 - It never stops publishing while it runs. On Ctrl+C it publishes one last zero target before it exits.

@@ -579,6 +579,7 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 | **DDS** | The middleware ROS 2 uses to move messages between nodes. |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). `rosrangers/gesture:jazzy` is this node's image. |
 | **Exit code** | The number a program returns when it ends: 0 = normal stop, 1 = error (here: no camera). |
+| **JSON** | A text format for structured data, used inside the `/gesture/raw` and `/gesture/intent` messages. |
 | **Keep-alive** | A small periodic message that proves the sender is still running. |
 | **Landmark** | One of the 21 tracked points on a hand (wrist, knuckles, finger joints and tips). |
 | **MCP / PIP / IP** | Finger joints: knuckle, middle joint, and the thumb's single middle joint. |
@@ -586,11 +587,14 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **NumPy array** | The image format passed to MediaPipe: RGB, `uint8`, shape `(height, width, 3)`. |
 | **OpenCV** | A computer-vision library used here to read the webcam and draw the video window. |
+| **QoS** | Quality of Service: ROS 2 delivery settings of a topic (reliable or best effort, queue depth). |
 | **rclpy** | The ROS 2 Python client library used to write nodes. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Shebang** | The first line of a script (`#!/usr/bin/python3`) that names the program that runs it. |
+| **SIGTERM** | The signal `docker stop` sends to ask a program to stop. The gesture nodes treat it like Ctrl+C: clean stop, exit code 0. |
 | **Static gesture** | A gesture recognised from a single frame: which fingers are extended and where they point. |
 | **Tasks API** | MediaPipe's newer API (`HandLandmarker`) that replaces the removed `mp.solutions`. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **UDP** | User Datagram Protocol: connectionless transport, used by the old standalone recogniser before 2026-10-20. |
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
+| **Wayland** | A Linux display system. OpenCV's window needs XWayland there (`QT_QPA_PLATFORM=xcb`). |

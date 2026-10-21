@@ -756,7 +756,7 @@ What the node does, and every detail of running and testing it, is in [[04 Missi
 
 ### 11.1 Build
 
-The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`). It is not committed yet (2026-10-20), so it only exists on the machine where it was written:
+The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`). It is not committed yet (2026-10-21), so it only exists on the machine where it was written:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh                  # no venv active
@@ -835,8 +835,8 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 
 | Term | Meaning |
 | --- | --- |
-| **CLI** | Command-line interface: here the `ros2` command and its sub-commands. |
 | **CI** | Continuous Integration: GitHub Actions runs the tests on every PR (`ground-ros2`, `ground-docker`). |
+| **CLI** | Command-line interface: here the `ros2` command and its sub-commands. |
 | **colcon** | The build tool for ROS 2 workspaces. |
 | **Container / image** | A Docker image is a packaged file system (here Ubuntu 24.04 + ROS 2 Jazzy + one node); a container is one running copy of it. |
 | **Coverage** | The share of code lines the tests run; CI requires at least 90 % for the gesture nodes. |
@@ -844,18 +844,23 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **Docker Compose** | Starts several containers from one file (`drone/ground/docker-compose.yml`). |
 | **Jazzy** | ROS 2 Jazzy Jalisco, the ROS 2 release we use (paired with Ubuntu 24.04). |
+| **Lifecycle node** | A ROS 2 node with managed states (configure, activate, deactivate), planned for `flight_interface`. |
 | **LTS** | Long-term support: a release maintained for several years. |
 | **Makefile** | The `make` targets in `drone/ground/` that build, start and test the nodes (Docker and native). |
 | **MediaPipe** | A framework used here for detecting hand landmarks. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **Package** | A folder of ROS 2 code (`package.xml`, `setup.py`) that builds into one or more nodes. |
+| **PID 1** | The first process in a container. `docker stop` sends its signal to it, so the node itself runs as PID 1. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
-| **ROS_DOMAIN_ID** | A number that separates ROS 2 networks, so teammates' nodes don't mix. |
 | **rosbag** | A file of recorded topic messages that can be replayed (`ros2 bag`). |
 | **rosdep** | A tool that installs the system dependencies a ROS 2 package declares. |
-| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
+| **ROS_DOMAIN_ID** | A number that separates ROS 2 networks, so teammates' nodes don't mix. |
 | **Shebang** | The first line of a script (`#!/usr/bin/python3`) that names the program that runs it. |
+| **SIGTERM** | The signal `docker stop` sends to ask a program to stop. The gesture nodes treat it like Ctrl+C: clean stop, exit code 0. |
+| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
+| **Stability filter** | The rule that a gesture must be seen in several packets in a row before it counts. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **UDP** | User Datagram Protocol: connectionless transport, used by the old recogniser and still accepted by `intent_node` (`input_source:=udp`). |
 | **venv** | A Python virtual environment; `drone/ground/gesture-venv` holds MediaPipe for `gesture_node`. |

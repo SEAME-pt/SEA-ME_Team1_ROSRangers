@@ -53,7 +53,7 @@ Status on 2026-10-21:
 | 6 | `flight_interface` | "How do we send it safely?" | ❌ | `drone/ground/src/flight_interface/` (only `info.md`) | ==🔴planned== | [[05 Future Nodes\|05]] §6, [[System Overview]] |
 | 7 | ESP8266 firmware | "How does it reach the FC?" | ❌ | `drone/firmware/esp8266/` (only `info.md`) | ==🔴planned== | [[Protocol Spec v0]] |
 
-Steps 1 to 4 are built: `intent_node` already existed, `mission_node` was created on 2026-10-19, and the recogniser became the ROS 2 node `gesture_node` on 2026-10-20 (the old `drone/tools/gesture/` folder was removed). `gesture_node` and `intent_node` were merged into `dev` on 2026-10-21 with their tests, Docker images and a `Makefile` (#78). `mission_node` is not in the repo yet. Everything after `/mission/velocity_target` is still a plan.
+Steps 1 to 3 are in `dev`: `intent_node` already existed, the recogniser became the ROS 2 node `gesture_node` on 2026-10-20 (the old `drone/tools/gesture/` folder was removed), and both were merged into `dev` on 2026-10-21 with their tests, Docker images and a `Makefile` (#78). Step 4, `mission_node`, was built on 2026-10-19 but is not committed yet. Everything after `/mission/velocity_target` is still a plan.
 
 > [!TIP] No ROS 2 install needed to run or test the gesture nodes
 > The Docker images bring ROS 2 Jazzy, OpenCV and MediaPipe. With Docker and a webcam, `cd drone/ground && make` builds and starts everything, and `make smoke` runs the full ROS 2 tests inside the images (§7, §8). A local Jazzy install is only needed to build and run the nodes natively.
@@ -103,7 +103,7 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 | A deliberate `OPEN_HAND_UP` is needed before anything moves (engage) | `mission_node` ([[04 Mission Node\|04]] §5.1) |
 | Hard speed limits (0.3 m/s lateral) and ramps when speeding up | `mission_node` ([[04 Mission Node\|04]] §5.5) |
 | Only the axes in the override mask are commanded | `mission_node` ([[04 Mission Node\|04]] §5.3) |
-| Never arm, disarm or change the override switch (SAF-03/04) | every node |
+| Never arm, disarm or change the override switch (REQ-SAF-003/004) | every node |
 
 `gesture_node` has **no** safety logic. It only reports what it sees. The values for the filter (packet count, timeouts) have one source: [[03 Intent Node|03]] §7.
 
@@ -118,7 +118,7 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 | Pipeline and contract tests (both nodes together) | `drone/tests/ros/` | pytest / unittest, ROS 2 for the pipeline tests |
 | `Makefile`, `docker-compose.yml`, `docker/` (Dockerfiles, `entrypoint.sh`, `smoke_test.sh`) | `drone/ground/` | host shell and Docker |
 | `mission_node` (ROS 2 package) | `MISSION_NODE_PACKAGE/` for now (not committed), later `drone/ground/src/mission_node/` | System Python with ROS 2 Jazzy |
-| `gesture-venv/`, `ros2_ws/` (`src/` symlinks, `build/`, `install/`, `log/`) | `drone/ground/`, **ignored by Git** | made by `make` on a PC with Jazzy ([[01 ROS2 Nodes Installation\|01]] §5) |
+| `gesture-venv/`, `ros2_ws/` (`src/` symlinks, `build/`, `install/`, `log/`) | `drone/ground/`, **ignored by Git** | made by `make` on a PC with Jazzy ([[01 ROS2 Nodes Installation\|01]] §6) |
 
 - `drone/tools/gesture/` (the standalone UDP prototype) was removed on 2026-10-20. Its code lives on in `gesture_node` ([[02 Gesture Node]] §9).
 - Natively, `gesture_node` must be built with the venv's Python and `intent_node` with the system Python. `make` does both ([[01 ROS2 Nodes Installation|01]] §6). In Docker each image has its own Python, so the problem does not exist.
@@ -357,14 +357,16 @@ Replacing the rule-based `recognize()` with a trained landmark classifier, and t
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). Here each node has an image with ROS 2 Jazzy inside. |
 | **Docker Compose** | Starts several containers from one file (`drone/ground/docker-compose.yml`). |
+| **HOVER_LAND_REQUEST** | The safe fallback intent of `intent_node`: hover and ask to land. Published before the first packet and when the hand or the recogniser is gone for more than 2 s. |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
 | **Makefile** | The `make` targets in `drone/ground/` that build, start and test the nodes (Docker and native). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8, 11 or 15). |
 | **MediaPipe** | A Google framework used here to find 21 hand landmarks in an image. |
 | **Mermaid** | A text-based diagram syntax rendered by Obsidian. |
 | **Node** | One ROS 2 program with one job. |
-| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages (`/gesture/raw`, `/gesture/intent`). |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data (the drone link; also the old recogniser before 2026-10-20). |
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
