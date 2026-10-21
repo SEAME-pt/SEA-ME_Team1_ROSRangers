@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sd-protocol"
+version = "0.0.1"
+description = "Python twin of the portable C++ protocol library (ADR-007)"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["sd_protocol*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
