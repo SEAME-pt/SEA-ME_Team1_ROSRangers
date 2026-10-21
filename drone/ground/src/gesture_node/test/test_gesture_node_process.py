@@ -39,13 +39,24 @@ except ImportError:
 # must not see these topics.
 TEST_DOMAIN_ID = 85
 FAKE_CAMERA = Path(__file__).with_name("fake_camera.py")
+# fake_camera.py runs as a script, so its sys.path starts at test/. Put the
+# package folder in front so `import gesture_node` works without colcon too.
+PACKAGE_DIR = FAKE_CAMERA.parent.parent
 
 
 class NodeProcess:
     """A node started as a subprocess, its output collected line by line."""
 
     def __init__(self, cmd):
-        env = dict(os.environ, ROS_DOMAIN_ID=str(TEST_DOMAIN_ID), PYTHONUNBUFFERED="1")
+        pythonpath = os.pathsep.join(
+            p for p in (str(PACKAGE_DIR), os.environ.get("PYTHONPATH")) if p
+        )
+        env = dict(
+            os.environ,
+            ROS_DOMAIN_ID=str(TEST_DOMAIN_ID),
+            PYTHONUNBUFFERED="1",
+            PYTHONPATH=pythonpath,
+        )
         self.proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env
         )
