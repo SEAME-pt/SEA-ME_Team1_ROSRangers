@@ -2,7 +2,7 @@
 title: Requirements
 type: plan
 status: active
-date: 2026-10-20
+date: 2026-10-21
 project: SEA autonomous drone
 tags:
   - plan
@@ -92,6 +92,8 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-016 | ESP8266 is safe and deterministic at power-up, reset and watchdog; no control forwarding until the start-up conditions are met. | [[PC_to_ESP]] (loss and failsafe) | test | HIL (power cycle, reset, watchdog) | accepted |
 | REQ-SAF-017 | Mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
 | REQ-SAF-018 | Mission node never commands an axis outside the active override mask. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-SAF-019 | `intent_node` never relays a stale gesture: hand gone > 0.3 s gives `NEUTRAL`; hand or packets gone > 2 s, or no packet yet, gives `HOVER_LAND_REQUEST`; no replay after a gap. | [[03 Intent Node]] §10 | test | unit + ROS node | draft |
+| REQ-SAF-020 | `intent_node` changes the intent only for a known gesture seen in 5 consecutive packets; no gesture maps to arm, disarm or the override switch. | [[03 Intent Node]] §10 | test + inspection | unit + ROS node | draft |
 
 ### Navigation (`REQ-NAV`)
 
@@ -113,6 +115,7 @@ Values proposed 2026-10-20 ([[ADR-016 Flow Sensor Path|ADR-016]] update). The te
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
 | REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode. | [[04 Mission Node]] (acceptance) | test | SITL | draft |
+| REQ-SW-002 | `/gesture/intent` is published at 20 Hz as a JSON string, whatever the input. | [[03 Intent Node]] §10 | test | ROS node | draft |
 
 ### Power (`REQ-PWR`)
 
