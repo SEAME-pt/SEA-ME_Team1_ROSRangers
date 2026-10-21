@@ -2,8 +2,6 @@
 
 namespace sd {
 
-std::uint8_t protocol_version() {
-  return 0;
-}
+std::uint8_t protocol_version() { return 0; }
 
-}  // namespace sd
+} // namespace sd
