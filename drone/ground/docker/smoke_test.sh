@@ -14,8 +14,12 @@
 # Own compose project and ROS domain, so a running `make up` stack (or
 # teammates on the network) is neither stopped nor mixed in.
 # Run from anywhere:  drone/ground/docker/smoke_test.sh
+# SMOKE_LOG_DIR=dir (CI sets it): save each container's full log there as
+# <container>.log, pass or fail. Unset (make smoke): no files are written.
 set -euo pipefail
 
+# Absolute before the cd below, so a relative SMOKE_LOG_DIR still works
+LOG_DIR=${SMOKE_LOG_DIR:+$(realpath -m "$SMOKE_LOG_DIR")}
 cd "$(dirname "$0")/.."
 export ROS_DOMAIN_ID=86 # tests use 81-85: `grep -r TEST_DOMAIN_ID src ../tests`
 PROJECT=ground-smoke
@@ -27,6 +31,14 @@ ECHO=$PROJECT-echo
 ROS=(--network host --ipc host -e ROS_DOMAIN_ID -e PYTHONUNBUFFERED=1)
 
 cleanup() {
+    # Save the logs first: removing the containers deletes them
+    if [[ -n $LOG_DIR ]]; then
+        mkdir -p "$LOG_DIR"
+        for container in "$INTENT" "$GESTURE" "$ECHO"; do
+            docker logs "$container" >"$LOG_DIR/$container.log" 2>&1 ||
+                rm -f "$LOG_DIR/$container.log" # never started
+        done
+    fi
     docker rm -f "$GESTURE" "$ECHO" >/dev/null 2>&1 || true
     $COMPOSE down >/dev/null 2>&1 || true
 }
