@@ -1,6 +1,7 @@
 import cv2 as opencv
-from .hand_processing import create_hands, detect_gesture, draw_hand
+
 from .gesture_sender import send_gesture
+from .hand_processing import create_hands, detect_gesture, draw_hand
 
 # Why the camera loop ended. gesture_node turns these into its exit code.
 QUIT = "quit"  # q pressed in the window
