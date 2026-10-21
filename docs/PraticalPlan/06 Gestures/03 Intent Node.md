@@ -2,7 +2,7 @@
 title: Intent_node (gesture name → operator intent)
 type: architecture
 status: draft
-date: 2026-10-20
+date: 2026-10-21
 project: SEA autonomous drone
 tags:
   - gestures
@@ -290,6 +290,18 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 - [ ] **Tests.** The node wrapper (subscriber, socket and timers) is only checked by hand. The filter has unit tests ([[Testing Strategy]]).
 - [ ] **Palm position.** `gesture_node` sends `xy = None`. Fill it if a later node needs it.
 - [ ] **Maintainer fields** in `package.xml` and `setup.py` are placeholders.
+
+---
+
+## 🔖 10. Requirement IDs
+
+Registered in [[Requirements]] on 2026-10-21. The tests that check each one are in brackets (`drone/ground/src/intent_node/test/`).
+
+| ID | Requirement |
+|---|---|
+| **REQ-SAF-019** | `intent_node` shall never relay a stale gesture: with the hand gone for more than 0.3 s it publishes `NEUTRAL`; with the hand or the packets gone for more than 2 s, or before the first packet, it publishes `HOVER_LAND_REQUEST`. A gesture is never replayed after a gap (`test_nothing_received_yet`, `test_no_hand_goes_neutral_then_hover_land`, `test_silent_sender_goes_neutral_then_hover_land`, `test_old_gesture_is_not_replayed_after_hand_gap`, `test_silence_goes_neutral_then_hover_land`). |
+| **REQ-SAF-020** | `intent_node` shall change the intent only for a known gesture seen in 5 consecutive packets (unknown or unconfirmed gestures give `NEUTRAL`), and no gesture shall map to arming, disarming or the override switch ([[Safety Rules]] #5) (`test_needs_five_consecutive_packets`, `test_unknown_gesture_is_neutral`, `test_no_gesture_arms_disarms_or_overrides`, `test_four_packets_are_not_enough`). |
+| **REQ-SW-002** | `/gesture/intent` shall be published at 20 Hz (`publish_rate_hz`) as a JSON string with the keys `intent`, `reason`, `gesture`, `t`, `xy`, whatever the input (`test_publishes_json_at_about_20_hz`). |
 
 ---
 
