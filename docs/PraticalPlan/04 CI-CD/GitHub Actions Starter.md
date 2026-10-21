@@ -2,7 +2,7 @@
 title: GitHub Actions Starter
 type: ci-cd
 status: draft
-date: 2026-10-20
+date: 2026-10-21
 project: SEA autonomous drone
 tags:
   - ci
@@ -13,6 +13,7 @@ tags:
 
 > [!warning] Status: STARTER. Adapt as the software repo grows.
 > Both workflow files parse as valid YAML (checked 2026-10-12). The real files are `.github/workflows/ci.yaml` and `hil.yaml` and they have run on GitHub; they have drifted from this first draft (paths now start with `drone/`, and each job is gated by a component check). Treat the repo files as the source of truth.
+> Added on 2026-10-21 (#73) and not shown below: the `ground-ros2` and `ground-docker` jobs, the PR path filter in `check-components`, `timeout-minutes` on every job, the `shellcheck` hook and the root `ruff.toml`. See [[CI-CD Overview]] §4.
 
 ---
 

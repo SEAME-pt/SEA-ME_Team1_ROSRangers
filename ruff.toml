@@ -1,0 +1,11 @@
+# Repo-wide ruff rules, run by pre-commit (ruff + ruff-format), issue #73.
+[lint]
+# pycodestyle errors and warnings, pyflakes, bugbear, import order
+select = ["E", "W", "F", "B", "I"]
+# ruff-format already wraps code at 88 columns; E501 would only flag long
+# comments and strings, which the formatter leaves alone
+ignore = ["E501"]
+
+[lint.isort]
+# Our packages, so they sort after rclpy/std_msgs and third-party imports
+known-first-party = ["gesture_node", "intent_node", "sd_protocol"]

@@ -1,8 +1,10 @@
 .obsidian/
-CLAUDE.md
-__pycache__/
-*.pyc
 .venv/
+__pycache__/
+*.csv
+*.bin
+.pytest_cache/
+config/
 
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/
