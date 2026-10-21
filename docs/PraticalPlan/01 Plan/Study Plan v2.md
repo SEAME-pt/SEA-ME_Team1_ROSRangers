@@ -15,7 +15,7 @@ tags: [plan]
 > [!summary] What changed from v1 (single learner, 8 weeks; archived in `Outdated/`)
 > - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner.
 > - Aligned to the **Module 1 deliverables**: architecture document, green CI (>80% coverage + HIL), real-time profile, sim-to-real report, E-stop under fault injection, sprint demos every 2 weeks.
-> - **Gestures are part of the plan.** The webcam prototype already exists ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
+> - **Gestures are part of the plan.** The webcam prototype already exists ([[02 Gesture Node|Gesture Recognition Program]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
 > - **Betaflight upgrade to 2026.6.2** in week 2, before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]]).
 > - ESP on **UART4**. ELRS stays on **UART2** ([[ADR-011 FC UART Allocation|ADR-011]]). **Custom ESP firmware** replaces AT 1.7.4.0 ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]).
 > - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]).
@@ -53,12 +53,12 @@ tags: [plan]
 - [x] Exposed pads listed: T1, R1, R2, R3, T4, R4, CAM, SCL, SDA, 5V, 3.3V, GND, DV5V
 - [x] Development process and Git workflow documented ([[Dev_Strategy]], Git Learning notes)
 - [x] Communication drafts written ([[PC_to_ESP]], [[ESP_to_FC]], [[ThoneFlow]])
-- [x] Static-gesture webcam prototype working ([[01 Gesture Recognition with OpenCV and MediaPipe|Gesture Recognition Program]])
+- [x] Static-gesture webcam prototype working ([[02 Gesture Node|Gesture Recognition Program]])
 - [x] Decisions accepted ([[Decision Register]])
 
 ### 2.2 To do in Sprint 0, week 2 (2026-10-12 to 2026-10-18)
 
-- [x] Safety induction done ([[Safety Rules]]); props-off rule agreed by all (GitHub #13, closed). Safety pilot: BrunoBMFT
+- [ ] Safety induction done ([[Safety Rules]]); props-off rule agreed by all
 - [x] Save `diff all` and `status` output in the software repo under `drone/config/betaflight/4.5.1/`
 - [x] Re-check the **barometer**: DPS310 detected (`status` 2026-10-14: `I2C:1`, 0 errors). Sensors tab altitude follows the board when raised/lowered (GitHub #15).
 - [x] Confirm the ELRS wires are on R2/T2 with a multimeter (2026-10-16, GitHub #16). T4/R4 continuity also OK; CAM/DV5V identified ([[Wiring and Pinout]] §1)
@@ -110,7 +110,7 @@ tags: [plan]
 - **C:** `flight_interface` lifecycle node: activate/deactivate, watchdog, an E-stop transition that cuts setpoints. Unit tests.
 - **A + B (props off):** run [[ESP_to_FC]] §11 Phases 1–5. MSP Override with mask **8** (yaw). Readback via `MSP_RC`. Pilot takeover. F1–F9 results recorded.
 - **D:** **HIL runner online**: flash the ESP from CI, run the props-off passthrough and failsafe-timing tests.
-- **E:** wrap the existing `gestures.py` into the recogniser process + `gesture_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
+- **E:** wrap the existing `gestures.py` into the recogniser process + `intent_node` ([[00 Gesture Pipeline|Gesture Pipeline]]). No drone yet.
 
 **Demo:** fault injection on the bench: kill the ground node, drop Wi-Fi, send garbage. Each must end in the defined safe state.
 
