@@ -53,10 +53,12 @@ class FilterTests(unittest.TestCase):
         self.send("INDEX_RIGHT", 5)
         self.assertEqual(self.intent(), "MOVE_RIGHT")
 
+    # REQ-SAF-019
     def test_nothing_received_yet(self):
         self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
         self.assertEqual(self.reason(), "no_packets_yet")
 
+    # REQ-SAF-020
     def test_needs_five_consecutive_packets(self):
         self.send("INDEX_RIGHT", 4)
         self.assertEqual(self.intent(), "NEUTRAL")
@@ -71,6 +73,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(self.intent(), "NEUTRAL")
 
     # --- the bug found in v1: an old gesture was replayed after a gap ---
+    # REQ-SAF-019
     def test_old_gesture_is_not_replayed_after_hand_gap(self):
         self.accept_right()
         self.f.update(packet(None))
@@ -79,6 +82,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "unconfirmed")
 
+    # REQ-SAF-019
     def test_old_gesture_is_not_replayed_even_if_same_gesture_returns(self):
         self.accept_right()
         self.clock.advance(0.5)
@@ -99,6 +103,7 @@ class FilterTests(unittest.TestCase):
         self.send("CLOSED_HAND", 3)
         self.assertEqual(self.intent(), "STOP_HOVER")
 
+    # REQ-SAF-019
     def test_no_hand_goes_neutral_then_hover_land(self):
         self.accept_right()
         self.send(None, 6)  # sender keeps sending "no hand" for 0.6 s
@@ -108,6 +113,7 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
         self.assertEqual(self.reason(), "no_hand_long")
 
+    # REQ-SAF-019
     def test_silent_sender_goes_neutral_then_hover_land(self):
         self.accept_right()
         self.clock.advance(0.5)
@@ -116,10 +122,17 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
         self.assertEqual(self.reason(), "no_packets")
 
+    # REQ-SAF-020
     def test_unknown_gesture_is_neutral(self):
         self.send("PEACE_SIGN", 6)
         self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "unmapped_gesture")
+
+    # REQ-SAF-020: gestures never arm, disarm or touch the override (Safety Rules #5)
+    def test_no_gesture_arms_disarms_or_overrides(self):
+        for gesture, intent in GESTURE_TO_INTENT.items():
+            words = set(intent.split("_"))
+            self.assertFalse(words & {"ARM", "DISARM", "OVERRIDE"}, gesture)
 
     def test_every_vocabulary_gesture_maps(self):
         for gesture, expected in GESTURE_TO_INTENT.items():

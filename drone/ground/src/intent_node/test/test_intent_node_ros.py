@@ -157,6 +157,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
     def close_input(self):
         pass
 
+    # REQ-SAF-019
     def test_starts_with_hover_land_before_any_packet(self):
         self.assertEqual(self.intents[0]["intent"], "HOVER_LAND_REQUEST")
         self.assertEqual(self.intents[0]["reason"], "no_packets_yet")
@@ -166,6 +167,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         self.wait_intent("MOVE_RIGHT", "ok")
         self.assertEqual(self.latest()["gesture"], "INDEX_RIGHT")
 
+    # REQ-SAF-020
     def test_four_packets_are_not_enough(self):
         self.send(packet("INDEX_RIGHT"), n=4)
         self.spin_for(0.2)
@@ -173,6 +175,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         self.assertEqual(self.latest()["reason"], "unconfirmed")
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents])
 
+    # REQ-SAF-019
     def test_silence_goes_neutral_then_hover_land(self):
         self.send(packet("INDEX_RIGHT"), n=5)
         self.wait_intent("MOVE_RIGHT")
@@ -182,6 +185,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         # Once the hand is gone the old gesture is never replayed
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents[start:]])
 
+    # REQ-SAF-019
     def test_no_hand_packets_go_neutral_then_hover_land(self):
         self.send(packet("INDEX_RIGHT"), n=5)
         self.wait_intent("MOVE_RIGHT")
@@ -216,6 +220,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         self.assertEqual(self.latest()["t"], 12.5)
         self.assertEqual(self.latest()["xy"], [0.25, 0.75])
 
+    # REQ-SW-002
     def test_publishes_json_at_about_20_hz(self):
         before = len(self.intents)
         self.spin_for(1.0)
