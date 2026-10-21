@@ -4,7 +4,7 @@
   <name>gesture_node</name>
   <version>0.1.0</version>
   <description>Reads the webcam (cv2.VideoCapture(0)), recognises hand gestures with MediaPipe and publishes them as JSON strings on /gesture/raw for intent_node.</description>
-  <maintainer email="you@example.com">Your Name</maintainer>
+  <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>

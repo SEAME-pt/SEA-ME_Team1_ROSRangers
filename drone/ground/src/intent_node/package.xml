@@ -4,7 +4,7 @@
   <name>intent_node</name>
   <version>0.2.0</version>
   <description>Receives hand-gesture JSON from gesture_node (/gesture/raw) or the standalone gestures.py (UDP), filters it safely and publishes an intent on /gesture/intent.</description>
-  <maintainer email="you@example.com">Your Name</maintainer>
+  <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>
