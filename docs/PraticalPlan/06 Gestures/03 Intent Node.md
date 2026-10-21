@@ -287,9 +287,9 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 - [ ] **Keep-alive rate.** The code uses 10 Hz (accept in about 0.4 s). An earlier version of the pipeline page said 5 Hz. Confirm 10 Hz with the team.
 - [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
 - [ ] **Log wording.** The logs still say `First packet from gestures.py` and `No packets from gestures.py` with the topic input too.
-- [ ] **Tests.** The node wrapper (subscriber, socket and timers) is only checked by hand. The filter has unit tests ([[Testing Strategy]]).
+- [x] **Tests.** The node wrapper (subscriber, socket and timers) has ROS node and process tests next to the filter's unit tests, with a 90 % coverage gate in CI ([[Testing Strategy]], 2026-10-21).
 - [ ] **Palm position.** `gesture_node` sends `xy = None`. Fill it if a later node needs it.
-- [ ] **Maintainer fields** in `package.xml` and `setup.py` are placeholders.
+- [x] **Maintainer fields** in `package.xml` and `setup.py` are filled in (2026-10-21).
 
 ---
 
