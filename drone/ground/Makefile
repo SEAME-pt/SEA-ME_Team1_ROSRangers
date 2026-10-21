@@ -7,6 +7,10 @@
 #   make fclean   clean + remove the venv, the workspace and Python caches,
 #                 leaving drone/ground/ as it was cloned
 #   make re       fclean, then all
+#   make test     every test: colcon test (unit + node) and drone/tests/ros
+#                 (pipeline). Without Jazzy: the unit tests only (= make unit)
+#   make unit     tests that need no ROS (ROS tests are skipped)
+#   make smoke    Docker smoke test (builds the images, intent -> MOVE_RIGHT)
 #
 # The native workspace follows docs/PraticalPlan/06 Gestures/00 Gesture Pipeline.md
 # (Step 0), but lives here instead of ~/ros2_ws and ~/gesture-venv:
@@ -20,12 +24,15 @@ ROS     := /opt/ros/jazzy/setup.bash
 VENV    := gesture-venv
 WS      := ros2_ws
 PKGS    := gesture_node intent_node
+E2E     := ../tests/ros
 
-# Teammates without Jazzy only get the containers
+# Teammates without Jazzy only get the containers and the unit tests
 ifneq ($(wildcard $(ROS)),)
 NATIVE  := ws
+TEST    := ros-test
 else
 NATIVE  := no-ros
+TEST    := unit
 endif
 
 all: $(NATIVE) up
@@ -62,6 +69,28 @@ $(WS)/.gesture_node: $(WS)/.src $(VENV)/.installed src/gesture_node/setup.py src
 no-ros:
 	@echo "ROS 2 Jazzy not found ($(ROS)): skipping venv and $(WS), running Docker only"
 
+# ---------- tests ----------
+
+test: $(TEST)
+
+# Same as CI's ground-ros2 job. The venv's Python runs them so gesture_node
+# finds MediaPipe; it also sees the system pytest and ROS.
+ros-test: ws
+	source $(ROS) && source $(WS)/install/setup.bash && source $(VENV)/bin/activate \
+		&& cd $(WS) \
+		&& python3 -m colcon test --packages-select $(PKGS) --event-handlers console_direct+ \
+		&& colcon test-result --verbose
+	source $(ROS) && source $(WS)/install/setup.bash && source $(VENV)/bin/activate \
+		&& python3 -m pytest $(E2E) -v
+
+unit:
+	cd src/intent_node && python3 -m unittest discover -s test -v
+	cd src/gesture_node && python3 -m unittest discover -s test -v
+	python3 -m unittest discover -s $(E2E) -v
+
+smoke:
+	docker/smoke_test.sh
+
 # ---------- Docker ----------
 
 up:
@@ -75,9 +104,9 @@ clean:
 	$(COMPOSE) down --rmi all --remove-orphans
 
 fclean: clean
-	rm -rf $(VENV) $(WS)
-	find src \( -name __pycache__ -o -name .pytest_cache -o -name '*.egg-info' \) -prune -exec rm -rf {} +
+	rm -rf $(VENV) $(WS) ../.pytest_cache
+	find src $(E2E) \( -name __pycache__ -o -name .pytest_cache -o -name '*.egg-info' \) -prune -exec rm -rf {} +
 
 re: fclean all
 
-.PHONY: all venv ws no-ros up down clean fclean re
+.PHONY: all venv ws no-ros test ros-test unit smoke up down clean fclean re
