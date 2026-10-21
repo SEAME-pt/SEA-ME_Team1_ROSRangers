@@ -55,6 +55,16 @@ Objetivos da semana
 Paulo - Investigar diff de latencias
 Bruno - Mais sinais.
 
+21/Oct - 12:26/12:34
+Problemas com a bateria no dia anterior. Ficamos sem uma bateria.(As duas equipas ficaram sem uma bateria - Total 2 baterias, 1 para cada equipa)
+Problemas com comando/bateria.
+Atualização possivel de firmware.
+Weekly hoje - Paulo vai
+Bruno - Continuar a ROS/Nodes - Containers
+Paulo - Continuação dos testes de latência.
+Guilherme - Ajudar os outros elementos.
+Tiago - Investigação dos parametros. Gazebo.
+
 
 ---
 
