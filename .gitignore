@@ -3,3 +3,7 @@ CLAUDE.md
 __pycache__/
 *.pyc
 .venv/
+
+# drone/ground Makefile: native venv and colcon workspace
+drone/ground/gesture-venv/
+drone/ground/ros2_ws/
