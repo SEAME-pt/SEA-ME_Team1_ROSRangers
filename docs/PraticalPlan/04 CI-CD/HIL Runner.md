@@ -72,7 +72,9 @@ The udev rule (replace the serial with the one from `udevadm info -a -n /dev/tty
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="<serial>", SYMLINK+="hil-esp", GROUP="dialout", MODE="0660"
 ```
 
-Gotcha: most D1 mini boards use a CH340 (`1a86:7523`). Ours shows up as an FTDI, so check `lsusb` before writing the rule.
+Gotcha: our ESP boards are ESP-12F dev boards (PlatformIO board `esp12e`) with an FTDI FT232R (`0403:6001`), not the CH340 (`1a86:7523`) that many ESP8266 boards use. Check `lsusb` before writing the rule.
+
+Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.4.1:8266`), and the Pi's only Wi-Fi is its internet link. USB flashing also recovers a build that broke OTA by itself, with no one at the bench.
 
 ## 4. First HIL tests (`drone/tests/hil/`)
 
