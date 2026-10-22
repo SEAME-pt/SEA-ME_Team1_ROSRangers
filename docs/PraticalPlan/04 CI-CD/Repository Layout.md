@@ -26,7 +26,7 @@ SEA-ME_Team1_ROSRangers/
 │   ├── config/
 │   │   └── betaflight/        # `diff all` and `status` baselines per Betaflight version
 │   ├── firmware/
-│   │   └── esp8266/           # PlatformIO, Arduino core, d1_mini (thin glue only)
+│   │   └── esp8266/           # PlatformIO, Arduino core, esp (thin glue only)
 │   │       └── backup/        # factory AT firmware backup notes (flash images are kept out of the repo)
 │   ├── lib/
 │   │   └── protocol/          # portable C++17 library (ADR-007): framing, MAC, seq window,

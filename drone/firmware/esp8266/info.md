@@ -1,1 +1,1 @@
-PlatformIO, Arduino/PI core, d1_mini
+PlatformIO, Arduino/PI core, esp

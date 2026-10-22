@@ -90,7 +90,7 @@ tags: [plan]
 | A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). |
 | B | *Changed 2026-10-20: the ESP is already soldered (incident #69), and the soldered link loses 0.7–3.7 % against 0 % before (#30).* **Find the cause of the loss, cheapest check first** (10 min each, near): FC on USB with the radio off → radio on and bound → ESP antenna turned away from the frame. Finish S2-02, S2-06 and S1-08 (ESP current) on the soldered link. Post the [[ESP_to_FC]] §10 joint evidence (#69). Agree the pass threshold (OD-22, #63). Props off ([[Safety Rules]] #13). |
 | C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. Decide the telemetry set (FC-12, #63) by 2026-10-23. Develop against the FC USB link or a recorded log, so C does not wait for B's fix. |
-| D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `d1_mini`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |
+| D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `esp`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |
 | E | Measure Wi-Fi ↔ ELRS coexistence **with Track B, as part of the #30 runs**: Wi-Fi channels 1/6/11, log ELRS LQ from the OSD. Keep the PX4 SITL work going in parallel. |
 | All | **One drone for A, B and D.** Book it with the daily drone schedule in [[Weekly Rituals]]. |
 
@@ -177,7 +177,7 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
 | **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
 | **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

@@ -9,7 +9,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | Path | What |
 |---|---|
 | `docs/` | Documentation vault (see "Where to look in the docs") |
-| `drone/firmware/esp8266/` | ESP firmware (PlatformIO, env `d1_mini`, `d1_mini_ota`) |
+| `drone/firmware/esp8266/` | ESP firmware (PlatformIO, env `esp`, `esp_ota`) |
 | `drone/lib/protocol/` | C++ protocol library (CMake + GoogleTest, shared with firmware) |
 | `drone/ground/src/sd_protocol_py/` | Python implementation of the same protocol |
 | `drone/ground/src/flight_interface/` | ROS 2 lifecycle node (ground ↔ drone) |

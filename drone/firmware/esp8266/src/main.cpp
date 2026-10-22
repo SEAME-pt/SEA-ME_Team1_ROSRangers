@@ -9,7 +9,7 @@
 #error "Secrets missing: secrets.py did not run (see platformio.ini)"
 #endif
 
-// Bench diagnosis of the Wi-Fi latency (envs d1_mini_diag_*): each part of the
+// Bench diagnosis of the Wi-Fi latency (envs esp_diag_*): each part of the
 // firmware can be left out. The normal firmware has all three.
 #ifndef WITH_OTA
 #define WITH_OTA 1

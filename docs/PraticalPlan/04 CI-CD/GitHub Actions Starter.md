@@ -88,13 +88,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install platformio
-      - run: pio run -d firmware/esp8266 -e d1_mini
+      - run: pio run -d firmware/esp8266 -e esp
         env:
           SD_PSK: ${{ secrets.SD_PSK_CI }}
       - uses: actions/upload-artifact@v4
         with:
           name: esp-firmware
-          path: firmware/esp8266/.pio/build/d1_mini/firmware.bin
+          path: firmware/esp8266/.pio/build/esp/firmware.bin
 
   betaflight-sitl:
     needs: [protocol-cpp, ground-python]
@@ -143,13 +143,13 @@ jobs:
         run: |
           python3 -m venv .venv && . .venv/bin/activate
           pip install platformio pytest pyserial
-          pio run -d firmware/esp8266 -e d1_mini
+          pio run -d firmware/esp8266 -e esp
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
       - name: Flash the bench ESP over the air (USB data never touches UART0)
         run: |
           . .venv/bin/activate
-          pio run -d firmware/esp8266 -e d1_mini_ota -t upload
+          pio run -d firmware/esp8266 -e esp_ota -t upload
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
@@ -164,7 +164,7 @@ jobs:
 ## 3. `firmware/esp8266/platformio.ini`
 
 ```ini
-[env:d1_mini]
+[env:esp]
 platform = espressif8266
 board = d1_mini
 framework = arduino
@@ -176,13 +176,13 @@ build_flags =
     -DSD_PSK=\"${sysenv.SD_PSK}\"
 
 ; Over-the-air upload, used by the HIL job (USB data never touches UART0 there)
-[env:d1_mini_ota]
-extends = env:d1_mini
+[env:esp_ota]
+extends = env:esp
 upload_protocol = espota
 upload_port = 192.168.4.1
 ```
 
-`d1_mini` uploads over USB (first flash or recovery, **FC wires unplugged**). `d1_mini_ota` uploads over Wi-Fi.
+`esp` uploads over USB (first flash or recovery, **FC wires unplugged**). `esp_ota` uploads over Wi-Fi.
 
 ## 4. `.pre-commit-config.yaml` (start)
 

@@ -155,7 +155,7 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

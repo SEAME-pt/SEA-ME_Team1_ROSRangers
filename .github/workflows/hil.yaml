@@ -49,14 +49,14 @@ jobs:
       - name: Build firmware for OTA
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e d1_mini_ota
+          pio run -d drone/firmware/esp8266 -e esp_ota
         env:
           SD_PSK: ${{ secrets.SD_PSK_HIL }}
 
       - name: Flash the bench ESP over the air
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e d1_mini_ota -t upload
+          pio run -d drone/firmware/esp8266 -e esp_ota -t upload
 
       - name: Bench tests (no battery, no props)
         run: |
