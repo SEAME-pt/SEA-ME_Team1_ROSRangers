@@ -3,6 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
+updated: 2026-10-21
 project: SEA autonomous drone
 tags:
   - gestures
@@ -20,7 +21,7 @@ aliases:
 `mission_node` (v0.1) is the second ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It reads what the operator wants from `/gesture/intent` ([[03 Intent Node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
 
 > [!WARNING] Status: DRAFT. Built and tested on real ROS 2 Jazzy, not reviewed yet
-> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[01 ROS2 Nodes Installation|01]] §12). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[02 Gesture Node]]); that chain has not run with `mission_node` yet.
+> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[01 ROS2 Nodes Installation|01]] §13). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[02 Gesture Node]]); that chain has not run with `mission_node` yet.
 > - It lives in **`MISSION_NODE_PACKAGE/`** at the repo root **for now**. Its final place is `drone/ground/src/mission_node/` ([[00 Gesture Pipeline]] §5). Only the folder moves. The package name stays `mission_node`.
 > - Topic names, `/flight/state` fields and every number are still **proposals**. The team must agree them (§13). Choices made while coding are listed in §11 for review. Nothing here changes an accepted ADR.
 > - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). Never use it with a real drone.
@@ -253,7 +254,7 @@ The node never disarms. Touchdown and disarm stay with the pilot or the Betaflig
 
 ### 5.6 Things it never does
 
-- It never arms, disarms or touches any AUX channel or the override switch (SAF-03/04, [[ADR-015 Gesture Input Source|ADR-015]]).
+- It never arms, disarms or touches any AUX channel or the override switch (REQ-SAF-003/004, [[ADR-015 Gesture Input Source|ADR-015]]).
 - It never keeps moving on stale, unknown or bad input.
 - It never sends a target above the limits or the hard ceilings, whatever the parameters say.
 - It never stops publishing while it runs. On Ctrl+C it publishes one last zero target before it exits.
@@ -421,14 +422,14 @@ The unit test `test_demo_sequence` plays this same script through `mission_logic
 
 ## 🔨 8. Build
 
-Same steps as `intent_node` ([[01 ROS2 Nodes Installation|01]] §5–6). The workspace `~/ros2_ws` lives outside the repo and `src/` holds symlinks:
+Same steps as `intent_node` ([[01 ROS2 Nodes Installation|01]] §6). Since 2026-10-21 the workspace is `drone/ground/ros2_ws`, made by `make ws` (ignored by Git). `src/` holds symlinks; `make ws` links `gesture_node` and `intent_node`, and `mission_node` is added by hand. `mission_node` has no Docker image yet, so it needs a local ROS 2 Jazzy:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
-ln -s ~/ROSRangers/MISSION_NODE_PACKAGE ~/ros2_ws/src/mission_node            # symlink, not a copy
-ln -s ~/ROSRangers/drone/ground/src/intent_node ~/ros2_ws/src/intent_node   # if not done yet
+cd ~/ROSRangers/drone/ground && make ws                                            # if not done yet
+ln -sfn ~/ROSRangers/MISSION_NODE_PACKAGE ros2_ws/src/mission_node                 # symlink, not a copy; make fclean removes it
 
-cd ~/ros2_ws
+cd ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --packages-select intent_node mission_node --symlink-install
 source install/setup.zsh
@@ -436,7 +437,7 @@ ros2 pkg executables mission_node
 ```
 
 > [!NOTE] Using bash?
-> Replace `setup.zsh` with `setup.bash` everywhere on this page ([[01 ROS2 Nodes Installation|01]] §4).
+> Replace `setup.zsh` with `setup.bash` everywhere on this page ([[01 ROS2 Nodes Installation|01]] §5.4).
 
 Expected: `Summary: 2 packages finished`, then:
 
@@ -449,13 +450,13 @@ mission_node mission_node
 - `~/ROSRangers` is wherever you cloned the repo.
 - When the package moves to `drone/ground/src/mission_node/`, delete the symlink and point a new one there. Nothing else changes.
 - Rebuild after changing `setup.py` or `package.xml`, or after **adding** a launch file. Edits to existing Python and launch files take effect without a rebuild (`--symlink-install`).
-- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[01 ROS2 Nodes Installation|01]] §6.3).
+- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[01 ROS2 Nodes Installation|01]] §6.4).
 
 Every ROS terminal below starts with:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
-source ~/ros2_ws/install/setup.zsh
+source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh
 ```
 
 ---
@@ -521,7 +522,7 @@ The launch file starts `intent_node`, `fake_flight_state` and `mission_node`. It
 
 ### 9.3 With `intent_node` and the webcam (`gesture_node`)
 
-As 9.2, but terminal 3 is the real recogniser, built as in [[01 ROS2 Nodes Installation|01]] §6.3:
+As 9.2, but terminal 3 is the real recogniser, built as in [[01 ROS2 Nodes Installation|01]] §6:
 
 ```bash
 ros2 run gesture_node gesture_node    # on Wayland: QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node
@@ -545,7 +546,7 @@ python3 -m unittest discover -s test -v      # 35 tests, all OK
 Or with colcon:
 
 ```bash
-cd ~/ros2_ws
+cd ~/ROSRangers/drone/ground/ros2_ws
 colcon test --packages-select mission_node && colcon test-result --verbose
 ```
 
@@ -600,7 +601,7 @@ Real-drone use is a **stretch** goal (week 7), only at low limits, with the pilo
 
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
-| `Package 'mission_node' not found` | workspace not loaded or not built | `source ~/ros2_ws/install/setup.zsh`, rerun `colcon build` |
+| `Package 'mission_node' not found` | workspace not loaded or not built | `source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh`, rerun `colcon build` |
 | `file 'mission_demo.launch.py' was not found` | built before the launch files existed | rebuild once: new launch files are only installed by `colcon build` |
 | Mode stays `IDLE` / `no_flight_state` | `fake_flight_state` not running | start it, or use a launch file |
 | Mode stays `READY` with an open hand | the hand was already open when the node became `READY` | close it or take it away, then show it again (§5.1) |
@@ -608,7 +609,7 @@ Real-drone use is a **stretch** goal (week 7), only at low limits, with the pilo
 | Goes `LAND_REQUEST` between manual commands | gaps over 2 s between `ros2 topic pub` runs | use `fake_intent` `constant` mode (§9.1) |
 | Intents jump between two values | `fake_intent` and `intent_node` both running | run only one of them |
 | `ros2 topic echo` says `Could not determine the type` | the echo started before the node | start it after, or give the type: `ros2 topic echo /mission/velocity_target geometry_msgs/msg/TwistStamped` |
-| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals | export the same value everywhere ([[01 ROS2 Nodes Installation\|01]] §4.7) |
+| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals | export the same value everywhere ([[01 ROS2 Nodes Installation\|01]] §5.7) |
 
 ---
 
@@ -658,7 +659,7 @@ To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each 
 - [ ] **Mission vs controller in one node?** [[System Overview]] draws "mission / controller" as one box. This page keeps them apart. Confirm in the architecture review.
 - [ ] **Launch files and parameters** should move to a `gesture_bringup` package with one reviewed YAML ([[05 Future Nodes]] §11).
 - [ ] **Node wrapper tests.** `mission_logic.py` has unit tests. The ROS wrapper (`mission_node.py`) is only checked by hand (Levels 1–2). A `launch_testing` test could automate Level 1.
-- [ ] **CI.** `ci.yaml` does not run these tests yet ([[Testing Strategy]]).
+- [ ] **CI.** `ci.yaml` does not run these tests yet ([[Testing Strategy]]). `gesture_node` and `intent_node` have their CI jobs since #78; `mission_node` needs to be committed to `drone/ground/src/mission_node/` first, then added to `ground-ros2` and given a Docker image like the other two ([[01 ROS2 Nodes Installation|01]] §4, §10).
 - [ ] **Maintainer fields** in `package.xml` and `setup.py` are placeholders.
 
 ---

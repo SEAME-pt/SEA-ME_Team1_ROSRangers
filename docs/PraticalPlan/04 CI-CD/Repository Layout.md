@@ -34,20 +34,24 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── src/
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
-│   ├── ground/                # ROS 2 Jazzy workspace (colcon)
+│   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
+│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke
+│   │   ├── docker-compose.yml # gesture, intent, echo services (no local ROS 2 needed)
+│   │   ├── docker/            # one Dockerfile per service, entrypoint.sh, smoke_test.sh
 │   │   └── src/
 │   │       ├── sd_protocol_py/   # Python twin of lib/protocol
-│   │       ├── flight_interface/ # lifecycle node (real + PX4 backends)
-│   │       └── gesture_node/     # talks to the MediaPipe recogniser process
+│   │       ├── flight_interface/ # lifecycle node (real + PX4 backends), only info.md so far
+│   │       ├── gesture_node/     # webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
+│   │       └── intent_node/      # /gesture/raw -> safety filter -> /gesture/intent
 │   ├── simulation/
 │   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
 │   ├── tools/
-│   │   ├── gesture/           # MediaPipe recogniser in its own venv (see 06 Gestures)
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
 │   └── tests/
 │       ├── vectors/           # golden vectors shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
 │       ├── hil/               # pytest suites run on the self-hosted runner
+│       ├── ros/               # gesture_node + intent_node together: contract and pipeline tests
 │       └── tools/             # (target, #60) unit tests of the bench tools, now in tests/scripts/
 ├── docs/                      # Obsidian vault (plan, ADRs, architecture, hardware, process)
 ├── scripts/                   # repo tooling only: sync-labels.sh
@@ -67,6 +71,9 @@ SEA-ME_Team1_ROSRangers/
 > [!note] Until #60 lands
 > The bench tools sit in `scripts/` and their tests in `tests/scripts/`.
 
+> [!note] Generated, not committed
+> `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §6).
+
 ## 2. Rule for testability
 
 Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs in `drone/lib/protocol/`, where it gets unit tests and coverage.
@@ -81,6 +88,7 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
+| **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |

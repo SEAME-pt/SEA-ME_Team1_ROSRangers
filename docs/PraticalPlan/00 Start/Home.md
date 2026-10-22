@@ -47,7 +47,7 @@ tags:
 | Ground ↔ ESP link | [[PC_to_ESP]] |
 | ESP ↔ FC link | [[ESP_to_FC]] |
 | Optical flow | [[ThoneFlow]] |
-| Gesture prototype | [[02 Gesture Node|Gesture Recognition Program]] |
+| Gesture recogniser | [[02 Gesture Node|Gesture Node]] |
 
 ## 3. The five things to remember
 

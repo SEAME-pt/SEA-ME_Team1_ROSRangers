@@ -3,6 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
+updated: 2026-10-21
 project: SEA autonomous drone
 tags:
   - gestures
@@ -38,20 +39,24 @@ flowchart LR
   E -->|"MSP over UART"| FC[Betaflight FC]
 ```
 
-Status on 2026-10-20:
+Status on 2026-10-21:
 
 | Step | Piece | Question it answers | Built? | Where | Status | Note |
 | :---: | :--- | :--- | :---: | :--- | :--- | :--- |
-| 1 | `gesture_node` (`gestures.py` + `hand_processing.py` inside) | "Which hand pose is this?" | ✅ | `drone/ground/src/gesture_node/` | ==🟠just created (2026-10-20)==: 6 unit tests; recognition code unchanged from the working prototype; first full run not recorded yet | [[02 Gesture Node\|02]] |
-| 2 | `/gesture/raw` (`gesture_sender.py` in `gesture_node`) | "How does the pose reach `intent_node`?" | ✅ | `drone/ground/src/gesture_node/` | ==🟠new==: replaced UDP on 2026-10-20 | [[02 Gesture Node\|02]] §8 |
-| 3 | `intent_node` | "What does the **operator** want?" | ✅ | `drone/ground/src/intent_node/` | ==🟢already exists==: 17 unit tests, built and run on ROS 2 Jazzy. Reads `/gesture/raw` with `input_source:=topic` | [[03 Intent Node\|03]] |
+| 1 | `gesture_node` (`gestures.py` + `hand_processing.py` inside) | "Which hand pose is this?" | ✅ | `drone/ground/src/gesture_node/` | ==🟢in `dev` (#78, 2026-10-21)==: 56 tests (unit, node, process), Docker image `rosrangers/gesture:jazzy`. First webcam run not recorded yet | [[02 Gesture Node\|02]] |
+| 2 | `/gesture/raw` (`gesture_sender.py` in `gesture_node`) | "How does the pose reach `intent_node`?" | ✅ | `drone/ground/src/gesture_node/` | ==🟢in `dev`==: replaced UDP on 2026-10-20 | [[02 Gesture Node\|02]] §8 |
+| 3 | `intent_node` | "What does the **operator** want?" | ✅ | `drone/ground/src/intent_node/` | ==🟢in `dev` (#78)==: 48 tests (unit, node, process), Docker image `rosrangers/intent:jazzy`. Reads `/gesture/raw` with `input_source:=topic` | [[03 Intent Node\|03]] |
+| 1–3 | pipeline tests, Docker smoke test | "Do the two nodes work together?" | ✅ | `drone/tests/ros/`, `drone/ground/docker/smoke_test.sh` | ==🟢in CI== (`ground-ros2`, `ground-docker`) | §8 |
 | 4 | `mission_node` | "What should the **drone** do now?" | ✅ | `MISSION_NODE_PACKAGE/` (for now) | ==🟠just created (2026-10-19)==: 35 unit tests, built and run on Jazzy alone and with `intent_node`. Not reviewed yet | [[04 Mission Node\|04]] |
 | 4a | `fake_flight_state`, `fake_intent` (in `mission_node`) | "Can we test without a drone?" | ✅ | `MISSION_NODE_PACKAGE/` | ==🟠pretend inputs, tests only==. `fake_flight_state` stands in for `/flight/state` until `flight_interface` exists | [[04 Mission Node\|04]] §7 |
 | 5 | controller + estimator | "Which attitude gives that velocity?" | ❌ | — | ==🔴planned== (Module 1, week 5) | [[05 Future Nodes\|05]] §5 |
 | 6 | `flight_interface` | "How do we send it safely?" | ❌ | `drone/ground/src/flight_interface/` (only `info.md`) | ==🔴planned== | [[05 Future Nodes\|05]] §6, [[System Overview]] |
 | 7 | ESP8266 firmware | "How does it reach the FC?" | ❌ | `drone/firmware/esp8266/` (only `info.md`) | ==🔴planned== | [[Protocol Spec v0]] |
 
-Steps 1 to 4 are built: `intent_node` already existed, `mission_node` was created on 2026-10-19, and the recogniser became the ROS 2 node `gesture_node` on 2026-10-20 (the old `drone/tools/gesture/` folder was removed). Everything after `/mission/velocity_target` is still a plan.
+Steps 1 to 3 are in `dev`: `intent_node` already existed, the recogniser became the ROS 2 node `gesture_node` on 2026-10-20 (the old `drone/tools/gesture/` folder was removed), and both were merged into `dev` on 2026-10-21 with their tests, Docker images and a `Makefile` (#78). Step 4, `mission_node`, was built on 2026-10-19 but is not committed yet. Everything after `/mission/velocity_target` is still a plan.
+
+> [!TIP] No ROS 2 install needed to run or test the gesture nodes
+> The Docker images bring ROS 2 Jazzy, OpenCV and MediaPipe. With Docker and a webcam, `cd drone/ground && make` builds and starts everything, and `make smoke` runs the full ROS 2 tests inside the images (§7, §8). A local Jazzy install is only needed to build and run the nodes natively.
 
 ---
 
@@ -59,8 +64,8 @@ Steps 1 to 4 are built: `intent_node` already existed, `mission_node` was create
 
 | Note | What it covers |
 | :--- | :--- |
-| **00 Gesture Pipeline** (this page) | The whole chain, the gesture vocabulary, the safety rules, where the files live, how to test `gesture_node` + `intent_node` (§8) |
-| [[01 ROS2 Nodes Installation]] | What ROS 2 and nodes are, installing ROS 2 Jazzy, setting up `~/ros2_ws`, building, running and testing each node (including `/gesture/raw` and `/gesture/intent`) |
+| **00 Gesture Pipeline** (this page) | The whole chain, the gesture vocabulary, the safety rules, where the files live, how to run (§7) and test (§8) `gesture_node` + `intent_node` |
+| [[01 ROS2 Nodes Installation]] | What ROS 2 and nodes are, running the nodes in Docker or natively with `make`, installing ROS 2 Jazzy, the workspace, building, running and testing each node (including `/gesture/raw` and `/gesture/intent`), the automated tests |
 | [[02 Gesture Node]] | The recogniser node `gesture_node`: why it is a ROS 2 node, how OpenCV and MediaPipe find the hand, the math, the gesture names, `/gesture/raw`, the venv, the code, tuning |
 | [[03 Intent Node]] | The `intent_node`: inputs, outputs, filter rules, parameters |
 | [[04 Mission Node]] | The `mission_node`: modes, intent → velocity, axis masking, land requests, pretend inputs, how to run and test it |
@@ -98,7 +103,7 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 | A deliberate `OPEN_HAND_UP` is needed before anything moves (engage) | `mission_node` ([[04 Mission Node\|04]] §5.1) |
 | Hard speed limits (0.3 m/s lateral) and ramps when speeding up | `mission_node` ([[04 Mission Node\|04]] §5.5) |
 | Only the axes in the override mask are commanded | `mission_node` ([[04 Mission Node\|04]] §5.3) |
-| Never arm, disarm or change the override switch (SAF-03/04) | every node |
+| Never arm, disarm or change the override switch (REQ-SAF-003/004) | every node |
 
 `gesture_node` has **no** safety logic. It only reports what it sees. The values for the filter (packet count, timeouts) have one source: [[03 Intent Node|03]] §7.
 
@@ -108,130 +113,158 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 
 | File or folder | Repo path | Runs in |
 | :--- | :--- | :--- |
-| `gesture_node` (ROS 2 package: `gestures.py`, `hand_processing.py`, `gesture_sender.py`, `gesture_node.py`, `requirements.txt`) | `drone/ground/src/gesture_node/` | Venv `~/gesture-venv` (Python 3.12, MediaPipe, OpenCV, `--system-site-packages` so it also sees ROS 2) |
-| `intent_node` (ROS 2 package) | `drone/ground/src/intent_node/` | System Python with ROS 2 Jazzy |
-| `mission_node` (ROS 2 package) | `MISSION_NODE_PACKAGE/` for now, later `drone/ground/src/mission_node/` | System Python with ROS 2 Jazzy |
-| `~/ros2_ws/` (`build/`, `install/`, `log/`) | **Host PC, outside the repo** | Build output of colcon ([[01 ROS2 Nodes Installation\|01]] §5) |
+| `gesture_node` (ROS 2 package: `gestures.py`, `hand_processing.py`, `gesture_sender.py`, `gesture_node.py`, `requirements.txt`, `test/`) | `drone/ground/src/gesture_node/` | Docker image `rosrangers/gesture:jazzy`, or natively the venv `drone/ground/gesture-venv` (Python 3.12, MediaPipe, OpenCV, `--system-site-packages` so it also sees ROS 2) |
+| `intent_node` (ROS 2 package, `test/`) | `drone/ground/src/intent_node/` | Docker image `rosrangers/intent:jazzy`, or natively the system Python with ROS 2 Jazzy |
+| Pipeline and contract tests (both nodes together) | `drone/tests/ros/` | pytest / unittest, ROS 2 for the pipeline tests |
+| `Makefile`, `docker-compose.yml`, `docker/` (Dockerfiles, `entrypoint.sh`, `smoke_test.sh`) | `drone/ground/` | host shell and Docker |
+| `mission_node` (ROS 2 package) | `MISSION_NODE_PACKAGE/` for now (not committed), later `drone/ground/src/mission_node/` | System Python with ROS 2 Jazzy |
+| `gesture-venv/`, `ros2_ws/` (`src/` symlinks, `build/`, `install/`, `log/`) | `drone/ground/`, **ignored by Git** | made by `make` on a PC with Jazzy ([[01 ROS2 Nodes Installation\|01]] §6) |
 
 - `drone/tools/gesture/` (the standalone UDP prototype) was removed on 2026-10-20. Its code lives on in `gesture_node` ([[02 Gesture Node]] §9).
-- `gesture_node` must be built with the venv's Python, `intent_node` with the system Python ([[01 ROS2 Nodes Installation|01]] §6).
+- Natively, `gesture_node` must be built with the venv's Python and `intent_node` with the system Python. `make` does both ([[01 ROS2 Nodes Installation|01]] §6). In Docker each image has its own Python, so the problem does not exist.
 
 ---
 
 ## 📌 6. Version notes (verified 2026-10-12)
 
 > [!WARNING] Keep `mediapipe==0.10.21` pinned
-> It is the last version with the legacy `mp.solutions.hands` API that our code uses, and it works on Ubuntu 24.04 / Python 3.12. MediaPipe 1.1.0 (6 Oct 2026) **removed** `mp.solutions`, so upgrading needs a port to the Tasks API (`HandLandmarker`). Details: [[02 Gesture Node|02]] §3.
+> It is the last version with the legacy `mp.solutions.hands` API that our code uses, and it works on Ubuntu 24.04 / Python 3.12. MediaPipe 1.1.0 (6 Oct 2026) **removed** `mp.solutions`, so upgrading needs a port to the Tasks API (`HandLandmarker`). Details: [[02 Gesture Node|02]] §3. `requirements.txt` also pins `opencv-python==4.11.0.86`, the same version as the `opencv-contrib-python` that MediaPipe pulls in.
 
 ---
 
 ## ▶️ 7. Quick start
 
-First time, nothing built yet? Follow §8 Step 0: it installs, builds and runs everything terminal by terminal. The full steps are in [[01 ROS2 Nodes Installation|01]]. The short version, with ROS 2 Jazzy and the workspace already built (§6 there), and both `source` lines in every terminal:
+Everything runs from `drone/ground/` with `make`. ROS 2 Jazzy does **not** have to be installed: the Docker images contain ROS 2, OpenCV and MediaPipe, and the `Makefile` builds and starts them. Full details: [[01 ROS2 Nodes Installation|01]] §4.
 
-| Terminal | Command                                                                                                                                   |
-| :------: | :---------------------------------------------------------------------------------------------------------------------------------------- |
-|    1     | `ros2 run intent_node intent_node --ros-args -p input_source:=topic`                                                                      |
-|    2     | `ros2 run gesture_node gesture_node` (to test without a camera, use the fake publisher in [[01 ROS2 Nodes Installation\|01]] §9, Level 0) |
-|    3     | `python3 ~/gesture_watch.py` (both topics, one line per change) or `ros2 topic echo /gesture/intent --field data`                         |
+| You have | Run | What happens |
+| :--- | :--- | :--- |
+| Docker + a webcam, **no ROS** | `cd ~/ROSRangers/drone/ground && make` | builds the images and starts `gesture`, `intent` and `echo` with `docker compose up --build`. A "Gestures" window opens; the `echo` lines show `/gesture/intent` |
+| Docker + a webcam + ROS 2 Jazzy | same `make` | also builds the venv and the workspace in `drone/ground/` (so you can run the nodes natively later), then starts the same containers |
+| ROS 2 Jazzy, natively | `make ws`, then the three terminals below | builds only the venv and the workspace |
 
-With `mission_node` too (its launch file must pass `input_source: topic` to `intent_node`, [[04 Mission Node|04]] §9.2): terminal 1 becomes `ros2 launch mission_node mission_with_gestures.launch.py` and terminal 2 `ros2 topic echo /mission/state --field data`. To run `mission_node` alone with pretend values: `ros2 launch mission_node mission_demo.launch.py` ([[04 Mission Node|04]] §9).
+| `make` target | Does |
+| :--- | :--- |
+| `make` | venv + workspace (only if Jazzy is installed), then the three containers |
+| `make down` | stops the containers |
+| `make unit` / `make test` / `make smoke` | the tests (§8 Step 1) |
+| `make clean` | `down` + removes this project's Docker images |
+| `make fclean` / `make re` | `clean` + removes the venv, the workspace and Python caches / `fclean`, then `make` |
+
+Press `q` in the "Gestures" window to stop `gesture_node`, and Ctrl+C (or `make down` in another terminal) to stop the rest.
+
+**Natively**, after `make ws`, with `source /opt/ros/jazzy/setup.zsh` and `source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh` in every terminal:
+
+| Terminal | Command |
+| :------: | :--- |
+| 1 | `ros2 run intent_node intent_node --ros-args -p input_source:=topic` |
+| 2 | `ros2 run gesture_node gesture_node` (to test without a camera, use the fake publisher in [[01 ROS2 Nodes Installation\|01]] §9, Level 0) |
+| 3 | `python3 ~/gesture_watch.py` (both topics, one line per change) or `ros2 topic echo /gesture/intent --field data` |
+
+With `mission_node` too (its launch file must pass `input_source: topic` to `intent_node`, [[04 Mission Node|04]] §9.2): terminal 1 becomes `ros2 launch mission_node mission_with_gestures.launch.py` and terminal 2 `ros2 topic echo /mission/state --field data`. To run `mission_node` alone with pretend values: `ros2 launch mission_node mission_demo.launch.py` ([[04 Mission Node|04]] §9). `mission_node` has no Docker image yet.
 
 ---
 
 ## 🧪 8. Test the nodes built so far: `gesture_node` + `intent_node`
 
-Do the steps in order: each one proves one more link, so the first step that fails tells you where the problem is. The full checklists are in [[01 ROS2 Nodes Installation|01]] §9. How to read each topic: [[02 Gesture Node|02]] §8 (`/gesture/raw`) and [[03 Intent Node|03]] §4 (`/gesture/intent`).
+Do the steps in order: each one proves one more link, so the first step that fails tells you where the problem is. Step 1 is automated and also runs in CI. Steps 2–5 are manual checks with the real nodes. The full checklists are in [[01 ROS2 Nodes Installation|01]] §9. How to read each topic: [[02 Gesture Node|02]] §8 (`/gesture/raw`) and [[03 Intent Node|03]] §4 (`/gesture/intent`).
 
 ```mermaid
 flowchart LR
-  T0["Step 0<br/>set up + run<br/>(3 terminals)"] --> T1["Step 1<br/>unit tests"]
+  T0["Step 0<br/>set up + run"] --> T1["Step 1<br/>automated tests<br/>(make unit / test / smoke)"]
   T1 --> T2["Step 2<br/>fake /gesture/raw<br/>→ intent_node"]
   T2 --> T3["Step 3<br/>gesture_node alone<br/>(webcam)"]
   T3 --> T4["Step 4<br/>gesture_node → intent_node"]
   T4 --> T5["Step 5<br/>safety checks"]
 ```
 
-### Step 0: set up and run, terminal by terminal (copy-paste)
+### Step 0: set up and run
 
-Everything you need, in order, so you don't have to open the other pages. The only thing assumed is that ROS 2 Jazzy is installed: `ls /opt/ros/jazzy` must list files. If it doesn't, install it first ([[01 ROS2 Nodes Installation|01]] §4, about 10 minutes). The commands are for zsh; on bash, change `setup.zsh` to `setup.bash`.
+Pick one of the two ways. Both start the same three things: `intent_node`, `gesture_node`, and something that prints `/gesture/intent`.
 
-Open three terminals and do them **in order: T1, then T2, then T3**. T1 creates the workspace that T2 builds into.
+#### Option A: Docker (no ROS 2 install)
 
-#### T1: `intent_node` (system Python, **no venv**)
+Needs Docker Engine with the Compose plugin (your user in the `docker` group), a webcam at `/dev/video0`, and an X11 or XWayland display.
 
 ```bash
-# --- first time only: create ~/ros2_ws and build intent_node ---
-source /opt/ros/jazzy/setup.zsh
-mkdir -p ~/ros2_ws/src
-ln -s ~/ROSRangers/drone/ground/src/intent_node  ~/ros2_ws/src/intent_node     # symlinks, not copies
-ln -s ~/ROSRangers/drone/ground/src/gesture_node ~/ros2_ws/src/gesture_node
-cd ~/ros2_ws
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --packages-select intent_node    # must end with "1 package finished"
-
-# --- every time: source, then run ---
-source /opt/ros/jazzy/setup.zsh
-source ~/ros2_ws/install/setup.zsh
-ros2 run intent_node intent_node --ros-args -p input_source:=topic
+cd ~/ROSRangers/drone/ground
+make                  # xhost +local:, then docker compose up --build (first build takes a few minutes)
 ```
 
-Leave it running. It logs `Intent -> HOVER_LAND_REQUEST (reason: no_packets_yet ...)` and a `No packets` warning every 5 s until T2 starts: that is correct.
+The output of the three services is prefixed `gesture-1`, `intent-1` and `echo-1`. `intent` starts with `input_source:=topic` already set in its image. To run them one per terminal instead (from `drone/ground/`):
 
-#### T2: `gesture_node` (built **from the venv**)
+| Terminal | Command |
+| :---: | :--- |
+| 1 | `docker compose up --build intent` |
+| 2 | `xhost +local:` (once per login), then `docker compose up --build gesture` |
+| 3 | `docker compose up --build echo` (prints every `/gesture/intent` message) |
+
+The `ros2` command line is in the images too, so the checks below work without a local ROS install. Replace `ros2 ...` with:
 
 ```bash
-# --- first time only: create the venv ~/gesture-venv ---
+docker compose run --rm echo ros2 topic list
+docker compose run --rm echo ros2 topic echo /gesture/raw std_msgs/msg/String --field data
+docker compose run --rm echo ros2 topic hz /gesture/intent
+```
+
+The containers use the host network, so with Jazzy installed a host terminal sees the same topics as long as `ROS_DOMAIN_ID` matches (`make` passes yours, default 0). Stop with Ctrl+C or `make down`.
+
+#### Option B: natively, with ROS 2 Jazzy installed
+
+`ls /opt/ros/jazzy` must list files. If it doesn't, install it first ([[01 ROS2 Nodes Installation|01]] §5, about 10 minutes) or use Option A. The commands are for zsh; on bash, change `setup.zsh` to `setup.bash`.
+
+```bash
+# --- first time only: system packages for the camera and the window ---
 sudo apt install python3.12-venv python3-pip libgl1 libglib2.0-0 v4l-utils libxcb-cursor0
-python3.12 -m venv --system-site-packages ~/gesture-venv
-~/gesture-venv/bin/pip install --upgrade pip
-~/gesture-venv/bin/pip install -r ~/ROSRangers/drone/ground/src/gesture_node/requirements.txt
 
-# --- first time only: build gesture_node with the venv's Python ---
-source /opt/ros/jazzy/setup.zsh
-source ~/gesture-venv/bin/activate
-cd ~/ros2_ws
-python3 -m colcon build --symlink-install --packages-select gesture_node
-deactivate
-head -1 ~/ros2_ws/install/gesture_node/lib/gesture_node/gesture_node   # must name ~/gesture-venv/bin/python3
-
-# --- every time: source, then run ---
-source /opt/ros/jazzy/setup.zsh
-source ~/ros2_ws/install/setup.zsh
-ros2 run gesture_node gesture_node      # on Wayland: QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node
+# --- first time, and after changing setup.py / package.xml / requirements.txt ---
+cd ~/ROSRangers/drone/ground
+make ws               # venv gesture-venv/ + workspace ros2_ws/, both in drone/ground/
 ```
 
-A "Gestures" window opens with the webcam. Press `q` in it to stop. You don't need to activate the venv to **run** it: the build wrote the venv's Python into the start script.
+`make ws` creates the venv with `--system-site-packages`, installs `requirements.txt`, links both packages into `ros2_ws/src/`, builds `intent_node` with the system Python and `gesture_node` with the venv's Python, and stops with an error if the `gesture_node` start script does not use the venv. The steps by hand are in [[01 ROS2 Nodes Installation|01]] §6.
 
-#### T3: watch the output
+Then, in each of three terminals:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
-source ~/ros2_ws/install/setup.zsh
-ros2 topic echo /gesture/intent --field data      # what intent_node publishes
+source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh
 ```
 
-Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, use `ros2 topic echo /gesture/raw --field data` instead. `echo` prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py`. Steps 2–5 below use it.
+| Terminal | Command |
+| :---: | :--- |
+| T1 | `ros2 run intent_node intent_node --ros-args -p input_source:=topic` |
+| T2 | `ros2 run gesture_node gesture_node` (on Wayland: `QT_QPA_PLATFORM=xcb ros2 run gesture_node gesture_node`) |
+| T3 | `ros2 topic echo /gesture/intent --field data` |
 
-> [!WARNING] Three rules that break things if you forget them
-> - **Never** run a plain `colcon build` of everything: it rebuilds `gesture_node` with the system Python, and `ros2 run gesture_node ...` then fails with `No module named 'mediapipe'`. Rebuild only with T2's build lines.
-> - `intent_node` **needs** `-p input_source:=topic`. Without it, it listens on old UDP and stays on `no_packets_yet`.
-> - All terminals must use the same `ROS_DOMAIN_ID`. If you set one (for example `export ROS_DOMAIN_ID=42`, to keep teammates' nodes away, [[01 ROS2 Nodes Installation|01]] §4.7), set it in **every** terminal, or put it in `~/.zshrc`.
+T1 logs `Intent -> HOVER_LAND_REQUEST (reason: no_packets_yet ...)` and a `No packets` warning every 5 s until T2 starts: that is correct. In T2 a "Gestures" window opens with the webcam; press `q` in it to stop. You don't need to activate the venv to **run** it: the build wrote the venv's Python into the start script.
 
-After the first time, only the "every time" lines are needed. A change to a `.py` file needs no rebuild (`--symlink-install`): stop the node and run it again.
+#### What you should see
 
-The steps below reuse these terminals. In each new terminal, run the two `source` lines first.
+Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, read `/gesture/raw` instead. `echo` prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py` (needs a local Jazzy). Steps 2–5 below use it; in Docker, read the `echo` output or the `Intent ->` lines of `intent` instead.
 
-### Step 1: unit tests (no ROS, no camera)
+> [!WARNING] Three rules that break things if you forget them (native setup)
+> - **Never** run a plain `colcon build` of everything in `ros2_ws`: it rebuilds `gesture_node` with the system Python, and `ros2 run gesture_node ...` then fails with `No module named 'mediapipe'`. Rebuild with `make ws` (after `rm ros2_ws/.gesture_node` if nothing changed in the package files).
+> - `intent_node` **needs** `-p input_source:=topic`. Without it, it listens on old UDP and stays on `no_packets_yet`. The Docker image already sets it.
+> - All terminals (and containers) must use the same `ROS_DOMAIN_ID`. If you set one (for example `export ROS_DOMAIN_ID=42`, to keep teammates' nodes away, [[01 ROS2 Nodes Installation|01]] §5.7), set it in **every** terminal, or put it in `~/.zshrc`. `make` and `docker compose` pass your value to the containers.
 
-```bash
-cd ~/ROSRangers/drone/ground/src/intent_node  && python3 -m unittest discover -s test -v   # 17 tests OK
-cd ~/ROSRangers/drone/ground/src/gesture_node && python3 -m unittest discover -s test -v   # 6 tests OK
-```
+A change to a `.py` file needs no rebuild natively (`--symlink-install`): stop the node and run it again. In Docker the code is copied into the image, so `make` (`up --build`) rebuilds the changed image.
 
-**Pass:** both end with `OK`. This checks the filter rules and the sender's JSON and keep-alive.
+### Step 1: automated tests
+
+From `drone/ground/`:
+
+| Command | Needs | Runs | Pass |
+| :--- | :--- | :--- | :--- |
+| `make unit` | Python 3 only (no ROS, no camera) | the unit tests of both packages and `drone/tests/ros`. The ROS and real-MediaPipe tests are **skipped** | 109 tests, `OK (skipped=41)` on 2026-10-21 |
+| `make test` | ROS 2 Jazzy (builds the workspace first). Without Jazzy it is `make unit` | `colcon test` of both packages (unit + node + process tests, like CI's `ground-ros2`), then `pytest drone/tests/ros` (contract + pipeline) | `104 tests, 0 errors, 0 failures, 0 skipped`, then `5 passed` |
+| `make smoke` | Docker only | `docker/smoke_test.sh`, like CI's `ground-docker`: builds the images, runs each package's tests **inside** its image with none skipped, sends `INDEX_RIGHT` from the gesture container to the intent container, checks the fallback and the clean stops | `PASS: images, in-image tests, gesture -> intent across containers, clean stops` |
+
+Without a local Jazzy, `make unit` + `make smoke` together run every test: the ROS tests that `make unit` skips run inside the images in `make smoke`. What each test file checks is in [[01 ROS2 Nodes Installation|01]] §10.
 
 ### Step 2: `intent_node` with a fake recogniser (no camera)
+
+> [!TIP] Steps 2–5 in Docker
+> The tables use the native commands. In Docker, start the nodes with `docker compose up intent` / `docker compose up gesture` and put `docker compose run --rm echo` in front of every `ros2 ...` command (Step 0, Option A). Stop `gesture_node` with `q` or `docker compose stop gesture`: both are a clean stop (exit code 0).
 
 | Terminal | Command |
 | :---: | :--- |
@@ -265,7 +298,7 @@ For the longer scripted sequence (six gestures and gaps, ~13 s), use the fake ca
 | 2 | `ros2 run gesture_node gesture_node` |
 | 3 | `python3 ~/gesture_watch.py` |
 
-1. Terminal 1 logs `First packet from gestures.py`, then `Recogniser link OK: ~50 packets in the last 5 s` every 5 s.
+1. Terminal 1 logs `First packet from gesture_node`, then `Recogniser link OK: ~50 packets in the last 5 s` every 5 s.
 2. `ros2 topic info /gesture/raw` shows 1 publisher and 1 subscriber.
 3. Hold each gesture of §3 for 1 s. In terminal 3, each `raw` line must be followed within ~0.5 s by its `intent` line:
 
@@ -287,7 +320,7 @@ Left and right are **your** left and right (the picture is mirrored).
 | `INDEX_RIGHT` until `MOVE_RIGHT`, hide the hand for 1 s, then show a fist | `NEUTRAL` / `no_hand`, then `unconfirmed`, then `STOP_HOVER`. **Never** `MOVE_RIGHT` again |
 | hide the hand for 0.1 s while holding `INDEX_RIGHT` | stays `MOVE_RIGHT` |
 | hide the hand for 3 s | `NEUTRAL`, then `HOVER_LAND_REQUEST` / `no_hand_long` |
-| stop `gesture_node` (`q`) while holding a gesture | `NEUTRAL` within 0.3 s, `HOVER_LAND_REQUEST` / `no_packets` after 2 s |
+| stop `gesture_node` (`q`, Ctrl+C or `docker compose stop gesture`) while holding a gesture | `NEUTRAL` within 0.3 s, `HOVER_LAND_REQUEST` / `no_packets` after 2 s |
 | any time | `ros2 topic hz /gesture/intent` stays at ~20 Hz |
 
 Anything that does not end in `NEUTRAL` or `HOVER_LAND_REQUEST` is a safety bug: stop and report it with the Bug form.
@@ -297,11 +330,15 @@ Anything that does not end in `NEUTRAL` or `HOVER_LAND_REQUEST` is a safety bug:
 | Symptom | First thing to check |
 | :--- | :--- |
 | `HOVER_LAND_REQUEST` / `no_packets_yet` forever | `intent_node` started without `-p input_source:=topic` |
-| `No module named 'mediapipe'` from `ros2 run gesture_node ...` | `gesture_node` built without the venv ([[02 Gesture Node\|02]] §10.5) |
-| nothing on `/gesture/raw` | `gesture_node` not running, camera not opened, or a different `ROS_DOMAIN_ID` in the two terminals |
+| `No module named 'mediapipe'` from `ros2 run gesture_node ...` | `gesture_node` built without the venv: `make ws` ([[02 Gesture Node\|02]] §10.5) |
+| `gesture_node` exits at once with `Cannot open camera 0` (exit code 1) | no webcam, or another program uses it: `ls /dev/video*` |
+| `gesture` container: `cannot open display` or no window | `xhost +local:` not run in this login, or `DISPLAY` not set ([[01 ROS2 Nodes Installation\|01]] §12) |
+| `docker compose up` fails on `/dev/video0` | no webcam at `/dev/video0`. `intent` and `echo` still start alone |
+| nothing on `/gesture/raw` | `gesture_node` not running, camera not opened, or a different `ROS_DOMAIN_ID` in the two terminals (or containers) |
+| a `make unit` / `make test` / `make smoke` failure | the test name says what broke ([[01 ROS2 Nodes Installation\|01]] §10). Fix it before the manual steps |
 | intent stays `NEUTRAL` / `unconfirmed` | the gesture name flickers: look at `/gesture/raw`, hold the pose more clearly ([[02 Gesture Node\|02]] §12) |
 
-More: [[01 ROS2 Nodes Installation|01]] §11, [[02 Gesture Node|02]] §14. Record each session (with `ros2 bag record -o gesture_proof /gesture/raw /gesture/intent`) in [[01 ROS2 Nodes Installation|01]] §12.
+More: [[01 ROS2 Nodes Installation|01]] §12, [[02 Gesture Node|02]] §14. Record each session (with `ros2 bag record -o gesture_proof /gesture/raw /gesture/intent`) in [[01 ROS2 Nodes Installation|01]] §13.
 
 ---
 
@@ -316,13 +353,20 @@ Replacing the rule-based `recognize()` with a trained landmark classifier, and t
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **CI** | Continuous Integration: GitHub Actions runs the tests on every PR (`ground-ros2`, `ground-docker`). |
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
+| **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). Here each node has an image with ROS 2 Jazzy inside. |
+| **Docker Compose** | Starts several containers from one file (`drone/ground/docker-compose.yml`). |
+| **HOVER_LAND_REQUEST** | The safe fallback intent of `intent_node`: hover and ask to land. Published before the first packet and when the hand or the recogniser is gone for more than 2 s. |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
+| **Makefile** | The `make` targets in `drone/ground/` that build, start and test the nodes (Docker and native). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8, 11 or 15). |
 | **MediaPipe** | A Google framework used here to find 21 hand landmarks in an image. |
 | **Mermaid** | A text-based diagram syntax rendered by Obsidian. |
 | **Node** | One ROS 2 program with one job. |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages (`/gesture/raw`, `/gesture/intent`). |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data (the drone link; also the old recogniser before 2026-10-20). |
 | **venv** | A Python virtual environment that keeps this project's packages separate from the system. |
