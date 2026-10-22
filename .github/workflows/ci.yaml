@@ -32,6 +32,7 @@ jobs:
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
       ros: ${{ steps.check.outputs.ros }}
+      ros_pkgs: ${{ steps.check.outputs.ros_pkgs }}
       docker: ${{ steps.check.outputs.docker }}
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +99,16 @@ jobs:
             echo "ros=true" >> "$GITHUB_OUTPUT"
           fi
 
+          # Packages ground-ros2 builds and tests. gesture_node + intent_node
+          # decide whether the job runs; mission_node joins once it exists.
+          ros_pkgs="gesture_node intent_node"
+          if [[ -f drone/ground/src/mission_node/package.xml ]]; then
+            ros_pkgs+=" mission_node"
+          else
+            echo "::notice title=ground-ros2 without mission_node::drone/ground/src/mission_node/package.xml not found"
+          fi
+          echo "ros_pkgs=$ros_pkgs" >> "$GITHUB_OUTPUT"
+
           if [[ ! -f drone/ground/docker-compose.yml ]]; then
             echo "docker=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=ground-docker skipped::drone/ground/docker-compose.yml not found"
@@ -155,9 +166,10 @@ jobs:
       - run: pip install -e drone/ground/src/sd_protocol_py
       - run: pytest drone/ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
 
-  # gesture_node + intent_node: unit, node and pipeline tests in the ros:jazzy
-  # container (ADR-018). REQUIRE_ROS_TESTS makes a missing rclpy fail instead
-  # of skipping the ROS tests.
+  # gesture_node + intent_node, plus mission_node once its package.xml exists
+  # (list in check-components ros_pkgs): unit, node, launch and pipeline tests
+  # in the ros:jazzy container (ADR-018). REQUIRE_ROS_TESTS makes a missing
+  # rclpy or package fail instead of skipping the ROS tests.
   ground-ros2:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.ros == 'true' }}
@@ -168,6 +180,7 @@ jobs:
       PIP_BREAK_SYSTEM_PACKAGES: "1"
       REQUIRE_ROS_TESTS: "1"
       ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
+      ROS_PKGS: ${{ needs.check-components.outputs.ros_pkgs }}
     defaults:
       run:
         shell: bash
@@ -183,14 +196,14 @@ jobs:
       - name: Build
         run: |
           source /opt/ros/jazzy/setup.bash
-          colcon build --base-paths drone/ground/src --packages-select gesture_node intent_node
+          colcon build --base-paths drone/ground/src --packages-select $ROS_PKGS
 
       # The packages' tests the way ROS runs them (writes build/<pkg>/pytest.xml)
       - name: Package tests (unit + node)
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          colcon test --base-paths drone/ground/src --packages-select gesture_node intent_node \
+          colcon test --base-paths drone/ground/src --packages-select $ROS_PKGS \
             --event-handlers console_direct+ --return-code-on-test-failure
           colcon test-result --verbose
 
@@ -201,8 +214,13 @@ jobs:
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
-          python3 -m pytest drone/ground/src/gesture_node/test drone/ground/src/intent_node/test drone/tests/ros \
-            --cov=gesture_node --cov=intent_node --cov-report=term-missing --cov-fail-under=90 \
+          test_paths=() cov_flags=()
+          for pkg in $ROS_PKGS; do
+            test_paths+=("drone/ground/src/$pkg/test")
+            cov_flags+=("--cov=$pkg")
+          done
+          python3 -m pytest "${test_paths[@]}" drone/tests/ros \
+            "${cov_flags[@]}" --cov-report=term-missing --cov-fail-under=90 \
             --junitxml=ground-ros2-report.xml
 
       - uses: actions/upload-artifact@v4
