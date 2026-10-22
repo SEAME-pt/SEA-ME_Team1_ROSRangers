@@ -25,7 +25,7 @@ tags:
 
 ## 2. Decision
 
-- **Custom ESP8266 firmware**: Arduino core 3.1.2 via PlatformIO, board `d1_mini`.
+- **Custom ESP8266 firmware**: Arduino core 3.1.2 via PlatformIO, board `esp12e`.
 - All logic with branches (framing, MAC, sequence window, failsafe timers, MSP encode/decode, ThoneFlow parser) lives in a **portable C++17 library**, built for the host (GoogleTest) and for the ESP.
 - A **Python twin** implements the same spec on the ground. Both must pass shared **golden test vectors**.
 - The spec lives in the docs repo ([[Protocol Spec v0]]). The code lives in the software repo ([[Repository Layout]]).

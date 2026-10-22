@@ -166,7 +166,7 @@ jobs:
 ```ini
 [env:esp]
 platform = espressif8266
-board = d1_mini
+board = esp12e
 framework = arduino
 monitor_speed = 115200
 lib_deps =
