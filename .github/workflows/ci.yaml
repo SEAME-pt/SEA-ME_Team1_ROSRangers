@@ -237,8 +237,9 @@ jobs:
       - run: pip install platformio
       - name: Build ESP8266 firmware
         run: pio run -d drone/firmware/esp8266 -e d1_mini
-        env:
-          SD_PSK: ${{ secrets.SD_PSK_CI }}
+        env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
+          SEAME_AP_PASS: ci-dummy-pass
+          SEAME_OTA_PASS: ci-dummy-pass
       - uses: actions/upload-artifact@v4
         with:
           name: esp-firmware

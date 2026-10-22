@@ -581,3 +581,22 @@ def test_stream_with_loopback_echo():
     client = msp.Client(TimedEcho(), loopback=True)
     rtts, lost, _ = msp_check.run_stream(client, 100, 50, 0.5, quiet=True, clock=clock)
     assert lost == 0 and len(rtts) == 100
+
+
+def test_udp_send_failure_counts_instead_of_crashing():
+    t = msp.UdpTransport("127.0.0.1", 9, 0)
+
+    class DownSocket:
+        def sendto(self, data, addr):
+            raise TimeoutError("timed out")  # what Linux raises when Wi-Fi drops
+
+        def close(self):
+            pass
+
+    real, t.sock = t.sock, DownSocket()
+    try:
+        t.send(b"$M<\x00\x01\x01")
+        t.send(b"$M<\x00\x01\x01")
+        assert t.send_errors == 2
+    finally:
+        real.close()
