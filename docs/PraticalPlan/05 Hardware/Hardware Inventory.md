@@ -26,7 +26,7 @@ tags:
 | Motors / props | 1405-4800KV / HQ DT63-3 V2 | [[2.5Drone]] |
 | Camera | Ratel 2 (analog) | [[2.5Drone]] |
 | VTX | PandaRC VT5804 BAT LITE, up to 1.3 W, Tramp on UART3, MMCX antenna | [[2.5Drone]] |
-| Radio | BETAFPV ELRS Nano 2.4 GHz on UART2 (antenna soldered, 5 V on DV5V; failsafe not re-tested, GitHub #22/#41) + RadioMaster Pocket | [[2.5Drone]] |
+| Radio | BETAFPV ELRS Nano 2.4 GHz on UART2 (antenna soldered, 5 V on DV5V; failsafe not re-tested, GitHub #22/#41) + RadioMaster Pocket. **Both on ELRS 4.1.0, CE_LBT, team binding phrase** since 2026-10-21 (receiver was 3.3.0 CE_LBT, Pocket 4.1.0 ISM2G4 with the "Zorro" target: no link). Pocket model `MODEL06`, CH5 = SA (ARM) | [[2.5Drone]], [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]], [[Radio Link Tests]] |
 | Wi-Fi bridge | **ESP-12F** module (ESP8266), **soldered to FC UART4 with removable wires** since 2026-10-19 ([[ADR-021 Removable ESP Connector\|ADR-021]]: connector to follow), currently **AT firmware 1.7.4.0** → custom firmware ([[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]]) | [[ESP_to_FC]] |
 | Flow sensor | ThoneFlow-3901U, **not installed**, CX-OF-like protocol, no height | [[ThoneFlow]] |
 | Battery | CNHL 4S 850 mAh (the manual suggests 450–650 mAh). XT30 ↔ XT60 adapter received, polarity OK. Checked 2026-10-16: no swelling, 3.90 V/cell ([[Battery Log]]). | team, [[2.5Drone]] |
@@ -59,3 +59,5 @@ tags:
 | **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
 | **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
 | **mAh** | Milliamp-hour: battery capacity. |
+| **Binding phrase** | Secret text set on both radio and receiver; both derive the same UID from it, so they link on every power-up. |
+| **CE_LBT** | EU regulatory domain of ELRS 2.4 GHz: listens before it transmits (Listen Before Talk). |
