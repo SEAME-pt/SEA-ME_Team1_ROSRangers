@@ -39,6 +39,20 @@ The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and E
 | `AT+CWAUTOCONN?` | 1 |
 | `AT+CIPMODE?` | 0 |
 
+## Spare ESP (HIL bench, 2026-10-22)
+
+Same board as the flight ESP (FT232R, same flash chip). It sits on the HIL Pi as `/dev/hil-esp` ([[HIL Runner]] §3.1, GitHub #48). The image is kept on the Pi (`/home/runner/`) and on the laptop that copied it, not in Git.
+
+| Item | Value |
+|---|---|
+| Station MAC | `cc:50:e3:6d:23:e4` |
+| Chip / flash | ESP8266EX, 26 MHz crystal, 160 MHz, 4 MB (manufacturer `0x5e`, device `0x4016`) |
+| Firmware | Not identified yet (probably the stock AT firmware). Check the boot output before the first CI flash. |
+
+| Image (4 194 304 bytes) | SHA-256 | Notes |
+|---|---|---|
+| `spare_esp_backup.bin` (rename to `esp8266_spare_cc50e36d23e4_2026-10-22.bin`) | `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e` | Made with esptool 5.6.0 `read-flash 0 0x400000` on the Pi. Not checked with `verify-flash` yet. May contain Wi-Fi credentials: never publish. |
+
 ## How it was made
 
 Command names use underscores: esptool 4.x accepts only those, esptool 5 accepts both.
