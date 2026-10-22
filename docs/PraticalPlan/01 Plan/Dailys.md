@@ -65,6 +65,13 @@ Paulo - Continuação dos testes de latência.
 Guilherme - Ajudar os outros elementos.
 Tiago - Investigação dos parametros. Gazebo.
 
+22/Oct - 09:46/09:50
+Thiago - Gazebo e ajudar Paulo na ligacao entre o ESP e o FC
+Paulo - Continuar a trabalhar no ESP e tentar melhorar a performance do ESP.
+Bruno - Continuar node-flight
+Guilherme - HIL runner, e preparar a proxima sprint
+**Blockers**
+Tiago - Radio
 
 ---
 
