@@ -1,4 +1,3 @@
-
 name: hil
 
 on:
@@ -13,6 +12,7 @@ concurrency:
 jobs:
   check-hil:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     steps:
@@ -31,32 +31,48 @@ jobs:
             echo "::notice title=hil skipped::needs drone/firmware/esp8266/platformio.ini and a test in drone/tests/hil"
           fi
 
+  # Spare ESP on the Pi's USB, no FC (ADR-020 update 2026-10-22), so it is
+  # flashed over USB, not OTA. It runs its own SoftAP name and passwords so
+  # it can never be mistaken for the drone.
   hil:
     needs: [check-hil]
     if: ${{ needs.check-hil.outputs.enabled == 'true' }}
     runs-on: [self-hosted, linux, ARM64, hil-drone]
     timeout-minutes: 20
+    env:
+      HIL_ESP_PORT: /dev/hil-esp
+      HIL_REQUIRED: "1"
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check the bench
+        shell: bash
+        run: |
+          if [[ ! -e $HIL_ESP_PORT ]]; then
+            echo "::error title=HIL bench::$HIL_ESP_PORT not found. Is the spare ESP plugged into the Pi?"
+            exit 1
+          fi
 
       - name: Set up Python environment
         run: |
           python3 -m venv .venv
           . .venv/bin/activate
-          pip install platformio pytest pyserial
+          pip install "platformio==6.1.*" pytest pyserial
 
-      - name: Build firmware for OTA
+      - name: Build firmware
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e d1_mini_ota
+          pio run -d drone/firmware/esp8266 -e esp
         env:
-          SD_PSK: ${{ secrets.SD_PSK_HIL }}
+          SEAME_AP_SSID: ${{ vars.SEAME_AP_SSID_HIL }}
+          SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
+          SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
 
-      - name: Flash the bench ESP over the air
+      - name: Flash the spare ESP over USB
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e d1_mini_ota -t upload
+          pio run -d drone/firmware/esp8266 -e esp -t nobuild -t upload --upload-port "$HIL_ESP_PORT"
 
       - name: Bench tests (no battery, no props)
         run: |

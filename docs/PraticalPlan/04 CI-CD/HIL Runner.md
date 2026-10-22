@@ -47,7 +47,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 2. GitHub → software repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
 3. udev rules for the two USB-serial devices.
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK.
-5. Store the PSK as the repo secret `SD_PSK_HIL`.
+5. Store the PSK as the repo secret `SD_PSK_HIL`. The current firmware (transparent bridge) does not use it: it builds with `SEAME_AP_SSID`, `SEAME_AP_PASS` and `SEAME_OTA_PASS` instead (§3.1).
 
 ### 3.1 As built (2026-10-22, GitHub #48)
 
@@ -60,7 +60,9 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 | USB-serial chip | FTDI FT232 (`0403:6001`), not CH340 |
 | Device name | `/dev/hil-esp`, udev rule in `/etc/udev/rules.d/99-hil.rules`, matched on vendor, product and FTDI serial |
 | Original firmware backup | `spare_esp_backup.bin`, 4 194 304 bytes, SHA-256 `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e`. Kept off the repo. |
-| Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. |
+| Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. `hil.yaml` builds the `esp` env and uploads it to `/dev/hil-esp`. |
+| SoftAP | Its own name and passwords, never the drone's: Variable `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), Secrets `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters). `SD_PSK_HIL` is kept for message signing (ADR-002) and is not used yet. |
+| Network | The Pi has only its built-in Wi-Fi, used for the internet. It cannot join the spare ESP's SoftAP at the same time, so the first HIL test is USB only (`drone/tests/hil/test_smoke.py`: normal flash boot, then silence on UART0). Wi-Fi tests need a USB Wi-Fi dongle on the Pi. |
 
 The spare ESP is **not wired to an FC**, so USB data is allowed for it ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-22). §2's "no USB data" rule still applies to any ESP wired to an FC.
 
