@@ -28,6 +28,21 @@ tags:
 | UART1 / UART6 | unassigned | [[ESP_to_FC]] §2 |
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
 
+### 1.1 Modes (CLI `aux`, read 2026-10-21)
+
+Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_2026-10-13_v2.txt`). The CLI prints each mode's permanent ID.
+
+| Mode | Channel | Range (µs) | Radio switch |
+|---|---|---|---|
+| ARM | AUX1 (CH5) | 1700–2100 | **SA** (mapped 2026-10-21, [[Radio Link Tests]]) |
+| ANGLE | AUX2 (CH6) | 1700–2100 | not mapped yet |
+| HORIZON | AUX2 (CH6) | 1300–1700 | not mapped yet |
+| BEEPER | AUX3 (CH7) | 1700–2100 | not mapped yet |
+| USER1 | AUX5 (CH9) | 1300–1700 | not mapped yet |
+
+> [!warning] Unmapped channels sit at mid-stick
+> Channels with no switch assigned sit at about 1500 µs. That value is inside the HORIZON and USER1 ranges, so both show as active in `MSP_STATUS` until the switches are assigned. MSP OVERRIDE is not configured yet ([[ADR-010 MSP Override|ADR-010]]).
+
 ## 2. Baseline on 4.5.1 (Module 1 week 1)
 
 1. `version`, `status`, `diff all`. Commit them to the software repo under `drone/config/betaflight/4.5.1/`.
@@ -80,3 +95,4 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
+| **AUX1** | First auxiliary RC channel (CH5). On this drone it carries the ARM switch (SA). |
