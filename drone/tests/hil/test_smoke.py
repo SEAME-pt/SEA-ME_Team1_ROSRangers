@@ -60,12 +60,19 @@ def test_crash_markers_found():
     assert crash_markers(b"") == []
 
 
+def skip_or_fail(reason: str):
+    if os.environ.get("HIL_REQUIRED") == "1":
+        pytest.fail(f"{reason} and HIL_REQUIRED=1")
+    pytest.skip(reason)
+
+
 def open_esp():
-    serial = pytest.importorskip("serial")
+    try:
+        import serial
+    except ImportError:
+        skip_or_fail("pyserial not installed")
     if not os.path.exists(PORT):
-        if os.environ.get("HIL_REQUIRED") == "1":
-            pytest.fail(f"{PORT} not found and HIL_REQUIRED=1")
-        pytest.skip(f"{PORT} not found (no HIL bench)")
+        skip_or_fail(f"{PORT} not found (no HIL bench)")
     port = serial.Serial()
     port.port = PORT
     port.baudrate = ROM_BAUD

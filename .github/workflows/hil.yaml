@@ -42,6 +42,11 @@ jobs:
     env:
       HIL_ESP_PORT: /dev/hil-esp
       HIL_REQUIRED: "1"
+      # Read by drone/firmware/esp8266/secrets.py on every pio run, the
+      # upload included, so they are set for the whole job
+      SEAME_AP_SSID: ${{ secrets.SEAME_AP_SSID_HIL }}
+      SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
+      SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +56,10 @@ jobs:
         run: |
           if [[ ! -e $HIL_ESP_PORT ]]; then
             echo "::error title=HIL bench::$HIL_ESP_PORT not found. Is the spare ESP plugged into the Pi?"
+            exit 1
+          fi
+          if [[ -z $SEAME_AP_SSID ]]; then
+            echo "::error title=HIL bench::secret SEAME_AP_SSID_HIL is empty: the spare ESP would start a SoftAP with no name"
             exit 1
           fi
 
@@ -64,10 +73,6 @@ jobs:
         run: |
           . .venv/bin/activate
           pio run -d drone/firmware/esp8266 -e esp
-        env:
-          SEAME_AP_SSID: ${{ vars.SEAME_AP_SSID_HIL }}
-          SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
-          SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
 
       - name: Flash the spare ESP over USB
         run: |
