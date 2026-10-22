@@ -41,7 +41,7 @@ The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and E
 
 ## Spare ESP (HIL bench, 2026-10-22)
 
-Same board as the flight ESP (FT232R, same flash chip). It sits on the HIL Pi as `/dev/hil-esp` ([[HIL Runner]] §3.1, GitHub #48). The image is kept on the Pi (`/home/runner/`) and on the laptop that copied it, not in Git.
+Same board as the flight ESP (FT232R, same flash chip). It sits on the HIL Pi as `/dev/hil-esp` (`docs/PraticalPlan/04 CI-CD/HIL Runner.md` §3.1, GitHub #48). The image is kept on the Pi (`/home/runner/`) and on the laptop that copied it, not in Git.
 
 | Item | Value |
 |---|---|
