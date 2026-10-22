@@ -55,7 +55,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 |---|---|
 | Runner machine | Raspberry Pi 4, Raspberry Pi OS 64-bit (desktop image), hostname `hil-drone`, user `runner` in `dialout` |
 | Runner | `hil-drone-pi`, labels `self-hosted, linux, ARM64, hil-drone`, runner 2.337.0, installed as a systemd service |
-| Repo setting | To confirm: fork PR workflows need approval for all external contributors (the repo is public) |
+| Repo setting | Fork PR workflows need approval for all external contributors (the repo is public). Set 2026-10-22. |
 | Spare ESP | ESP8266EX, 26 MHz crystal, 4 MB flash (manufacturer `5e`, device `4016`), MAC `cc:50:e3:6d:23:e4` |
 | USB-serial chip | FTDI FT232 (`0403:6001`), not CH340 |
 | Device name | `/dev/hil-esp`, udev rule in `/etc/udev/rules.d/99-hil.rules`, matched on vendor, product and FTDI serial |
