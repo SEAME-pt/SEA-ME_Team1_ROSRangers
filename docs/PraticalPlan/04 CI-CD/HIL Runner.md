@@ -15,8 +15,8 @@ tags:
 > [!info] Decision: [[ADR-020 HIL Runner|ADR-020]]
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
 
-> [!warning] No spare FC or ESP (2026-10-20)
-> There is no spare FC and no spare ESP ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-20, GitHub #34). The bench below assumes dedicated hardware, so **how HIL runs on the flight unit, possibly with simulation (Gazebo / SITL), is open**. It is the spike in GitHub #61. The runner setup is GitHub #48. Until #61 closes, treat §2 and §4 as the target, not the plan.
+> [!warning] One spare ESP, no spare FC (2026-10-22)
+> The team has one spare ESP and no spare FC ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-22). The bench today is the Pi plus the spare ESP on USB, with no FC (§3.1). How the FC side is tested (Betaflight SITL, or the flight unit on the bench) is the spike in GitHub #61. Until #61 closes, treat the FC parts of §2 and §4 as the target, not the plan.
 
 ---
 
@@ -49,6 +49,29 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK.
 5. Store the PSK as the repo secret `SD_PSK_HIL`.
 
+### 3.1 As built (2026-10-22, GitHub #48)
+
+| Item | Value |
+|---|---|
+| Runner machine | Raspberry Pi 4, Raspberry Pi OS 64-bit (desktop image), hostname `hil-drone`, user `runner` in `dialout` |
+| Runner | `hil-drone-pi`, labels `self-hosted, linux, ARM64, hil-drone`, runner 2.337.0, installed as a systemd service |
+| Repo setting | To confirm: fork PR workflows need approval for all external contributors (the repo is public) |
+| Spare ESP | ESP8266EX, 26 MHz crystal, 4 MB flash (manufacturer `5e`, device `4016`), MAC `cc:50:e3:6d:23:e4` |
+| USB-serial chip | FTDI FT232 (`0403:6001`), not CH340 |
+| Device name | `/dev/hil-esp`, udev rule in `/etc/udev/rules.d/99-hil.rules`, matched on vendor, product and FTDI serial |
+| Original firmware backup | `spare_esp_backup.bin`, 4 194 304 bytes, SHA-256 `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e`. Kept off the repo. |
+| Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. |
+
+The spare ESP is **not wired to an FC**, so USB data is allowed for it ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-22). §2's "no USB data" rule still applies to any ESP wired to an FC.
+
+The udev rule (replace the serial with the one from `udevadm info -a -n /dev/ttyUSB0 | grep -m1 'ATTRS{serial}'`):
+
+```text
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="<serial>", SYMLINK+="hil-esp", GROUP="dialout", MODE="0660"
+```
+
+Gotcha: most D1 mini boards use a CH340 (`1a86:7523`). Ours shows up as an FTDI, so check `lsusb` before writing the rule.
+
 ## 4. First HIL tests (`drone/tests/hil/`)
 
 1. **Smoke:** OTA flash → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received.
@@ -78,3 +101,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 | **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **udev** | The Linux device manager. A udev rule gives a USB device a fixed name such as `/dev/hil-esp`. |
+| **FTDI** | A maker of USB-to-serial chips (the FT232 on our spare ESP board). |
+| **DTR / RTS** | Serial control lines. `esptool` uses them to reset the ESP into flash mode without a button press. |
+| **SHA-256** | A hash used to check that a file (here the firmware backup) has not changed. |
