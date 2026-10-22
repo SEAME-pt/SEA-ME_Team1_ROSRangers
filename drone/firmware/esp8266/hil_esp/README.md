@@ -22,7 +22,7 @@ Setup and wiring: `docs/PraticalPlan/04 CI-CD/HIL Runner.md` §3.1, ADR-020 upda
 
 | Image (4 194 304 bytes each) | SHA-256 | Notes |
 |---|---|---|
-| `spare_esp_backup.bin`, made 2026-10-22 | `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e` | Original firmware, before any CI flash. esptool 5.6.0 `read-flash 0 0x400000` on the Pi. Not checked with `verify-flash` yet. May contain Wi-Fi credentials: never publish. |
+| `spare_esp_backup.bin`, made 2026-10-22 | `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e` | Original firmware, before any CI flash. esptool 5.6.0 `read-flash 0 0x400000` on the Pi. `verify-flash` digest matched (2026-10-22). May contain Wi-Fi credentials: never publish. |
 
 ## How to make or restore a backup (on the Pi)
 
