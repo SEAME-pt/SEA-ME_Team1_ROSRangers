@@ -44,6 +44,7 @@ tags:
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner | ✅ Accepted | n/a |
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | 🟡 Proposed (2026-10-21, #73, PR #74) | n/a |
+| [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -61,11 +62,15 @@ tags:
 - New [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed, accepted when PR #74 merges): CI gates and lint rules, taken while preparing `ci.yaml` for the ROS 2 ground nodes (#73, PR #74).
 - [[ADR-017 Branching Model|ADR-017]] has an update. On a PR, `ground-ros2` and `ground-docker` run only when the PR touches the ground code or `ci.yaml`. Pushes are never path-filtered.
 
-## 4. Still open
+## 4. What changed on 2026-10-22
+
+- New [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]] (accepted 2026-10-21, #22). The RadioMaster Pocket (ELRS 4.1.0, ISM2G4) and the BETAFPV Nano receiver (ELRS 3.3.0, CE_LBT) could not link. Both were flashed to ELRS 4.1.0 CE_LBT with the team binding phrase on 2026-10-21, so the safety pilot's link works. Test record: [[Radio Link Tests]].
+
+## 5. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 5. Glossary
+## 6. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -86,3 +91,4 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **CE_LBT** | EU regulatory domain of ELRS 2.4 GHz: listens before it transmits (Listen Before Talk). |
