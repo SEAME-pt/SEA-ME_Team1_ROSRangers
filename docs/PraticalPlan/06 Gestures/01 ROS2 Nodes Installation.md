@@ -178,7 +178,7 @@ diff logs/mission/2026-10-23_10-00-00.log logs/mission/latest.log        # compa
 docker compose logs -f mission                                           # same output through Docker
 ```
 
-`logs/` is ignored by Git (only its `.gitignore` is committed). `GROUND_LOG_DIR=./other make` puts the files somewhere else. For this, `entrypoint.sh` stays PID 1 and passes SIGTERM / Ctrl+C on to the node, so lines printed while a node stops still reach the file. Without `LOG_DIR` (CI, the in-image tests) it only runs the command.
+`logs/` is ignored by Git (only its `.gitignore` is committed). `GROUND_LOG_DIR=./other make` puts the files somewhere else. For this, `entrypoint.sh` stays PID 1 and passes SIGTERM / Ctrl+C on to the node, so lines printed while a node stops still reach the file. Without `LOG_DIR` (CI, the in-image tests) it only runs the command with `exec`, so the node itself is PID 1.
 
 ### 4.3 The `make` targets
 
@@ -198,7 +198,14 @@ Run from `drone/ground/`:
 > [!WARNING] `make fclean` prunes all of Docker, not only this project
 > `docker system prune -af` removes **every** stopped container, unused network, image that no container uses, and the build cache on your PC, also from other projects. Use `make clean` if you only want this project's images gone.
 
-Every test target ends with a summary, one row per package or test file (`PASS 135/135`), then `ALL PASSED` or `FAILED`, and keeps its full output in `logs/test/<target>.log` (`unit.log`, `pkg-test.log`, `e2e-test.log`, `smoke.log`).
+Every test target ends with a summary, one row per package or test file (`PASS 135/135`), then `ALL PASSED` or `FAILED`, and keeps its full output in `logs/test/`:
+
+| Target | Log file |
+| :--- | :--- |
+| `make unit` | `logs/test/unit.log` |
+| `make test` (with Jazzy) | `logs/test/pkg-test.log` (colcon) and `logs/test/e2e-test.log` (`drone/tests/ros`) |
+| `make test` (without Jazzy) | `logs/test/unit.log` (it runs `make unit`) |
+| `make smoke` | `logs/test/smoke.log` |
 
 ```bash
 cd ~/ROSRangers/drone/ground
@@ -747,7 +754,7 @@ From `drone/ground/`:
 | `make test` | ROS 2 Jazzy (§5). Builds the workspace first (`make ws`). Without Jazzy it runs `make unit` | `pkg-test`: `colcon test --packages-select gesture_node intent_node mission_node` with the venv's Python and `colcon test-result --verbose`; then `e2e-test`: `python3 -m pytest ../tests/ros -v`. Both parts run even if the first fails | `239 tests, 0 errors, 0 failures, 0 skipped`, then `47/47` |
 | `make smoke` | Docker only (§4) | `docker/smoke_test.sh`, six steps (§10.3) | `PASS: images, in-image tests, gesture -> intent -> mission across containers, monitor, clean stops, node logs` |
 
-Each target ends with a summary (one row per package or test file, passed/total, skipped and failed counts) and keeps its full output in `logs/test/<target>.log`:
+Each target ends with a summary (one row per package or test file, passed/total, skipped and failed counts) and keeps its full output in `logs/test/` (`unit.log`, `pkg-test.log` + `e2e-test.log`, `smoke.log`, §4.3):
 
 ```text
 =================== summary: make unit (no ROS needed) ===================
@@ -869,7 +876,7 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | `gesture` container: `cannot open display` / `could not connect to display` | X server refuses the container | `xhost +local:` (`make` runs it), check `echo $DISPLAY` |
 | `docker compose up` fails with `/dev/video0: no such file or directory` | no webcam at `/dev/video0` | plug one in; `docker compose up intent mission flight echo` runs the rest |
 | `docker compose up` shows only the table, no node output | expected since #93: the nodes write to files | `tail -f logs/<service>/latest.log` or `docker compose logs -f <service>` (§4.2) |
-| a test target failed and the output scrolled away | | `logs/test/<target>.log` holds all of it |
+| a test target failed and the output scrolled away | | `logs/test/unit.log`, `pkg-test.log` + `e2e-test.log` (`make test`) or `smoke.log` hold all of it (§4.3) |
 | containers run but a host `ros2 topic list` shows nothing | different `ROS_DOMAIN_ID` in the host shell and in the shell that started `make` | export the same value in both |
 | a test is `skipped` in `make unit` | `rclpy` or MediaPipe not available | expected; `make test` (Jazzy) or `make smoke` (Docker) runs them (§10.4) |
 | Watcher prints only `HOVER_LAND_REQUEST` / `no_packets_yet` | nothing reaches `intent_node` | started without `input_source:=topic`, or `gesture_node` not running: Level 1 |
@@ -923,7 +930,7 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | **MediaPipe** | A framework used here for detecting hand landmarks. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **Package** | A folder of ROS 2 code (`package.xml`, `setup.py`) that builds into one or more nodes. |
-| **PID 1** | The first process in a container. `docker stop` sends its signal to it. Here it is `entrypoint.sh`, which passes the signal on to the node and waits until the log file has every line. |
+| **PID 1** | The first process in a container. `docker stop` sends its signal to it. Under compose (`LOG_DIR` set) it is `entrypoint.sh`, which passes the signal on to the node and waits until the log file has every line; without `LOG_DIR` (CI, in-image tests) the node itself. |
 | **Pretend input** | A small node (`fake_flight_state`, `fake_intent`) that publishes made-up values so a node can be tested without the real source. Never used with a real drone. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |

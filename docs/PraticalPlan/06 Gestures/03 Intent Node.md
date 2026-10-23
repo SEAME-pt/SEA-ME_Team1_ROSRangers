@@ -283,7 +283,7 @@ drone/ground/src/intent_node/
 
 48 tests in total (2026-10-21); without ROS 2 the 21 node and process tests are skipped. What each file checks, and how to run them (`make unit`, `make test`, `make smoke`): [[01 ROS2 Nodes Installation|01]] §10. The tests with `gesture_node` (contract and pipeline) are in `drone/tests/ros/`.
 
-The Docker image is `drone/ground/docker/intent/Dockerfile`: `ros:jazzy-ros-base`, `colcon build` of this package, and the node as PID 1 so `docker stop` stops it cleanly.
+The Docker image is `drone/ground/docker/intent/Dockerfile`: `ros:jazzy-ros-base`, `colcon build` of this package, and the node started directly (not through `ros2 run`), so `docker stop` stops it cleanly. Under compose `entrypoint.sh` is PID 1 and passes the signal on ([[01 ROS2 Nodes Installation|01]] §4.2).
 
 Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `intent_node/` folder.
 

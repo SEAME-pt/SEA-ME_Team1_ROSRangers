@@ -338,7 +338,7 @@ The node logs its topics at start-up, every mode change (`LAND_REQUEST` as a war
 
 The health report is a warning when one of the two inputs got no messages in the last 5 s. Bad input looks like `Bad /gesture/intent (unknown_intent) treated as NEUTRAL: ...` or `Ignored a bad /flight/state message: ...`.
 
-In Docker (§9.1) the same lines go to `drone/ground/logs/mission/latest.log` (and `logs/flight/latest.log` for `fake_flight_state`), each one prefixed with the wall-clock time. Every container start writes a new file, so two runs can be compared with `diff` ([[01 ROS2 Nodes Installation|01]] §4.3).
+In Docker (§9.4) the same lines go to `drone/ground/logs/mission/latest.log` (and `logs/flight/latest.log` for `fake_flight_state`), each one prefixed with the wall-clock time. Every container start writes a new file, so two runs can be compared with `diff` ([[01 ROS2 Nodes Installation|01]] §4.2, "Node logs").
 
 ### 6.4 How to read the outputs
 

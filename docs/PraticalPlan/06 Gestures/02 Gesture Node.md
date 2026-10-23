@@ -363,7 +363,7 @@ drone/ground/src/gesture_node/
 
 56 tests in total (2026-10-21). Without ROS 2 the 15 node and process tests are skipped, and without MediaPipe 2 more. What each file checks, and how to run them (`make unit`, `make test`, `make smoke`): [[01 ROS2 Nodes Installation|01]] §10. The tests that need both nodes are in `drone/tests/ros/`.
 
-The Docker image is `drone/ground/docker/gesture/Dockerfile`: `ros:jazzy-ros-base`, `pip3 install -r requirements.txt`, the X11/Qt libraries for the window, `colcon build` of this package, and the node as PID 1 so `docker stop` stops it cleanly.
+The Docker image is `drone/ground/docker/gesture/Dockerfile`: `ros:jazzy-ros-base`, `pip3 install -r requirements.txt`, the X11/Qt libraries for the window, `colcon build` of this package, and the node started directly (not through `ros2 run`), so `docker stop` stops it cleanly. Under compose `entrypoint.sh` is PID 1 and passes the signal on ([[01 ROS2 Nodes Installation|01]] §4.2).
 
 | File | What it does | Change from the prototype |
 | :--- | :--- | :--- |

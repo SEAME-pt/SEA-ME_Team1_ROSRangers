@@ -119,7 +119,7 @@ Movement gestures (wave, swipe) from a planned motion tracker could be added lat
 | Contract, pipeline and launch tests (two or three nodes together), tests of the `echo` table and the Docker entrypoint | `drone/tests/ros/` | pytest / unittest, ROS 2 for the pipeline, launch and program tests |
 | `Makefile`, `docker-compose.yml`, `docker/` (Dockerfiles, `entrypoint.sh`, `smoke_test.sh`, `echo/monitor.py`) | `drone/ground/` | host shell and Docker |
 | `gesture-venv/`, `ros2_ws/` (`src/` symlinks, `build/`, `install/`, `log/`) | `drone/ground/`, **ignored by Git** | made by `make` on a PC with Jazzy ([[01 ROS2 Nodes Installation\|01]] §6) |
-| `logs/` (`<service>/latest.log` per node, `test/<target>.log` per test target, `smoke/`) | `drone/ground/logs/`, **ignored by Git** (only its `.gitignore` is committed) | written by the containers and the `make` test targets ([[01 ROS2 Nodes Installation\|01]] §4.3) |
+| `logs/` (`<service>/latest.log` per node; `test/unit.log`, `test/pkg-test.log`, `test/e2e-test.log`, `test/smoke.log` from the test targets; `smoke/`) | `drone/ground/logs/`, **ignored by Git** (only its `.gitignore` is committed) | written by the containers ([[01 ROS2 Nodes Installation\|01]] §4.2) and the `make` test targets ([[01 ROS2 Nodes Installation\|01]] §4.3) |
 
 - `drone/tools/gesture/` (the standalone UDP prototype) was removed on 2026-10-20. Its code lives on in `gesture_node` ([[02 Gesture Node]] §9).
 - Natively, `gesture_node` must be built with the venv's Python, `intent_node` and `mission_node` with the system Python. `make` does both ([[01 ROS2 Nodes Installation|01]] §6). In Docker each image has its own Python, so the problem does not exist.
@@ -148,7 +148,7 @@ Everything runs from `drone/ground/` with `make`. ROS 2 Jazzy does **not** have 
 | :--- | :--- |
 | `make` | venv + workspace (only if Jazzy is installed), then the five containers |
 | `make down` | stops the containers |
-| `make unit` / `make test` / `make smoke` | the tests (§8 Step 1). Each ends with a pass/total summary and keeps its full output in `logs/test/<target>.log` |
+| `make unit` / `make test` / `make smoke` | the tests (§8 Step 1). Each ends with a pass/total summary and keeps its full output in `logs/test/`: `unit.log`; `pkg-test.log` + `e2e-test.log` for `make test` (`unit.log` without Jazzy); `smoke.log` |
 | `make clean` | `down` + removes this project's Docker images |
 | `make fclean` / `make re` | `clean` + removes the venv, the workspace, `logs/` and Python caches, and runs `docker system prune -af` / `fclean`, then `make` |
 
@@ -246,7 +246,7 @@ T1 logs `Intent -> HOVER_LAND_REQUEST (reason: no_packets_yet ...)` and a `No pa
 
 #### What you should see
 
-Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, read `/gesture/raw` instead. `echo` prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py` (needs a local Jazzy). Steps 2–5 below use it; in Docker, read the `echo` table (it only changes when a value changes) or the `Intent ->` lines in `logs/intent/latest.log` instead.
+Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, read `/gesture/raw` instead. T3 (`ros2 topic echo`) prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py` (needs a local Jazzy). Steps 2–5 below use it; in Docker, read the `echo` table (it only changes when a value changes) or the `Intent ->` lines in `logs/intent/latest.log` instead.
 
 > [!WARNING] Three rules that break things if you forget them (native setup)
 > - **Never** run a plain `colcon build` of everything in `ros2_ws`: it rebuilds `gesture_node` with the system Python, and `ros2 run gesture_node ...` then fails with `No module named 'mediapipe'`. Rebuild with `make ws` (after `rm ros2_ws/.gesture_node` if nothing changed in the package files).
