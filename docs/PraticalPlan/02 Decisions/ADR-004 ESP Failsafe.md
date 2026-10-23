@@ -3,6 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D04
@@ -32,7 +33,7 @@ tags:
 
 | Betaflight version | ESP action | Result |
 |---|---|---|
-| 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
+| 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override\|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
 | 2026.6.2 | Neutral for 1 s, then **stop sending** | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
 
 **Resume:** never automatic. The ground sends `RESUME_REQUEST` inside a valid session, then streams neutral setpoints for ≥ 500 ms before control returns ([[ESP Link State Machine]]).
@@ -81,4 +82,8 @@ The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-0
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
-| **`T_loss`** | Link-loss timeout ([[ADR-004 ESP Failsafe\|ADR-004]]): if no accepted control message arrives for this long, the ESP enters its link failsafe. Set to 250 ms. |
+| **Angle mode** | Betaflight mode where the sticks command a tilt angle; centred sticks level the drone. It does not hold position: the drone can drift. |
+| **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
+| **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
+| **STREAMING** | ESP link state in which ground setpoints are being forwarded to the FC ([[ESP Link State Machine]]). |
+| **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |

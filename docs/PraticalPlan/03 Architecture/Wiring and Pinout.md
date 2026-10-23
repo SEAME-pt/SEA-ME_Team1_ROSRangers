@@ -13,6 +13,8 @@ tags:
 
 # Wiring and Pinout
 
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
+
 > [!warning] Status: DRAFT. The ESP is wired (state 2026-10-20).
 > Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove, so the install is not permanent. It is not on a connector yet ([[ADR-021 Removable ESP Connector|ADR-021]], accepted 2026-10-20). S2-01 passed on this link ([[ESP Bench Test Plan]] §4). Still open: the [[ESP_to_FC]] §10 evidence on the soldered joints, the ESP current (S1-08), and the ELRS failsafe re-test (GitHub #22, #41).
 
@@ -97,7 +99,7 @@ Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flo
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
+| **CRSF** | Crossfire serial protocol: the serial wire format between the ELRS receiver and the FC (UART2), and between the radio and its ELRS module. |
 | **DV5V** | 5 V pad on this FC that the vendor diagram uses to power the receiver. |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
@@ -109,3 +111,5 @@ Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flo
 | **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **GND** | Ground: the common 0 V reference wire. |
+| **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |

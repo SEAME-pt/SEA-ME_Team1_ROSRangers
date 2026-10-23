@@ -657,7 +657,6 @@ flowchart LR
 | **MAVLink**         | A common messaging protocol between drones and ground stations                       |
 | **MSP**             | MultiWii Serial Protocol, the serial protocol Betaflight uses                        |
 | **ELRS**            | ExpressLRS, the open source radio-control link used on our receiver                  |
-| **AT command** | Text command used to configure or control a modem or microcontroller module. |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |

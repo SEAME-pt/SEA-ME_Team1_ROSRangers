@@ -1,7 +1,7 @@
 ---
 title: ESP Bench Test Plan
 type: test-plan
-status: draft
+status: active
 date: 2026-10-12
 project: SEA autonomous drone
 aliases:
@@ -170,6 +170,9 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
-| **dBm** | Received signal strength in decibel-milliwatts. Closer to 0 is stronger: −40 is very strong, −70 is weak. |
-| **p99** | 99th percentile: 99 % of the measured values are at or below it. |
-| **`T_loss`** | Link-loss timeout ([[ADR-004 ESP Failsafe\|ADR-004]]): if no accepted control message arrives for this long, the ESP enters its link failsafe. Set to 250 ms. |
+| **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |
+| **WPA2-PSK** | Wi-Fi security mode where every client uses the same pre-shared key (the ESP SoftAP, ADR-006). |
+| **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
+| **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
+| **compare-diffs** | Bench-tool command that compares two Betaflight `diff all` files, used to prove the FC configuration is unchanged. |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |

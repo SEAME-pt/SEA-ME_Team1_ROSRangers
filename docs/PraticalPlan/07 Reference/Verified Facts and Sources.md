@@ -3,6 +3,7 @@ title: Verified Facts and Sources
 type: reference
 status: active
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - reference
@@ -50,9 +51,10 @@ tags:
 
 ## 4. Not verified (treat with care)
 
-- The ROS 2 / PX4 / Ubuntu version pairing in [[ADR-018 Ground OS and ROS 2|ADR-018]]: check the official pages before installing.
 - CLI command syntax in [[Betaflight Setup]]: confirm with `help` on your version.
-- The GitHub Actions workflows run on every PR (see the Actions tab). The SITL and HIL jobs skip until their files exist.
+- The GitHub Actions workflows run on every PR (see the Actions tab).
+
+> 2026-10-23: the ROS 2 / PX4 / Ubuntu pairing is verified ([[PX4 SITL Setup]] §1, [[ADR-018 Ground OS and ROS 2|ADR-018]] update), and the SITL and HIL jobs now have their files, so both bullets were removed from this list.
 
 ## 5. Glossary
 

@@ -3,6 +3,7 @@ title: HIL Runner
 type: ci-cd
 status: draft
 date: 2026-10-12
+updated: 2026-10-22
 project: SEA autonomous drone
 tags:
   - ci
@@ -11,6 +12,8 @@ tags:
 ---
 
 # HIL Runner: what it is and how to build ours
+
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
 > [!info] Decision: [[ADR-020 HIL Runner|ADR-020]]
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
@@ -25,6 +28,8 @@ tags:
 A normal CI job runs on GitHub's cloud machines, which have no drone attached. A **self-hosted runner** is a machine **we** own (a Raspberry Pi) that registers with our GitHub repo and picks up jobs labelled for it. Because real hardware is plugged into it, the job can **flash the real ESP and test it**. That is "hardware-in-the-loop" (level 4 in [[Dev_Strategy]] §12). Module 1 requires one job like this.
 
 ## 2. Bench setup (safe by construction)
+
+This is the target setup. What is built today (one spare ESP, no FC, USB flashing) is in §3.1.
 
 ```text
         5V + GND only            Wi-Fi: OTA flash + tests (joins ESP SoftAP)
@@ -44,7 +49,7 @@ A normal CI job runs on GitHub's cloud machines, which have no drone attached. A
 ## 3. Setup steps
 
 1. Raspberry Pi OS 64-bit, user `runner`, member of the `dialout` group.
-2. GitHub → software repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
+2. GitHub → the repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
 3. udev rules for the two USB-serial devices.
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK. As built, the Pi has no Ethernet, so this needs a USB Wi-Fi dongle (§3.1).
 5. Store the PSK as the repo secret `SD_PSK_HIL`. The current firmware (transparent bridge) does not use it: it builds with `SEAME_AP_SSID`, `SEAME_AP_PASS` and `SEAME_OTA_PASS` instead (§3.1).
@@ -85,7 +90,7 @@ Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.
 5. **Latency:** RTT histogram saved as an artifact.
 
 > [!warning] Self-hosted runner security
-> It executes whatever code the workflow runs. Keep the software repo private, or require approval for workflows from outside contributors. Never run the HIL job on `pull_request` from forks.
+> It executes whatever code the workflow runs. The repo is public, so fork PR workflows need approval (set 2026-10-22, §3.1). Never run the HIL job on `pull_request` from forks.
 
 ## 5. Glossary
 
@@ -109,3 +114,5 @@ Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.
 | **FTDI** | A maker of USB-to-serial chips (the FT232 on our spare ESP board). |
 | **DTR / RTS** | Serial control lines. `esptool` uses them to reset the ESP into flash mode without a button press. |
 | **SHA-256** | A hash used to check that a file (here the firmware backup) has not changed. |
+| **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |
+| **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |

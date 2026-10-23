@@ -92,3 +92,7 @@ Battery B1 checked before the session ([[Battery Log]]). Props off. Battery and 
 | **CE_LBT** | EU regulatory domain of ELRS 2.4 GHz: listens before it transmits (Listen Before Talk). |
 | **ESC** | Electronic Speed Controller: drives one motor. The FC's 4-in-1 ESC also stores each motor's spin direction. |
 | **Props out** | Motor layout where the front propellers sweep outwards at the front (`yaw_motors_reversed = ON` in Betaflight). |
+| **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |

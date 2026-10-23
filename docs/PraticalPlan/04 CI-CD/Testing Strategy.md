@@ -3,6 +3,7 @@ title: Testing Strategy
 type: test-plan
 status: draft
 date: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - Communication Test Plan
@@ -12,6 +13,8 @@ tags:
 ---
 
 # Testing Strategy
+
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
 > [!info] Builds on [[Dev_Strategy]] §12–§13 (test levels and pyramid)
 > It also covers the test requirements in [[PC_to_ESP]] §9, [[ESP_to_FC]] §11 and [[ThoneFlow]] §9.
@@ -30,7 +33,7 @@ tags:
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |
 | 3 Simulation | controller + flight interface | PX4 SITL + Gazebo | square path, link-loss injection |
-| 4 HIL | real ESP + FC, Wi-Fi, no battery | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
+| 4 HIL | real spare ESP, no FC (FC checks through Betaflight SITL or the flight unit, #61), no battery; Wi-Fi once the Pi has a USB dongle | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
 | 4 Bench (manual) | ESP alone, then with the FC on temporary wires | lab | [[ESP Bench Test Plan]] Stages 1–2 |
 | 4 Bench (manual) | props off, battery on | lab | [[ESP_to_FC]] §11 Phases 1–6 |
 | 5 Flight | cage, safety pilot | lab | staged masks ([[ADR-010 MSP Override\|ADR-010]]) |
@@ -110,3 +113,5 @@ pkill -f betaflight_SITL.elf
 | **Submodule** | A Git repository nested inside another one at a fixed commit; Betaflight pulls its config and libraries in this way. |
 | **Artifact (CI)** | A file a CI job saves so it can be downloaded after the run, such as a log. |
 | **CLI (Betaflight)** | Betaflight's text command line on a serial port, entered with `#`. |
+| **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
+| **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |

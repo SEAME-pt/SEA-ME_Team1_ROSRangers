@@ -3,7 +3,7 @@ title: Open Questions
 type: tracking
 status: active
 date: 2026-10-12
-updated: 2026-10-16
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - questions
@@ -23,7 +23,7 @@ tags:
 | 2 | Baro present? | **Yes, DPS310 detected.** `status` 2026-10-13/14: `I2C:1`, `BARO=DPS310`, 0 I2C errors. ALTHOLD is possible if it fits the 2026.6.2 build → [[ADR-014 Betaflight Version\|ADR-014]] |
 | 3 | ESP board? | ESP → [[ADR-012 ESP UART Pins\|ADR-012]] |
 | 4 | Upgrade Betaflight? | **Yes** → [[ADR-014 Betaflight Version\|ADR-014]] |
-| 5 | Gestures OK for Module 2? | Yes → [[00 Gesture Pipeline|Gesture Pipeline]] |
+| 5 | Gestures OK for Module 2? | Yes → [[00 Gesture Pipeline\|Gesture Pipeline]] |
 | 6 | GitFlow mandatory? | No → the team's [[Dev_Strategy]] model ([[ADR-017 Branching Model\|ADR-017]]) |
 | 7 | HIL runners? | Pis/Arduinos available, concept new → [[HIL Runner]] |
 | 8 | Ground OS? | Linux → [[ADR-018 Ground OS and ROS 2\|ADR-018]] |
@@ -64,7 +64,7 @@ tags:
 ### Safety
 - [ ] **Network isolation for the transparent bridge:** is an isolated network needed, or is the shared SEAME Wi-Fi acceptable? Under evaluation (team, 2026-10-20). Not a rule yet ([[Safety Rules]] §2).
 - [ ] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Team to decide (2026-10-20).
-- [ ] Name the second trained safety pilot (BrunoBMFT is the first).
+- [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
 
 ### Tests
 - [ ] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? (week 2)
@@ -85,3 +85,8 @@ tags:
 | **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
+| **Betaflight** | The open-source FC firmware on the drone: 4.5.1 installed, 2026.6.2 planned (ADR-014). |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |
+| **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |

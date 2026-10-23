@@ -3,6 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -63,7 +64,7 @@ Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job
 5. PlatformIO build of a "hello" firmware for `esp`.
 6. `drone/config/betaflight/` with the `diff all` files, reviewed like code.
 
-Then: SITL job (week 3), HIL job (week 4), tag `v0.1.0` on `main` (week 8).
+Then: SITL job (done 2026-10-23, `betaflight-sitl`, #85), HIL job (runner registered 2026-10-22 with a first smoke test; flashing and bench tests in week 4, #48), tag `v0.1.0` on `main` (week 8).
 
 ## 3. Before you commit: run pre-commit
 
@@ -101,7 +102,7 @@ pre-commit run --all-files
 
 ## 4. CI decisions for the ROS 2 ground nodes (2026-10-21)
 
-Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed; issue #73, PR #74), from the review of `drone/ground` on 2026-10-21. This section is a summary; the ADR has the reasons and the options considered.
+Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (accepted; issue #73, PR #74 merged 2026-10-21), from the review of `drone/ground` on 2026-10-21. This section is a summary; the ADR has the reasons and the options considered.
 
 **Done:**
 - **Time limits** on every `ci.yaml` job.
@@ -151,3 +152,4 @@ Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed; issue #73, PR
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
 | **shellcheck** | Linter for shell scripts (`.sh`), run as a pre-commit hook. |
 | **Smoke test** | A quick end-to-end check that the built thing starts and does its basic job. |
+| **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |

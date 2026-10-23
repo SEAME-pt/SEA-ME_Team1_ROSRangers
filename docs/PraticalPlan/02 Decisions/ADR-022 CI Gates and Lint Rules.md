@@ -1,8 +1,9 @@
 ---
 title: ADR-022 — CI Gates and Lint Rules
 type: adr
-status: proposed
+status: accepted
 date: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D22
@@ -15,7 +16,7 @@ tags:
 
 # ADR-022 — CI Gates and Lint Rules
 
-> [!info] Status: PROPOSED (2026-10-21, GitHub #73, PR #74). Accepted when PR #74 is approved and merged into `dev`
+> [!success] Status: ACCEPTED (2026-10-21, PR #74 merged into `dev`). Proposed on 2026-10-21 in GitHub #73
 > Taken while preparing `ci.yaml` for the ROS 2 ground nodes (`gesture_node`, `intent_node`), from the review of `drone/ground` on 2026-10-21. Amends the CI consequence of [[ADR-017 Branching Model|ADR-017]] (see its update of 2026-10-21).
 
 ## 1. Context
@@ -57,6 +58,8 @@ tags:
   - Required checks on `dev`.
 
   Each needs its own entry here when it is decided.
+
+> Update 2026-10-23: accepted. PR #74 was merged into `dev` on 2026-10-21, and the gates above are in `.github/workflows/ci.yaml`.
 
 ## 5. Related pages
 

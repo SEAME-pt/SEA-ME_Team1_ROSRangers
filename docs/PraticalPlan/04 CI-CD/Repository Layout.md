@@ -1,7 +1,7 @@
 ---
 title: Software Repository Layout
 type: ci-cd
-status: accepted
+status: active
 date: 2026-10-21
 project: SEA autonomous drone
 tags:
@@ -96,3 +96,4 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
