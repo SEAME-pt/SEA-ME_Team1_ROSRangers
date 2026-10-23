@@ -1074,6 +1074,7 @@ The complete development process can be summarized as:
 The development process exists to help the team build a reliable autonomous drone within six months.
 
 The process itself should never become more complicated than the problem it is solving.
+
 ## 26. Glossary
 
 | Term | Meaning |
@@ -1085,3 +1086,5 @@ The process itself should never become more complicated than the problem it is s
 | **PR** | Pull Request: a proposed change submitted for review before merging. |
 | **REQ** | Requirement ID of the form REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN, used for traceability. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
+| **Sprint** | A 2-week iteration of the board. Sprint 0 = 2026-10-07 to 2026-10-18; Sprint 1 = 2026-10-19 to 2026-11-01. |
+| **Track (A–E)** | The five ownership areas: A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures ([[Team Tracks]]). |

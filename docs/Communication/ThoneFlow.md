@@ -3,6 +3,7 @@ title: ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
 type: sensor-integration
 status: draft
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -19,6 +20,8 @@ tags:
 ---
 
 # ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
+
+> [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
 > [!warning] Status: DRAFT / PLANNED. Sensor NOT installed.
 > The ThoneFlow-3901U is an unsoldered, separate module and is **not installed** on the drone. No wiring exists. It is **not confirmed** that Betaflight 4.5.1 supports this sensor. Everything under "Proposed" below is an architectural option, not a validated design. Datasheet facts are marked **[DS]**; proposals are marked **[PROPOSED]**; items the datasheet does not state are marked **[NOT STATED]**.
@@ -237,7 +240,7 @@ flowchart LR
 |---|---|
 | Precondition | **Betaflight 4.5.1 (or the ODDITYRCF7AIO target build) must be confirmed to support this sensor/format on a UART.** Unconfirmed; do not assume. |
 | What to check | Official Betaflight 4.5.x documentation and release notes for optical-flow / rangefinder sensor support and supported frame formats; the target's build options and serial-port function list. Whether any supported optical-flow input is by UART frame, by MSP message, or not at all is **unknown**. |
-| FC UART availability | Earlier configuration inspection showed UART1, UART4 and UART6 appearing unassigned, with UART4 the leading candidate for the ESP link (see [[ESP_to_FC|esp8266-fc-serial-interface]]). Physical pad availability is **unconfirmed**, so any sensor UART would need its own confirmation. |
+| FC UART availability | Earlier configuration inspection showed UART1, UART4 and UART6 appearing unassigned, with UART4 the leading candidate for the ESP link (see [[ESP_to_FC\|esp8266-fc-serial-interface]]). Physical pad availability is **unconfirmed**, so any sensor UART would need its own confirmation. |
 | Pros | Hardware UART on the FC; no ESP8266 serial-port constraint; parsing handled by firmware if supported. |
 | Cons / unknowns | May simply be unsupported; even if flow input is supported, it is unknown what Betaflight does with it and what is exposed to the ground computer; changes to FC configuration need explicit approval; no way for ground-side estimation to see raw flow values unless exposed through MSP. |
 | Validation needed | Confirm support from documentation first; then props-off bench check that the FC recognises frames and exposes the data. |
@@ -248,7 +251,7 @@ flowchart LR
 
 | Aspect | Notes |
 |---|---|
-| Precondition | **Custom ESP8266 firmware.** The current AT firmware (v1.7.4.0, SDK 3.0.5) is not a platform for a sensor parser; whether it could be used at all is not assessed here. This ties into the AT vs. custom C++ decision on [[PC_to_ESP|ground-esp8266-communication]] (OD-01). |
+| Precondition | **Custom ESP8266 firmware.** The current AT firmware (v1.7.4.0, SDK 3.0.5) is not a platform for a sensor parser; whether it could be used at all is not assessed here. This ties into the AT vs. custom C++ decision on [[PC_to_ESP\|ground-esp8266-communication]] (OD-01). |
 | Serial constraint | See §6: the ESP8266 has **one** full-duplex hardware UART (UART0), which is already proposed for the FC link; UART1 is transmit-only. A second receive path would be **software serial**, which needs validation. |
 | Pros | No extra processor; data enters the same Wi-Fi path the ground computer already uses; ground-side estimator sees raw flow values. |
 | Cons / risks | Software-serial reliability under Wi-Fi load is **unproven**; ESP8266 CPU/timing budget is shared with Wi-Fi, FC link and command validation; any ESP8266 fault affects both the flow data and the FC link. |

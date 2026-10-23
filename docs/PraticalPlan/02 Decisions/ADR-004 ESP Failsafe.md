@@ -3,6 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D04
@@ -32,7 +33,7 @@ tags:
 
 | Betaflight version | ESP action | Result |
 |---|---|---|
-| 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
+| 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override\|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
 | 2026.6.2 | Neutral for 1 s, then **stop sending** | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
 
 **Resume:** never automatic. The ground sends `RESUME_REQUEST` inside a valid session, then streams neutral setpoints for ≥ 500 ms before control returns ([[ESP Link State Machine]]).
@@ -44,6 +45,14 @@ The decision above is unchanged. This entry fixes what "safe" means for the **ES
 - On link loss the drone **holds its position**: the ESP keeps neutral sticks (roll/pitch/yaw 1500, throttle left to the pilot), as in the table above. The drone does **not** land or return by itself.
 - The **pilot takes over with the radio** (ELRS and the override switch). This stays the only guaranteed mitigation.
 - This is **not** Betaflight's own RX failsafe (`failsafe_procedure` = DROP on ELRS radio loss, layer 1 below). That one is a different failsafe and is not changed here ([[Betaflight Setup]] §5).
+
+### 2.2 Update 2026-10-23: no position hold
+
+The decision is unchanged. This entry corrects the wording of §2.1:
+
+- "Holds its position" in §2.1 means **attitude hold only**. The ESP keeps neutral sticks and Betaflight levels the drone in Angle mode. There is no position sensor and no position hold, so the drone **can drift**. The pilot takes over with the radio and owns the throttle.
+- `T_loss` stays at the initial **250 ms**. The link-loss measurements of 2026-10-19 are being redone after hardware problems (GitHub #30). A new value needs its own dated entry here.
+- The E-stop, the kill switch and the takeover switch are defined in [[Safety Rules]] §3 and in [[ADR-010 MSP Override|ADR-010]] (update 2026-10-23).
 
 ## 3. Safety layers (inner → outer)
 
@@ -73,3 +82,8 @@ The decision above is unchanged. This entry fixes what "safe" means for the **ES
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **Angle mode** | Betaflight mode where the sticks command a tilt angle; centred sticks level the drone. It does not hold position: the drone can drift. |
+| **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
+| **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
+| **STREAMING** | ESP link state in which ground setpoints are being forwarded to the FC ([[ESP Link State Machine]]). |
+| **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |

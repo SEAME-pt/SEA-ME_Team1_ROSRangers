@@ -27,7 +27,7 @@ tags:
 - Guilherme: progress on issues/PRs.
 - Paulo: possibility of live sync in Obsidian.
 - Prep Weekly (2026-10-14):
-  - How the week went + next week
+  - How the week went + plan for 2026-10-19 to 2026-10-23
   - Talk about the docs
   - Talk about CI/CD
   - Bruno is working with Gesture Capture and ROS 2

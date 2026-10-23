@@ -3,6 +3,7 @@ title: Ground Computer ↔ ESP8266 Communication Architecture
 type: architecture-design
 status: draft
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -18,6 +19,10 @@ tags:
 ---
 
 # Ground Computer ↔ ESP8266 Communication Architecture
+
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
+
+> [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
 > [!warning] Status: DRAFT / PROPOSED
 > This page records agreed design directions and *proposes* further detail. Nothing described here has been implemented or tested. Exact packet formats, port numbers, timeouts, rates and numerical limits are deliberately **not** specified and are listed as open decisions in [§12](#12-open-decisions).
@@ -166,7 +171,7 @@ flowchart LR
 
 ### 3.4 Unresolved questions
 
-See [§12](#12-open-decisions) for the full list, including proposed resolutions from the 2026-10-12 review (recommended, not yet approved by the team). Still genuinely open: exact packet fields, port values, rate and timeout values, the definition of the failsafe safe output, and whether a message authentication code is needed.
+See [§12](#12-open-decisions) for the full list, including proposed resolutions from the 2026-10-12 review (recommended, not yet approved by the team). Still genuinely open: exact packet fields, port values, rate and timeout values, the definition of the failsafe safe output, and key rotation (OD-18). Message authentication was decided in [[ADR-002 Message Integrity|ADR-002]].
 
 ---
 
@@ -565,7 +570,7 @@ The communication design is accepted for a given phase only when the relevant cr
 
 - Exact packet fields, port values, update rate and `T_fresh`/`T_loss` values (to be derived from measurement), the definition of the failsafe safe output (coordinated with the FC document), whether a message authentication code is needed, telemetry transport, key management, overload policy, shared-definition location, ground-side bridge form, acceptance thresholds and firmware update mechanism. See [§12](#12-open-decisions).
 
-**Recommended in the 2026-10-12 review (pending team approval):** custom ESP8266 firmware (OD-01); fixed-layout binary messages with length-prefixed TCP framing (OD-02/03); static addressing on a dedicated ground-side access point (OD-04/17); wrap-aware sequence numbers with a per-session ID and ESP-side receive-clock freshness (OD-08/10); gaps counted but not acted on (OD-09); no automatic resume, control valid only within a session, and configuration rejected while control is enabled (OD-13/14/16).
+**Resolved by ADRs (2026-10-12):** see [[Decision Register]]. ESP SoftAP instead of a ground-side access point: ADR-006 (OD-04/17). Custom firmware: ADR-007 (OD-01). HMAC: ADR-002 (OD-11). Sequence and sessions: ADR-003 (OD-08/09). Failsafe and resume: ADR-004 (OD-13). TCP session: ADR-005 (OD-14). Port numbers are still open (OD-04, [[Protocol Spec v0]] §7).
 
 **Not covered here:** the ESP8266 ↔ flight controller interface, which belongs in a separate document.
 

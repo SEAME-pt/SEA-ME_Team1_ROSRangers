@@ -3,6 +3,7 @@ title: ADR-023 — ELRS Firmware Version and Regulatory Domain
 type: adr
 status: accepted
 date: 2026-10-22
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - adr
@@ -32,6 +33,9 @@ Both devices were then read directly over their own ExpressLRS Wi-Fi pages (`htt
 | Binding UID | 179,19,74,136,33,254 (`Overridden`) | 0,1,0,1,0,83 (`Traditional`) |
 | Hardware target flashed | RadioMaster **Zorro** Internal 2.4GHz TX | `BETAFPV_NANO_2400_RX` |
 | MCU / RF chip | ESP32 / SX128x | ESP8285 / SX1281 |
+
+> [!note] Update 2026-10-23: binding UIDs
+> The UIDs above were read **before** the 2026-10-21 update. The Pocket's came from a wrong placeholder phrase. The current UID comes from the team binding phrase and is **intentionally not written** in this repository, because the UID works like the phrase itself.
 
 Sources on compatibility:
 
@@ -103,7 +107,7 @@ ELRS 4.1.0 still supports the ESP8285 receivers: the BETAFPV Nano RX is in the o
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **Binding phrase** | Secret text set on both radio and receiver; both derive the same UID from it, so they link on every power-up. |
 | **CE_LBT** | EU regulatory domain of ELRS 2.4 GHz: listens before it transmits (Listen Before Talk). |
-| **CRSF** | Crossfire serial protocol: the wire format between the EdgeTX radio and its ELRS module, and between the receiver and the FC. |
+| **CRSF** | Crossfire serial protocol: the serial wire format between the ELRS receiver and the FC (UART2), and between the radio and its ELRS module. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **ESP8285** | The microcontroller inside the BETAFPV Nano receiver that runs the ELRS firmware (not the drone's ESP-12F bridge). |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
@@ -111,3 +115,5 @@ ELRS 4.1.0 still supports the ESP8285 receivers: the BETAFPV Nano RX is in the o
 | **Lua (ExpressLRS Lua)** | The ExpressLRS menu script on the radio (SYS → TOOLS → ExpressLRS). |
 | **Target** | The hardware definition an ELRS firmware is built for (pins, power levels, product name). |
 | **UID** | Binding identifier derived from the binding phrase (or set by a bind); TX and RX link only when it matches. |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |
+| **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |

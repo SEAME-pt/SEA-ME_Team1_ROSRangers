@@ -63,3 +63,6 @@ The team has **one spare ESP** (same board as the flight ESP) and permission to 
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `d1_mini_ota`). |
