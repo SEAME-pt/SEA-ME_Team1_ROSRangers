@@ -3,7 +3,7 @@ title: System Overview
 type: architecture
 status: draft
 date: 2026-10-12
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - architecture
@@ -12,7 +12,7 @@ tags:
 # System Overview
 
 > [!warning] Status: DRAFT
-> This is the architecture we are building towards. State on 2026-10-21: since 2026-10-20 the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The gesture nodes `gesture_node` and `intent_node` are built and tested in CI and Docker (2026-10-21), without a drone ([[00 Gesture Pipeline]]). `mission_node` exists with 35 unit tests but is not committed yet ([[04 Mission Node]]). The rest of the chain (controller, failsafe, `flight_interface`) is not built or tested yet.
+> This is the architecture we are building towards. State on 2026-10-21: since 2026-10-19 the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The gesture nodes `gesture_node` and `intent_node` are built and tested in CI and Docker (2026-10-21), without a drone ([[00 Gesture Pipeline]]). `mission_node` exists with 35 unit tests but is not committed yet ([[04 Mission Node]]). The rest of the chain (controller, failsafe, `flight_interface`) is not built or tested yet.
 
 Follows the Module 1 reference layering: mission → ROS 2 → hardware abstraction → real-time layer → sensors/actuators.
 
@@ -60,7 +60,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
-| Webcam + MediaPipe | ≥ 20 FPS | [[02 Gesture Node|Gesture Node]] |
+| Webcam + MediaPipe | ≥ 20 FPS | [[02 Gesture Node\|Gesture Node]] |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.
 
@@ -78,12 +78,12 @@ Telemetry echoes the **last applied control seq and its send timestamp**, so the
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
+| **CRSF** | Crossfire serial protocol: the serial wire format between the ELRS receiver and the FC (UART2), and between the radio and its ELRS module. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
-| **HMAC** | Hash-based message authentication code: a keyed checksum that proves a packet was not changed or forged. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **IMU** | Inertial Measurement Unit: the gyroscope and accelerometer on the FC. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |

@@ -5,6 +5,7 @@ __pycache__/
 *.bin
 .pytest_cache/
 config/
+.claude/settings*.json
 
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/

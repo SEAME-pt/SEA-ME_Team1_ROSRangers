@@ -19,7 +19,7 @@ This note contains metadata properties at the very top. In Obsidian, these field
 * [ ] Wireframe the new login overlay interface.
 * [ ] Review structural changes with the engineering team.
 
-*Note: The box above is an active, live view of the milestone section inside [[Linking and Embeddings]]].*
+*Note: The box above is an active, live view of the milestone section inside [[Linking and Embeddings]].*
 
 ---
 ## Glossary

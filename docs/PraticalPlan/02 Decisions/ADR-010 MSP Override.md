@@ -3,6 +3,7 @@ title: ADR-010 — MSP Override for Setpoints
 type: adr
 status: accepted-with-conditions
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D10
@@ -48,6 +49,13 @@ MSP Override (mode ID 50), with these **mandatory conditions**:
 5. Bump-free handover: the ground initialises setpoints from the pilot's current values (`MSP_RC`).
 6. On 4.5.1: **props-off bench tests only** ([[ESP_to_FC]] §11) until the upgrade.
 
+### Update 2026-10-23: kill switch and takeover switch (team decision)
+
+The radio has two separate safety switches. The conditions above are unchanged.
+
+- **Kill switch:** SA, which is also the ARM switch. Releasing SA disarms and stops the motors. Tested on the bench on 2026-10-22 ([[Radio Link Tests]] RL-12, GitHub #22).
+- **Takeover switch:** the MSP Override switch (the "override switch" in condition 3). Turning it off ends ground control: from that moment until it is turned on again, the drone takes commands only from the radio. Its AUX channel is not mapped yet ([[Betaflight Setup]] §1). It stays out of the mask (condition 1).
+
 ## 3. Consequences
 
 - The bench plan in [[ESP_to_FC]] §11 is the gate before any override flight.
@@ -64,11 +72,14 @@ MSP Override (mode ID 50), with these **mandatory conditions**:
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **CRSF** | Crossfire Serial Protocol, a serial protocol used by radio-control equipment. |
+| **CRSF** | Crossfire serial protocol: the serial wire format between the ELRS receiver and the FC (UART2), and between the radio and its ELRS module. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
-| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 to REQ-SAF-008 (was SAF-08)) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |

@@ -3,6 +3,7 @@ title: ESP8266 ↔ Flight Controller Serial Interface (Proposed)
 type: interface-design
 status: draft
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - architecture
@@ -17,6 +18,10 @@ tags:
 ---
 
 # ESP8266 ↔ Flight Controller Serial Interface (Proposed)
+
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
+
+> [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
 > [!warning] Status: DRAFT / PROPOSED / PROVISIONAL
 > This page describes a **proposed** serial link. **No wiring or firmware change has been approved based solely on this proposal.** Nothing here has been physically validated: not UART4, not MSP override, not any pin or pad connection. Pad locations, protocol payloads, baud rate and timeout values are deliberately **not** specified and appear as open decisions in [§12](#12-acceptance-criteria-and-unresolved-decisions).
@@ -89,7 +94,7 @@ Describe the **proposed** serial link between the ESP8266 Wi-Fi bridge and the O
 | Manual control | ELRS; must remain independent and retain pilot takeover authority |
 | Optical-flow sensor | ThoneFlow-3901U, available, **not installed** |
 | Exposed pads (team, 2026-10-12) | T1, R1, R2, R3, T4, R4, CAM, SCL, SDA, 5V ×2, GND ×3, 3.3V, DV5V |
-| ELRS wiring | 5V, G, R2, T2 (Medium certainty, [[2.5Drone]] #22) |
+| ELRS wiring | DV5V (moved from 5V, GitHub #41), G, R2, T2 (High: multimeter 2026-10-16, GitHub #16, [[Wiring and Pinout]] §1) |
 | MSP API (4.5.1) | 1.46 ([[2.5Drone]]) |
 
 ---
@@ -318,7 +323,7 @@ The ground computer produces high-level control commands (see companion page for
 
 ### 9.1 Principles (proposed)
 
-- **Link-loss safe state (team, 2026-10-20, [[ADR-004 ESP Failsafe|ADR-004]]):** when the ground link is lost (F3), the ESP streams neutral sticks so the drone holds its position, and the pilot takes over with the radio. This is separate from Betaflight's own receiver failsafe (F4, DROP on ELRS loss), which is not changed.
+- **Link-loss safe state (team, 2026-10-20, [[ADR-004 ESP Failsafe|ADR-004]]):** when the ground link is lost (F3), the ESP streams neutral sticks so the drone levels in Angle mode (it can drift: no position hold, [[ADR-004 ESP Failsafe|ADR-004]] 2026-10-23), and the pilot takes over with the radio. This is separate from Betaflight's own receiver failsafe (F4, DROP on ELRS loss), which is not changed.
 - **Assume the worst case for held values** until tested otherwise: the FC may continue acting on the last override.
 - **Pilot takeover must not depend on any component on the ESP8266 path.**
 - Every failure scenario above must have a recorded props-off test result before the design is considered acceptable (§12).
@@ -336,7 +341,7 @@ The ground computer produces high-level control commands (see companion page for
 ### 10.1 Identification (documentation first)
 
 - [x] Obtain manufacturer documentation/wiring diagram for the OddityRC F722AIO and cross-check with the `ODDITYRCF7AIO` target definition. (2026-10-16: vendor diagram matches the target pad list, see [[Wiring and Pinout]] §1.)
-- [ ] Identify, from documentation **and** physical inspection, which pads correspond to the intended UART (UART4 candidate): TX pad, RX pad, ground, and available power pads. Record them in [[Wiring and Pinout]].
+- [x] Identify, from documentation **and** physical inspection, which pads correspond to the intended UART (UART4 candidate): TX pad, RX pad, ground, and available power pads. Record them in [[Wiring and Pinout]]. (2026-10-16, GitHub #16, [[Wiring and Pinout]] §1.)
 - [ ] Confirm that silkscreen label ↔ Betaflight UART number ↔ MCU pin are consistent; do not assume.
 - [ ] Confirm the pads are not shared with another function (e.g. a peripheral, buzzer, LED strip) that would conflict.
 - [ ] Record photographs of the board before any change.
@@ -512,7 +517,8 @@ Evidence (logs, test records, photographs) is required for each.
 
 ### Not done
 
-- No physical pad identified; no wiring, configuration or firmware change approved; no validation performed.
+- 2026-10-23: pads identified (2026-10-16) and the ESP soldered to UART4 (2026-10-19, S2-01 passed, incident #69). Not done: the §10 evidence on the soldered joints, MSP Override, F1–F9.
+- 2026-10-12 state (history): no physical pad identified; no wiring, configuration or firmware change approved; no validation performed.
 
 ### Remaining questions (highest priority first)
 
@@ -548,5 +554,5 @@ Evidence (logs, test records, photographs) is required for each.
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **ARM** | Arming: enabling the motors. Only the pilot arms, never code or gestures. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
-| **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
+| **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

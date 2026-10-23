@@ -3,6 +3,7 @@ title: Battery Log
 type: hardware
 status: active
 date: 2026-10-16
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - hardware
@@ -31,21 +32,21 @@ tags:
 
 | ID | Battery | Connector |
 |---|---|---|
-| B1 | CNHL 4S 850 mAh | XT60, used with the XT30 ↔ XT60 adapter |
+| B1 | CNHL 4S 850 mAh (the maximum for this drone, REQ-HW-001) | XT60, used with the XT30 ↔ XT60 adapter |
 
 ## 3. Checks
 
 | Date | Battery | Swelling / damage | Adapter polarity | Cells (V) | Pack (V) | Notes | Issue |
 |---|---|---|---|---|---|---|---|
 | 2026-10-16 | B1 | None | OK | 3.90 / 3.90 / 3.90 / 3.90 | 15.6 | First check on arrival. Cells are below full charge (4.20 V); charge at the lab station before a flight. | #19 |
+| 2026-10-22 | B1 | None; wires and connector in good condition | — | 3.84 / 3.83 / 3.83 / 3.86 | 15.36 | Before the #22 bench session (props off). Measured with a multimeter. About half charge: enough for bench tests; charge to 4.20 V/cell before a flight. | #22 |
 
 ## 4. Glossary
 
 | Term | Meaning |
 | --- | --- |
 | **4S** | Four LiPo cells in series. |
-| **LiPo** | Lithium-polymer battery. |
+| **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
 | **Storage voltage** | Per-cell voltage at which a LiPo is kept when not in use, to slow ageing. |
 | **XT30 / XT60** | Common power connectors for small and medium drone batteries. |
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
-| **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
