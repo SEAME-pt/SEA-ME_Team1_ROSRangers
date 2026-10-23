@@ -38,6 +38,7 @@ tags:
 | Date | Battery | Swelling / damage | Adapter polarity | Cells (V) | Pack (V) | Notes | Issue |
 |---|---|---|---|---|---|---|---|
 | 2026-10-16 | B1 | None | OK | 3.90 / 3.90 / 3.90 / 3.90 | 15.6 | First check on arrival. Cells are below full charge (4.20 V); charge at the lab station before a flight. | #19 |
+| 2026-10-22 | B1 | None; wires and connector in good condition | — | 3.84 / 3.83 / 3.83 / 3.86 | 15.36 | Before the #22 bench session (props off). Measured with a multimeter. About half charge: enough for bench tests; charge to 4.20 V/cell before a flight. | #22 |
 
 ## 4. Glossary
 

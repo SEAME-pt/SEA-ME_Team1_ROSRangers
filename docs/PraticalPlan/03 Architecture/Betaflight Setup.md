@@ -43,6 +43,20 @@ Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_20
 > [!warning] Unmapped channels sit at mid-stick
 > Channels with no switch assigned sit at about 1500 µs. That value is inside the HORIZON and USER1 ranges, so both show as active in `MSP_STATUS` until the switches are assigned. MSP OVERRIDE is not configured yet ([[ADR-010 MSP Override|ADR-010]]).
 
+### 1.2 Motors (CLI read 2026-10-23)
+
+| Setting | Value | Meaning |
+|---|---|---|
+| `mixer` | QUADX | M1 rear right, M2 front right, M3 rear left, M4 front left (seen from above) |
+| `yaw_motors_reversed` | ON | Props out: seen from above, M1 and M4 turn counter-clockwise, M2 and M3 clockwise |
+| `motor_pwm_protocol` | DSHOT600 | |
+| `dshot_bidir` | ON | RPM telemetry from each ESC (used by the RPM filter) |
+| `motor_poles` | 12 | **To confirm:** 1405 motors are often 14-pole. If they are, RPM readings are about 17 % high and the RPM filter is mistuned ([[Open Questions]]) |
+| `dshot_idle_value` | 550 | 5.5 % motor speed while armed |
+
+> [!warning] Motor direction lives in the ESC, not in `diff all`
+> On 2026-10-23 M2 and M3 were reversed in the ESC with the Motors tab *Motor direction* tool, because all four motors turned the same way ([[Radio Link Tests]] §3.1). This setting is not part of the Betaflight `diff all`. If the ESC is replaced or re-flashed, check and set the directions again.
+
 ## 2. Baseline on 4.5.1 (Module 1 week 1)
 
 1. `version`, `status`, `diff all`. Commit them to the software repo under `drone/config/betaflight/4.5.1/`.
@@ -78,6 +92,8 @@ UART2 (ELRS) and UART3 (Tramp) are **left untouched** (REQ-SAF-008 (was SAF-08))
 | `failsafe_recovery_delay` | 5 | 0.5 s of valid data to recover |
 | RX loss detection | ~100 ms, then the last values are held for 300 ms | then Stage 1 values (sticks centred, throttle low) |
 
+Values read on the drone on 2026-10-22 (CLI `get failsafe`): `failsafe_procedure = DROP`, `failsafe_delay = 15`, `failsafe_recovery_delay = 5`, `failsafe_throttle = 1000`, `failsafe_throttle_low_delay = 100` (if the throttle has been low for 10 s, a radio loss disarms at once), `failsafe_switch_mode = STAGE1`, `msp_override_failsafe = OFF`. `rxfail`: roll, pitch, yaw and throttle `auto`, AUX channels `hold`. Bench result: [[Radio Link Tests]] RL-11.
+
 Start with **DROP** in the cage (low altitude). These values are Betaflight's own RX failsafe (radio loss). The program's link-loss requirement is a different failsafe: on **ESP link loss** the drone holds position with neutral sticks and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20). Re-evaluate the DROP choice after the upgrade.
 
 ## 6. Glossary
@@ -96,3 +112,6 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **REQ-SAF-001 to 008** | Safety requirements (were REQ-SAF-001 (was SAF-01) to REQ-SAF-008) defined in ESP_to_FC section 8 and registered in Requirements (independent ELRS path, pilot takeover, no arming from code). |
 | **AUX1** | First auxiliary RC channel (CH5). On this drone it carries the ARM switch (SA). |
+| **ESC** | Electronic Speed Controller: drives one motor. The FC's 4-in-1 ESC also stores each motor's spin direction. |
+| **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
+| **Props out** | Motor layout where the front propellers sweep outwards at the front (`yaw_motors_reversed = ON` in Betaflight). |
