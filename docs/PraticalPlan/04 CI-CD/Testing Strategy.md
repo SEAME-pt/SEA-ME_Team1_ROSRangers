@@ -44,7 +44,43 @@ Each one has an **expected state** and a **measured time-to-safe-state**.
 
 UDP RTT (median/p99/max), loss %, ESP loop jitter, ESP CPU cost of the MAC ([[ADR-002 Message Integrity|ADR-002]]), Betaflight task timings, gesture → setpoint latency, ThoneFlow frame-loss rate (threshold agreed **before** testing, TF-10), flow velocity error, coverage %.
 
-## 4. Glossary
+## 4. MSP integration tests against Betaflight SITL
+
+Level 2 above. Code in `drone/tests/sitl/`, CI job `betaflight-sitl` ([[ADR-019 Sim Backends|ADR-019]], [[ADR-014 Betaflight Version|ADR-014]]). Added on 2026-10-23 (issue #85).
+
+| File | What |
+|---|---|
+| `msp_frames.py` | Minimal MSP v1/v2 encoder and decoder. Moves into `sd_protocol` once it has MSP code. |
+| `test_msp_frames.py` | Unit tests for the encoder/decoder. No SITL needed. |
+| `test_msp_handshake.py` | `MSP_API_VERSION` over v1 and v2. A v2 frame with a bad CRC, a v1 frame with a bad checksum and line noise get no reply, and SITL still answers the next valid frame. |
+| `conftest.py` | Waits for TCP 5761 (UART1) and an MSP answer instead of a fixed `sleep`. |
+
+Run locally (the same steps as the CI job):
+
+```sh
+git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
+git -C bf submodule update --init --recursive --depth 1
+mkdir -p shim
+printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
+chmod +x shim/arm-none-eabi-gcc
+PATH="$PWD/shim:$PATH" make -C bf TARGET=SITL -j"$(nproc)"
+(cd bf && ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+SITL_REQUIRED=1 pytest drone/tests/sitl -v
+pkill -f betaflight_SITL.elf
+```
+
+| Variable | Default | Effect |
+|---|---|---|
+| `SITL_REQUIRED` | unset | `1` turns "SITL not reachable" from a skip into a failure. CI sets it. |
+| `SITL_TIMEOUT_S` | 60 s with `SITL_REQUIRED=1`, else 5 s | How long to wait for the port and an MSP answer |
+| `SITL_HOST`, `SITL_MSP_PORT` | `127.0.0.1`, `5761` | Where SITL listens |
+
+> [!warning] Gotchas
+> - Fetch the submodules before `make -j`. Otherwise the parallel jobs race for `bf/.git/config` ("could not lock config file") and the build fails.
+> - Outside an MSP frame Betaflight acts on `#` (enters the CLI) and `R` (default `reboot_character`, reboot to bootloader). Test noise must contain neither.
+> - When the job fails, CI uploads `sitl.log` as the `betaflight-sitl-log` artifact.
+
+## 5. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -71,3 +107,6 @@ UDP RTT (median/p99/max), loss %, ESP loop jitter, ESP CPU cost of the MAC ([[AD
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **Smoke test** | A quick end-to-end check that the built thing starts and does its basic job. |
+| **Submodule** | A Git repository nested inside another one at a fixed commit; Betaflight pulls its config and libraries in this way. |
+| **Artifact (CI)** | A file a CI job saves so it can be downloaded after the run, such as a log. |
+| **CLI (Betaflight)** | Betaflight's text command line on a serial port, entered with `#`. |
