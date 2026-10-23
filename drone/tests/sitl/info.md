@@ -10,6 +10,7 @@ Run locally (same steps as the `betaflight-sitl` job in `ci.yaml`):
 
 ```sh
 git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
+git -C bf submodule update --init --recursive --depth 1   # avoids a make -j race
 mkdir -p shim
 printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
 chmod +x shim/arm-none-eabi-gcc
