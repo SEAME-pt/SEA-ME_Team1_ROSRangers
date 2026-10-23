@@ -3,7 +3,7 @@ title: Future nodes to add
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - gestures
@@ -181,7 +181,7 @@ ros2 launch gesture_bringup gestures.launch.py
 
 The safety parameters ([[03 Intent Node]] §7, [[04 Mission Node]] §3.3) then live in one reviewed YAML file instead of command lines.
 
-Until then, `drone/ground/docker-compose.yml` already starts `gesture_node` and `intent_node` (with `input_source:=topic`) together, in Docker (`make`, [[01 ROS2 Nodes Installation|01]] §4). Two launch files live inside the `mission_node` package: `mission_demo.launch.py` and `mission_with_gestures.launch.py` ([[04 Mission Node]] §9). Move them here when this package is created.
+Until then, `drone/ground/docker-compose.yml` already starts `gesture_node`, `intent_node` (with `input_source:=topic`), `mission_node` and the pretend `fake_flight_state` together, in Docker (`make`, [[01 ROS2 Nodes Installation|01]] §4). Two launch files live inside the `mission_node` package: `mission_demo.launch.py` and `mission_with_gestures.launch.py` ([[04 Mission Node]] §9). Move them here when this package is created.
 
 ---
 

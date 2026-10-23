@@ -27,8 +27,8 @@ tags:
 |---|---|---|---|
 | 1 Unit (C++) | framing, MAC, sequence window, failsafe timers, AETR mapping, MSP encode/decode, ThoneFlow parser | GitHub runner, GoogleTest | stale seq rejected; 251 ms without control → failsafe; tag flip → reject; false `0xFE` header resync |
 | 1 Unit (Python) | same spec in `sd_protocol_py`, controller, gesture filter | GitHub runner, pytest | |
-| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`: unit, node, process and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent over real topics |
-| 2 Docker images | the ground images build; gesture container → intent container; clean stops | GitHub runner (job `ground-docker`, `drone/ground/docker/smoke_test.sh`) | `INDEX_RIGHT` → `MOVE_RIGHT`; stop gesture → `HOVER_LAND_REQUEST` |
+| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`, `mission_node`: unit, node, process, launch, contract and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent → mission over real topics; zero velocity within 0.25 s of losing `/gesture/intent` |
+| 2 Docker images | the ground images build; package tests inside each image; gesture container → intent container → mission container; clean stops; node logs | GitHub runner (job `ground-docker`, `drone/ground/docker/smoke_test.sh`) | `INDEX_RIGHT` → `MOVE_RIGHT`, mission never engages without `HOLD_POSITION`; stop gesture → `HOVER_LAND_REQUEST`, mission `LAND_REQUEST` |
 | 2 Cross-language | golden vectors (`drone/tests/vectors/*.json`) | both | C++ encoder and Python decoder agree byte for byte |
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |

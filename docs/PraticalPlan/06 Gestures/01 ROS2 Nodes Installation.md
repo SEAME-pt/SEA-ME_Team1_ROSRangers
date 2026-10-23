@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker or ROS 2 Jazzy, workspace, build, run an
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - gestures
@@ -25,16 +25,16 @@ This is the practical guide. It explains what ROS 2 and nodes are, how to run th
 > [!WARNING] Status: DRAFT
 > - On 2026-10-19 `intent_node` and `mission_node` were built with `colcon build` on Pop!_OS 24.04 + Jazzy, and the chain fake sender → `intent_node` → `mission_node` ran (test log in §13). At that time the recogniser still sent UDP.
 > - Since 2026-10-20 the recogniser is the ROS 2 node `gesture_node`, and `intent_node` reads `/gesture/raw` with `input_source:=topic`.
-> - On 2026-10-21 `gesture_node` and `intent_node` were merged into `dev` (#78) with their tests, Docker images, the `Makefile` and CI jobs. All automated tests pass (§10, §13). A full run with the webcam is not recorded yet.
-> - `mission_node` (`MISSION_NODE_PACKAGE/`) is not committed to any branch yet (§11) and has no Docker image.
+> - On 2026-10-21 `gesture_node` and `intent_node` were merged into `dev` (#78) with their tests, Docker images, the `Makefile` and CI jobs.
+> - On 2026-10-23 `mission_node` was merged into `dev` (#93) at `drone/ground/src/mission_node/`, with its tests, its Docker image, the pretend `flight` service, the `echo` live table and per-node log files (§4, §11). All automated tests pass (§10, §13). A full run with the webcam is not recorded yet.
 
-### Node status (2026-10-21)
+### Node status (2026-10-23)
 
 | Node | What | Docker | Build (native) | Run | Test |
 | :--- | :--- | :---: | :---: | :---: | :---: |
 | `gesture_node` | webcam + MediaPipe → `/gesture/raw` | §4 | §6 | §4, §7 | §9, §10 |
 | `intent_node` | `/gesture/raw` → filter → `/gesture/intent` | §4 | §6 | §4, §7 | §9, §10 |
-| `mission_node` | `/gesture/intent` → `/mission/velocity_target` | — | §11 ([[04 Mission Node\|04]] §8) | [[04 Mission Node\|04]] §9 | [[04 Mission Node\|04]] §10 |
+| `mission_node` | `/gesture/intent` + `/flight/state` → `/mission/velocity_target` | §4 | §6 | §11, [[04 Mission Node\|04]] §9 | §10, [[04 Mission Node\|04]] §10 |
 
 ---
 
@@ -114,7 +114,7 @@ Details, the comparison with a separate camera node, and the open ADR: [[02 Gest
 
 ## 🐳 4. Run without installing ROS 2: Docker and `make`
 
-Since 2026-10-21 (#78) each gesture node has a Docker image built from `ros:jazzy-ros-base`. `drone/ground/docker-compose.yml` starts them, and `drone/ground/Makefile` wraps everything in a few targets.
+Since 2026-10-21 (#78) each gesture node has a Docker image built from `ros:jazzy-ros-base`, and `mission_node` too since 2026-10-23 (#93). `drone/ground/docker-compose.yml` starts them, and `drone/ground/Makefile` wraps everything in a few targets.
 
 ### 4.1 What you need
 
@@ -134,12 +134,51 @@ ROS 2, Python 3.12, OpenCV and MediaPipe are **not** needed on the host.
 | :--- | :--- | :--- | :--- |
 | `gesture` | `rosrangers/gesture:jazzy` | `docker/gesture/Dockerfile` | `gesture_node` (webcam, "Gestures" window, `/gesture/raw`). Adds pip `requirements.txt` (MediaPipe, OpenCV) and the X11/Qt libraries for the window |
 | `intent` | `rosrangers/intent:jazzy` | `docker/intent/Dockerfile` | `intent_node` with `input_source:=topic`. Pure `rclpy`, no pip packages |
-| `echo` | `rosrangers/echo:jazzy` | `docker/echo/Dockerfile` | `ros2 topic echo /gesture/intent std_msgs/msg/String`. Also the way to use the `ros2` CLI (§4.4) |
+| `mission` | `rosrangers/mission:jazzy` | `docker/mission/Dockerfile` | `mission_node` ([[04 Mission Node]]). Pure `rclpy`, no pip packages |
+| `flight` | `rosrangers/mission:jazzy` (same image) | `docker/mission/Dockerfile` | `fake_flight_state`: a **pretend** `/flight/state` (override on, mask `${MASK:-11}`, airborne `${AIRBORNE:-true}`) until `flight_interface` exists. Never with a real drone |
+| `echo` | `rosrangers/echo:jazzy` | `docker/echo/Dockerfile` | `docker/echo/monitor.py`: the live table of the chain. Also the way to use the `ros2` CLI (§4.4) |
 
-- Each image builds its package with `colcon build` in `/ws`. `docker/entrypoint.sh` sources ROS 2 and `/ws/install/setup.bash`, then runs the command.
-- The node is PID 1, not `ros2 run`, so `docker stop` (SIGTERM) stops it cleanly at once with exit code 0.
+- Each node image builds its package with `colcon build` in `/ws`. `docker/entrypoint.sh` sources ROS 2 and `/ws/install/setup.bash`, then runs the command. The node runs directly, not through `ros2 run` (which does not pass SIGTERM on), so `docker stop` stops it cleanly at once with exit code 0. `mission_node` still sends its last zero target.
 - All services use `network_mode: host` and `ipc: host`, so DDS discovery works between containers and with a host ROS install. `ROS_DOMAIN_ID` comes from your shell (default 0).
 - `gesture` gets `/dev/video0`, `DISPLAY` and `/tmp/.X11-unix`, so OpenCV can open the camera and the window.
+
+**The live table (`echo`).** `docker compose up` shows only this table; the nodes' output goes to log files (below). It is redrawn in place like `top`, only when a value changes:
+
+```text
+Ground pipeline monitor   15:10:12   (Ctrl+C to quit)
+
+GESTURE   gesture_node  /gesture/raw                 live
+    gesture     INDEX_RIGHT
+
+INTENT    intent_node   /gesture/intent              live
+    intent      MOVE_RIGHT
+    reason      ok
+    gesture     INDEX_RIGHT
+
+MISSION   mission_node  /mission/state               live
+    mode        ENGAGED
+    why         hold_position
+    mask        11
+    airborne    True
+
+VELOCITY  mission_node  /mission/velocity_target     live
+    fwd/back    0
+    left/right  right 0.30 m/s
+    up/down     0
+    yaw         0
+```
+
+A block is `waiting` until its first message and `STALE n s` when its topic stops for more than 1 s. Velocities are in the body frame (left/right is the drone's, [[04 Mission Node|04]] §5.2). Without a terminal (piped, or in the smoke test) it prints one line per change instead. Ctrl+C or SIGTERM exits 0.
+
+**Node logs.** Every node service (not `echo`) writes its output to `drone/ground/logs/<service>/<start time>.log`, every line prefixed with the wall-clock time, and `logs/<service>/latest.log` points to the newest run:
+
+```bash
+tail -f logs/mission/latest.log                                          # follow one node live
+diff logs/mission/2026-10-23_10-00-00.log logs/mission/latest.log        # compare two runs
+docker compose logs -f mission                                           # same output through Docker
+```
+
+`logs/` is ignored by Git (only its `.gitignore` is committed). `GROUND_LOG_DIR=./other make` puts the files somewhere else. For this, `entrypoint.sh` stays PID 1 and passes SIGTERM / Ctrl+C on to the node, so lines printed while a node stops still reach the file. PID 1 is `entrypoint.sh` when `LOG_DIR` is set, otherwise the node: without `LOG_DIR` it only runs the command with `exec`. Every compose service sets `LOG_DIR`, also in the smoke test (CI job `ground-docker`, logs in `logs/smoke/`); the containers the smoke test starts with plain `docker run` (the in-image tests, the topic echoes) don't.
 
 ### 4.3 The `make` targets
 
@@ -147,43 +186,60 @@ Run from `drone/ground/`:
 
 | Target | Does |
 | :--- | :--- |
-| `make` | With Jazzy installed: the venv and the workspace (§6). Then always: `xhost +local:` and `docker compose up --build` (gesture, intent, echo). Without Jazzy it prints `ROS 2 Jazzy not found ... running Docker only` |
+| `make` | With Jazzy installed: the venv and the workspace (§6). Then always: `xhost +local:`, `mkdir -p logs` and `docker compose up --build` (gesture, intent, mission, flight, echo). Without Jazzy it prints `ROS 2 Jazzy not found ... running Docker only` |
 | `make down` | `docker compose down`: stops the containers |
 | `make unit` | the tests that need no ROS (§10) |
-| `make test` | with Jazzy: `colcon test` + the pipeline tests (§10). Without Jazzy: `make unit` |
+| `make test` | with Jazzy: `colcon test` of the three packages + the tests in `drone/tests/ros` (§10). Without Jazzy: `make unit` |
 | `make smoke` | the Docker smoke test `docker/smoke_test.sh` (§10) |
 | `make clean` | `down` + removes this project's images |
-| `make fclean` | `clean` + removes `gesture-venv/`, `ros2_ws/` and Python caches: `drone/ground/` as it was cloned |
+| `make fclean` | `clean` + removes `gesture-venv/`, `ros2_ws/`, everything in `logs/` and Python caches, then runs `docker system prune -af`: `drone/ground/` as it was cloned |
 | `make re` | `fclean`, then `make` |
+
+> [!WARNING] `make fclean` prunes all of Docker, not only this project
+> `docker system prune -af` removes **every** stopped container, unused network, image that no container uses, and the build cache on your PC, also from other projects. Use `make clean` if you only want this project's images gone.
+
+Every test target ends with a summary, one row per package or test file (`PASS 135/135`), then `ALL PASSED` or `FAILED`, and keeps its full output in `logs/test/`:
+
+| Target | Log file |
+| :--- | :--- |
+| `make unit` | `logs/test/unit.log` |
+| `make test` (with Jazzy) | `logs/test/pkg-test.log` (colcon) and `logs/test/e2e-test.log` (`drone/tests/ros`) |
+| `make test` (without Jazzy) | `logs/test/unit.log` (it runs `make unit`) |
+| `make smoke` | `logs/test/smoke.log` |
 
 ```bash
 cd ~/ROSRangers/drone/ground
-make              # first build takes a few minutes (MediaPipe), then the three services run
+make              # first build takes a few minutes (MediaPipe), then the five services run
+MASK=15 make      # the same, with the pretend flight state on mask 15 (AIRBORNE=false: on the ground)
 ```
 
-Show a hand to the webcam: the `echo-1` lines change from `HOVER_LAND_REQUEST` to the intent of your gesture (for example `"intent":"MOVE_RIGHT"`). `q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest.
+Show a hand to the webcam: in the live table the `INTENT` block changes from `HOVER_LAND_REQUEST` to the intent of your gesture (for example `MOVE_RIGHT`). An open hand engages `mission_node` (`MISSION` → `ENGAGED`), and then the `VELOCITY` block follows your gestures ([[04 Mission Node]] §5). `q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest.
 
-One service per terminal (output is easier to read):
+One service per terminal:
 
 ```bash
-docker compose up --build intent      # terminal 1: filter -> /gesture/intent
-docker compose up --build gesture     # terminal 2: camera + "Gestures" window (run `xhost +local:` once per login first)
-docker compose up --build echo        # terminal 3: ros2 topic echo /gesture/intent
-docker compose down                   # stop everything
+docker compose up --build intent          # terminal 1: filter -> /gesture/intent
+docker compose up --build gesture         # terminal 2: camera + "Gestures" window (run `xhost +local:` once per login first)
+docker compose run --rm --build echo      # terminal 3: the live table
+docker compose up --build mission flight  # terminal 4: mission_node + pretend /flight/state
+docker compose down                       # stop everything
 ```
+
+Named on the command line, each service prints its output in its own terminal, and still writes `logs/<service>/latest.log`. `attach: false` in `docker-compose.yml` only hides the nodes from a plain `docker compose up` / `make`, which shows the table alone (checked 2026-10-23).
 
 ### 4.4 The `ros2` CLI without a local ROS 2
 
 Every image has ROS 2, so the `echo` service can run any `ros2` command on the same network:
 
 ```bash
-docker compose run --rm echo ros2 topic list                     # /gesture/intent, /gesture/raw, ...
+docker compose run --rm echo ros2 topic list                     # /gesture/intent, /gesture/raw, /mission/..., /flight/state
 docker compose run --rm echo ros2 topic echo /gesture/raw std_msgs/msg/String --field data
 docker compose run --rm echo ros2 topic hz /gesture/intent       # ~20 Hz
 docker compose run --rm echo ros2 node info /intent_node
+docker compose run --rm echo ros2 param set /fake_flight_state override_active false   # mission_node -> IDLE
 ```
 
-Checked on 2026-10-21: with `intent` running, `ros2 topic list` in the `echo` container lists `/gesture/intent` and `/gesture/raw`. Every `ros2 ...` command on the following pages works this way. The watcher `~/gesture_watch.py` (§9) needs a local Jazzy.
+Checked on 2026-10-21: with `intent` running, `ros2 topic list` in the `echo` container lists `/gesture/intent` and `/gesture/raw`. Checked on 2026-10-23: `ros2 param set /fake_flight_state override_active false` through the `echo` image puts `mission_node` in `IDLE (override_off)`. Every `ros2 ...` command on the following pages works this way. The watcher `~/gesture_watch.py` (§9) needs a local Jazzy.
 
 ### 4.5 Changing the code
 
@@ -281,7 +337,7 @@ export ROS_DOMAIN_ID=42                         # your own number, 0-101, differ
 export ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # Jazzy: only talk to this machine
 ```
 
-`docker compose` passes `ROS_DOMAIN_ID` to the containers, so set it before `make` too. The tests use their own domains (81–85, the smoke test 86), so they never mix with a running pipeline.
+`docker compose` passes `ROS_DOMAIN_ID` to the containers, so set it before `make` too. The tests use their own domains (81–85 and 87–91, the smoke test 86), so they never mix with a running pipeline.
 
 ---
 
@@ -302,7 +358,8 @@ drone/ground/
 └── ros2_ws/
     ├── src/
     │   ├── gesture_node -> ../../src/gesture_node   (symlink)
-    │   └── intent_node  -> ../../src/intent_node    (symlink)
+    │   ├── intent_node  -> ../../src/intent_node    (symlink)
+    │   └── mission_node -> ../../src/mission_node   (symlink)
     ├── build/      # generated by colcon build
     ├── install/    # generated: what `source install/setup.zsh` loads
     └── log/        # generated
@@ -311,7 +368,7 @@ drone/ground/
 | Step `make ws` does | Same as by hand |
 | :--- | :--- |
 | `python3.12 -m venv --system-site-packages gesture-venv`, `pip install -r src/gesture_node/requirements.txt` | §6.2 |
-| symlinks in `ros2_ws/src/`, then `colcon build --symlink-install --packages-select intent_node` with the system Python | §6.3 |
+| symlinks in `ros2_ws/src/` (redone when the `Makefile` changes, so an old workspace gets new packages), then `colcon build --symlink-install --packages-select intent_node` and the same for `mission_node`, with the system Python | §6.3 |
 | `python3 -m colcon build --symlink-install --packages-select gesture_node` with the venv active | §6.4 |
 | checks that the first line of `ros2_ws/install/gesture_node/lib/gesture_node/gesture_node` names `gesture-venv`, else stops with `gesture_node was not built with gesture-venv's Python` | §6.4 `head -1` |
 
@@ -322,7 +379,7 @@ Then, in every terminal:
 ```bash
 source /opt/ros/jazzy/setup.zsh
 source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh
-ros2 pkg list | grep -E "gesture_node|intent_node"      # must print both
+ros2 pkg list | grep -E "gesture_node|intent_node|mission_node"      # must print all three
 ```
 
 > [!NOTE] Why the workspace is in `drone/ground/` but not in Git
@@ -356,7 +413,7 @@ deactivate
 - `--system-site-packages` is required. Without it the venv can't see `yaml` and the other apt packages `rclpy` needs.
 - Already have a venv without it? Set `include-system-site-packages = true` in its `pyvenv.cfg` (that is what the flag writes).
 
-### 6.3 By hand: the workspace and `intent_node`
+### 6.3 By hand: the workspace, `intent_node` and `mission_node`
 
 ```bash
 source /opt/ros/jazzy/setup.zsh                      # no venv active
@@ -364,14 +421,15 @@ cd ~/ROSRangers/drone/ground
 mkdir -p ros2_ws/src
 ln -sfn ../../src/intent_node  ros2_ws/src/intent_node    # symlinks, not copies
 ln -sfn ../../src/gesture_node ros2_ws/src/gesture_node
+ln -sfn ../../src/mission_node ros2_ws/src/mission_node
 
 cd ros2_ws
 rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install --packages-select intent_node
+colcon build --symlink-install --packages-select intent_node mission_node
 ```
 
 - `ros2_ws/src/intent_node/package.xml` must exist (through the symlink), not one folder deeper.
-- Setuptools deprecation warnings are common and harmless if the build ends with `Summary: 1 package finished`.
+- Setuptools deprecation warnings are common and harmless if the build ends with `Summary: 2 packages finished`.
 
 ### 6.4 By hand: `gesture_node` with the venv's Python
 
@@ -386,13 +444,14 @@ deactivate
 
 source install/setup.zsh
 head -1 install/gesture_node/lib/gesture_node/gesture_node    # must name .../gesture-venv/bin/python3
-ros2 pkg list | grep -E "gesture_node|intent_node"           # must print both
+ros2 pkg list | grep -E "gesture_node|intent_node|mission_node"   # must print all three
 ```
 
 | After you change | Rebuild |
 | :--- | :--- |
 | a Python file (`.py`) | nothing (`--symlink-install`) natively; `make` rebuilds the Docker image |
-| `setup.py`, `setup.cfg` or `package.xml` of `intent_node` | `make ws`, or §6.3 build line |
+| `setup.py`, `setup.cfg` or `package.xml` of `intent_node` or `mission_node` | `make ws`, or §6.3 build line |
+| a **new** launch file in `mission_node` | `rm ros2_ws/.mission_node && make ws` (launch files are installed by the build) |
 | the same files of `gesture_node`, or `requirements.txt` | `make ws`, or §6.4, **always from the venv** |
 | a plain `colcon build` of everything by mistake | `rm ros2_ws/.gesture_node && make ws`, or §6.4 again (it reset the `gesture_node` shebang) |
 
@@ -691,14 +750,25 @@ The levels of §9 are checked by hand with a webcam. Most of them are also autom
 
 From `drone/ground/`:
 
-| Command | Needs | What runs | Result on 2026-10-21 |
+| Command | Needs | What runs | Result on 2026-10-23 (Bruno's PC, `dev` after #93) |
 | :--- | :--- | :--- | :--- |
-| `make unit` | Python 3 only | `python3 -m unittest discover` in `src/intent_node`, `src/gesture_node` and `../tests/ros`. Tests that need `rclpy` or the real MediaPipe are **skipped** | 48 + 56 + 5 = 109 tests, `OK`, 41 skipped |
-| `make test` | ROS 2 Jazzy (§5). Builds the workspace first (`make ws`). Without Jazzy it runs `make unit` | `colcon test --packages-select gesture_node intent_node` with the venv's Python, `colcon test-result --verbose`, then `python3 -m pytest ../tests/ros -v` | `104 tests, 0 errors, 0 failures, 0 skipped`, then `5 passed` |
-| `make smoke` | Docker only (§4) | `docker/smoke_test.sh`, five stages (§10.3) | `PASS: images, in-image tests, gesture -> intent across containers, clean stops` |
+| `make unit` | Python 3 only | `python3 -m unittest discover` in `src/gesture_node`, `src/intent_node`, `src/mission_node` and `../tests/ros`. Tests that need `rclpy`, the ROS launch packages or the real MediaPipe are **skipped** | 56 + 48 + 135 + 47 = 286 tests, 173 passed, 113 skipped, `ALL PASSED` |
+| `make test` | ROS 2 Jazzy (§5). Builds the workspace first (`make ws`). Without Jazzy it runs `make unit` | `pkg-test`: `colcon test --packages-select gesture_node intent_node mission_node` with the venv's Python and `colcon test-result --verbose`; then `e2e-test`: `python3 -m pytest ../tests/ros -v`. Both parts run even if the first fails | `239 tests, 0 errors, 0 failures, 0 skipped`, then `47/47` |
+| `make smoke` | Docker only (§4) | `docker/smoke_test.sh`, six steps (§10.3) | `PASS: images, in-image tests, gesture -> intent -> mission across containers, monitor, clean stops, node logs` |
+
+Each target ends with a summary (one row per package or test file, passed/total, skipped and failed counts) and keeps its full output in `logs/test/` (`unit.log`, `pkg-test.log` + `e2e-test.log`, `smoke.log`, §4.3):
+
+```text
+=================== summary: make unit (no ROS needed) ===================
+  gesture_node                       PASS    39/56    17 skipped
+  intent_node                        PASS    27/48    21 skipped
+  mission_node                       PASS    83/135   52 skipped
+  drone/tests/ros                    PASS    24/47    23 skipped
+ALL PASSED
+```
 
 > [!TIP] Without ROS 2 on your PC
-> `make unit` and `make smoke` together run every test: the ROS tests that `make unit` skips run inside the images in `make smoke`, with none skipped.
+> `make unit` and `make smoke` together run every **package** test: the ROS tests that `make unit` skips run inside the images in `make smoke`, with none skipped. The ROS tests in `drone/tests/ros/` (pipeline, launch, `echo` table, entrypoint) only run with `make test` or in CI.
 
 Run one package's tests natively (ROS sourced, from the package folder): `python3 -m unittest discover -s test -v`, or one file: `python3 -m unittest test.test_intent_node_ros -v`.
 
@@ -716,26 +786,33 @@ Run one package's tests natively (ROS sourced, from the package folder): `python
 | `src/gesture_node/test/test_gesture_node_process.py` | process | `rclpy` | `gesture_node`'s real `main()` through `test/fake_camera.py`: `q`, Ctrl+C, Ctrl+C twice and SIGTERM exit 0; no camera / camera lost exit 1 with an error log; the gesture arrives on `/gesture/raw` |
 | `drone/tests/ros/test_gesture_contract.py` | unit | nothing | every gesture name in `intent_node`'s table can really be produced by `gesture_node`'s `recognize()`, so a rename on one side can't make the drone silently ignore a gesture |
 | `drone/tests/ros/test_gesture_pipeline.py` | pipeline | `rclpy` | landmarks → `recognize()` → `send_gesture()` → `gesture_node` → `/gesture/raw` → `intent_node` (default timeouts) → `/gesture/intent`: every gesture reaches its intent; hand lost → `NEUTRAL` → `HOVER_LAND_REQUEST`; recogniser stops → `HOVER_LAND_REQUEST` |
+| `src/mission_node/test/` (4 files, 135 tests) | unit, node, process, launch | `rclpy` except the 83 logic tests | every rule of `mission_node`, the real node on real topics, clean stops, the launch files: [[04 Mission Node]] §10.2 |
+| `drone/tests/ros/test_mission_contract.py` | unit | nothing | the real `intent_node` filter feeding the real `MissionLogic`: same intents and reasons on both sides, `fake_intent` speaks `intent_node`'s format |
+| `drone/tests/ros/test_mission_pipeline.py` | pipeline | `rclpy` | `test_gesture_pipeline.py`, one link further: … → `/gesture/intent` → `mission_node` (+ `fake_flight_state`) → `/mission/velocity_target`: no motion before the open hand, index moves, mask 11 never climbs, fist stops, hand or recogniser lost → land request |
+| `drone/tests/ros/test_mission_launch.py` | launch | `rclpy`, `ros2 launch` | `mission_with_gestures.launch.py` end to end with pretend `/gesture/raw`; Ctrl+C exits 0 and leaves no node running |
+| `drone/tests/ros/test_monitor.py` | unit + program | `rclpy` | the `echo` live table (§4.2): what each block shows, bad JSON never crashes it, the text only changes when a message changes it, one line per change without a terminal, synchronized frames on a terminal, cursor back and exit 0 on Ctrl+C / SIGTERM |
+| `drone/tests/ros/test_entrypoint.py` | program | bash, ROS 2 at `/opt/ros/jazzy` | `docker/entrypoint.sh` without Docker: without `LOG_DIR` it only runs the command; with it, every line timestamped in `logs/<service>/`, `latest.log`, one file per run, files the host user can delete, SIGTERM and SIGINT reach the command and its last lines are kept |
 
 `test/fake_camera.py` (in `gesture_node`) runs the real `gesture_node` with a fake camera that "sees" `INDEX_RIGHT` at ~30 FPS: `python3 fake_camera.py run|quit|no_camera|camera_lost`. The process tests and the smoke test use it.
 
-The requirement IDs of `intent_node` (REQ-SAF-019, REQ-SAF-020, REQ-SW-002) name the tests that check them: [[03 Intent Node]] §10.
+The requirement IDs of `intent_node` (REQ-SAF-019, REQ-SAF-020, REQ-SW-002) name the tests that check them: [[03 Intent Node]] §10. Those of `mission_node` (REQ-SAF-017, REQ-SAF-018, REQ-CTL-001, REQ-SW-001): [[04 Mission Node]] §12.
 
 ### 10.3 The Docker smoke test
 
 `docker/smoke_test.sh` (`make smoke`, CI job `ground-docker`) checks the images, not only the code:
 
-1. Builds `gesture`, `intent` and `echo`.
-2. Runs each package's tests **inside its own image** with `REQUIRE_ROS_TESTS=1`, and fails if any test is skipped: the image's own OpenCV, MediaPipe and ROS must work.
-3. Runs `gesture_node`'s real `main()` with the fake camera in the gesture image → the intent container → `MOVE_RIGHT` on `/gesture/intent` within 60 s.
-4. `docker stop` on the gesture container: it exits 0 at once, and `intent_node` falls back to `HOVER_LAND_REQUEST` (`no_packets`) within 15 s.
-5. `docker stop` on the intent and echo containers: both stop at once.
+1. Builds `gesture`, `intent`, `mission` and `echo`.
+2. Runs each package's tests **inside its own image** with `REQUIRE_ROS_TESTS=1`, and fails if any test is skipped: the image's own OpenCV, MediaPipe and ROS must work (56 + 48 + 135 tests).
+3. Starts `intent`, `mission` and `flight` with Compose, and `gesture_node`'s real `main()` with the fake camera in the gesture image: `MOVE_RIGHT` on `/gesture/intent` within 60 s; `mission_node` shows `MOVE_RIGHT` on `/mission/state` but **never** `ENGAGED` (nobody showed `HOLD_POSITION`); the `echo` image's monitor shows intent `MOVE_RIGHT` and mission `READY`.
+4. `docker stop` on the gesture container: it exits 0 at once, `intent_node` falls back to `HOVER_LAND_REQUEST` (`no_packets`) and `mission_node` (airborne, pretend flight state) goes to `LAND_REQUEST`, within 15 s each.
+5. `docker stop` on the intent, mission, flight, echo and monitor containers: all stop at once (exit code 0; the two `ros2 topic echo` containers 15).
+6. Node logs: `logs/smoke/<service>/latest.log` exists for intent, mission and flight, every line timestamped, with the expected lines in it (`Mode -> LAND_REQUEST (no_packets)` for mission). A container that prints 5000 lines while it stops loses none of them.
 
-It uses its own Compose project (`ground-smoke`) and `ROS_DOMAIN_ID=86`, so a running `make` stack is neither stopped nor mixed in. With `SMOKE_LOG_DIR=dir` it saves each container's log there.
+It uses its own Compose project (`ground-smoke`), `ROS_DOMAIN_ID=86` and log folder `logs/smoke/`, so a running `make` stack is neither stopped nor mixed in, and its logs stay as they were. With `SMOKE_LOG_DIR=dir` it also saves each container's full log there. The summary at the end has one row per in-image test run and the steps reached (`steps PASS 6/6`).
 
 ### 10.4 Skipped tests and `REQUIRE_ROS_TESTS`
 
-Tests that need `rclpy` are skipped when ROS 2 is not sourced, so `make unit` works on any PC. With `REQUIRE_ROS_TESTS=1` a missing `rclpy` is a **failure** instead. CI and the smoke test set it, so a broken ROS install can never pass as "all skipped". Each ROS test uses its own `ROS_DOMAIN_ID` (81–85): `grep -r TEST_DOMAIN_ID drone/ground/src drone/tests`.
+Tests that need `rclpy` are skipped when ROS 2 is not sourced, so `make unit` works on any PC. With `REQUIRE_ROS_TESTS=1` a missing `rclpy` is a **failure** instead. CI and the smoke test set it, so a broken ROS install can never pass as "all skipped". Each ROS test uses its own `ROS_DOMAIN_ID` (81–85, 87–91; the smoke test 86): `grep -r TEST_DOMAIN_ID drone/ground/src drone/tests`.
 
 ### 10.5 In CI
 
@@ -743,7 +820,7 @@ Tests that need `rclpy` are skipped when ROS 2 is not sourced, so `make unit` wo
 
 | Job | Runs | Gate |
 | :--- | :--- | :--- |
-| `ground-ros2` | in `ros:jazzy-ros-base`: `colcon build` + `colcon test` of both packages, then pytest over the package tests and `drone/tests/ros` with coverage | all tests pass, line coverage ≥ 90 % (98.25 % on 2026-10-21) |
+| `ground-ros2` | in `ros:jazzy-ros-base`: `colcon build` + `colcon test` of `gesture_node`, `intent_node` and `mission_node` (the list comes from `check-components`; `mission_node` joins once its `package.xml` exists, #84), then pytest over the package tests and `drone/tests/ros` with coverage | all tests pass, line coverage ≥ 90 % (98.25 % on 2026-10-21; 99.21 % on `dev` after #93, 2026-10-23: 239 colcon tests, 286 pytest tests) |
 | `ground-docker` | `drone/ground/docker/smoke_test.sh` | `PASS` |
 
 On a PR both run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. Run `pre-commit run --all-files` before pushing (ruff, shellcheck for `docker/*.sh`).
@@ -756,15 +833,15 @@ What the node does, and every detail of running and testing it, is in [[04 Missi
 
 ### 11.1 Build
 
-The package is in `MISSION_NODE_PACKAGE/` at the repo root for now (later `drone/ground/src/mission_node/`). It is not committed yet (2026-10-21), so it only exists on the machine where it was written:
+The package is in `drone/ground/src/mission_node/` since #93 (2026-10-23).
+
+- **Docker:** `make` builds `rosrangers/mission:jazzy` and starts the `mission` and `flight` services (§4.2).
+- **Natively:** `make ws` links and builds it with the system Python, like `intent_node` (§6.1). By hand: §6.3.
 
 ```bash
 source /opt/ros/jazzy/setup.zsh                  # no venv active
-cd ~/ROSRangers/drone/ground
-ln -sfn ~/ROSRangers/MISSION_NODE_PACKAGE ros2_ws/src/mission_node   # after make ws; make fclean removes it
-cd ros2_ws
-colcon build --symlink-install --packages-select intent_node mission_node   # not gesture_node (§6.4)
-source install/setup.zsh
+cd ~/ROSRangers/drone/ground && make ws
+source ros2_ws/install/setup.zsh
 ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission_node
 ```
 
@@ -772,15 +849,14 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 
 | Level | Command | Pass when |
 | :--- | :--- | :--- |
-| 0: unit | `cd ~/ROSRangers/MISSION_NODE_PACKAGE && python3 -m unittest discover -s test -v` (or `colcon test --packages-select mission_node`) | 35 tests OK |
-| 1: alone, pretend values | `ros2 launch mission_node mission_demo.launch.py` + `ros2 topic echo /mission/state --field data` | the mode sequence of [[04 Mission Node\|04]] §7.2 |
+| 0: automated | `make unit`, `make test`, `make smoke` (§10) | `ALL PASSED`; `mission_node` 135/135 in `make test` and inside its image |
+| 1: alone, pretend values | `ros2 launch mission_node mission_demo.launch.py` + `ros2 topic echo /mission/state --field data` (Docker: [[04 Mission Node\|04]] §9.4) | the mode sequence of [[04 Mission Node\|04]] §7.2 |
 | 2: with `intent_node`, no camera | `ros2 launch mission_node mission_with_gestures.launch.py`, then the scripted sequence of §9 Level 0 | the table in [[04 Mission Node\|04]] §10, Level 2 |
-| 3: real gestures | same launch, then `ros2 run gesture_node gesture_node` | [[04 Mission Node\|04]] §10, Level 3 |
+| 3: real gestures | same launch, then `ros2 run gesture_node gesture_node`; or `make` in Docker and watch the live table | [[04 Mission Node\|04]] §10, Level 3 |
 
-> [!WARNING] The launch file still starts `intent_node` on UDP
-> `mission_with_gestures.launch.py` starts `intent_node` with its default `input_source` (`udp`). Until the launch file passes `input_source: topic`, levels 2 and 3 get no gestures ([[04 Mission Node]] §9.2).
+`mission_with_gestures.launch.py` starts `intent_node` with `input_source: topic` (#93), so levels 2 and 3 get the gestures from `/gesture/raw`.
 
-`/flight/state` comes from the pretend node `fake_flight_state` until `flight_interface` exists. Never use it with a real drone.
+`/flight/state` comes from the pretend node `fake_flight_state` (the `flight` service in Docker) until `flight_interface` exists. Never use it with a real drone.
 
 ---
 
@@ -790,7 +866,8 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | :--- | :--- | :--- |
 | `ros2: command not found` | ROS 2 not loaded | `source /opt/ros/jazzy/setup.zsh` |
 | `Package 'gesture_node' not found` | workspace not loaded or not built | `make ws`, then `source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh` |
-| colcon finds no packages | `package.xml` one folder too deep | `src/intent_node/package.xml` and `src/gesture_node/package.xml` must exist |
+| colcon finds no packages | `package.xml` one folder too deep | `src/intent_node/package.xml`, `src/gesture_node/package.xml` and `src/mission_node/package.xml` must exist |
+| `Package 'mission_node' not found` in a workspace made before 2026-10-23 | the workspace has no `mission_node` link yet | `make ws` (it redoes the links when the `Makefile` changes) |
 | `rosdep` cannot resolve a key | missing rosdep data | `rosdep update`; `-r` lets the build continue |
 | `No module named 'mediapipe'` from `ros2 run gesture_node` | `gesture_node` built with plain `colcon build` (shebang `/usr/bin/python3`) | `rm ros2_ws/.gesture_node && make ws` (§6.1) or §6.4, or `ros2 run --prefix 'python3' gesture_node gesture_node` with the venv active |
 | `No module named 'yaml'` in `gesture_node` | venv without `--system-site-packages` | `make fclean && make ws`, or §6.2 |
@@ -799,7 +876,9 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | `make` prints `ROS 2 Jazzy not found ... running Docker only` | no `/opt/ros/jazzy/setup.bash` | expected without Jazzy: only the containers run. For native, install Jazzy (§5) |
 | `permission denied ... docker.sock` | your user is not in the `docker` group | `sudo usermod -aG docker $USER`, log out and in |
 | `gesture` container: `cannot open display` / `could not connect to display` | X server refuses the container | `xhost +local:` (`make` runs it), check `echo $DISPLAY` |
-| `docker compose up` fails with `/dev/video0: no such file or directory` | no webcam at `/dev/video0` | plug one in; `docker compose up intent echo` runs the rest |
+| `docker compose up` fails with `/dev/video0: no such file or directory` | no webcam at `/dev/video0` | plug one in; `docker compose up intent mission flight echo` runs the rest |
+| `docker compose up` shows only the table, no node output | expected since #93: the nodes write to files | `tail -f logs/<service>/latest.log` or `docker compose logs -f <service>` (§4.2) |
+| a test target failed and the output scrolled away | | `logs/test/unit.log`, `pkg-test.log` + `e2e-test.log` (`make test`) or `smoke.log` hold all of it (§4.3) |
 | containers run but a host `ros2 topic list` shows nothing | different `ROS_DOMAIN_ID` in the host shell and in the shell that started `make` | export the same value in both |
 | a test is `skipped` in `make unit` | `rclpy` or MediaPipe not available | expected; `make test` (Jazzy) or `make smoke` (Docker) runs them (§10.4) |
 | Watcher prints only `HOVER_LAND_REQUEST` / `no_packets_yet` | nothing reaches `intent_node` | started without `input_source:=topic`, or `gesture_node` not running: Level 1 |
@@ -825,6 +904,8 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | 2026-10-21 | Bruno (#78, with Claude Code) | Ubuntu 24.04 + Jazzy; `ros:jazzy-ros-base` container | `make unit` 109 OK (2 skipped, no real MediaPipe); `make test` 104 + 5 passed; `make smoke` PASS; coverage 98.25 % | merged into `dev` (#78, #79) |
 | 2026-10-21 | Claude Code (for #26) | Bruno's PC, Pop!_OS 24.04 + Jazzy + Docker, branch `dev` after #78/#79 | `make unit`: 109 tests OK, 41 skipped (system Python, no `rclpy`); `make test`: `104 tests, 0 errors, 0 failures, 0 skipped`, then `5 passed`; `make smoke`: PASS (56 + 48 tests inside the images) | `docker compose run --rm echo ros2 topic list` lists `/gesture/raw` and `/gesture/intent` (§4.4) |
 | 2026-10-21 | Bruno | Pop!_OS 24.04 + Jazzy: `ros2 doctor` (§5.6) and the official tutorials | `All 5 checks passed`; all Jazzy *Beginner: CLI tools* and *Beginner: Client libraries* tutorials on docs.ros.org done | #26 |
+| 2026-10-23 | CI (`dev` push after #93) | `ros:jazzy-ros-base` container, GitHub Actions | `ground-ros2`: `239 tests, 0 errors, 0 failures, 0 skipped`, pytest `286 passed`, coverage 99.21 %; `ground-docker`: in-image 56/56, 48/48, 135/135, steps 6/6 | `mission_node` in `dev` at `drone/ground/src/mission_node/` |
+| 2026-10-23 | Claude Code (for #94) | Bruno's PC, Pop!_OS 24.04 + Jazzy + Docker, branch from `dev` after #93 | `make unit`: 286 tests, 173 passed, 113 skipped; `make test`: `239 tests, 0 errors, 0 failures, 0 skipped`, then `47/47`; `make smoke`: `ALL PASSED` (56 + 48 + 135 in the images, 6/6 steps) | in Docker: the `fake_intent` demo against the `mission` and `flight` containers gave the mode sequence of [[04 Mission Node\|04]] §7.2; `ros2 param set /fake_flight_state override_active false` through `echo` gave `IDLE (override_off)` |
 | | | Level 0 (fake `/gesture/raw`) + watcher | | |
 | | | Level 1 (`/gesture/raw` from the webcam) | | |
 | | | Levels 2 to 4 (real gestures → `/gesture/intent`) | | |
@@ -839,18 +920,20 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | **CLI** | Command-line interface: here the `ros2` command and its sub-commands. |
 | **colcon** | The build tool for ROS 2 workspaces. |
 | **Container / image** | A Docker image is a packaged file system (here Ubuntu 24.04 + ROS 2 Jazzy + one node); a container is one running copy of it. |
-| **Coverage** | The share of code lines the tests run; CI requires at least 90 % for the gesture nodes. |
+| **Coverage** | The share of code lines the tests run; CI requires at least 90 % for the ROS 2 nodes. |
 | **DDS** | The middleware ROS 2 uses to find nodes and move messages between them. |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **Docker Compose** | Starts several containers from one file (`drone/ground/docker-compose.yml`). |
 | **Jazzy** | ROS 2 Jazzy Jalisco, the ROS 2 release we use (paired with Ubuntu 24.04). |
 | **Lifecycle node** | A ROS 2 node with managed states (configure, activate, deactivate), planned for `flight_interface`. |
+| **Live table** | What the `echo` container shows (`docker/echo/monitor.py`): the latest gesture, intent, mission mode and velocity target, redrawn only when something changes. |
 | **LTS** | Long-term support: a release maintained for several years. |
 | **Makefile** | The `make` targets in `drone/ground/` that build, start and test the nodes (Docker and native). |
 | **MediaPipe** | A framework used here for detecting hand landmarks. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **Package** | A folder of ROS 2 code (`package.xml`, `setup.py`) that builds into one or more nodes. |
-| **PID 1** | The first process in a container. `docker stop` sends its signal to it, so the node itself runs as PID 1. |
+| **PID 1** | The first process in a container. `docker stop` sends its signal to it. Here it is `entrypoint.sh` when `LOG_DIR` is set (every compose service), which passes the signal on to the node and waits until the log file has every line; otherwise the node. |
+| **Pretend input** | A small node (`fake_flight_state`, `fake_intent`) that publishes made-up values so a node can be tested without the real source. Never used with a real drone. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
@@ -858,7 +941,7 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | **rosdep** | A tool that installs the system dependencies a ROS 2 package declares. |
 | **ROS_DOMAIN_ID** | A number that separates ROS 2 networks, so teammates' nodes don't mix. |
 | **Shebang** | The first line of a script (`#!/usr/bin/python3`) that names the program that runs it. |
-| **SIGTERM** | The signal `docker stop` sends to ask a program to stop. The gesture nodes treat it like Ctrl+C: clean stop, exit code 0. |
+| **SIGTERM** | The signal `docker stop` sends to ask a program to stop. The ground nodes treat it like Ctrl+C: clean stop, exit code 0 (`mission_node` first sends a last zero target). |
 | **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
 | **Stability filter** | The rule that a gesture must be seen in several packets in a row before it counts. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
