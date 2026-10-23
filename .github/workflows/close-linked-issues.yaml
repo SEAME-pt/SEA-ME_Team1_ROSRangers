@@ -1,11 +1,14 @@
 name: close-linked-issues
 
-# GitHub only auto-closes linked issues when a PR merges into the default
-# branch (main). Our PRs target dev (ADR-017), so close them here instead.
+# GitHub only links "Closes #N" when a PR targets the default branch (main).
+# Our PRs target dev (ADR-017), so two things never happen by themselves:
+#   - the board's "PR linked -> In Review" automation (issue #88)
+#   - closing the issues when the PR merges
+# This workflow does both for PRs into dev.
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, reopened, ready_for_review, edited, closed]
     branches: [dev]
 
 permissions:
@@ -13,11 +16,21 @@ permissions:
   pull-requests: read
 
 jobs:
-  close:
-    if: github.event.pull_request.merged == true
+  linked-issues:
+    # Merged PRs close their issues; open, non-draft PRs move them to In Review.
+    if: >-
+      ${{
+        (github.event.action == 'closed' && github.event.pull_request.merged) ||
+        (github.event.action != 'closed' && !github.event.pull_request.draft)
+      }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/github-script@v7
+        env:
+          # Fine-grained PAT with organisation "Projects: read and write".
+          # GITHUB_TOKEN cannot write to an organisation project.
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
         with:
           script: |
             const pr = context.payload.pull_request;
@@ -37,18 +50,81 @@ jobs:
             );
             repository.pullRequest.closingIssuesReferences.nodes.forEach(n => numbers.add(n.number));
 
+            // Open issues only: skip PR numbers and issues already closed.
+            const issues = [];
             for (const issue_number of numbers) {
               const { data: issue } = await github.rest.issues.get({ ...context.repo, issue_number });
               if (issue.pull_request || issue.state === 'closed') {
                 core.info(`#${issue_number}: skipped (${issue.pull_request ? 'pull request' : 'already closed'})`);
                 continue;
               }
-              await github.rest.issues.createComment({
-                ...context.repo,
-                issue_number,
-                body: `Closed by #${pr.number} (merged into \`dev\`).`,
-              });
-              await github.rest.issues.update({ ...context.repo, issue_number, state: 'closed', state_reason: 'completed' });
-              core.info(`#${issue_number}: closed`);
+              issues.push(issue);
             }
-            if (numbers.size === 0) core.notice('No linked issues to close.');
+
+            if (context.payload.action === 'closed') {
+              for (const issue of issues) {
+                await github.rest.issues.createComment({
+                  ...context.repo,
+                  issue_number: issue.number,
+                  body: `Closed by #${pr.number} (merged into \`dev\`).`,
+                });
+                await github.rest.issues.update({
+                  ...context.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+                core.info(`#${issue.number}: closed`);
+              }
+              if (issues.length === 0) core.notice('No linked issues to close.');
+              return;
+            }
+
+            // Opened / ready for review: move the issues and the PR's card to In Review
+            // on "Team1 ROSRangers Board" (GitHub Project #111).
+            if (!process.env.PROJECT_TOKEN) {
+              core.notice('PROJECT_TOKEN secret not set: board not updated.');
+              return;
+            }
+            const board = getOctokit(process.env.PROJECT_TOKEN);
+            const PROJECT_ID = 'PVT_kwDOCx6Z1M4Bm4OL';
+
+            const { node: project } = await board.graphql(
+              `query($id: ID!) {
+                 node(id: $id) { ... on ProjectV2 {
+                   field(name: "Status") { ... on ProjectV2SingleSelectField { id options { id name } } }
+                 } }
+               }`,
+              { id: PROJECT_ID },
+            );
+            const status = project.field;
+            const inReview = status.options.find(o => o.name === 'In Review');
+
+            const contents = [...issues.map(i => [`#${i.number}`, i.node_id]), [`PR #${pr.number}`, pr.node_id]];
+            for (const [label, contentId] of contents) {
+              // Returns the existing item when the content is already on the board.
+              const { addProjectV2ItemById: { item } } = await board.graphql(
+                `mutation($project: ID!, $content: ID!) {
+                   addProjectV2ItemById(input: { projectId: $project, contentId: $content }) {
+                     item { id fieldValueByName(name: "Status") { ... on ProjectV2ItemFieldSingleSelectValue { name } } }
+                   }
+                 }`,
+                { project: PROJECT_ID, content: contentId },
+              );
+              const current = item.fieldValueByName?.name;
+              if (current === 'In Review' || current === 'Done') {
+                core.info(`${label}: left in ${current}`);
+                continue;
+              }
+              await board.graphql(
+                `mutation($project: ID!, $item: ID!, $field: ID!, $option: String!) {
+                   updateProjectV2ItemFieldValue(input: {
+                     projectId: $project, itemId: $item, fieldId: $field,
+                     value: { singleSelectOptionId: $option }
+                   }) { clientMutationId }
+                 }`,
+                { project: PROJECT_ID, item: item.id, field: status.id, option: inReview.id },
+              );
+              core.info(`${label}: ${current ?? 'no status'} -> In Review`);
+            }
+            if (issues.length === 0) core.notice('No linked issues; only the PR card was moved.');

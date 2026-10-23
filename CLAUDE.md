@@ -71,7 +71,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
   - Fields: Sprint (2-week iterations: Sprint 0 = 7–18 Oct 2026, Sprint 1 from 19 Oct, … Sprint 4 ends 13 Dec), Phase (Development Plan 1–6), Requirement (text).
   - Automations: auto-add from the repo, item added → Backlog, PR linked → In Review, closed → Done, auto-archive.
   - New sprint: add the next iterations to the Sprint field (Module 2 starts 14 Dec), then turn the next Study Plan weeks into issues with the issue forms.
-- `close-linked-issues.yaml` closes linked issues when a PR merges into `dev`. GitHub only does this by itself for `main`.
+- `close-linked-issues.yaml` handles PRs into `dev`, where GitHub doesn't link `Closes #N` (it only does for `main`): when the PR opens or is ready for review, it moves the linked issues and the PR card to In Review (needs the `PROJECT_TOKEN` secret); when it merges, it closes them.
 
 ## CI
 
@@ -85,7 +85,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 
 ## Gotchas
 
-- `Closes #N` does not close issues on PRs into `dev` by itself (see `close-linked-issues.yaml` above).
+- `Closes #N` does not close issues or move them to In Review on PRs into `dev` by itself (see `close-linked-issues.yaml` above). If `PROJECT_TOKEN` is missing or expired, move them by hand.
 - The sidebar "Development" links on an issue act like `Closes`. They can only be removed in the browser.
 - Use `gh` from cli.github.com, not Ubuntu's apt version (2.4 has no `gh project`/`gh label`, and `gh pr edit` breaks). Board and field changes go through `gh api graphql`. The board's view grouping and workflow targets can only be changed in the UI.
 - Granting people access (project collaborators, repo permissions) is blocked in auto mode. Ask the user to do it in the UI.

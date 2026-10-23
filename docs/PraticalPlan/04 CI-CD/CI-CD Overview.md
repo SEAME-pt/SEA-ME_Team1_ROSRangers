@@ -54,6 +54,12 @@ Each job is gated by `check-components` and turns on when its component exists (
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
 
+**Issues and the board (`close-linked-issues.yaml`).** GitHub only links `Closes #N` when a PR targets `main`. Our PRs target `dev` ([[ADR-017 Branching Model|ADR-017]]), so this workflow does the two things GitHub would otherwise do (added 2026-10-23, issue #88):
+- When a PR into `dev` opens, is reopened, is marked ready for review or has its description edited, it moves the issues in `Closes/Fixes/Resolves #N` (and the Development sidebar) and the PR's own card to **In Review**. Drafts are skipped, and cards in In Review or Done stay put.
+- When the PR merges, it closes those issues with a comment.
+
+The board step needs the repo secret **`PROJECT_TOKEN`**: a fine-grained personal access token with resource owner `SEAME-pt`, organisation permission **Projects: read and write**, and read access to this repo's issues and pull requests. The default `GITHUB_TOKEN` cannot write to an organisation project. Without the secret the step prints a notice and the board isn't updated. The token belongs to one person and expires, so renew it before its expiry date.
+
 ## 2. Start now (no open decisions)
 
 1. Software repo with `main` + `dev` and protection ([[Branch_Protection]]). The tree is in [[Repository Layout]]; the workflow files are summarised in [[GitHub Actions Starter]].
@@ -146,6 +152,9 @@ Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed; issue #73, PR
 | **hadolint** | Linter for Dockerfiles. |
 | **JUnit report** | An XML file listing each test and its result, which CI tools can display. |
 | **Path filter** | A rule that runs a CI job only when a PR changes certain files. |
+| **PAT** | Personal access token: a GitHub token tied to one person's account, with chosen permissions and an expiry date. |
+| **GitHub Project** | GitHub's board for issues and PRs (Projects v2). Ours is #111, "Team1 ROSRangers Board". |
+| **Secret (Actions)** | An encrypted value stored in the repo settings that workflows can read, such as a token. It never appears in logs. |
 | **Required check** | A CI job that must pass before a PR can be merged (set in the repo's branch protection). |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
