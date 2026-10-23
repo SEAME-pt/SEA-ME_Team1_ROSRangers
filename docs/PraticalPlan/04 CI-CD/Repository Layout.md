@@ -3,6 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - ci
@@ -36,13 +37,15 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke
-│   │   ├── docker-compose.yml # gesture, intent, echo services (no local ROS 2 needed)
-│   │   ├── docker/            # one Dockerfile per service, entrypoint.sh, smoke_test.sh
+│   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed)
+│   │   ├── docker/            # one Dockerfile per image, entrypoint.sh, smoke_test.sh, echo/monitor.py (live table)
+│   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/
 │   │       ├── sd_protocol_py/   # Python twin of lib/protocol
 │   │       ├── flight_interface/ # lifecycle node (real + PX4 backends), only info.md so far
 │   │       ├── gesture_node/     # webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
-│   │       └── intent_node/      # /gesture/raw -> safety filter -> /gesture/intent
+│   │       ├── intent_node/      # /gesture/raw -> safety filter -> /gesture/intent
+│   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
 │   ├── simulation/
 │   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
 │   ├── tools/
@@ -51,7 +54,7 @@ SEA-ME_Team1_ROSRangers/
 │       ├── vectors/           # golden vectors shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
 │       ├── hil/               # pytest suites run on the self-hosted runner
-│       ├── ros/               # gesture_node + intent_node together: contract and pipeline tests
+│       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
 │       └── tools/             # (target, #60) unit tests of the bench tools, now in tests/scripts/
 ├── docs/                      # Obsidian vault (plan, ADRs, architecture, hardware, process)
 ├── scripts/                   # repo tooling only: sync-labels.sh

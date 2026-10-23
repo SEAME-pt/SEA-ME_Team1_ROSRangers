@@ -12,7 +12,7 @@ tags:
 # System Overview
 
 > [!warning] Status: DRAFT
-> This is the architecture we are building towards. State on 2026-10-21: since 2026-10-19 the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The gesture nodes `gesture_node` and `intent_node` are built and tested in CI and Docker (2026-10-21), without a drone ([[00 Gesture Pipeline]]). `mission_node` exists with 35 unit tests but is not committed yet ([[04 Mission Node]]). The rest of the chain (controller, failsafe, `flight_interface`) is not built or tested yet.
+> This is the architecture we are building towards. State on 2026-10-23: since 2026-10-19 the ESP (stock AT firmware, not the custom firmware) is soldered to FC UART4 and the FC answers MSP through it. The gesture nodes `gesture_node` and `intent_node` are built and tested in CI and Docker (2026-10-21), without a drone ([[00 Gesture Pipeline]]). `mission_node` is in `dev` too since 2026-10-23 (#93), with 135 tests and a Docker image, fed by a pretend `/flight/state` ([[04 Mission Node]]). The rest of the chain (controller, failsafe, `flight_interface`) is not built or tested yet.
 
 Follows the Module 1 reference layering: mission → ROS 2 → hardware abstraction → real-time layer → sensors/actuators.
 

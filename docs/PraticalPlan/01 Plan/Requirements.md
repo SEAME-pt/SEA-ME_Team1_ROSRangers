@@ -91,8 +91,8 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-014 | Failsafe action toward the FC follows [[ADR-004 ESP Failsafe\|ADR-004]] (2026-10-20 entry): neutral sticks on the overridden axes, throttle stays with the pilot, no automatic landing or return; the drone levels in Angle mode (it can drift, there is no position hold, 2026-10-23 entry) and the pilot takes over with the radio. | [[PC_to_ESP]] (loss and failsafe) · [[ADR-004 ESP Failsafe\|ADR-004]] | test | HIL, then cage | accepted |
 | REQ-SAF-015 | Failsafe state is observable by the ground side when the link allows. | [[PC_to_ESP]] (loss and failsafe) | test | HIL | accepted |
 | REQ-SAF-016 | ESP8266 is safe and deterministic at power-up, reset and watchdog; no control forwarding until the start-up conditions are met. | [[PC_to_ESP]] (loss and failsafe) | test | HIL (power cycle, reset, watchdog) | accepted |
-| REQ-SAF-017 | Mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
-| REQ-SAF-018 | Mission node never commands an axis outside the active override mask. | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-SAF-017 | Mission node outputs zero velocity within 0.25 s of losing `/gesture/intent`. | [[04 Mission Node]] §12 | test | unit + ROS node (#93), then SITL | draft |
+| REQ-SAF-018 | Mission node never commands an axis outside the active override mask. | [[04 Mission Node]] §12 | test | unit + ROS node (#93), then SITL | draft |
 | REQ-SAF-019 | `intent_node` never relays a stale gesture: hand gone > 0.3 s gives `NEUTRAL`; hand or packets gone > 2 s, or no packet yet, gives `HOVER_LAND_REQUEST`; no replay after a gap. | [[03 Intent Node]] §10 | test | unit + ROS node | draft |
 | REQ-SAF-020 | `intent_node` changes the intent only for a known gesture seen in 5 consecutive packets; no gesture maps to arm, disarm or the override switch. | [[03 Intent Node]] §10 | test + inspection | unit + ROS node | draft |
 | REQ-SAF-021 | E-stop: when a fault is detected (the list in [[Testing Strategy]] §2), the system brings the drone to a safe stop, in the air or on the ground. Time to the safe state is measured per fault. | [[Safety Rules]] §3 · [[Study Plan v2]] §11 | test + demo | SITL + HIL, then cage | draft |
@@ -111,13 +111,13 @@ Values proposed 2026-10-20 ([[ADR-016 Flow Sensor Path|ADR-016]] update). The te
 
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
-| REQ-CTL-001 | Gesture speeds limited to 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw (parameters, with a hard ceiling). | [[04 Mission Node]] (acceptance) | test | unit + SITL | draft |
+| REQ-CTL-001 | Gesture speeds limited to 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw (parameters, with a hard ceiling). | [[04 Mission Node]] §12 | test | unit + ROS node (#93), then SITL | draft |
 
 ### Software (`REQ-SW`)
 
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
-| REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode. | [[04 Mission Node]] (acceptance) | test | SITL | draft |
+| REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode. | [[04 Mission Node]] §12 | test | ROS node (#93), then SITL | draft |
 | REQ-SW-002 | `/gesture/intent` is published at 20 Hz as a JSON string, whatever the input. | [[03 Intent Node]] §10 | test | ROS node | draft |
 | REQ-SW-003 | CI enforces line coverage of at least 80 % on the C++ protocol library and `sd_protocol_py`, and at least 90 % on the ROS 2 nodes. | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] · [[Study Plan v2]] §11 | test | CI | accepted |
 | REQ-SW-004 | A HIL job on the self-hosted runner flashes the spare ESP and runs the bench tests on every push to `dev` and `main`. | [[ADR-020 HIL Runner\|ADR-020]] · [[HIL Runner]] | test | HIL (CI) | draft |

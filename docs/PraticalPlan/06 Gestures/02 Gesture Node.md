@@ -3,7 +3,7 @@ title: Gesture Node (webcam + OpenCV + MediaPipe → /gesture/raw)
 type: architecture
 status: draft
 date: 2026-10-20
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - gestures
@@ -363,7 +363,7 @@ drone/ground/src/gesture_node/
 
 56 tests in total (2026-10-21). Without ROS 2 the 15 node and process tests are skipped, and without MediaPipe 2 more. What each file checks, and how to run them (`make unit`, `make test`, `make smoke`): [[01 ROS2 Nodes Installation|01]] §10. The tests that need both nodes are in `drone/tests/ros/`.
 
-The Docker image is `drone/ground/docker/gesture/Dockerfile`: `ros:jazzy-ros-base`, `pip3 install -r requirements.txt`, the X11/Qt libraries for the window, `colcon build` of this package, and the node as PID 1 so `docker stop` stops it cleanly.
+The Docker image is `drone/ground/docker/gesture/Dockerfile`: `ros:jazzy-ros-base`, `pip3 install -r requirements.txt`, the X11/Qt libraries for the window, `colcon build` of this package, and the node started directly (not through `ros2 run`), so `docker stop` stops it cleanly. Under compose `entrypoint.sh` is PID 1 and passes the signal on ([[01 ROS2 Nodes Installation|01]] §4.2).
 
 | File | What it does | Change from the prototype |
 | :--- | :--- | :--- |
@@ -384,7 +384,7 @@ Needs Docker with the Compose plugin, a webcam at `/dev/video0` and an X11 or XW
 
 ```bash
 cd ~/ROSRangers/drone/ground
-make                          # all three services; or only this node:
+make                          # the whole chain (five services, live table); or only this node:
 xhost +local:                 # once per login: lets the container open its window
 docker compose up --build gesture
 ```
@@ -559,7 +559,7 @@ $$d = \frac{\sqrt{(x_8 - x_4)^2 + (y_8 - y_4)^2}}{\lVert P_9 - P_0 \rVert}$$
 - [ ] **ADR.** Write the ADR that amends [[ADR-018 Ground OS and ROS 2|ADR-018]]: recogniser inside ROS 2, camera read in the node, venv with `--system-site-packages`, no `cv_bridge`. Never edit ADR-018 silently.
 - [ ] **First full run** with the webcam, `intent_node` and `mission_node`, recorded in [[01 ROS2 Nodes Installation|01]] §13.
 - [ ] **CPU numbers.** Measure CPU and frame time against the old `gestures.py` instead of the estimates in §2.
-- [ ] **Launch file.** `mission_with_gestures.launch.py` starts `intent_node` with the default `input_source` (`udp`). It must pass `input_source: topic` ([[04 Mission Node]] §9.2).
+- [x] **Launch file.** `mission_with_gestures.launch.py` starts `intent_node` with `input_source: topic` (#93, 2026-10-23, [[04 Mission Node]] §9.2).
 - [ ] **Headless run.** `gestures.py` always opens a window; on a PC without a display the node fails, in Docker too. Add a parameter if the recogniser moves to the Raspberry Pi. (The tests and the smoke test use `test/fake_camera.py`, so they need no display.)
 - [x] **Ctrl+C** no longer skips `cap.release()` / `destroyAllWindows()`: the loop checks a stop flag and releases in a `finally` (#78, 2026-10-21, `test_camera_and_window_released_on_every_ending`).
 - [x] **Formatting.** `pre-commit` (ruff, ruff-format) is clean on the package (#78, 2026-10-21).

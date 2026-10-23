@@ -3,7 +3,7 @@ title: Intent_node (gesture name → operator intent)
 type: architecture
 status: draft
 date: 2026-10-21
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - gestures
@@ -283,7 +283,7 @@ drone/ground/src/intent_node/
 
 48 tests in total (2026-10-21); without ROS 2 the 21 node and process tests are skipped. What each file checks, and how to run them (`make unit`, `make test`, `make smoke`): [[01 ROS2 Nodes Installation|01]] §10. The tests with `gesture_node` (contract and pipeline) are in `drone/tests/ros/`.
 
-The Docker image is `drone/ground/docker/intent/Dockerfile`: `ros:jazzy-ros-base`, `colcon build` of this package, and the node as PID 1 so `docker stop` stops it cleanly.
+The Docker image is `drone/ground/docker/intent/Dockerfile`: `ros:jazzy-ros-base`, `colcon build` of this package, and the node started directly (not through `ros2 run`), so `docker stop` stops it cleanly. Under compose `entrypoint.sh` is PID 1 and passes the signal on ([[01 ROS2 Nodes Installation|01]] §4.2).
 
 Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `intent_node/` folder.
 
@@ -295,7 +295,7 @@ Only `__init__.py`, `gesture_filter.py` and `intent_node.py` go in the inner `in
 - [x] **Start-up intent.** `HOVER_LAND_REQUEST` / `no_packets_yet` is published until the recogniser starts. `mission_node` treats it as `NEUTRAL`, also when airborne ([[04 Mission Node]] §5.4).
 - [x] **Shutdown traceback.** Stopping `mission_with_gestures.launch.py` with Ctrl+C made `intent_node` print a `KeyboardInterrupt` traceback (seen 2026-10-19). Fixed in #78: Ctrl+C and SIGTERM only set a stop flag, and further signals are ignored once shutdown starts (`test_double_ctrl_c_stops_cleanly`, `test_sigterm_stops_cleanly`).
 - [ ] **Keep-alive rate.** The code and every gesture note use 10 Hz (accept in about 0.4 s). Confirm 10 Hz with the team.
-- [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. The Docker image passes `topic`; `ros2 run` and the `mission_node` launch file still need it by hand. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
+- [ ] **Default input.** `input_source` defaults to `udp`, but nothing sends UDP since 2026-10-20. The Docker image and `mission_with_gestures.launch.py` (#93) pass `topic`; `ros2 run` still needs it by hand. Decide whether to make `topic` the default, or remove the UDP input (and `udp_host` / `udp_port`).
 - [x] **Log wording.** The logs name the real sender: `gesture_node` with `input_source:=topic`, `gestures.py` with UDP (#78, `test_link_report_names_gesture_node`).
 - [x] **Tests.** The node wrapper (subscriber, socket and timers) has ROS node and process tests next to the filter's unit tests, with a 90 % coverage gate in CI ([[Testing Strategy]], 2026-10-21).
 - [ ] **Palm position.** `gesture_node` sends `xy = None`. Fill it if a later node needs it.
