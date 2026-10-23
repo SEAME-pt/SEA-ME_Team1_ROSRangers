@@ -142,6 +142,7 @@ pkg-test: ws
 	@eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); \
 	( source $(ROS) && source $(WS)/install/setup.bash && source $(VENV)/bin/activate \
 		&& cd $(WS) \
+		&& { colcon test-result --delete-yes >/dev/null || true; } \
 		&& python3 -m colcon test --packages-select $(PKGS) --event-handlers console_direct+ \
 		&& colcon test-result --verbose ) 2>&1 | tee $(TESTLOG)/pkg-test.log; \
 	code=$${PIPESTATUS[0]}; rows=(); \

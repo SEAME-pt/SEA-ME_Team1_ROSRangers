@@ -6,6 +6,13 @@ fake_flight_state, mission_node) and plays gesture_node: JSON packets on
 engages, an index finger moves the target, and Ctrl+C stops everything
 cleanly: ros2 launch exits 0 and none of its nodes is left running.
 
+Launched with airborne:=false (also checks that the launch argument reaches
+fake_flight_state). intent_node counts "no hand" from its own start, so when
+the test's first packet arrives more than 2 s after launch (slow DDS
+discovery, seen in the CI container: 2.5 s) it says HOVER_LAND_REQUEST
+(no_hand_long). Airborne, mission_node would go to LAND_REQUEST and never
+show READY; on the ground it ignores land requests and stays READY.
+
 Needs ROS 2 Jazzy sourced and intent_node + mission_node installed (colcon
 build, workspace sourced). Without them the test is skipped, unless
 REQUIRE_ROS_TESTS=1 is set (CI sets it), then it fails.
@@ -71,7 +78,13 @@ class GesturesLaunchTests(unittest.TestCase):
         # Own process group, stopped as a whole (see support.py). stdin not
         # a terminal: ros2 launch behaves the same wherever the tests run.
         self.launch = subprocess.Popen(
-            ["ros2", "launch", "mission_node", "mission_with_gestures.launch.py"],
+            [
+                "ros2",
+                "launch",
+                "mission_node",
+                "mission_with_gestures.launch.py",
+                "airborne:=false",
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -86,6 +99,7 @@ class GesturesLaunchTests(unittest.TestCase):
         self.probe = rclpy.create_node("mission_launch_test_probe")
         self.raw_pub = self.probe.create_publisher(String, "/gesture/raw", 10)
         self.mode = None
+        self.airborne = None
         self.vy = None
         self.probe.create_subscription(String, "/mission/state", self._on_state, 10)
         self.probe.create_subscription(
@@ -107,7 +121,9 @@ class GesturesLaunchTests(unittest.TestCase):
             self.lines.append(line)
 
     def _on_state(self, msg):
-        self.mode = json.loads(msg.data)["mode"]
+        state = json.loads(msg.data)
+        self.mode = state["mode"]
+        self.airborne = state["airborne"]
 
     def _on_velocity(self, msg):
         self.vy = msg.twist.linear.y
@@ -129,6 +145,7 @@ class GesturesLaunchTests(unittest.TestCase):
     def test_open_hand_engages_index_moves_and_ctrl_c_stops(self):
         output = lambda: "".join(self.lines)  # noqa: E731
         self.assertTrue(self.show(None, lambda: self.mode == "READY", 30.0), output())
+        self.assertIs(self.airborne, False, "airborne:=false did not reach the node")
         self.assertTrue(
             self.show("OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0), output()
         )
