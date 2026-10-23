@@ -73,6 +73,15 @@ Guilherme - HIL runner, e preparar a proxima sprint
 **Blockers**
 Tiago - Radio
 
+23/Oct - 10:52/10:58
+Paulo - Vai continuar testar conexoes/benchmark
+Thiago - Recalibrar motores e Gazebo
+Bruno - confirmar mission node conexecao com os outros nodes, implementar failsafes nos nodes.
+Guilherme - Ler documentacao
+**Blockers**
+Paulo - Verificar os testes por causa de problemas de cabos no dia anterior.
+
+
 ---
 
 ## Glossary
