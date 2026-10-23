@@ -314,7 +314,17 @@ jobs:
       - run: pip install -e drone/ground/src/sd_protocol_py
 
       - name: MSP integration tests against SITL
+        env:
+          SITL_REQUIRED: "1"
         run: |
-          (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
-          sleep 3
+          (cd bf && ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+          # conftest.py waits for TCP 5761 and an MSP answer, up to 60 s
           pytest drone/tests/sitl -v
+
+      - name: Upload SITL log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betaflight-sitl-log
+          path: sitl.log
+          if-no-files-found: warn
