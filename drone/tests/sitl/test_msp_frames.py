@@ -20,14 +20,21 @@ def test_encode_v1_api_version_request():
 
 
 def test_encode_v2_api_version_request():
-    assert encode_v2(MSP_API_VERSION) == bytes([0x24, 0x58, 0x3C, 0x00, 0x01, 0x00, 0x00, 0x00, 0x45])
+    assert encode_v2(MSP_API_VERSION) == bytes(
+        [0x24, 0x58, 0x3C, 0x00, 0x01, 0x00, 0x00, 0x00, 0x45]
+    )
 
 
 def test_decode_round_trip_v1_and_v2():
     for encode, version in ((encode_v1, 1), (encode_v2, 2)):
         frame, used = decode(encode(MSP_API_VERSION, b"\x00\x01\x2f", FROM_FC))
         assert frame is not None
-        assert (frame.version, frame.direction, frame.cmd, frame.payload) == (version, FROM_FC, 1, b"\x00\x01\x2f")
+        assert (frame.version, frame.direction, frame.cmd, frame.payload) == (
+            version,
+            FROM_FC,
+            1,
+            b"\x00\x01\x2f",
+        )
         assert used == len(encode(MSP_API_VERSION, b"\x00\x01\x2f", FROM_FC))
 
 

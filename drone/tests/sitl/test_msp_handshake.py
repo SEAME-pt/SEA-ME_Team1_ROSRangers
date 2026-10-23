@@ -40,7 +40,9 @@ def test_v2_bad_crc_is_ignored(msp):
     bad = bytearray(encode_v2(MSP_API_VERSION))
     bad[-1] ^= 0xFF
     msp.send(bytes(bad))
-    assert msp.read_frame(timeout=IGNORE_WINDOW_S) is None, "SITL answered a frame with a bad CRC"
+    assert (
+        msp.read_frame(timeout=IGNORE_WINDOW_S) is None
+    ), "SITL answered a frame with a bad CRC"
 
     msp.send(encode_v2(MSP_API_VERSION))
     assert_api_version_reply(msp.read_frame(), version=2)
@@ -50,7 +52,9 @@ def test_v1_bad_checksum_is_ignored(msp):
     bad = bytearray(encode_v1(MSP_API_VERSION))
     bad[-1] ^= 0xFF
     msp.send(bytes(bad))
-    assert msp.read_frame(timeout=IGNORE_WINDOW_S) is None, "SITL answered a frame with a bad checksum"
+    assert (
+        msp.read_frame(timeout=IGNORE_WINDOW_S) is None
+    ), "SITL answered a frame with a bad checksum"
 
     msp.send(encode_v1(MSP_API_VERSION))
     assert_api_version_reply(msp.read_frame(), version=1)

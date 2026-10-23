@@ -15,7 +15,11 @@ from msp_frames import MSP_API_VERSION, Frame, decode, encode_v1
 HOST = os.environ.get("SITL_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SITL_MSP_PORT", "5761"))
 # Short wait for a local run without SITL, long one when SITL must be there
-TIMEOUT_S = float(os.environ.get("SITL_TIMEOUT_S", "60" if os.environ.get("SITL_REQUIRED") == "1" else "5"))
+TIMEOUT_S = float(
+    os.environ.get(
+        "SITL_TIMEOUT_S", "60" if os.environ.get("SITL_REQUIRED") == "1" else "5"
+    )
+)
 REPLY_TIMEOUT_S = 1.0
 
 
@@ -87,7 +91,9 @@ def connect_when_ready() -> MspLink | None:
 def sitl_session():
     link = connect_when_ready()
     if link is None:
-        skip_or_fail(f"no MSP answer from SITL on {HOST}:{PORT} within {TIMEOUT_S:.0f} s")
+        skip_or_fail(
+            f"no MSP answer from SITL on {HOST}:{PORT} within {TIMEOUT_S:.0f} s"
+        )
     yield link
     link.sock.close()
 

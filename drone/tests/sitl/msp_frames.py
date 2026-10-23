@@ -38,7 +38,9 @@ def encode_v1(cmd: int, payload: bytes = b"", direction: bytes = TO_FC) -> bytes
     return b"$M" + direction + body + bytes([xor_checksum(body)])
 
 
-def encode_v2(cmd: int, payload: bytes = b"", direction: bytes = TO_FC, flag: int = 0) -> bytes:
+def encode_v2(
+    cmd: int, payload: bytes = b"", direction: bytes = TO_FC, flag: int = 0
+) -> bytes:
     body = struct.pack("<BHH", flag, cmd, len(payload)) + payload
     return b"$X" + direction + body + bytes([crc8_dvb_s2(body)])
 
