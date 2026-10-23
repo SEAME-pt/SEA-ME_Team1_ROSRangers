@@ -104,6 +104,7 @@ jobs:
       - name: Build Betaflight SITL (same version as the drone)
         run: |
           git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
+          git -C bf submodule update --init --recursive --depth 1   # make -j races on them otherwise
           mkdir -p shim && printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
           chmod +x shim/arm-none-eabi-gcc
           PATH="$PWD/shim:$PATH" make -C bf TARGET=SITL -j"$(nproc)"
@@ -113,9 +114,9 @@ jobs:
       - run: pip install pytest && pip install -e ground/src/sd_protocol_py
       - name: MSP integration tests against SITL (TCP 5761)
         run: |
-          (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
-          sleep 3
-          pytest tests/sitl -v
+          (cd bf && ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+          SITL_REQUIRED=1 pytest tests/sitl -v   # conftest.py waits for TCP 5761
+      # On failure ci.yaml also uploads sitl.log ([[Testing Strategy]] §4)
 ```
 
 ## 2. `.github/workflows/hil.yaml`

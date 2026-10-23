@@ -302,6 +302,9 @@ jobs:
       - name: Build Betaflight SITL
         run: |
           git clone --depth 1 --branch 2026.6.2 https://github.com/betaflight/betaflight.git bf
+          # Fetch submodules first: make -j hydrates them in parallel and the
+          # jobs race for bf/.git/config ("could not lock config file")
+          git -C bf submodule update --init --recursive --depth 1
           mkdir -p shim
           printf '#!/bin/sh\n[ "$1" = "-dumpversion" ] && echo 13.3.1 && exit 0\nexit 1\n' > shim/arm-none-eabi-gcc
           chmod +x shim/arm-none-eabi-gcc
@@ -315,7 +318,17 @@ jobs:
       - run: pip install -e drone/ground/src/sd_protocol_py
 
       - name: MSP integration tests against SITL
+        env:
+          SITL_REQUIRED: "1"
         run: |
-          (cd bf && ./obj/main/betaflight_SITL.elf > sitl.log 2>&1 &)
-          sleep 3
+          (cd bf && ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+          # conftest.py waits for TCP 5761 and an MSP answer, up to 60 s
           pytest drone/tests/sitl -v
+
+      - name: Upload SITL log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: betaflight-sitl-log
+          path: sitl.log
+          if-no-files-found: warn
