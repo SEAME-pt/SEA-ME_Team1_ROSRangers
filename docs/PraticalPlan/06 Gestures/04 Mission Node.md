@@ -23,7 +23,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT. In `dev` with its tests and Docker image, numbers not reviewed yet
 > - Merged into `dev` on 2026-10-23 (#93, issue #27) at **`drone/ground/src/mission_node/`**. `make ws` builds it natively (§8). The Docker image `rosrangers/mission:jazzy` runs it with no local ROS 2, and `make` starts it next to `gesture_node` and `intent_node` (§9.4).
-> - 135 tests (logic, ROS node, process, launch files) plus 19 contract, pipeline and launch tests in `drone/tests/ros/` (§10). CI runs all of them in `ground-ros2` (90 % coverage gate) and inside the image in `ground-docker`.
+> - 135 tests (logic, ROS node, process, launch files) plus 19 contract, pipeline and launch tests in `drone/tests/ros/` (§10). CI runs all of them in `ground-ros2` (90 % coverage gate). `ground-docker` runs the 135 package tests inside the image.
 > - Topic names, `/flight/state` fields and every number are still **proposals**. The team must agree them (§13). Choices made while coding are listed in §11 for review. Nothing here changes an accepted ADR.
 > - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). The Docker stack runs it as the `flight` service. Never use it with a real drone.
 > - Not run yet with the real webcam (§10, Level 3), and not with a controller or a drone.
@@ -587,7 +587,7 @@ AIRBORNE=false make                      # on the ground: land requests ignored
 | `mission` | `rosrangers/mission:jazzy` | `mission_node` with the default parameters |
 | `flight` | `rosrangers/mission:jazzy` (same image) | `fake_flight_state` with `mask:=${MASK:-11}` and `airborne:=${AIRBORNE:-true}`. **Pretend**, never with a real drone |
 
-One per terminal: `docker compose up --build mission flight`, and the table alone with `docker compose run --rm echo`. Any `ros2` command of this page works through the echo image: `docker compose run --rm echo ros2 topic echo /mission/state std_msgs/msg/String --field data`, or `docker compose run --rm echo ros2 param set /fake_flight_state override_active false`.
+One per terminal: `docker compose up --build mission flight`, and the table alone with `docker compose run --rm echo`. Services named on the command line print their output in that terminal (and still write `logs/<service>/latest.log`); `attach: false` only hides them from a plain `docker compose up` / `make` (checked 2026-10-23). Any `ros2` command of this page works through the echo image: `docker compose run --rm echo ros2 topic echo /mission/state std_msgs/msg/String --field data`, or `docker compose run --rm echo ros2 param set /fake_flight_state override_active false`.
 
 The pretend demo of §9.1 (`fake_intent`) has no service of its own: it would fight `intent_node`. Run it in the image without the `intent` service:
 
@@ -599,7 +599,7 @@ docker compose down
 
 `LOG_NAME=fake_intent` keeps its output in `logs/fake_intent/`, so `logs/mission/latest.log` stays the node's log. Compare `logs/mission/latest.log` with the table in §7.2.
 
-`docker stop` (or Ctrl+C / `make down`) stops `mission_node` like Ctrl+C: one last zero target, exit code 0 (§5.6). The smoke test checks it (§10.2).
+`docker stop` (or Ctrl+C / `make down`) stops `mission_node` like Ctrl+C: one last zero target, exit code 0 (§5.6). The smoke test checks the clean stop (exit code 0 within seconds), not the last zero target; that one is checked by `test_mission_node_process.py` (`test_last_target_is_zero_after_sigterm`, §10.2).
 
 ---
 

@@ -178,7 +178,7 @@ diff logs/mission/2026-10-23_10-00-00.log logs/mission/latest.log        # compa
 docker compose logs -f mission                                           # same output through Docker
 ```
 
-`logs/` is ignored by Git (only its `.gitignore` is committed). `GROUND_LOG_DIR=./other make` puts the files somewhere else. For this, `entrypoint.sh` stays PID 1 and passes SIGTERM / Ctrl+C on to the node, so lines printed while a node stops still reach the file. Without `LOG_DIR` (CI, the in-image tests) it only runs the command with `exec`, so the node itself is PID 1.
+`logs/` is ignored by Git (only its `.gitignore` is committed). `GROUND_LOG_DIR=./other make` puts the files somewhere else. For this, `entrypoint.sh` stays PID 1 and passes SIGTERM / Ctrl+C on to the node, so lines printed while a node stops still reach the file. PID 1 is `entrypoint.sh` when `LOG_DIR` is set, otherwise the node: without `LOG_DIR` it only runs the command with `exec`. Every compose service sets `LOG_DIR`, also in the smoke test (CI job `ground-docker`, logs in `logs/smoke/`); the containers the smoke test starts with plain `docker run` (the in-image tests, the topic echoes) don't.
 
 ### 4.3 The `make` targets
 
@@ -224,6 +224,8 @@ docker compose run --rm --build echo      # terminal 3: the live table
 docker compose up --build mission flight  # terminal 4: mission_node + pretend /flight/state
 docker compose down                       # stop everything
 ```
+
+Named on the command line, each service prints its output in its own terminal, and still writes `logs/<service>/latest.log`. `attach: false` in `docker-compose.yml` only hides the nodes from a plain `docker compose up` / `make`, which shows the table alone (checked 2026-10-23).
 
 ### 4.4 The `ros2` CLI without a local ROS 2
 
@@ -786,7 +788,7 @@ Run one package's tests natively (ROS sourced, from the package folder): `python
 | `drone/tests/ros/test_gesture_pipeline.py` | pipeline | `rclpy` | landmarks → `recognize()` → `send_gesture()` → `gesture_node` → `/gesture/raw` → `intent_node` (default timeouts) → `/gesture/intent`: every gesture reaches its intent; hand lost → `NEUTRAL` → `HOVER_LAND_REQUEST`; recogniser stops → `HOVER_LAND_REQUEST` |
 | `src/mission_node/test/` (4 files, 135 tests) | unit, node, process, launch | `rclpy` except the 83 logic tests | every rule of `mission_node`, the real node on real topics, clean stops, the launch files: [[04 Mission Node]] §10.2 |
 | `drone/tests/ros/test_mission_contract.py` | unit | nothing | the real `intent_node` filter feeding the real `MissionLogic`: same intents and reasons on both sides, `fake_intent` speaks `intent_node`'s format |
-| `drone/tests/ros/test_mission_pipeline.py` | pipeline | `rclpy` | the test above, one link further: … → `/gesture/intent` → `mission_node` (+ `fake_flight_state`) → `/mission/velocity_target`: no motion before the open hand, index moves, mask 11 never climbs, fist stops, hand or recogniser lost → land request |
+| `drone/tests/ros/test_mission_pipeline.py` | pipeline | `rclpy` | `test_gesture_pipeline.py`, one link further: … → `/gesture/intent` → `mission_node` (+ `fake_flight_state`) → `/mission/velocity_target`: no motion before the open hand, index moves, mask 11 never climbs, fist stops, hand or recogniser lost → land request |
 | `drone/tests/ros/test_mission_launch.py` | launch | `rclpy`, `ros2 launch` | `mission_with_gestures.launch.py` end to end with pretend `/gesture/raw`; Ctrl+C exits 0 and leaves no node running |
 | `drone/tests/ros/test_monitor.py` | unit + program | `rclpy` | the `echo` live table (§4.2): what each block shows, bad JSON never crashes it, the text only changes when a message changes it, one line per change without a terminal, synchronized frames on a terminal, cursor back and exit 0 on Ctrl+C / SIGTERM |
 | `drone/tests/ros/test_entrypoint.py` | program | bash, ROS 2 at `/opt/ros/jazzy` | `docker/entrypoint.sh` without Docker: without `LOG_DIR` it only runs the command; with it, every line timestamped in `logs/<service>/`, `latest.log`, one file per run, files the host user can delete, SIGTERM and SIGINT reach the command and its last lines are kept |
@@ -930,7 +932,7 @@ ros2 pkg executables mission_node      # fake_flight_state, fake_intent, mission
 | **MediaPipe** | A framework used here for detecting hand landmarks. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
 | **Package** | A folder of ROS 2 code (`package.xml`, `setup.py`) that builds into one or more nodes. |
-| **PID 1** | The first process in a container. `docker stop` sends its signal to it. Under compose (`LOG_DIR` set) it is `entrypoint.sh`, which passes the signal on to the node and waits until the log file has every line; without `LOG_DIR` (CI, in-image tests) the node itself. |
+| **PID 1** | The first process in a container. `docker stop` sends its signal to it. Here it is `entrypoint.sh` when `LOG_DIR` is set (every compose service), which passes the signal on to the node and waits until the log file has every line; otherwise the node. |
 | **Pretend input** | A small node (`fake_flight_state`, `fake_intent`) that publishes made-up values so a node can be tested without the real source. Never used with a real drone. |
 | **rclpy** | The ROS 2 Python client library used to write nodes. It has no commands of its own. |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN` (for example REQ-SAF-019), registered in Requirements. |

@@ -204,6 +204,8 @@ make                  # xhost +local:, then docker compose up --build (first bui
 | 3 | `docker compose run --rm --build echo` (the live table) |
 | 4 | `docker compose up --build mission flight` (only to see the mission rows) |
 
+Started this way, each service prints its output in its own terminal and still writes `logs/<service>/latest.log`; only a plain `docker compose up` / `make` hides the nodes behind the table.
+
 The `ros2` command line is in the images too, so the checks below work without a local ROS install. Replace `ros2 ...` with:
 
 ```bash
@@ -246,7 +248,7 @@ T1 logs `Intent -> HOVER_LAND_REQUEST (reason: no_packets_yet ...)` and a `No pa
 
 #### What you should see
 
-Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, read `/gesture/raw` instead. T3 (`ros2 topic echo`) prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py` (needs a local Jazzy). Steps 2–5 below use it; in Docker, read the `echo` table (it only changes when a value changes) or the `Intent ->` lines in `logs/intent/latest.log` instead.
+Show a hand pose: about 0.4 s later the `intent` changes (for example `INDEX_RIGHT` → `"intent":"MOVE_RIGHT"`). To see what `gesture_node` sends, read `/gesture/raw` instead. T3's native `ros2 topic echo` (not the Docker `echo` table) prints 20 lines a second; to see only the **changes** on both topics, save the watcher once ([[01 ROS2 Nodes Installation|01]] §9, "The watcher") and run `python3 ~/gesture_watch.py` (needs a local Jazzy). Steps 2–5 below use it; in Docker, read the `echo` table (it only changes when a value changes) or the `Intent ->` lines in `logs/intent/latest.log` instead.
 
 > [!WARNING] Three rules that break things if you forget them (native setup)
 > - **Never** run a plain `colcon build` of everything in `ros2_ws`: it rebuilds `gesture_node` with the system Python, and `ros2 run gesture_node ...` then fails with `No module named 'mediapipe'`. Rebuild with `make ws` (after `rm ros2_ws/.gesture_node` if nothing changed in the package files).
