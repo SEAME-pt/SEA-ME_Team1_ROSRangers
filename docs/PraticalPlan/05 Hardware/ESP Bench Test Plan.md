@@ -176,3 +176,6 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 | **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
 | **compare-diffs** | Bench-tool command that compares two Betaflight `diff all` files, used to prove the FC configuration is unchanged. |
 | **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |
+| **dBm** | Received signal strength in decibel-milliwatts. Closer to 0 is stronger: −40 is very strong, −70 is weak. |
+| **p99** | 99th percentile: 99 % of the measured values are at or below it. |
+| **`T_loss`** | Link-loss timeout ([[ADR-004 ESP Failsafe\|ADR-004]]): if no accepted control message arrives for this long, the ESP enters its link failsafe. Set to 250 ms. |
