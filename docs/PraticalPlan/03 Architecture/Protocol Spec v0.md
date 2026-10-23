@@ -66,7 +66,7 @@ tags:
 
 ## 4. Receive rules
 
-1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004 (were REQ-COM-001 to 04)).
+1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
 3. Control (0x60) is accepted only if `seq > last_ctrl_seq` ([[ADR-003 Sequence Acceptance|ADR-003]]). Otherwise drop and count.
 4. Values are clamped. The ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs.
@@ -105,3 +105,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ and Python 
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
+| **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
+| **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
+| **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |

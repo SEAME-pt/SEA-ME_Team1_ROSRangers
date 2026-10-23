@@ -3,6 +3,7 @@ title: Team Tracks
 type: plan
 status: active
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - plan
@@ -23,16 +24,16 @@ The program evaluates **individual** contributions, and everyone must understand
 | B · Embedded Link | ESP firmware, MSP, C++ protocol lib, ThoneFlow reader | A, D | [[ESP Link State Machine]], unit tests, HIL passing, [[ESP_to_FC]] §11 results |
 | C · Ground & ROS 2 | `flight_interface` lifecycle node, Python protocol, controller | E | node graph, message contracts |
 | D · CI/CD & Test | workflows, coverage gates, static analysis, SITL job, [[HIL Runner]] | B | green pipeline, HIL job |
-| E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline|Gesture Pipeline]] | C | sim-to-real report |
+| E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline\|Gesture Pipeline]] | C | sim-to-real report |
 
-**Owners (2026-10-20):** A · BrunoBMFT, C · Dot99. The team assigns B, D and E internally.
+**Owners (team decision 2026-10-23):** A · BrunoBMFT (also the safety pilot), D · Dot99. Tracks **B, C and E have no fixed owner**: people rotate between them so everyone understands the whole drone. This replaces the 2026-10-20 line (A · BrunoBMFT, C · Dot99).
 
 ## 2. Rules
 
 - Every PR is reviewed by people **outside** the author's track (knowledge spreads): **1 approving review** on PRs into `dev`, **2** on `dev` → `main` (team decision 2026-10-20, [[ADR-017 Branching Model|ADR-017]]). Merge rules follow [[Dev_Strategy]] §8–§9.
 - Each person gives one 20-min **teach-back** per sprint on their track.
 - Rotate one person between tracks each sprint. CI (D) and Safety (A) keep one stable owner.
-- Safety pilot: at least 2 trained people. Nobody flies alone ([[Safety Rules]] #15). The safety induction is done (GitHub #13, closed, 2026-10-20). Named safety pilot: BrunoBMFT. The second person rotates among trained team members each session.
+- Safety pilot: **one trained safety pilot** is enough (team decision 2026-10-23; was "at least 2 trained people"). Nobody flies alone ([[Safety Rules]] #15). The safety induction is done (GitHub #13, closed, 2026-10-20). Named safety pilot: BrunoBMFT. The second person rotates among trained team members each session.
 
 ## 3. Glossary
 
@@ -48,3 +49,11 @@ The program evaluates **individual** contributions, and everyone must understand
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **Betaflight** | The open-source FC firmware on the drone: 4.5.1 installed, 2026.6.2 planned (ADR-014). |
+| **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
+| **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
+| **Lifecycle node** | A ROS 2 node with managed states (configure, activate, deactivate); `flight_interface` will be one. |
+| **Safety pilot** | The trained person at the cage with the RadioMaster and line of sight. The radio always wins over code. |
+| **Teach-back** | A 20-minute talk each person gives per sprint on their track. |
+| **Track (A–E)** | The five ownership areas: A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures ([[Team Tracks]]). |

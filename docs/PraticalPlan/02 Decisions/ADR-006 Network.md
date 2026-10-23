@@ -3,6 +3,7 @@ title: ADR-006 — Wi-Fi Network Topology and Security
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D06
@@ -33,6 +34,10 @@ tags:
 - Application-level validation stays mandatory ([[ADR-002 Message Integrity|ADR-002]]).
 - **Revisit** if more than 4 ground devices need to connect, or if range is insufficient in the cage.
 
+### Update 2026-10-23: port numbers
+
+Port numbers are **not fixed yet**. They are still open in [[Protocol Spec v0]] §7 (OD-04) and are set at the protocol freeze in Study Plan week 3 (2026-11-02 to 2026-11-06). The rest of the decision is unchanged.
+
 ## 3. Consequences
 
 - The [[HIL Runner]] Pi joins the ESP SoftAP on Wi-Fi and uses Ethernet for GitHub.
@@ -51,3 +56,6 @@ tags:
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |
+| **WPA2-PSK** | Wi-Fi security mode where every client uses the same pre-shared key (the ESP SoftAP, ADR-006). |
+| **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |

@@ -3,6 +3,7 @@ title: ADR-018 — Ground Computer OS and ROS 2
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D18
@@ -26,6 +27,10 @@ tags:
 
 - MediaPipe pulls `numpy` and OpenCV with pip. These can clash with the apt-installed ROS packages (`cv_bridge`). Keep the gesture recogniser in **its own venv/process** and talk to ROS 2 through a thin node ([[00 Gesture Pipeline|Gesture Pipeline]]).
 - PX4 SITL + Gazebo support for this exact combination must be checked on the official pages before installing (not verified here).
+
+### Update 2026-10-23: PX4 check closed
+
+Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic is the primary PX4 combination, verified on 2026-10-15 ([[PX4 SITL Setup]] §1, GitHub #29). The open check in §2 is closed. The decision is unchanged.
 
 ## 3. Related pages
 

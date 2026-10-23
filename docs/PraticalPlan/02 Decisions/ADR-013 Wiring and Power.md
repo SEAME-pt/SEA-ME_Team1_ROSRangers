@@ -3,6 +3,7 @@ title: ADR-013 — ESP ↔ FC Wiring and Power
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 aliases:
   - D13
@@ -33,6 +34,10 @@ tags:
 
 - The FC 5V rail current rating is not documented in our sources. The ESP draws peaks of hundreds of mA during Wi-Fi transmit. Measure on the bench before flying (FC-05).
 - Which 5V pad: use a free one, e.g. the buzzer/LED group (#14 in [[2.5Drone]]), after checking it with a multimeter.
+
+### Update 2026-10-23: which 5V pad
+
+The ESP takes the **5V pad next to T4** (the UART4 row, [[Wiring and Pinout]] §1). The ELRS receiver moved to **DV5V** (GitHub #41), so that pad is free. The buzzer/LED pad suggested in §2 is not used. The decision is unchanged.
 
 ## 3. Mounting
 

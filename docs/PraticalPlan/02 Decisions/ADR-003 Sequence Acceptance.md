@@ -18,7 +18,7 @@ tags:
 
 ## 1. Context
 
-REQ-COM-006 to 009 (were REQ-COM-006 to 04) and REQ-COM-010 to 013 (were REQ-COM-010 to 04) in [[PC_to_ESP]] §6 require duplicates and reordering to be handled, sequence width to be defined, and a restarted sender not to be confused with replayed traffic.
+REQ-COM-006 to 013 (old IDs REQ-SEQ-01 to 04 and REQ-ORD-01 to 04) in [[PC_to_ESP]] §6 require duplicates and reordering to be handled, sequence width to be defined, and a restarted sender not to be confused with replayed traffic.
 
 ## 2. Decision
 

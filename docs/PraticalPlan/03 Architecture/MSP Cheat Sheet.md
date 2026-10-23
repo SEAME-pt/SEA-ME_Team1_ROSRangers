@@ -3,6 +3,7 @@ title: MSP Cheat Sheet
 type: reference
 status: active
 date: 2026-10-12
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - msp
@@ -11,6 +12,8 @@ tags:
 ---
 
 # MSP Cheat Sheet
+
+> [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
 > [!info] Sources
 > Command IDs come from Betaflight's `msp_protocol.h`. The byte vectors were sent to a running **Betaflight 2026.6.2 SITL** on 2026-10-12, and the replies below are what it answered. Our FC runs **4.5.1 (MSP API 1.46)** ([[2.5Drone]]).
@@ -47,7 +50,7 @@ tags:
 | 200 | MSP_SET_RAW_RC | setpoints (AETR order) |
 
 > [!danger] Never forwarded from the network (gateway allow-list)
-> `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. The week-2 transparent-bridge spike forwards all of these: use it only with props off on the isolated network.
+> `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. The week-2 transparent-bridge spike forwards all of these: use it only with props off ([[Safety Rules]] #13). Network isolation is still an open item ([[Safety Rules]] §2).
 
 ## 4. Channel-order trap
 
@@ -62,3 +65,6 @@ tags:
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |
+| **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
+| **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |
