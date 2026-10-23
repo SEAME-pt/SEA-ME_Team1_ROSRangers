@@ -3,13 +3,14 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-21
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - gestures
   - ros2
   - mission
   - safety
+  - docker
 aliases:
   - Mission Node
   - Mission Nodes
@@ -18,13 +19,14 @@ aliases:
 
 # 🎯 Mission_Node: gesture intent → velocity target
 
-`mission_node` (v0.1) is the second ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]]. It reads what the operator wants from `/gesture/intent` ([[03 Intent Node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
+`mission_node` (v0.1) is the third ROS 2 node of the [[00 Gesture Pipeline|Gesture Pipeline]], after `gesture_node` and `intent_node`. It reads what the operator wants from `/gesture/intent` ([[03 Intent Node]]) and what the drone is doing from `/flight/state`. It publishes a safe velocity target on `/mission/velocity_target`: limited, ramped, and only on the axes the ground owns.
 
-> [!WARNING] Status: DRAFT. Built and tested on real ROS 2 Jazzy, not reviewed yet
-> - The package exists and runs. It has 35 unit tests and passed `colcon build` + `colcon test` on Pop!_OS 24.04 + Jazzy on 2026-10-19. It also ran end to end with `intent_node` and the UDP fake camera (§10, test log in [[01 ROS2 Nodes Installation|01]] §13). Since 2026-10-20 the recogniser is `gesture_node` on `/gesture/raw` ([[02 Gesture Node]]); that chain has not run with `mission_node` yet.
-> - It lives in **`MISSION_NODE_PACKAGE/`** at the repo root **for now**. Its final place is `drone/ground/src/mission_node/` ([[00 Gesture Pipeline]] §5). Only the folder moves. The package name stays `mission_node`.
+> [!WARNING] Status: DRAFT. In `dev` with its tests and Docker image, numbers not reviewed yet
+> - Merged into `dev` on 2026-10-23 (#93, issue #27) at **`drone/ground/src/mission_node/`**. `make ws` builds it natively (§8). The Docker image `rosrangers/mission:jazzy` runs it with no local ROS 2, and `make` starts it next to `gesture_node` and `intent_node` (§9.4).
+> - 135 tests (logic, ROS node, process, launch files) plus 19 contract, pipeline and launch tests in `drone/tests/ros/` (§10). CI runs all of them in `ground-ros2` (90 % coverage gate) and inside the image in `ground-docker`.
 > - Topic names, `/flight/state` fields and every number are still **proposals**. The team must agree them (§13). Choices made while coding are listed in §11 for review. Nothing here changes an accepted ADR.
-> - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). Never use it with a real drone.
+> - `/flight/state` does not exist yet (no `flight_interface`). Until it does, the package ships a **pretend** publisher, `fake_flight_state` (§7). The Docker stack runs it as the `flight` service. Never use it with a real drone.
+> - Not run yet with the real webcam (§10, Level 3), and not with a controller or a drone.
 
 ---
 
@@ -64,28 +66,43 @@ One ROS 2 Python package, `mission_node`, with **three executables** and **two l
 | `fake_flight_state` | executable (pretend input) | publishes a pretend `/flight/state` at 10 Hz. Every field is a parameter you can change while it runs (§7.1) |
 | `fake_intent` | executable (pretend input) | publishes pretend `/gesture/intent` messages in `intent_node`'s format: a 29 s scripted demo, or one constant intent you change by hand (§7.2) |
 | `mission_demo.launch.py` | launch file | `fake_flight_state` + `mission_node` + `fake_intent`: **the node on its own with pretend values** |
-| `mission_with_gestures.launch.py` | launch file | `intent_node` + `fake_flight_state` + `mission_node`: **the real gesture chain**. You add `gesture_node` or the fake `/gesture/raw` publisher (§9.2) |
+| `mission_with_gestures.launch.py` | launch file | `intent_node` (with `input_source: topic`) + `fake_flight_state` + `mission_node`: **the real gesture chain**. You add `gesture_node` or the fake `/gesture/raw` publisher (§9.2) |
 
 ### 2.1 Files
 
 ```text
-MISSION_NODE_PACKAGE/                 # later: drone/ground/src/mission_node/
-├── package.xml                       # must be directly here (rclpy, std_msgs, geometry_msgs, launch_ros)
-├── setup.py, setup.cfg
+drone/ground/src/mission_node/
+├── package.xml                       # rclpy, std_msgs, geometry_msgs, rcl_interfaces; launch, launch_ros, intent_node (for the gestures launch)
+├── setup.py, setup.cfg               # three console scripts, installs launch/*.launch.py
 ├── resource/mission_node
 ├── launch/
 │   ├── mission_demo.launch.py        # on its own, pretend inputs
-│   └── mission_with_gestures.launch.py   # with intent_node
+│   └── mission_with_gestures.launch.py   # with intent_node on /gesture/raw
 ├── mission_node/
 │   ├── __init__.py
 │   ├── mission_logic.py              # all the rules of §5. NO ROS imports, injectable clock
 │   ├── mission_node.py               # rclpy wrapper: subscriptions, 20 Hz timer, publishers, logs
+│   ├── spin.py                       # run(): spin until Ctrl+C / SIGTERM, then a clean stop (§5.6). Used by all three executables
 │   ├── fake_inputs.py                # demo script + JSON builders. NO ROS imports
 │   ├── fake_flight_state.py          # pretend /flight/state publisher
 │   └── fake_intent.py                # pretend /gesture/intent publisher
-└── test/
-    └── test_mission_logic.py         # 35 unit tests, incl. the demo script played through the logic
+└── test/                             # 135 tests (§10.2)
+    ├── test_mission_logic.py         # unit: every rule of §5, the demo script, random inputs
+    ├── test_mission_node_ros.py      # node: the real node and the pretend inputs on real topics
+    ├── test_mission_node_process.py  # process: Ctrl+C, SIGTERM, bad parameters, the demo launch
+    └── test_launch_files.py          # the launch files start the right nodes
 ```
+
+Outside the package, in `drone/ground/`:
+
+| File | What |
+| :--- | :--- |
+| `docker/mission/Dockerfile` | image `rosrangers/mission:jazzy`: `ros:jazzy-ros-base` + `colcon build` of this package. Runs `mission_node`, and `fake_flight_state` for the `flight` service (§9.4) |
+| `docker-compose.yml` | services `mission` and `flight` (pretend `/flight/state`, `MASK` and `AIRBORNE` from the shell) |
+| `docker/echo/monitor.py` | the live table of `make`: gesture, intent, mission mode and velocity target ([[01 ROS2 Nodes Installation\|01]] §4.2) |
+| `Makefile` | `make ws` builds this package, `make unit` / `make test` / `make smoke` run its tests ([[01 ROS2 Nodes Installation\|01]] §4.3) |
+
+Tests that use `mission_node` together with `intent_node` or `gesture_node` live in `drone/tests/ros/` (§10.2).
 
 Same pattern as `intent_node` ([[03 Intent Node]] §8): the decisions live in a ROS-free module (`mission_logic.py`), so they can be unit-tested anywhere. `mission_node.py` only wires them to ROS.
 
@@ -119,7 +136,7 @@ Type `std_msgs/msg/String` holding JSON. The real publisher will be `flight_inte
 | `mask` | expected override mask | 8 / 11 / 15 decide which axes may be commanded (§5.3). Any other value → `IDLE` |
 | `airborne` | estimator / baro height above a threshold | land requests are ignored on the ground (§5.4) |
 
-The parsing is strict: only a real JSON `true` counts as true (`"true"` or `1` are false), and `mask` must be an integer. A `/flight/state` older than `flight_state_timeout_sec` (0.5 s) counts as lost → `IDLE`. The node never reads ARM state in order to change it.
+The parsing is strict: only a real JSON `true` counts as true (`"true"` or `1` are false), a missing field counts as false, and `mask` must be an integer. `esp_state` is case-insensitive. A message that is not a JSON object is ignored and counted, so the last good one goes stale. A `/flight/state` older than `flight_state_timeout_sec` (0.5 s) counts as lost → `IDLE`. The node never reads ARM state in order to change it.
 
 ### 3.3 Parameters
 
@@ -129,6 +146,8 @@ Read once at start-up. Change them with `--ros-args -p name:=value`:
 ros2 run mission_node mission_node --ros-args -p max_lateral_mps:=0.2 -p intent_lost_sec:=1.5
 ```
 
+The number parameters also take an integer (`-p intent_lost_sec:=3`). Anything else (`-p max_lateral_mps:=fast`) stops the node at start-up: a `FATAL` log line that names the parameter, exit code 1, no traceback.
+
 | Parameter | Default | Meaning |
 |---|---|---|
 | `intent_topic` | `/gesture/intent` | input topic |
@@ -137,7 +156,7 @@ ros2 run mission_node mission_node --ros-args -p max_lateral_mps:=0.2 -p intent_
 | `state_topic` | `/mission/state` | output topic |
 | `frame_id` | `base_link` | `header.frame_id` of the velocity target |
 | `intent_timeout_sec` | `0.25` | no intent for this long → `NEUTRAL` (zero) |
-| `intent_lost_sec` | `2.0` | no intent for this long → `HOVER_LAND_REQUEST` (`intent_topic_lost`). Also: `NEUTRAL` for this long while `ENGAGED` → `READY` |
+| `intent_lost_sec` | `2.0` | no intent for this long → `HOVER_LAND_REQUEST` (`intent_topic_lost`). Also: `NEUTRAL` for this long while `ENGAGED` → `READY`. Never shorter than `intent_timeout_sec` |
 | `flight_state_timeout_sec` | `0.5` | no `/flight/state` for this long → `IDLE` |
 | `max_lateral_mps` | `0.3` | speed for `MOVE_LEFT/RIGHT` (hard ceiling 0.5) |
 | `max_vertical_mps` | `0.2` | speed for `CLIMB_SLOWLY` / `DESCEND_…` and the mask-15 landing (hard ceiling 0.5) |
@@ -145,7 +164,7 @@ ros2 run mission_node mission_node --ros-args -p max_lateral_mps:=0.2 -p intent_
 | `max_accel_mps2` | `0.5` | how fast linear speed may **increase** (§5.5) |
 | `max_yaw_accel_dps2` | `40.0` | how fast yaw rate may **increase** |
 | `land_hover_sec` | `2.0` | mask 15 land request: hover this long, then descend |
-| `publish_rate_hz` | `20.0` | output rate, always on |
+| `publish_rate_hz` | `20.0` | output rate, always on (at least 1 Hz) |
 
 > [!WARNING] Safety settings
 > The speed limits, timeouts and ramps are safety settings. Agree changes with the team. A value above the hard ceiling is clamped to the ceiling with a warning at start-up. A negative or NaN limit becomes 0. The limits are clamped again downstream (controller, `flight_interface`, ESP), as [[Protocol Spec v0]] §5 requires.
@@ -156,7 +175,7 @@ ros2 run mission_node mission_node --ros-args -p max_lateral_mps:=0.2 -p intent_
 
 Subscriptions only store the latest message. One timer runs at 20 Hz and does everything, so there are no threads or locks (same pattern as `intent_node`). On every tick:
 
-1. **Check intent freshness.** Last intent older than `intent_timeout_sec` → `NEUTRAL` (`intent_stale`). Older than `intent_lost_sec` → `HOVER_LAND_REQUEST` (`intent_topic_lost`). This catches a crashed `intent_node`, which can't report itself.
+1. **Check intent freshness.** Last intent older than `intent_timeout_sec` → `NEUTRAL` (`intent_stale`). Older than `intent_lost_sec` → `HOVER_LAND_REQUEST` (`intent_topic_lost`). This catches a crashed `intent_node`, which can't report itself. An intent that would go stale before the **next** tick already counts as stale, so the zero target is never late, whatever the tick phase (at 20 Hz: zero 0.20–0.25 s after the last message).
 2. **Check the flight state** (§3.2). Missing, stale, link lost, not `STREAMING`, override off or bad mask → `IDLE`.
 3. **Update the mode** (§5.1).
 4. **Map** the intent to a raw velocity target (§5.2). Zero unless `ENGAGED` (or a mask-15 landing).
@@ -191,7 +210,7 @@ stateDiagram-v2
 | `ENGAGED` | from the intent | gestures move the drone |
 | `LAND_REQUEST` | hover; with mask 15, descend after `land_hover_sec` (§5.4) | operator gone, or `intent_node` gone |
 
-- **Engaging needs a deliberate `OPEN_HAND_UP`.** `HOLD_POSITION` must **start** while in `READY`. If the hand was already showing it, it must go away and be shown again. This holds after `STOP_HOVER`, after a land request, and when the pilot flips override while the operator already holds an open hand. A stray gesture never starts motion.
+- **Engaging needs a deliberate `OPEN_HAND_UP`.** `HOLD_POSITION` must **start** while in `READY`. If the hand was already showing it, it must go away and be shown again. This holds after `STOP_HOVER`, after a land request, after any fall back to `IDLE`, when the pilot flips override while the operator already holds an open hand, and when `mission_node` (re)starts while the hand is already open: the first message it ever gets is never a "start". A stray gesture never starts motion.
 - **Only real messages count for "start".** A delivery gap (`intent_stale`, made up by this node) never looks like "hand removed and shown again". Without this rule, a 0.3 s network hiccup could engage the drone (found in the first real run, §11).
 - **Dead-man rule:** in `ENGAGED`, `NEUTRAL` (hand gone > 0.3 s, from `intent_node`) gives zero at once, but stays engaged, so a short loss doesn't force re-engaging. `NEUTRAL` for more than `intent_lost_sec` → `READY`. Hand gone > 2 s → `intent_node` sends `HOVER_LAND_REQUEST`.
 - Flight state not OK → `IDLE` from any mode. The pilot always wins ([[System Overview]] §2).
@@ -242,6 +261,13 @@ So `CLIMB_SLOWLY` / `DESCEND_…` do nothing until mask 15.
 | Airborne, mask 8 or 11 | zero velocity (hover) and `land_request: true` in `/mission/state`. The **pilot** lands, because they own throttle |
 | Airborne, mask 15 | hover for `land_hover_sec` (2 s), then descend at `max_vertical_mps` until `airborne` goes false (→ `READY`, `landed`). The pilot can take over at any time |
 
+While in `LAND_REQUEST`:
+
+- Motion intents (`MOVE_…`, `YAW_…`, `CLIMB_SLOWLY`) are ignored. Only `HOLD_POSITION` (→ `READY`, `operator_back`, then a new engage is needed), touchdown (→ `READY`, `landed`) or a flight state that is not OK (→ `IDLE`) leave it.
+- With mask 15 the descent goes on whatever the intent, also when `intent_node` dies.
+- If the mask drops from 15 to 8 or 11 during the descent, `linear.z` goes to zero at once: throttle is back with the pilot.
+- A new land request after `READY` starts the `land_hover_sec` hover again.
+
 The node never disarms. Touchdown and disarm stay with the pilot or the Betaflight failsafe ([[Safety Rules]] rule 5).
 
 ### 5.5 Ramp and clamp
@@ -257,7 +283,9 @@ The node never disarms. Touchdown and disarm stay with the pilot or the Betaflig
 - It never arms, disarms or touches any AUX channel or the override switch (REQ-SAF-003/004, [[ADR-015 Gesture Input Source|ADR-015]]).
 - It never keeps moving on stale, unknown or bad input.
 - It never sends a target above the limits or the hard ceilings, whatever the parameters say.
-- It never stops publishing while it runs. On Ctrl+C it publishes one last zero target before it exits.
+- It never stops publishing while it runs. On Ctrl+C or SIGTERM (`docker stop`) it publishes one last zero target, then exits with code 0 and no traceback, even while the operator still shows a motion gesture. Signals that arrive while it is stopping (`ros2 launch` forwards a second Ctrl+C) are ignored. The pretend nodes stop the same way (`spin.py`).
+- It never starts with a bad configuration: a parameter that is not a number gives a `FATAL` log line and exit code 1 (§3.3).
+- It never moves the wrong way on a timing fault: a stalled timer cannot make one large ramp step (the step is capped at 0.2 s), and a clock that jumps backwards does not speed anything up.
 
 ---
 
@@ -297,9 +325,10 @@ Type `std_msgs/msg/String` (JSON). Published on every change, and at 2 Hz otherw
 
 ### 6.3 Logs
 
-The node logs every mode change (`LAND_REQUEST` as a warning), every intent change, each new `axis_not_owned`, bad input (throttled), and a health report every 5 s:
+The node logs its topics at start-up, every mode change (`LAND_REQUEST` as a warning), every intent change, each new `axis_not_owned`, bad input (warnings, at most one every 2 s), a parameter clamped to its ceiling (warning, at start-up), and a health report every 5 s:
 
 ```text
+[INFO] [mission_node]: Reading /gesture/intent and /flight/state; publishing /mission/velocity_target at 20 Hz and /mission/state
 [INFO] [mission_node]: Mode -> ENGAGED (hold_position)
 [INFO] [mission_node]: Intent -> MOVE_RIGHT (reason: ok)
 [INFO] [mission_node]: Not commanded, mask 11: ['axis_not_owned:z']
@@ -307,11 +336,13 @@ The node logs every mode change (`LAND_REQUEST` as a warning), every intent chan
 [INFO] [mission_node]: Health: 100 intents and 50 flight states in the last 5 s; mode ENGAGED, last intent MOVE_RIGHT; bad: json 0, unknown intents 0, flight states 0
 ```
 
-The health report is a warning when one of the two inputs got no messages in the last 5 s.
+The health report is a warning when one of the two inputs got no messages in the last 5 s. Bad input looks like `Bad /gesture/intent (unknown_intent) treated as NEUTRAL: ...` or `Ignored a bad /flight/state message: ...`.
+
+In Docker (§9.1) the same lines go to `drone/ground/logs/mission/latest.log` (and `logs/flight/latest.log` for `fake_flight_state`), each one prefixed with the wall-clock time. Every container start writes a new file, so two runs can be compared with `diff` ([[01 ROS2 Nodes Installation|01]] §4.3).
 
 ### 6.4 How to read the outputs
 
-Run these in a terminal with both `source` lines:
+With `make` (Docker), the `echo` table already shows the mission mode and the velocity target in words, next to the gesture and the intent ([[01 ROS2 Nodes Installation|01]] §4.2). For the details, run these in a terminal with both `source` lines, or put `docker compose run --rm echo` in front of them without a local ROS 2 ([[01 ROS2 Nodes Installation|01]] §4.4):
 
 | Command | Shows |
 | :--- | :--- |
@@ -321,7 +352,7 @@ Run these in a terminal with both `source` lines:
 | `ros2 topic echo --once /mission/velocity_target` | one full message, with `header.stamp` and `frame_id` |
 | `ros2 topic hz /mission/velocity_target` | ~20 Hz in every mode, zeros included |
 | `ros2 topic echo /flight/state --field data` | the pretend drone state from `fake_flight_state` (§7.1) |
-| the `mission_node` terminal | `Mode ->` and `Intent ->` on every change, the health report every 5 s (§6.3) |
+| the `mission_node` terminal, or `tail -f logs/mission/latest.log` in Docker | `Mode ->` and `Intent ->` on every change, the health report every 5 s (§6.3) |
 
 **Reading `/mission/velocity_target`.** The axes follow §5.2 (x forward, y **left**, z up, yaw positive = left), so the signs look reversed for "right":
 
@@ -377,12 +408,20 @@ Publishes `/flight/state` at 10 Hz. It reads its parameters on every tick, so yo
 | `override_active` | `true` | `false` → `IDLE` (`override_off`): the pilot takes over |
 | `mask` | `11` | `8` (yaw only), `15` (all axes, climb works, mask-15 landing) |
 | `airborne` | `true` | `false`: land requests are ignored |
-| `rate_hz`, `topic` | `10.0`, `/flight/state` | |
+| `publish` | `true` | `false`: sends nothing at all, like a dead `flight_interface` → `IDLE` (`flight_state_stale`) within 0.5 s. `true` again resumes |
+| `raw` | `''` | any text: sent **as is** instead of the fields, to try bad messages. `''` goes back to the fields |
+| `rate_hz`, `topic` | `10.0`, `/flight/state` | read at start-up only |
 
 ```bash
 ros2 param set /fake_flight_state override_active false
 ros2 param set /fake_flight_state mask 15
+ros2 param set /fake_flight_state publish false                         # flight_interface died
+ros2 param set /fake_flight_state raw 'not json'                        # ignored and counted -> stale -> IDLE
+ros2 param set /fake_flight_state raw "'{\"link_ok\": \"true\"}'"      # a string, not a boolean -> IDLE
+ros2 param set /fake_flight_state raw ''                                # back to the fields
 ```
+
+JSON in `raw` needs the extra single quotes, or `ros2 param` reads it as YAML. At start-up the node warns `PRETEND flight state on /flight/state at 10 Hz. Not for use with a real drone.`, and it logs each new message text once. Each fault drops `mission_node` to `IDLE`, and after the fault a new deliberate `HOLD_POSITION` is needed (`test_every_pretend_fault_stops_and_needs_a_new_engage`).
 
 Stopping `fake_flight_state` (Ctrl+C) is also a test: `mission_node` goes `IDLE` (`flight_state_stale`) within 0.5 s.
 
@@ -394,8 +433,11 @@ Publishes `/gesture/intent` at 20 Hz in `intent_node`'s exact format. **Never ru
 | :--- | :--- | :--- |
 | `mode` | `demo` | `demo` plays the script below. `constant` publishes `intent` until stopped |
 | `intent` | `NEUTRAL` | the intent in `constant` mode. Change it live with `ros2 param set /fake_intent intent MOVE_RIGHT` |
+| `reason` | `ok` | the `reason` in `constant` mode, also live (for example `no_hand_long` with `HOVER_LAND_REQUEST`) |
 | `loop` | `false` | `demo`: start again at the end instead of exiting |
 | `rate_hz`, `topic` | `20.0`, `/gesture/intent` | |
+
+The `gesture` field is filled with the gesture `intent_node` maps to that intent (`MOVE_RIGHT` → `INDEX_RIGHT`). A contract test checks that `fake_intent` uses `intent_node`'s exact format and gesture names (§10.2). At the end of the demo (without `loop`) it logs `Demo finished` and exits with code 0.
 
 The **demo script** (29 s) and what `mission_node` should do with the default fake flight state (mask 11, airborne):
 
@@ -422,24 +464,22 @@ The unit test `test_demo_sequence` plays this same script through `mission_logic
 
 ## 🔨 8. Build
 
-Same steps as `intent_node` ([[01 ROS2 Nodes Installation|01]] §6). Since 2026-10-21 the workspace is `drone/ground/ros2_ws`, made by `make ws` (ignored by Git). `src/` holds symlinks; `make ws` links `gesture_node` and `intent_node`, and `mission_node` is added by hand. `mission_node` has no Docker image yet, so it needs a local ROS 2 Jazzy:
+**Without a local ROS 2:** nothing to build by hand. `make` (or `docker compose build mission`) builds the image `rosrangers/mission:jazzy` from `docker/mission/Dockerfile`, which runs `colcon build --packages-select mission_node` inside `ros:jazzy-ros-base` (§9.4).
+
+**Natively**, with ROS 2 Jazzy installed: the workspace is `drone/ground/ros2_ws`, made by `make ws` (ignored by Git), the same as for the other nodes ([[01 ROS2 Nodes Installation|01]] §6). `make ws` links `src/mission_node` into `ros2_ws/src/` and builds it with the system Python:
 
 ```bash
 source /opt/ros/jazzy/setup.zsh
-cd ~/ROSRangers/drone/ground && make ws                                            # if not done yet
-ln -sfn ~/ROSRangers/MISSION_NODE_PACKAGE ros2_ws/src/mission_node                 # symlink, not a copy; make fclean removes it
-
-cd ros2_ws
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --packages-select intent_node mission_node --symlink-install
-source install/setup.zsh
+cd ~/ROSRangers/drone/ground
+make ws                                  # venv + gesture_node, intent_node, mission_node
+source ros2_ws/install/setup.zsh
 ros2 pkg executables mission_node
 ```
 
 > [!NOTE] Using bash?
 > Replace `setup.zsh` with `setup.bash` everywhere on this page ([[01 ROS2 Nodes Installation|01]] §5.4).
 
-Expected: `Summary: 2 packages finished`, then:
+Expected:
 
 ```text
 mission_node fake_flight_state
@@ -448,9 +488,10 @@ mission_node mission_node
 ```
 
 - `~/ROSRangers` is wherever you cloned the repo.
-- When the package moves to `drone/ground/src/mission_node/`, delete the symlink and point a new one there. Nothing else changes.
-- Rebuild after changing `setup.py` or `package.xml`, or after **adding** a launch file. Edits to existing Python and launch files take effect without a rebuild (`--symlink-install`).
-- Build `mission_node` with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[01 ROS2 Nodes Installation|01]] §6.4).
+- `make ws` only rebuilds what changed. It rebuilds `mission_node` after a change to its `setup.py` or `package.xml`. Add a launch file? Then `rm ros2_ws/.mission_node && make ws`: new launch files are only installed by a build. Edits to existing Python and launch files take effect without a rebuild (`--symlink-install`).
+- By hand, from `ros2_ws/`: `colcon build --symlink-install --packages-select mission_node`, with the system Python (no venv). Only `gesture_node` is built from the MediaPipe venv ([[01 ROS2 Nodes Installation|01]] §6.4). Never a plain `colcon build` of everything.
+- `mission_with_gestures.launch.py` also needs `intent_node` in the same workspace. `make ws` builds both.
+- If you made the old symlink to `MISSION_NODE_PACKAGE/` by hand before 2026-10-23, `make ws` replaces it with the link to `src/mission_node`.
 
 Every ROS terminal below starts with:
 
@@ -515,10 +556,9 @@ ros2 param set /fake_flight_state override_active false   # -> IDLE
 | 2 | `ros2 topic echo /mission/state --field data` |
 | 3 | the scripted fake camera of [[01 ROS2 Nodes Installation\|01]] §9, Level 0 (publishes on `/gesture/raw`) |
 
-The launch file starts `intent_node`, `fake_flight_state` and `mission_node`. It accepts the same `mask:=` and `airborne:=` arguments. Don't start `fake_intent` here.
+The launch file starts `intent_node` (with `input_source: topic`, so it reads `/gesture/raw`), `fake_flight_state` and `mission_node`. It accepts the same `mask:=` and `airborne:=` arguments. Don't start `fake_intent` here: it would fight `intent_node` on `/gesture/intent` (`test_launch_files.py` checks the launch file doesn't start it).
 
-> [!WARNING] The launch file must switch `intent_node` to the topic
-> Since 2026-10-20 the recogniser publishes on `/gesture/raw` and nothing sends UDP any more. `intent_node` still defaults to `input_source: udp`, so the launch file must start it with `parameters=[{"input_source": "topic"}]`. Until that is changed, this section and §9.3 get no gestures (`HOVER_LAND_REQUEST` / `no_packets_yet` forever, which `mission_node` treats as `NEUTRAL`).
+`test_mission_launch.py` runs this launch file in CI with pretend `/gesture/raw` packets: open hand engages, index right moves, Ctrl+C stops every node (§10.2).
 
 ### 9.3 With `intent_node` and the webcam (`gesture_node`)
 
@@ -530,31 +570,81 @@ ros2 run gesture_node gesture_node    # on Wayland: QT_QPA_PLATFORM=xcb ros2 run
 
 Try it: open hand up (engage) → index pointing right (moves right) → fist (stop, `READY`) → index right again (nothing: not engaged) → open hand (engage again) → hide your hand for 3 s (`LAND_REQUEST`) → open hand (`READY`, operator back).
 
+### 9.4 In Docker (no local ROS 2)
+
+From `drone/ground/`, `make` starts the whole chain: `gesture` (webcam), `intent`, `mission`, `flight` (= `fake_flight_state`) and `echo`. The terminal shows the `echo` live table: the gesture, the intent, the mission mode (`mode`, `why`, `mask`, `airborne`, `limited`) and the velocity target in words (`left/right  right 0.30 m/s`). Each node's own output goes to `logs/<service>/latest.log` ([[01 ROS2 Nodes Installation|01]] §4).
+
+```bash
+cd ~/ROSRangers/drone/ground
+make                                     # xhost +local:, then docker compose up --build
+tail -f logs/mission/latest.log          # second terminal: Mode -> / Intent -> lines
+MASK=15 make                             # pretend flight state with mask 15 (throttle is ours)
+AIRBORNE=false make                      # on the ground: land requests ignored
+```
+
+| Service | Image | Runs |
+| :--- | :--- | :--- |
+| `mission` | `rosrangers/mission:jazzy` | `mission_node` with the default parameters |
+| `flight` | `rosrangers/mission:jazzy` (same image) | `fake_flight_state` with `mask:=${MASK:-11}` and `airborne:=${AIRBORNE:-true}`. **Pretend**, never with a real drone |
+
+One per terminal: `docker compose up --build mission flight`, and the table alone with `docker compose run --rm echo`. Any `ros2` command of this page works through the echo image: `docker compose run --rm echo ros2 topic echo /mission/state std_msgs/msg/String --field data`, or `docker compose run --rm echo ros2 param set /fake_flight_state override_active false`.
+
+The pretend demo of §9.1 (`fake_intent`) has no service of its own: it would fight `intent_node`. Run it in the image without the `intent` service:
+
+```bash
+docker compose up -d mission flight
+docker compose run --rm -e LOG_NAME=fake_intent mission /ws/install/mission_node/lib/mission_node/fake_intent
+docker compose down
+```
+
+`LOG_NAME=fake_intent` keeps its output in `logs/fake_intent/`, so `logs/mission/latest.log` stays the node's log. Compare `logs/mission/latest.log` with the table in §7.2.
+
+`docker stop` (or Ctrl+C / `make down`) stops `mission_node` like Ctrl+C: one last zero target, exit code 0 (§5.6). The smoke test checks it (§10.2).
+
 ---
 
 ## 🧪 10. Test
 
-Work through the levels in order. Each one adds one link of the chain.
+Most of this section is automated (§10.1, §10.2) and runs in CI on every PR that touches `drone/ground/`. The manual levels below show the same behaviour with your own eyes, and Level 3 (real gestures) can only be done by hand. Work through the levels in order. Each one adds one link of the chain.
 
-### Level 0: unit tests (no ROS needed)
+### 10.1 Automated tests
 
-```bash
-cd ~/ROSRangers/MISSION_NODE_PACKAGE
-python3 -m unittest discover -s test -v      # 35 tests, all OK
-```
+From `drone/ground/` (the same targets as for the other nodes, [[01 ROS2 Nodes Installation|01]] §10):
 
-Or with colcon:
+| Command | Needs | Runs for `mission_node` |
+| :--- | :--- | :--- |
+| `make unit` | Python 3 only | `test_mission_logic.py` and the contract tests in `drone/tests/ros/`. The tests that need `rclpy` are skipped |
+| `make test` | ROS 2 Jazzy (`make ws` first) | `colcon test` of the package (all 135 tests), then `pytest drone/tests/ros` (contract, pipeline, launch) |
+| `make smoke` | Docker only | the 135 tests **inside** `rosrangers/mission:jazzy` with none skipped, then gesture → intent → mission across containers and clean `docker stop`s |
 
-```bash
-cd ~/ROSRangers/drone/ground/ros2_ws
-colcon test --packages-select mission_node && colcon test-result --verbose
-```
+One package natively (ROS sourced, from `drone/ground/src/mission_node/`): `python3 -m unittest discover -s test -v`, or one file: `python3 -m unittest test.test_mission_node_ros -v`.
 
-What is covered (every rule of §5): starts `IDLE`; `IDLE` for each flight-state problem (link, `STREAMING`, override, bad mask, stale); engage only on a fresh `HOLD_POSITION`; a delivery gap never re-engages; `STOP_HOVER` and long `NEUTRAL` disengage; stale intent → zero within 0.25 s; lost topic → `LAND_REQUEST` when airborne; never-received is not "lost"; unknown intent and bad JSON → zero; strict `/flight/state` parsing; land request ignored on the ground and at `intent_node` start-up; mask 11 / mask 15 landing; touchdown; the full intent table; masks 8 and 11; ramp never above `max_accel_mps2`; stopping immediate; reversing through zero; ceilings hold with absurd parameters; NaN/negative limits; the demo script (§7.2).
+In CI (`ci.yaml`): `ground-ros2` builds and tests `mission_node` with the other two packages, then runs pytest over the package tests and `drone/tests/ros` with the 90 % line-coverage gate. `ground-docker` runs `docker/smoke_test.sh`. On `dev` after #93 (2026-10-23): `239 tests, 0 errors, 0 failures, 0 skipped` (colcon, three packages), `286 passed` (pytest), coverage 99.21 %, smoke test `mission_node (in its image) PASS 135/135`, `steps PASS 6/6`.
+
+### 10.2 What each test file checks
+
+| File | Kind | Tests | Checks |
+| :--- | :--- | :---: | :--- |
+| `test/test_mission_logic.py` | unit, no ROS | 83 | every rule of §5 with a fake clock: modes and blockers, engage only on a new `HOLD_POSITION` (also after start-up, `IDLE` and delivery gaps), dead-man and `NEUTRAL` timers, zero within 0.25 s whatever the tick phase, land requests (ground, start-up, masks 11 and 15, touchdown, mask drop, `intent_node` dying), every mask × intent, strict `/flight/state` parsing, ramp and ceilings (also NaN, negative, infinite, stalled timer, clock going backwards), every `/mission/state` field, the demo script of §7.2, and random inputs that never break the safety rules |
+| `test/test_mission_node_ros.py` | node, `rclpy` | 38 | the real `MissionNode` on real topics, next to a probe that plays `intent_node` and `flight_interface`: 20 Hz in every mode, ramp, mask 8 / 11, zero within 0.25 s of losing `/gesture/intent`, `IDLE` on lost or bad `/flight/state`, `/mission/state` on change and at 2 Hz, the health report and logs, topics and `frame_id` from parameters, a slower `publish_rate_hz`, clamped and wrong-type parameters; `fake_flight_state` and `fake_intent` on their own and driving the real node through every pretend fault |
+| `test/test_mission_node_process.py` | process, `rclpy` | 10 | the three executables as programs: Ctrl+C, Ctrl+C twice and SIGTERM exit 0 without a traceback; the last `/mission/velocity_target` is zero even while `MOVE_RIGHT` is shown; a parameter that is not a number exits 1 with a `FATAL` line; `mission_demo.launch.py` reaches `ENGAGED` and a `MOVE_RIGHT` target, and Ctrl+C stops all of it |
+| `test/test_launch_files.py` | static, ROS launch packages | 4 | both launch files start the right executables; `mission_with_gestures.launch.py` starts `intent_node` with `input_source: topic` and never `fake_intent` |
+| `drone/tests/ros/test_mission_contract.py` | unit, no ROS | 12 | the real `intent_node` filter feeding the real `MissionLogic` on one fake clock: both sides know the same intents and reasons, `fake_intent` speaks `intent_node`'s format, every gesture moves only the owned axes. A rename on either side fails here instead of silently stopping (or not stopping) the drone |
+| `drone/tests/ros/test_mission_pipeline.py` | pipeline, `rclpy` | 6 | landmarks → `gesture_node` → `/gesture/raw` → `intent_node` → `/gesture/intent` → `mission_node` (+ `fake_flight_state`) → `/mission/velocity_target`: no motion before the open hand, open hand engages and index moves, thumb up does not climb under mask 11, fist stops, hand lost and recogniser stopped request landing |
+| `drone/tests/ros/test_mission_launch.py` | launch, `rclpy` | 1 | `ros2 launch mission_node mission_with_gestures.launch.py airborne:=false` with pretend `/gesture/raw` packets: open hand engages, index moves, Ctrl+C exits 0 and leaves no node running |
+| `drone/tests/ros/test_monitor.py`, `test_entrypoint.py` | program | 13 + 10 | the `echo` live table (also the mission rows) and the Docker entrypoint that writes `logs/<service>/` ([[01 ROS2 Nodes Installation\|01]] §10.2) |
+
+The smoke test (`make smoke`, [[01 ROS2 Nodes Installation|01]] §10.3) adds what only Docker can show: `INDEX_RIGHT` from the gesture container reaches the mission container as `MOVE_RIGHT` but **never engages** (nobody showed `HOLD_POSITION`); stopping the gesture container makes `intent_node` say `HOVER_LAND_REQUEST` (`no_packets`) and `mission_node`, airborne, go to `LAND_REQUEST`; `docker stop` ends `mission` and `flight` at once with exit code 0; `logs/smoke/mission/latest.log` holds `Mode -> LAND_REQUEST (no_packets)`.
+
+The ROS tests are skipped without `rclpy`, unless `REQUIRE_ROS_TESTS=1` (CI and the smoke test set it). Each one uses its own `ROS_DOMAIN_ID` (81–85, 87–91; the smoke test 86), so they never mix with a running pipeline.
+
+### Level 0: automated tests (no camera)
+
+Run §10.1. **Pass:** every summary ends with `ALL PASSED`.
 
 ### Level 1: the node on its own, pretend values
 
-Run §9.1 (the demo). **Pass:**
+Run §9.1 (the demo), or §9.4 in Docker. `test_demo_engages_moves_and_stops_cleanly` and the `FakeInputsDriveMissionTests` automate most of these checks. **Pass:**
 
 | Check | How | Expected |
 | :--- | :--- | :--- |
@@ -568,7 +658,7 @@ Run §9.1 (the demo). **Pass:**
 
 ### Level 2: full chain, no camera
 
-Run §9.2. The Level 0 fake-camera sequence ([[01 ROS2 Nodes Installation|01]] §9) should give (checked on 2026-10-19 with the UDP sender; the topic version sends the same sequence):
+Run §9.2. The Level 0 fake-camera sequence ([[01 ROS2 Nodes Installation|01]] §9) should give the table below (checked by hand on 2026-10-19 with the old UDP sender; the topic version sends the same sequence). `test_mission_pipeline.py` and `test_mission_launch.py` check the same steps automatically on `/gesture/raw` (§10.2).
 
 | Fake camera | `intent_node` intent | `mission_node` mode | Velocity |
 | :--- | :--- | :--- | :--- |
@@ -601,15 +691,18 @@ Real-drone use is a **stretch** goal (week 7), only at low limits, with the pilo
 
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
-| `Package 'mission_node' not found` | workspace not loaded or not built | `source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh`, rerun `colcon build` |
-| `file 'mission_demo.launch.py' was not found` | built before the launch files existed | rebuild once: new launch files are only installed by `colcon build` |
-| Mode stays `IDLE` / `no_flight_state` | `fake_flight_state` not running | start it, or use a launch file |
+| `Package 'mission_node' not found` | workspace not loaded or not built | `make ws`, then `source ~/ROSRangers/drone/ground/ros2_ws/install/setup.zsh` |
+| `file 'mission_demo.launch.py' was not found` | built before the launch files existed | `rm ros2_ws/.mission_node && make ws`: new launch files are only installed by a build |
+| `Package 'intent_node' not found` from `mission_with_gestures.launch.py` | `intent_node` not built in the same workspace | `make ws` builds both |
+| Mode stays `IDLE` / `no_flight_state` | `fake_flight_state` not running (natively), or the `flight` service not started (Docker) | start it, use a launch file, or `docker compose up mission flight` |
+| `mission_node` exits at once with `FATAL ... must be a number` (exit code 1) | a number parameter got text | fix the `-p` value (§3.3) |
+| `echo` table: `MISSION ... STALE` or `waiting` | the `mission` container stopped or never started | `docker compose ps`, then `logs/mission/latest.log` |
 | Mode stays `READY` with an open hand | the hand was already open when the node became `READY` | close it or take it away, then show it again (§5.1) |
 | `CLIMB_SLOWLY` does nothing | mask 11: the pilot owns throttle | expected. Try `mask:=15` |
 | Goes `LAND_REQUEST` between manual commands | gaps over 2 s between `ros2 topic pub` runs | use `fake_intent` `constant` mode (§9.1) |
 | Intents jump between two values | `fake_intent` and `intent_node` both running | run only one of them |
 | `ros2 topic echo` says `Could not determine the type` | the echo started before the node | start it after, or give the type: `ros2 topic echo /mission/velocity_target geometry_msgs/msg/TwistStamped` |
-| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals | export the same value everywhere ([[01 ROS2 Nodes Installation\|01]] §5.7) |
+| Echo shows nothing but the node runs | different `ROS_DOMAIN_ID` in the terminals (or containers) | export the same value everywhere, before `make` too ([[01 ROS2 Nodes Installation\|01]] §5.7) |
 
 ---
 
@@ -629,44 +722,53 @@ These fill gaps in the original design, or change it. Each needs a team review b
 | 8 | `/flight/state` older than 0.5 s, or a mask other than 8/11/15 → `IDLE`. Booleans must be real JSON `true` | A dead `flight_interface` must not leave the last "override on" in place |
 | 9 | Hard ceilings 0.5 m/s and 45 °/s are constants in `mission_logic.py`. Higher parameters are clamped with a warning, NaN or negative → 0 | The design asked for a ceiling that no parameter can pass |
 | 10 | `/mission/state` adds `mode_reason`, `gesture`, `airborne`, and `ramping:<axis>` in `limited` | Makes the logs explain themselves |
-| 11 | One last zero target is published on Ctrl+C | So a reader never keeps the last non-zero target |
+| 11 | One last zero target is published on Ctrl+C **and SIGTERM** (`docker stop`), then exit code 0 (#93) | So a reader never keeps the last non-zero target. In Docker the stop signal is SIGTERM, so it must behave like Ctrl+C |
 | 12 | Unknown intents count as `NEUTRAL` for the "`NEUTRAL` > 2 s → `READY`" rule | Unknown is never "keep moving" |
+| 13 | An intent that would go stale before the next tick counts as stale now (#93) | Without it, the 20 Hz timer could send the zero up to one tick (50 ms) after the 0.25 s of REQ-SAF-017 |
+| 14 | The ramp step uses at most 0.2 s of elapsed time; a clock going backwards gives no step (#93) | A stalled timer must not turn into one large jump in speed |
+| 15 | `intent_lost_sec` is never shorter than `intent_timeout_sec` (#93) | "Topic lost" can never be decided before "stale" |
+| 16 | A parameter that is not a number stops the node at start-up (`FATAL`, exit code 1); an integer is accepted (#93) | A typo in a safety setting must not start a node with a guessed value |
+| 17 | In `LAND_REQUEST` only `HOLD_POSITION`, touchdown or a bad flight state change the mode; the mask-15 descent goes on whatever the intent (#93) | A land request ends only on a deliberate open hand or touchdown (`test_motion_intents_are_ignored_while_landing`, `test_mask_15_keeps_descending_whatever_the_intent`). A mask drop still stops the descent at once (§5.4) |
+| 18 | `fake_flight_state` got `publish` and `raw` parameters (#93) | To test a dead `flight_interface` and bad messages without code changes (§7.1) |
 
 ---
 
-## 🔖 12. Requirement IDs (proposal)
+## 🔖 12. Requirement IDs
 
-To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each one is in brackets.
+Registered in [[Requirements]] (status `draft`). The tests that check each one are in brackets: unit tests in `test_mission_logic.py`, node tests in `test_mission_node_ros.py` (§10.2).
 
 | ID | Requirement |
 |---|---|
-| REQ-SAF-0xx | The mission node outputs zero velocity within 0.25 s of losing `/gesture/intent` (`test_stale_intent_gives_zero_within_0_25_s`). |
-| REQ-SAF-0xx | The mission node never commands an axis outside the active override mask (`test_mask_11_zeroes_z`, `test_mask_8_only_yaw`). |
-| REQ-SAF-0xx | Motion only starts after a deliberate `HOLD_POSITION` (`test_engage_only_after_hold_position`, `test_delivery_gap_while_holding_does_not_engage`). |
-| REQ-CTL-0xx | Gesture speeds are limited to 0.3 m/s lateral, 0.2 m/s vertical and 20 °/s yaw (parameters), with a hard ceiling of 0.5 m/s and 45 °/s (`test_intent_table`, `test_ceiling_holds_even_with_high_parameters`). |
-| REQ-SW-0xx | `/mission/velocity_target` is published at 20 Hz in every mode (checked by hand, Level 1: `ros2 topic hz`). |
+| REQ-SAF-017 | The mission node outputs zero velocity within 0.25 s of losing `/gesture/intent` (unit: `test_stale_intent_gives_zero_within_0_25_s`, `test_tick_period_cannot_make_the_watchdog_late`; node: `test_stale_intent_gives_zero_within_0_25_s`). |
+| REQ-SAF-018 | The mission node never commands an axis outside the active override mask (unit: `test_mask_11_zeroes_z`, `test_mask_8_only_yaw`, `test_every_mask_and_intent`; node: `test_mask_11_never_commands_z`, `test_mask_8_only_yaw`). |
+| not registered | Motion only starts after a deliberate `HOLD_POSITION` (unit: `test_engage_only_after_hold_position`, `test_delivery_gap_while_holding_does_not_engage`, `test_hold_shown_at_start_up_does_not_engage`; node: `test_stray_gesture_never_moves`). Proposed as a third REQ-SAF; it has no ID in [[Requirements]] yet (§13). |
+| REQ-CTL-001 | Gesture speeds are limited to 0.3 m/s lateral, 0.2 m/s vertical and 20 °/s yaw (parameters), with a hard ceiling of 0.5 m/s and 45 °/s (unit: `test_intent_table`, `test_ceiling_holds_even_with_high_parameters`; node: `test_speeds_above_the_ceiling_are_clamped_with_a_warning`). |
+| REQ-SW-001 | `/mission/velocity_target` is published at 20 Hz in every mode (node: `test_publishes_at_20_hz_in_every_mode`; by hand, Level 1: `ros2 topic hz`). |
 
 ---
 
 ## ❓ 13. Open points
 
 - [ ] **Review §11** and agree the numbers: `max_vertical_mps`, `max_yaw_rate_dps`, `max_accel_mps2`, `max_yaw_accel_dps2`, `land_hover_sec`, the ceilings, `flight_state_timeout_sec`.
-- [ ] **Move the package** from `MISSION_NODE_PACKAGE/` to `drone/ground/src/mission_node/` (and update the symlink in §8 and the paths on this page).
+- [ ] **Register the engage rule** ("motion only starts after a deliberate `HOLD_POSITION`", §12) as a REQ-SAF in [[Requirements]].
+- [ ] **First run with the webcam** (§10, Level 3), recorded in [[01 ROS2 Nodes Installation|01]] §13 with a `ros2 bag`.
+- [x] **Move the package** from `MISSION_NODE_PACKAGE/` to `drone/ground/src/mission_node/` (#93, 2026-10-23).
 - [ ] **Topic names and types.** `/mission/velocity_target` (TwistStamped), `/mission/state` and `/flight/state` (JSON strings). A typed message package (`drone_msgs`) would also fix `/gesture/intent` ([[03 Intent Node]] §9, [[05 Future Nodes]] §4).
 - [ ] **Who publishes `/flight/state`** (planned: `flight_interface`), and how `airborne` is decided (baro height threshold?). Until then, `fake_flight_state`.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
 - [ ] **Forward/back.** Vocabulary v0 has no gesture for it. Add one, or keep `linear.x = 0` for Module 1.
 - [ ] **Mission vs controller in one node?** [[System Overview]] draws "mission / controller" as one box. This page keeps them apart. Confirm in the architecture review.
 - [ ] **Launch files and parameters** should move to a `gesture_bringup` package with one reviewed YAML ([[05 Future Nodes]] §11).
-- [ ] **Node wrapper tests.** `mission_logic.py` has unit tests. The ROS wrapper (`mission_node.py`) is only checked by hand (Levels 1–2). A `launch_testing` test could automate Level 1.
-- [ ] **CI.** `ci.yaml` does not run these tests yet ([[Testing Strategy]]). `gesture_node` and `intent_node` have their CI jobs since #78; `mission_node` needs to be committed to `drone/ground/src/mission_node/` first, then added to `ground-ros2` and given a Docker image like the other two ([[01 ROS2 Nodes Installation|01]] §4, §10).
-- [ ] **Maintainer fields** in `package.xml` and `setup.py` are placeholders.
+- [x] **Node wrapper tests.** The ROS wrapper has node, process and launch tests next to the logic's unit tests (#93, §10.2).
+- [x] **CI and Docker.** `ground-ros2` builds and tests `mission_node` within the 90 % coverage gate, `ground-docker` runs its tests in its own image `rosrangers/mission:jazzy` (#84, #93, 2026-10-23).
+- [x] **Maintainer fields** in `package.xml` and `setup.py` are filled in (#93).
+- [x] **Launch file input.** `mission_with_gestures.launch.py` starts `intent_node` with `input_source: topic` (#93).
 
 ---
 
 ## 🔗 14. Related pages
 
-[[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[03 Intent Node]] · [[05 Future Nodes]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
+[[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[02 Gesture Node]] · [[03 Intent Node]] · [[05 Future Nodes]] · [[Requirements]] · [[Testing Strategy]] · [[System Overview]] · [[Protocol Spec v0]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-015 Gesture Input Source|ADR-015]] · [[ADR-019 Sim Backends|ADR-019]] · [[Study Plan v2]] · [[Safety Rules]]
 
 ---
 
@@ -678,8 +780,11 @@ To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each 
 | **Body frame** | Axes fixed to the drone: x forward, y left, z up (FLU). |
 | **Ceiling** | A hard-coded maximum that no parameter can exceed. |
 | **colcon** | The build tool for ROS 2 workspaces. |
+| **Contract test** | A test that runs two nodes' real logic together, so a renamed intent or reason on one side fails the build instead of the drone. |
+| **Coverage** | The share of code lines the tests run; CI requires at least 90 % for the ROS 2 nodes. |
 | **Dead-man** | A control that only works while the operator keeps doing it (here: the hand must stay visible). |
 | **DDS** | The middleware under ROS 2 that finds nodes and carries messages. Discovery of new nodes can briefly delay delivery. |
+| **Docker image / container** | A packaged Ubuntu 24.04 + ROS 2 Jazzy + one node (`rosrangers/mission:jazzy`); a container is one running copy of it. |
 | **Engage** | Going from `READY` to `ENGAGED`: from then on gestures move the drone. |
 | **Estimator** | Ground code that combines flow, IMU and baro height into a velocity estimate. |
 | **Intent** | The action the operator asks for (for example `MOVE_LEFT`), published on `/gesture/intent`. |
@@ -690,5 +795,7 @@ To be registered in [[Dev_Strategy]] §15 style. The unit test that checks each 
 | **Ramp** | Limiting how fast a target can change, so motion starts smoothly. |
 | **REP-103** | The ROS convention for units (SI) and axis directions. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
+| **SIGTERM** | The signal `docker stop` sends to ask a program to stop. `mission_node` treats it like Ctrl+C: last zero target, exit code 0. |
+| **Smoke test** | A short end-to-end check that the built images start and work together (`make smoke`). |
 | **TwistStamped** | Standard ROS 2 message holding a linear and angular velocity with a timestamp and frame. |
 | **Watchdog** | A timer that triggers a safe action when expected messages stop arriving. |
