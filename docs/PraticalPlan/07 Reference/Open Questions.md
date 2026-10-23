@@ -47,8 +47,8 @@ tags:
 ### For instructors
 - [x] Permission to reflash Betaflight (and the ESP) on the lab drones. → Yes (#11 above)
 - [x] Does the lab already have self-hosted runners with drone hardware? → No, we build our own (#12 above)
-- [x] Spare ESP for the HIL bench? → Yes, more are available (2026-10-14)
-- [ ] Spare FC for the HIL bench? Not confirmed. Without one, the bench FC is a flying unit (GitHub #34).
+- [x] Spare ESP for the HIL bench? → Yes: the team has one spare ESP and may use it for HIL (2026-10-22, [[ADR-020 HIL Runner|ADR-020]]). It is on the HIL Pi (GitHub #48).
+- [x] Spare FC for the HIL bench? → No (2026-10-20, GitHub #34). FC-side HIL uses Betaflight SITL or the flight unit on the bench (GitHub #61).
 - [x] Does the class mandate a ROS 2 distro? → No (#13 above)
 - [x] Can we add a ToF rangefinder (height) or a small MCU for the flow sensor? → Neither: baro for height, no MCU (#14 above)
 
