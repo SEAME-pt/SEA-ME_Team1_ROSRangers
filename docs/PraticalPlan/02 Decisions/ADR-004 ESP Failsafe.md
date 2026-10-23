@@ -45,6 +45,14 @@ The decision above is unchanged. This entry fixes what "safe" means for the **ES
 - The **pilot takes over with the radio** (ELRS and the override switch). This stays the only guaranteed mitigation.
 - This is **not** Betaflight's own RX failsafe (`failsafe_procedure` = DROP on ELRS radio loss, layer 1 below). That one is a different failsafe and is not changed here ([[Betaflight Setup]] §5).
 
+### 2.2 `T_loss` measured (2026-10-23)
+
+The decision is unchanged. ESP-S1-05 on 2026-10-23 (custom ESP firmware, soldered link, production AP, short range, 3 × 10 min at 50 Hz) measured a worst silence of **203 ms** and no silence over 250 ms ([[ESP Bench Test Plan]] §4). By the OD-07 method, **`T_loss` = 250 ms is confirmed at short range**. ESP-S1-09 at the real distance can still change it; if it does, it gets a new dated entry here.
+
+### 2.3 `T_loss` at the cage distance (2026-10-23)
+
+The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-09 (cage, PC in the coding room, 3 × 10 min) measured longest silences of 272, 343 and 247 ms, so the ESP failsafe would have fired 1, 11 and 0 times. Run 2 followed run 1 with the drone on for more than 30 minutes and more interference. The team takes it as the expected worst case, because the drone will not be that far for that long in flight. A trip is safe by design (neutral sticks, pilot takes over), so the occasional trip at range is accepted rather than raising `T_loss` ([[ESP Bench Test Plan]] §4).
+
 ## 3. Safety layers (inner → outer)
 
 1. Betaflight ELRS failsafe (radio loss → Stage 1 → Stage 2).
@@ -73,3 +81,4 @@ The decision above is unchanged. This entry fixes what "safe" means for the **ES
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **`T_loss`** | Link-loss timeout ([[ADR-004 ESP Failsafe\|ADR-004]]): if no accepted control message arrives for this long, the ESP enters its link failsafe. Set to 250 ms. |

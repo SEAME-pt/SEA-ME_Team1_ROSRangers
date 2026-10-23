@@ -22,6 +22,9 @@ tags:
 > [!warning] Status: DRAFT / PROPOSED
 > This page records agreed design directions and *proposes* further detail. Nothing described here has been implemented or tested. Exact packet formats, port numbers, timeouts, rates and numerical limits are deliberately **not** specified and are listed as open decisions in [§12](#12-open-decisions).
 
+> [!info] Update 2026-10-23: custom firmware
+> The 2026-10-20 note below is out of date. Since 2026-10-21 the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`) instead of AT 1.7.4. It is still a transparent bridge: the protocol on the ESP and the failsafe are not implemented yet. ESP-S1-05 passed on 2026-10-23 at short range (worst silence 203 ms, below `T_loss` = 250 ms, [[ESP Bench Test Plan]] §4).
+
 > [!info] Update 2026-10-20: bench state
 > The banner above is the 2026-10-12 state. The ESP-12F (ESP8266) now runs the stock AT firmware in the production SoftAP scenario, soldered to FC UART4 since 2026-10-19. Latency and loss were measured with the AT bridge ([[ESP Bench Test Plan]] §4). The custom firmware, the protocol on the ESP and the failsafe are not implemented or tested yet.
 

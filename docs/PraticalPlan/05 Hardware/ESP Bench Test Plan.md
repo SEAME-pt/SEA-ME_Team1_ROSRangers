@@ -75,13 +75,15 @@ Only after Stages 1 and 2 pass:
 
 ## 4. Results log
 
-Recorded from GitHub #30 (comments of 2026-10-16 and 2026-10-19) and #25 (session 2026-10-14). The "Who" column is the GitHub author of the record, not necessarily who ran the test. Raw files are in `results/` and `config/betaflight/4.5.1/` of the tooling branch (PR #11), not in this repo yet.
+Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and #25 (session 2026-10-14). The "Who" column is the GitHub author of the record, not necessarily who ran the test. Raw files are in `results/` and `config/betaflight/4.5.1/` of the tooling branch (PR #11), not in this repo yet.
 
 **Setups:**
 
 - **2026-10-14:** the ESP alone on USB, no FC (#25).
 - **2026-10-16:** before the temporary ESP↔FC wires. Props off, no battery, FC on USB only. Latency runs are 10 min at a true 50 Hz (`--stream`, 30,000 requests).
 - **2026-10-19:** the ESP soldered to UART4 and the real FC, production AP (`seame-drone-0850`, channel 6). Props off. FC **not** on USB (powered on its own; what powered it is an open question). ESP USB unplugged. `--stream` runs, 10 min, 30,000 requests.
+- **2026-10-23:** as 2026-10-19, but the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`, replaces AT 1.7.4 since 2026-10-21). PC next to the drone, PC Wi-Fi power save off, props off, no battery. `msp_check.py` `--stream`, 50 Hz, 10 min, 30,000 requests per run.
+- **2026-10-23 (S1-09):** drone in the cage, PC in the coding room, radio on and bound, PC Wi-Fi power save off, props off. ESP on the `esp_diag_timing` build (four timestamps per request on UDP 5761, read by `scripts/esp_timing.py`; the bridge itself is unchanged). `seame.py msp ping --stream --duration 600`, 50 Hz, 30,000 requests per run.
 
 | Test ID | Date | Who | Result (pass/fail + numbers) | Notes / issue # |
 |---|---|---|---|---|
@@ -93,12 +95,14 @@ Recorded from GitHub #30 (comments of 2026-10-16 and 2026-10-19) and #25 (sessio
 | ESP-S1-05 | 2026-10-14 | Dot99 (body of #25) | Not a valid result. Test scenario (ESP on SEAME), sleep mode not set. 500 requests: 0 % loss, median 32.7 ms, p99 80.4 ms, max 127.5 ms, 0 bad checksums. 10-min run (30,000 requests planned): 8,079 answered, 12.6 % loss, median 33.2 ms, p99 87.9 ms, max 495 ms. **Cut off:** the ESP USB was unplugged at about 2.5 min, so the losses after that are not link losses. | #25. To redo with the board left plugged in, sleep off, threshold agreed beforehand |
 | ESP-S1-05 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (SEAME network, sleep off, fake FC). 0 lost / 30,000. RTT median 35.8 ms, p99 106 ms, max 238 ms. Longest silence 219 ms, 0 over 250 ms. | #30. The pass threshold was still a proposal (see below) |
 | ESP-S1-05 | 2026-10-19 | ptorrao-git (comment on #30) | **FAIL against the proposed threshold** (loss ≤ 0.1 %, p99 ≤ 150 ms). Soldered link, production AP, PC next to the drone (`s1-05_soldered.csv`): loss **0.69 %** (206), RTT median 55 ms, p99 328 ms, max 499 ms, longest silence **830 ms**, 57 silences over 250 ms. Loss per minute 0.1–2.3 %, no trend, longest burst 26. | #30, open investigation. 5–10× worse than the same AP before soldering. Cause not found |
+| ESP-S1-05 | 2026-10-23 | ptorrao-git (comment on #30) | **PASS** against [[ADR-004 ESP Failsafe\|ADR-004]] (`T_loss` = 250 ms, OD-07). Custom ESP firmware, soldered link, production AP, short range, 3 × 10 min at 50 Hz (`s1-05_soldered_run1/2/3.csv`): lost 4 / 3 / 0 of 30,000 (≤ 0.013 %), RTT median 12.4 / 12.5 / 12.2 ms, p99 58 / 63 / 61 ms, max 230 / 196 / 179 ms, longest silence 163 / 203 / 186 ms, **0 silences over 250 ms**. Losses come at the end of rare ~200 ms Wi-Fi stalls, at most 4 in a row. | #30, #25. Supersedes 2026-10-19: that loss came with the AT firmware and is gone with the custom firmware. Worst silence 203 ms < 250 ms, so `T_loss` = 250 ms holds at short range. S1-09 (range) still to run |
 | ESP-S1-06 | 2026-10-16 | ptorrao-git (comment on #30) | Worse, as expected (modem sleep). 164 lost (0.55 %), p99 200 ms, max 488 ms, longest silence 949 ms, 21 silences over 250 ms. The first 5 min matched S1-05, so SEAME traffic probably added to it. | #30. Confirms [[ADR-006 Network\|ADR-006]] (sleep off) |
 | ESP-S1-07 | 2026-10-16 | ptorrao-git (comment on #30) | Not run (n/a). AT transparent mode has one link; needs the custom firmware. | #30, [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
 | ESP-S1-08 | 2026-10-19 | ptorrao-git (comment on #30) | No number recorded. 2026-10-16: "not recorded here yet". 2026-10-19: reported as done by the team, numbers still to be posted. It is also the first candidate cause listed for the 2026-10-19 loss (a 5V rail that cannot cover the ESP's TX peaks). | #30. Still open: peak and average mA (decides power bank vs FC 5V pad, FC-05) |
 | ESP-S1-09 | 2026-10-14 | Dot99 (body of #25) | ~2 % loss (490 answers of 500 requests assumed), ESP on its own WPA2 SoftAP `seame-drone-0850` channel 6, about 10 m, `msp_check.py ping` at 50 Hz. RTT median 26.6 ms, mean 32.8 ms, p95 58.6 ms, p99 95.5 ms, max 150.7 ms, 4 over 100 ms. Signal reported good. RSSI not logged. | #25. Loss above the 1 % script default; the box stays unticked until a threshold is agreed |
 | ESP-S1-09 | 2026-10-16 | ptorrao-git (comment on #30) | WARNING. Range 12 m, production AP, cage, loopback: 15 lost (0.05 %), longest burst 4. RTT median 32.0 ms, p99 134 ms, max 307 ms. Longest silence **340 ms**, 8 silences over 250 ms. | #30. With `T_loss` = 250 ms the ESP failsafe would have fired 8 times in 10 min |
 | ESP-S1-09 | 2026-10-19 | ptorrao-git (comment on #30) | **FAIL against the proposed threshold.** Soldered link, cage, PC in the coding room (`s2_latency_cage.csv`): loss **3.71 %** (1,114), RTT median 72 ms, p99 429 ms, max 500 ms, longest silence **1,149 ms**, 202 silences over 250 ms. Loss per minute: 0.8, 0.8, 1.3, 1.9, 3.4, 4.2, 4.1, 4.3, 7.8, 8.6 %; median RTT rises from 65 to 86 ms. Longest burst 37 requests (0.74 s); 35 bursts of 10 or more. | #30, open investigation. The steady decline suggests something drifting, not only distance. A short-range S1-09 baseline was reported done, but its numbers are not posted |
+| ESP-S1-09 | 2026-10-23 | ptorrao-git (comment on #30) | **Recorded** (criterion met: loss and RTT at the real distance). Custom ESP firmware, soldered link, cage, 3 × 10 min (`s1-09_cage_run1/2/3`): lost 41 / 229 / 46 of 30,000 (0.14 / 0.76 / 0.15 %), RTT median 18.7 / 18.9 / 17.2 ms, p99 118 / 230 / 118 ms, max 269 / 498 / 248 ms, longest silence 272 / 343 / 247 ms. Against [[ADR-004 ESP Failsafe\|ADR-004]] `T_loss` = 250 ms: 1 / 11 / 0 silences at or above it. Signal −62 to −72 dBm. ESP timestamps: the FC answered every request it got; silences come from Wi-Fi in both directions; 35 / 85 / 24 replies were dropped by the ESP while its Wi-Fi send queue was full. | #30, #25. Supersedes 2026-10-19. Run 2 came right after run 1 (drone on > 30 min, more interference); run 3 after a power-cycle. Run 2 is taken as the expected worst case, since the drone will not be that far for that long in flight; no rerun. `T_loss` unchanged at 250 ms |
 | ESP-S1-10 |  |  | Not run. | Needs the custom firmware |
 | ESP-S2-01 | 2026-10-19 | ptorrao-git (comment on #30) | PASS. `test s2-01` on the soldered link: 0 / 100 lost, RTT median 33 ms, p99 127 ms, max 130 ms, longest silence 130 ms, 0 over 250 ms. The FC answers MSP through the soldered UART4: wiring and crossover are right. | #30. The 2026-10-16 relay run is listed as reported done, with no saved files |
 | ESP-S2-02 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay, no wires). `status-watch` 234 polls / 26 s while the ESP was reset: 0 timeouts, I2C errors 0, never armed, `reboot_required` false. Arming-disable flags constant at 0x100004 (RXLOSS + DSHOT_TELEM; radio off, no ESC power), same as the CLI. FC uptime 2,894 s at the end: no FC reboot. `compare-diffs`: no configuration change (16:38 vs 17:27). | #30. Not yet run on the soldered link (needs the FC on USB, ESP reset button ×20) |
@@ -107,7 +111,10 @@ Recorded from GitHub #30 (comments of 2026-10-16 and 2026-10-19) and #25 (sessio
 | ESP-S2-05 |  |  | Not run. | Only the current AP channel (6) is possible with the ESP USB unplugged |
 | ESP-S2-06 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay). Relay stopped twice: loss detected after 302 ms both times (limit 500 ms). Outages 8.2 s and 4.7 s. | #30. Not run on the soldered link: a soldered wire cannot be unplugged, so the FC would be rebooted over USB, which is closer to F6 than F2 |
 
-### Decision threshold (proposal, not agreed)
+### Decision threshold (proposal, dropped 2026-10-23)
+
+> [!note] Dropped 2026-10-23
+> This proposal was never agreed and is no longer used (the later 400 ms `T_loss` idea in #25/#30 is dropped too). The threshold in force is the accepted [[ADR-004 ESP Failsafe|ADR-004]]: `T_loss` = 250 ms, confirmed with the OD-07 method (just above the worst silence in normal operation). S1-05 records loss % and p99; it does not limit them. Kept below as history.
 
 From #30, 2026-10-16. With the initial `T_loss` = 250 ms ([[ADR-004 ESP Failsafe|ADR-004]], OD-07), the ESP failsafe would have fired 8 times in 10 min at 12 m on the production AP and 0 times on SEAME at short range. Proposal:
 
@@ -128,10 +135,10 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 
 ### Still open
 
-- S1-08 numbers; S1-05 on the production AP at short range and the short-range S1-09 baseline (reported done, numbers not posted).
+- S1-08 numbers. S1-07 and S1-10 (need the custom firmware's TCP session and a watchdog test build).
+- Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall.
 - [[ESP_to_FC]] §10.1–§10.3 evidence on the soldered joints (continuity, no shorts, crossover, T4 idle about 3.3 V, photos).
 - S2-02, S2-06 and S2-05 on the soldered link.
-- Agree the threshold.
 
 ## 5. Related pages
 
@@ -159,3 +166,6 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **dBm** | Received signal strength in decibel-milliwatts. Closer to 0 is stronger: −40 is very strong, −70 is weak. |
+| **p99** | 99th percentile: 99 % of the measured values are at or below it. |
+| **`T_loss`** | Link-loss timeout ([[ADR-004 ESP Failsafe\|ADR-004]]): if no accepted control message arrives for this long, the ESP enters its link failsafe. Set to 250 ms. |

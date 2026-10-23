@@ -1,8 +1,10 @@
 import csv
 import pathlib
+import socket
 import struct
 import sys
 import threading
+import time
 
 import pytest
 import serial
@@ -174,13 +176,34 @@ def test_run_ping_records_successes_and_timeouts():
                 return None, None
             return object(), 0.025
 
-    rtts, lost, records = run_ping(DummyClient(), 3, 0, 0.5, quiet=True)
+    ticks = iter(range(100))
+    rtts, lost, records = run_ping(
+        DummyClient(), 3, 0, 0.5, quiet=True, clock=lambda: next(ticks)
+    )
     assert rtts == [25.0, 25.0]
     assert lost == 1
     assert records == [
-        {"request": 1, "status": "ok", "rtt_ms": "25.000"},
-        {"request": 2, "status": "timeout", "rtt_ms": ""},
-        {"request": 3, "status": "ok", "rtt_ms": "25.000"},
+        {
+            "request": 1,
+            "status": "ok",
+            "rtt_ms": "25.000",
+            "sent_s": "1.000",
+            "received_s": "1.025",
+        },
+        {
+            "request": 2,
+            "status": "timeout",
+            "rtt_ms": "",
+            "sent_s": "2.000",
+            "received_s": "",
+        },
+        {
+            "request": 3,
+            "status": "ok",
+            "rtt_ms": "25.000",
+            "sent_s": "3.000",
+            "received_s": "3.025",
+        },
     ]
 
 
@@ -488,6 +511,58 @@ def test_stream_marks_dropped_requests_and_measures_the_silence():
     assert all(r <= 33 for r in rtts)  # no answer is matched to the wrong request
     extra = msp_check.timing_metrics(times, clock.t, len(records))
     assert 400 <= extra["max_gap_ms"] <= 425 and extra["gaps_over_250ms"] == 1
+    # one silence of ~400 ms, about 2 s into the run, holding the 20 lost requests
+    (silence,) = msp_check.find_silences(records)
+    assert 1.9 <= float(silence["from_s"]) <= 2.1
+    assert 400 <= float(silence["duration_ms"]) <= 425
+    assert (silence["lost"], silence["first_lost"], silence["last_lost"]) == (
+        20,
+        101,
+        120,
+    )
+
+
+def test_silences_show_400_ms_of_loss_split_in_four():
+    clock = FakeClock()
+    # the same 20 lost requests as above, in 4 blocks of 5 (100 ms each)
+    drops = [*range(50, 55), *range(100, 105), *range(150, 155), *range(200, 205)]
+    client = msp.Client(StreamFc(clock, delay=0.03, drop=drops))
+    rtts, lost, records = msp_check.run_stream(
+        client, 300, 50, 0.5, quiet=True, clock=clock
+    )
+    assert lost == 20
+    silences = msp_check.find_silences(records)
+    assert [s["lost"] for s in silences] == [5, 5, 5, 5]
+    assert all(100 <= float(s["duration_ms"]) <= 125 for s in silences)
+    starts = [float(s["from_s"]) for s in silences]
+    assert starts == sorted(starts) and 0.9 <= starts[0] <= 1.1
+
+
+def test_save_csv_writes_timestamps_and_silences(tmp_path):
+    records = [
+        msp_check.record(0, 0.0, 0.010),
+        msp_check.record(1, 0.020),
+        msp_check.record(2, 0.040),
+        msp_check.record(3, 0.200, 0.010),
+    ]
+    msp_check.add_gaps(records)
+    path = tmp_path / "run.csv"
+    msp_check.save_csv(path, records, 2, 0)
+    with path.open(newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    assert list(rows[0]) == list(msp_check.RECORD_FIELDS)
+    assert rows[3]["received_s"] == "0.210" and rows[3]["gap_ms"] == "200.000"
+    assert rows[1]["gap_ms"] == ""
+    with (tmp_path / "run_silences.csv").open(newline="") as fh:
+        (silence,) = list(csv.DictReader(fh))
+    assert silence["from_s"] == "0.010" and silence["to_s"] == "0.210"
+    assert (silence["lost"], silence["first_lost"], silence["last_lost"]) == (
+        "2",
+        "2",
+        "3",
+    )
+    with (tmp_path / "run_analytics.csv").open(newline="") as fh:
+        assert dict(csv.reader(fh))["silences_over_100ms"] == "1"
 
 
 def test_save_csv_adds_timing_metrics(tmp_path):
@@ -600,3 +675,50 @@ def test_udp_send_failure_counts_instead_of_crashing():
         assert t.send_errors == 2
     finally:
         real.close()
+
+
+def esp_line(seq, udp_rx=5, uart_rx=40, udp_tx=5, fail=0, turns=5, stations=1):
+    return (
+        f"{seq},{seq * 100},{udp_rx},{udp_rx * 6},{uart_rx},{udp_tx},{fail},"
+        f"{turns},9000,15000,{turns * 11000},2500,{stations}\n"
+    ).encode()
+
+
+def test_parse_esp_report_reads_the_firmware_line():
+    r = msp_check.parse_esp_report(esp_line(7))
+    assert r["seq"] == 7 and r["esp_ms"] == 700 and r["turn_sum_us"] == 55000
+    assert msp_check.parse_esp_report(b"garbage\n") is None
+    assert msp_check.parse_esp_report(b"1,2,3\n") is None
+
+
+def test_esp_timing_summary_says_where_requests_stopped():
+    lines = [
+        esp_line(0),
+        esp_line(1, udp_rx=0, uart_rx=0, udp_tx=0, turns=0),  # nothing reached the ESP
+        esp_line(3, uart_rx=0, udp_tx=0, turns=0),  # the FC did not answer; seq 2 lost
+        esp_line(4, fail=2),
+    ]
+    reports = [(100.0 + i, msp_check.parse_esp_report(x)) for i, x in enumerate(lines)]
+    text = "\n".join(msp_check.summarize_esp_timing(reports))
+    assert "4 reports of 100 ms, 1 missing" in text
+    assert "no request reaching the ESP: 1" in text
+    assert "requests but no FC answer: 1" in text
+    assert "refused: 2" in text
+    assert "mean 11.0 ms, max 15.0 ms" in text
+    rows = msp_check.esp_timing_rows(reports, start_unix=99.5)
+    assert rows[0]["pc_s"] == "0.500" and rows[0]["turn_mean_us"] == "11000"
+    assert rows[1]["turn_mean_us"] == ""
+
+
+def test_esp_timing_listener_collects_reports():
+    listener = msp_check.EspTimingListener(port=0)
+    port = listener.sock.getsockname()[1]
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as tx:
+        for seq in range(3):
+            tx.sendto(esp_line(seq), ("127.0.0.1", port))
+        tx.sendto(b"not a report", ("127.0.0.1", port))
+    deadline = time.monotonic() + 2
+    while len(listener.reports) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    listener.stop()
+    assert [r["seq"] for _, r in listener.reports] == [0, 1, 2]

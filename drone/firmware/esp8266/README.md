@@ -36,6 +36,7 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
 | `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | Every later update. `hil.yaml` uses it |
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
+| `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5761 (`WITH_TIMING=1`), see below |
 
 ## Build
 
@@ -133,11 +134,36 @@ python3 scripts/seame.py msp --usb ping -n 3000 --rate 5 --timeout 0.15 --csv us
 
 Post run2, run3 and this run on #30 as they are, failures included.
 
+## Diagnosis: timestamps per request (`esp_diag_timing`)
+
+For each request the ESP records four `micros()` stamps and sends them every 100 ms to the PC on UDP 5761. The bridge on 5760 is unchanged, and the normal `esp` / `esp_ota` build is byte for byte the same (`WITH_TIMING` defaults to 0).
+
+| Stamp | When | |
+|---|---|---|
+| `esp_in` | The UDP request is read | Gap between two `esp_in` = silence on the Wi-Fi PC → ESP |
+| `uart_out` | The request is written to the FC UART | `uart_out − esp_in` = the ESP before the FC |
+| `uart_in` | The first reply byte arrives from the FC | `uart_in − uart_out` = the FC + the UART (0 = no FC reply in 500 ms) |
+| `esp_out` | The reply is handed to the Wi-Fi stack | `esp_out − uart_in` = the ESP after the FC (includes the 1 ms idle wait) |
+
+Each report also has the ESP's longest loop time in those 100 ms (an ESP stall shows up there). The ESP can't see time on air: a slow PC RTT with small ESP stages means the time was spent on Wi-Fi.
+
+```bash
+pio run -d drone/firmware/esp8266 -e esp_diag_timing -t upload           # OTA
+python3 scripts/esp_timing.py listen --csv s1-09_run1_esp.csv            # terminal 1, start first
+python3 scripts/msp_check.py ...                                         # terminal 2, the test as usual
+# Ctrl+C in terminal 1 after the test; split the loss with the PC's numbers:
+python3 scripts/esp_timing.py summary s1-09_run1_esp.csv --sent 30000 --pc-lost 12
+pio run -d drone/firmware/esp8266 -e esp_ota -t upload                   # back to the normal firmware
+```
+
+The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this build.
+
 ## Files
 
 | File | What |
 |---|---|
 | `platformio.ini` | Envs and platform version |
 | `secrets.py` | Pre-build script: Wi-Fi and OTA secrets, channel |
-| `src/main.cpp` | The bridge |
+| `src/main.cpp` | The bridge (and the `WITH_*` diagnosis switches) |
+| `../../../scripts/esp_timing.py` | Reads the `esp_diag_timing` reports |
 | `backup/README.md` | Flash backups (AT and custom), SHA-256, restore |
