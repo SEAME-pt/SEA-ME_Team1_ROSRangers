@@ -1,0 +1,3 @@
+# Node logs from docker compose (see docker-compose.yml)
+*
+!.gitignore
