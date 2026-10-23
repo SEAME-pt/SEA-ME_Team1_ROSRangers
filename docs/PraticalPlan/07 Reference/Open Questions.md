@@ -57,6 +57,7 @@ tags:
 - [x] ELRS wires really on R2/T2 (multimeter, [[2.5Drone]] #22). → Yes (#15 above)
 - [x] T4/R4 continuity to the MCU side, no shorts to neighbours. → Yes (#16 above)
 - [ ] FC 5V rail: available current for the ESP (FC-05).
+- [ ] Motor pole count: the FC has `motor_poles = 12`, but 1405 motors are often 14-pole. Count the magnets in one motor bell; if 14, set `motor_poles = 14` (with team approval and a saved `diff all`), because RPM readings and the RPM filter depend on it ([[Betaflight Setup]] §1.2).
 - [x] What exactly are the CAM and DV5V pads used for on this board? → camera video in, receiver 5 V (#17 above)
 - [x] Is the ELRS red (5 V) wire on **DV5V** or on a **5V** pad? → **5V** (team, 2026-10-16). Moving it to DV5V: GitHub #41.
 
@@ -83,3 +84,4 @@ tags:
 | **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
 | **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
