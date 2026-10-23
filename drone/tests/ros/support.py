@@ -1,18 +1,21 @@
 """Shared setup for the tests in drone/tests/ros/.
 
-These tests use gesture_node and intent_node together, so they live outside
-both packages. They import the packages from the repo sources (no colcon
-install needed for the non-ROS tests), and reuse make_hand() from
+These tests use gesture_node, intent_node and mission_node together, so they
+live outside the packages. They import the packages from the repo sources (no
+colcon install needed for the non-ROS tests), and reuse make_hand() from
 gesture_node's unit tests to build landmark fixtures.
 """
 
 import os
+import signal
 import sys
+import time
 import types
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[2] / "ground" / "src"
-for path in (SRC / "gesture_node", SRC / "intent_node", SRC / "gesture_node" / "test"):
+PACKAGES = (SRC / "gesture_node", SRC / "intent_node", SRC / "mission_node")
+for path in (*PACKAGES, SRC / "gesture_node" / "test"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
@@ -50,3 +53,36 @@ def ros_available():
             raise
         return False
     return True
+
+
+# ---------- `ros2 launch` as a subprocess ----------
+# Start it with start_new_session=True: its nodes then share a process group
+# with it, and the group can be stopped like Ctrl+C in a terminal, which
+# signals every process in it. Signalling only `ros2 launch` is not enough:
+# when its stdin is a terminal it assumes its nodes got Ctrl+C too and does
+# not pass the signal on, and SIGKILL cannot be passed on at all. Either way
+# the nodes kept running and disturbed the next test runs in the same domain.
+
+
+def group_alive(pgid):
+    """True while any process of the process group `pgid` is still running."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def wait_group_gone(pgid, timeout=5.0):
+    end = time.monotonic() + timeout
+    while group_alive(pgid) and time.monotonic() < end:
+        time.sleep(0.05)
+    return not group_alive(pgid)
+
+
+def kill_group(pgid):
+    """SIGKILL every process left in the group (test cleanup)."""
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass

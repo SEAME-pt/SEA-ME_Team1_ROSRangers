@@ -1,15 +1,25 @@
 # One container per node: gesture_node -> /gesture/raw -> intent_node ->
-# /gesture/intent -> echo. No local Jazzy, OpenCV or MediaPipe needed.
-# Linux host with a webcam and X11 (Wayland with XWayland works too).
+# /gesture/intent -> mission_node (with a pretend /flight/state) ->
+# /mission/velocity_target + /mission/state, all shown by echo. No local Jazzy, OpenCV or
+# MediaPipe needed. Linux host with a webcam and X11 (Wayland with XWayland
+# works too).
 #
 # Run from drone/ground/:
 #   xhost +local:                          # once per login: lets gesture open its window
-#   docker compose up --build              # all three, output prefixed per service
+#   docker compose up --build              # all of them: the live table here, each
+#                                          # node's output in logs/<service>/latest.log
 # or one per terminal:
 #   docker compose up --build gesture      # terminal 1: camera + "Gestures" window (q to quit)
 #   docker compose up --build intent       # terminal 2: filter -> /gesture/intent
-#   docker compose up --build echo         # terminal 3: ros2 topic echo /gesture/intent
+#   docker compose run --rm --build echo   # terminal 3: live table (gesture, intent, mode, velocity)
+#   docker compose up --build mission flight  # terminal 4: mode changes in the log
 #   docker compose down                    # stop everything
+#
+# Logs: every node (not echo) writes logs/<service>/<start time>.log, one file
+# per run, every line timestamped; logs/<service>/latest.log is the newest.
+# Compare two runs:  diff logs/mission/2026-10-23_10-00-00.log logs/mission/latest.log
+# Follow one live:   tail -f logs/mission/latest.log   (or docker compose logs -f mission)
+# GROUND_LOG_DIR=./other  puts them somewhere else (the smoke test uses ./logs/smoke).
 
 # Shared by every service. Build context is this folder so the Dockerfiles can
 # COPY src/ and docker/entrypoint.sh.
@@ -18,10 +28,27 @@ x-ros: &ros
   ipc: host            # Fast DDS shared-memory transport
   environment:
     - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+  volumes:
+    - /etc/localtime:/etc/localtime:ro   # host time zone in logs and the table
+
+# The nodes: output to logs/<service>/ (docker/entrypoint.sh), not to the
+# `docker compose up` terminal, which only shows echo's table.
+x-node: &node
+  <<: *ros
+  attach: false
+  environment: &node-env
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    LOG_DIR: /logs
+    PYTHONUNBUFFERED: "1"   # print() lines reach the log at once
+    # The log lines already carry the time (entrypoint.sh)
+    RCUTILS_CONSOLE_OUTPUT_FORMAT: "[{severity}] [{name}]: {message}"
+  volumes:
+    - /etc/localtime:/etc/localtime:ro
+    - ${GROUND_LOG_DIR:-./logs}:/logs
 
 services:
   gesture:
-    <<: *ros
+    <<: *node
     build:
       context: .
       dockerfile: docker/gesture/Dockerfile
@@ -29,18 +56,55 @@ services:
     devices:
       - /dev/video0:/dev/video0
     environment:
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      - DISPLAY=${DISPLAY:-:0}
-      - QT_X11_NO_MITSHM=1
+      <<: *node-env
+      LOG_NAME: gesture
+      DISPLAY: ${DISPLAY:-:0}
+      QT_X11_NO_MITSHM: "1"
     volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${GROUND_LOG_DIR:-./logs}:/logs
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
 
   intent:
-    <<: *ros
+    <<: *node
     build:
       context: .
       dockerfile: docker/intent/Dockerfile
     image: rosrangers/intent:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: intent
+
+  mission:
+    <<: *node
+    build:
+      context: .
+      dockerfile: docker/mission/Dockerfile
+    image: rosrangers/mission:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: mission
+
+  # PRETEND /flight/state (override on, mask 11, airborne) until flight_interface
+  # exists, so mission can leave IDLE. Never use it with a real drone.
+  # MASK=15 docker compose up ...  gives the ground throttle (climb / descend);
+  # AIRBORNE=false: on the ground, land requests are ignored.
+  flight:
+    <<: *node
+    build:
+      context: .
+      dockerfile: docker/mission/Dockerfile
+    image: rosrangers/mission:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: flight
+    command:
+      - /ws/install/mission_node/lib/mission_node/fake_flight_state
+      - --ros-args
+      - -p
+      - mask:=${MASK:-11}
+      - -p
+      - airborne:=${AIRBORNE:-true}
 
   echo:
     <<: *ros
@@ -48,3 +112,4 @@ services:
       context: .
       dockerfile: docker/echo/Dockerfile
     image: rosrangers/echo:jazzy
+    tty: true   # the live table, also inside `docker compose up`

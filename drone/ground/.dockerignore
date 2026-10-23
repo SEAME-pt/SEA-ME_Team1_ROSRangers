@@ -5,3 +5,5 @@
 **/*.pyc
 gesture-venv/
 ros2_ws/
+logs/
+Makefile

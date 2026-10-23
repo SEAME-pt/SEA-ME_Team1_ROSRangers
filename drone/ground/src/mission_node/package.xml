@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mission_node</name>
+  <version>0.1.0</version>
+  <description>Turns operator intents from /gesture/intent into a safe, masked, ramped velocity target on /mission/velocity_target. Includes pretend input nodes for testing.</description>
+  <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>rcl_interfaces</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>intent_node</exec_depend>  <!-- mission_with_gestures.launch.py -->
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
