@@ -12,3 +12,4 @@ drone/ground/ros2_ws/
 /config/
 .pio/
 /results/
+.vscode/
