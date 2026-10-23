@@ -1,52 +1,128 @@
 #!/bin/bash
 # Docker smoke test for the ground images (CI job ground-docker, `make smoke`).
 #
-#   1. Build gesture, intent and echo.
+#   1. Build gesture, intent, mission and echo.
 #   2. Run each package's tests inside its own image, none skipped: the
 #      image's own OpenCV, MediaPipe and ROS must work, not only CI's install.
 #   3. Across containers: gesture_node's real main() with a fake camera
 #      (src/gesture_node/test/fake_camera.py) in the gesture image publishes
-#      INDEX_RIGHT -> intent container -> MOVE_RIGHT on /gesture/intent.
-#   4. docker stop the gesture container: it exits 0 at once, and intent falls
-#      back to HOVER_LAND_REQUEST (reason no_packets).
-#   5. docker stop the intent and echo containers: exit 0 at once.
+#      INDEX_RIGHT -> intent container -> MOVE_RIGHT on /gesture/intent ->
+#      mission container (pretend /flight/state from the flight container)
+#      sees MOVE_RIGHT on /mission/state but never engages: nobody showed
+#      HOLD_POSITION. The echo image's own command (docker/echo/monitor.py,
+#      the table of `docker compose up`, here one line per change) shows it.
+#   4. docker stop the gesture container: it exits 0 at once, intent falls
+#      back to HOVER_LAND_REQUEST (reason no_packets) and mission, airborne,
+#      goes to LAND_REQUEST.
+#   5. docker stop the intent, mission, flight, echo and monitor containers:
+#      exit 0 at once.
+#   6. Node logs (docker/entrypoint.sh): intent, mission and flight, started
+#      by compose, wrote logs/smoke/<service>/latest.log, every line
+#      timestamped. A container stopped with docker stop keeps every line its
+#      command prints while stopping (the entrypoint is PID 1 there).
 #
-# Own compose project and ROS domain, so a running `make up` stack (or
-# teammates on the network) is neither stopped nor mixed in.
+# Own compose project, ROS domain and log folder (logs/smoke), so a running
+# `make up` stack (or teammates on the network) is neither stopped nor mixed
+# in, and its logs/<service>/latest.log stay as they were.
 # Run from anywhere:  drone/ground/docker/smoke_test.sh
 # SMOKE_LOG_DIR=dir (CI sets it): save each container's full log there as
-# <container>.log, pass or fail. Unset (make smoke): no files are written.
+# <container>.log, pass or fail. Unset (make smoke): only logs/smoke is written.
 set -euo pipefail
 
+SELF=$(realpath "$0")
 # Absolute before the cd below, so a relative SMOKE_LOG_DIR still works
 LOG_DIR=${SMOKE_LOG_DIR:+$(realpath -m "$SMOKE_LOG_DIR")}
 cd "$(dirname "$0")/.."
-export ROS_DOMAIN_ID=86 # tests use 81-85: `grep -r TEST_DOMAIN_ID src ../tests`
+export ROS_DOMAIN_ID=86 # tests use 81-85 and 87-91: `grep -r TEST_DOMAIN_ID src ../tests`
+# The compose services' log folder (docker-compose.yml). Made here, not by
+# Docker, so it belongs to the user and the next run can empty it.
+export GROUND_LOG_DIR=./logs/smoke
+rm -rf "$GROUND_LOG_DIR"
+mkdir -p "$GROUND_LOG_DIR"
 PROJECT=ground-smoke
 COMPOSE="docker compose -p $PROJECT -f docker-compose.yml"
 INTENT=$PROJECT-intent-1
 GESTURE=$PROJECT-gesture
+MISSION=$PROJECT-mission-1
+FLIGHT=$PROJECT-flight-1
 ECHO=$PROJECT-echo
+MISSION_ECHO=$PROJECT-mission-echo
+MONITOR=$PROJECT-monitor
+STOPPER=$PROJECT-stopper
+CONTAINERS=("$INTENT" "$MISSION" "$FLIGHT" "$GESTURE" "$ECHO" "$MISSION_ECHO"
+    "$MONITOR" "$STOPPER")
+# A line as entrypoint.sh writes it to a log file: wall-clock time first
+STAMP='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6} '
 # Talk ROS with the intent service: host network and IPC, same domain
 ROS=(--network host --ipc host -e ROS_DOMAIN_ID -e PYTHONUNBUFFERED=1)
 
+# The summary printed at the end, pass or fail: one row per in-image test
+# run, then the steps reached. STEP is the step running now.
+ROWS=()
+STEP=0
+STEPS=$(grep -cE '^step [0-9]+ ' "$SELF")
+
+# step N TITLE: start step N
+step() {
+    STEP=$1
+    echo "--- $1. $2"
+}
+
+# row NAME CODE PASSED TOTAL [NOTE]: one summary line (as in the Makefile)
+row() {
+    local status=PASS
+    (($2)) && status=FAIL
+    printf '  %-34s %s %5s/%-5s %s\n' "$1" "$status" "$3" "$4" "${5:-}"
+}
+
+# n_after KEY TEXT: "failures=2" -> 2 (0 if absent)
+n_after() {
+    local n
+    n=$(grep -oE "$1=[0-9]+" <<<"$2" | grep -oE '[0-9]+$' | head -n 1 || true)
+    echo "${n:-0}"
+}
+
+# notes N LABEL ...: "3 skipped, 1 failed" for the non-zero counts
+notes() {
+    local out=()
+    while (($# >= 2)); do
+        (($1 > 0)) && out+=("$1 $2")
+        shift 2
+    done
+    local IFS=,
+    sed 's/,/, /g' <<<"${out[*]}"
+}
+
+summary() {
+    local code=$1 reached=$STEP
+    ((code)) && reached=$((STEP - 1))
+    echo
+    echo "=================== summary: make smoke (Docker) ==================="
+    ((${#ROWS[@]})) && printf '%s\n' "${ROWS[@]}"
+    row "steps" "$code" "$reached" "$STEPS" "$( ((code)) && echo "failed in step $STEP")"
+    ((code)) && echo "FAILED" || echo "ALL PASSED"
+}
+
 cleanup() {
+    local code=$?
     # Save the logs first: removing the containers deletes them
     if [[ -n $LOG_DIR ]]; then
         mkdir -p "$LOG_DIR"
-        for container in "$INTENT" "$GESTURE" "$ECHO"; do
+        for container in "${CONTAINERS[@]}"; do
             docker logs "$container" >"$LOG_DIR/$container.log" 2>&1 ||
                 rm -f "$LOG_DIR/$container.log" # never started
         done
     fi
-    docker rm -f "$GESTURE" "$ECHO" >/dev/null 2>&1 || true
+    docker rm -f "$GESTURE" "$ECHO" "$MISSION_ECHO" "$MONITOR" "$STOPPER" \
+        >/dev/null 2>&1 || true
     $COMPOSE down >/dev/null 2>&1 || true
+    summary "$code"
 }
 trap cleanup EXIT
 
 fail() {
     echo "FAIL: $*"
-    for container in "$INTENT" "$GESTURE" "$ECHO"; do
+    for container in "${CONTAINERS[@]}"; do
         echo "--- last log lines of $container"
         docker logs "$container" 2>&1 | tail -n 15 || true
     done
@@ -55,9 +131,17 @@ fail() {
 
 # run_tests IMAGE PACKAGE: the package's tests inside its image, none skipped
 run_tests() {
-    local out
-    if ! out=$(docker run --rm -e REQUIRE_ROS_TESTS=1 -w "/ws/src/$2" "$1" \
-        python3 -m unittest discover -s test 2>&1); then
+    local out code=0 ran end f e k
+    out=$(docker run --rm -e REQUIRE_ROS_TESTS=1 -w "/ws/src/$2" "$1" \
+        python3 -m unittest discover -s test 2>&1) || code=$?
+    ran=$(grep -oE '^Ran [0-9]+' <<<"$out" | grep -oE '[0-9]+' || true)
+    end=$(grep -E '^(OK|FAILED)' <<<"$out" | tail -n 1 || true)
+    f=$(n_after failures "$end")
+    e=$(n_after errors "$end")
+    k=$(n_after skipped "$end")
+    ROWS+=("$(row "$2 (in its image)" $((code || k)) $((${ran:-0} - f - e - k)) "${ran:-0}" \
+        "$(notes "$k" "skipped (not allowed here)" "$f" failed "$e" errors)")")
+    if ((code)); then
         echo "$out"
         fail "$2 tests failed inside $1"
     fi
@@ -93,32 +177,86 @@ stop_and_check() {
     echo "    $1 stopped cleanly (exit code $code)"
 }
 
-echo "--- 1. build gesture, intent, echo"
+step 1 "build gesture, intent, mission, echo"
 $COMPOSE build
 
-echo "--- 2. package tests inside their images"
+step 2 "package tests inside their images"
 run_tests rosrangers/gesture:jazzy gesture_node
 run_tests rosrangers/intent:jazzy intent_node
+run_tests rosrangers/mission:jazzy mission_node
 
-echo "--- 3. gesture container -> intent container -> /gesture/intent"
-$COMPOSE up -d intent
+step 3 "gesture container -> intent container -> mission container"
+$COMPOSE up -d intent mission flight
 docker run -d --name "$ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
     ros2 topic echo --field data /gesture/intent std_msgs/msg/String >/dev/null
+docker run -d --name "$MISSION_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
+    ros2 topic echo --field data /mission/state std_msgs/msg/String >/dev/null
+docker run -d --name "$MONITOR" "${ROS[@]}" rosrangers/echo:jazzy >/dev/null
 docker run -d --name "$GESTURE" "${ROS[@]}" rosrangers/gesture:jazzy \
     python3 /ws/src/gesture_node/test/fake_camera.py run >/dev/null
 wait_for "$ECHO" '"intent":"MOVE_RIGHT"' 60 ||
     fail "no MOVE_RIGHT on /gesture/intent within 60 s"
 echo "    INDEX_RIGHT from the gesture container became MOVE_RIGHT"
+wait_for "$MISSION_ECHO" '"intent":"MOVE_RIGHT","reason":"ok"' 15 ||
+    fail "mission did not see MOVE_RIGHT on /mission/state within 15 s"
+! docker logs "$MISSION_ECHO" 2>&1 | grep -F '"mode":"ENGAGED"' >/dev/null ||
+    fail "mission engaged without HOLD_POSITION"
+echo "    mission saw MOVE_RIGHT and stayed READY (no HOLD_POSITION, no motion)"
+wait_for "$MONITOR" "intent: MOVE_RIGHT ok INDEX_RIGHT" 15 ||
+    fail "the echo image's monitor did not show MOVE_RIGHT within 15 s"
+wait_for "$MONITOR" "mission: READY" 15 ||
+    fail "the echo image's monitor did not show mission READY within 15 s"
+echo "    the echo image's monitor shows intent MOVE_RIGHT and mission READY"
 
-echo "--- 4. stop the gesture container: intent falls back to HOVER_LAND_REQUEST"
+step 4 "stop the gesture container: HOVER_LAND_REQUEST, mission LAND_REQUEST"
 seen=$(docker logs "$ECHO" 2>&1 | wc -l)
+mission_seen=$(docker logs "$MISSION_ECHO" 2>&1 | wc -l)
 stop_and_check "$GESTURE"
 wait_for "$ECHO" '"reason":"no_packets"' 15 "$seen" ||
     fail "no HOVER_LAND_REQUEST (no_packets) within 15 s of stopping the gesture container"
 echo "    intent fell back to HOVER_LAND_REQUEST (no_packets)"
+wait_for "$MISSION_ECHO" '"mode":"LAND_REQUEST","mode_reason":"no_packets"' 15 "$mission_seen" ||
+    fail "mission did not go to LAND_REQUEST within 15 s of stopping the gesture container"
+echo "    mission went to LAND_REQUEST (airborne, pretend flight state)"
+wait_for "$MONITOR" "mission: LAND_REQUEST no_packets" 15 ||
+    fail "the echo image's monitor did not show LAND_REQUEST within 15 s"
+echo "    the monitor shows it too"
 
-echo "--- 5. stop the intent and echo containers"
+step 5 "stop the intent, mission, flight, echo and monitor containers"
 stop_and_check "$INTENT"
+stop_and_check "$MISSION"
+stop_and_check "$FLIGHT"
 stop_and_check "$ECHO" "0 15" # the ros2 CLI exits with the signal number
+stop_and_check "$MISSION_ECHO" "0 15"
+stop_and_check "$MONITOR"
 
-echo "PASS: images, in-image tests, gesture -> intent across containers, clean stops"
+step 6 "node logs in $GROUND_LOG_DIR"
+# check_log SERVICE TEXT: latest.log exists, every line is timestamped, TEXT is in it
+check_log() {
+    local log=$GROUND_LOG_DIR/$1/latest.log
+    [[ -s $log ]] || fail "no $log"
+    ! grep -vE "$STAMP" "$log" >/dev/null ||
+        fail "lines without a timestamp in $log: $(grep -vE "$STAMP" "$log" | head -n 3)"
+    grep -F -- "$2" "$log" >/dev/null || fail "\"$2\" not in $log"
+    echo "    $log: $(wc -l <"$log") timestamped lines, \"$2\" among them"
+}
+check_log intent "Intent -> MOVE_RIGHT (reason: ok"
+check_log mission "Mode -> LAND_REQUEST (no_packets)"
+check_log flight "PRETEND flight state"
+# A pretend node that prints 5000 lines and "stopping" on SIGTERM. The
+# entrypoint is PID 1: when PID 1 exits the kernel kills the logger, so it
+# must wait for the logger. A plain `exec "$@"` keeps only the first few of
+# these lines (checked on 2026-10-23: 11 of 5002).
+docker run -d --name "$STOPPER" -e LOG_DIR=/logs -e LOG_NAME=stopper \
+    -v "$PWD/$GROUND_LOG_DIR:/logs" rosrangers/mission:jazzy bash -c \
+    'trap "seq 1 5000; echo stopping; exit 0" TERM; echo ready; while :; do sleep 0.05; done' \
+    >/dev/null
+wait_for "$STOPPER" ready 15 || fail "the stopper container never started"
+stop_and_check "$STOPPER"
+log=$GROUND_LOG_DIR/stopper/latest.log
+[[ $(wc -l <"$log") -eq 5002 && $(tail -n 1 "$log") =~ $STAMP"stopping"$ ]] ||
+    fail "$log lost lines printed during docker stop ($(wc -l <"$log") of 5002)"
+echo "    all 5000 lines printed during docker stop, and the last one, are in the log file"
+
+echo "PASS: images, in-image tests, gesture -> intent -> mission across containers," \
+    "monitor, clean stops, node logs"
