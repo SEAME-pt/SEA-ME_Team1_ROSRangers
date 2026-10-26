@@ -72,14 +72,12 @@ jobs:
       - name: Build firmware
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp_ota
-        env:
-          SD_PSK: ${{ secrets.SD_PSK_HIL }}
+          pio run -d drone/firmware/esp8266 -e esp
 
       - name: Flash the spare ESP over USB
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp_ota -t upload
+          pio run -d drone/firmware/esp8266 -e esp -t nobuild -t upload --upload-port "$HIL_ESP_PORT"
 
       - name: Bench tests (no battery, no props)
         run: |

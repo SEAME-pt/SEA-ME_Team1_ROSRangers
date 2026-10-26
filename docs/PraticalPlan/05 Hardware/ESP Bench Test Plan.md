@@ -123,7 +123,7 @@ Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and
 From #30, 2026-10-16. With the initial `T_loss` = 250 ms ([[ADR-004 ESP Failsafe|ADR-004]], OD-07), the ESP failsafe would have fired 8 times in 10 min at 12 m on the production AP and 0 times on SEAME at short range. Proposal:
 
 - Loss ≤ 0.1 % over 10 min at 50 Hz, on the production AP at the operating distance.
-- `T_loss` = 300 ms, just above the worst silence measured on 2026-10-16 (340 ms), per OD-07. Revisit after a channel survey (`nmcli dev wifi list`, try channels 1 and 11) and the custom firmware.
+- `T_loss` = 400 ms, just above the worst silence measured on 2026-10-16 (340 ms), per OD-07. Revisit after a channel survey (`nmcli dev wifi list`, try channels 1 and 11) and the custom firmware.
 - p99 RTT ≤ 150 ms.
 
 **The soldered link of 2026-10-19 fails this proposal**, even next to the PC (loss 0.69 % and 3.71 %, p99 328 and 429 ms, longest silences 830 and 1,149 ms, all above 400 ms). The 2026-10-16 numbers (before soldering) met the proposal at 12 m. This is an open investigation in #30, which stays open until the cause is found.

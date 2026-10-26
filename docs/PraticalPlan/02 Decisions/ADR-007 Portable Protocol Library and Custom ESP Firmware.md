@@ -39,6 +39,10 @@ tags:
 
 Since 2026-10-20 the docs and the code are in one repository ([[Repository Layout]]). The spec lives in the vault (`docs/`, [[Protocol Spec v0]]). The code lives in `drone/lib/protocol/` (C++ library), `drone/ground/src/sd_protocol_py/` (Python twin) and `drone/firmware/esp8266/` (firmware). Read "docs repo" and "software repo" above as these folders, and `esp_firmware/src` below as `drone/firmware/esp8266/src`. The decision is unchanged.
 
+### Update 2026-10-23: one repository
+
+Since 2026-10-20 the docs and the code are in one repository ([[Repository Layout]]). The spec lives in the vault (`docs/`, [[Protocol Spec v0]]). The code lives in `drone/lib/protocol/` (C++ library), `drone/ground/src/sd_protocol_py/` (Python twin) and `drone/firmware/esp8266/` (firmware). Read "docs repo" and "software repo" above as these folders, and `esp_firmware/src` below as `drone/firmware/esp8266/src`. The decision is unchanged.
+
 ## 3. Consequences
 
 - More firmware work for the team, contained by testing the logic off-target.
