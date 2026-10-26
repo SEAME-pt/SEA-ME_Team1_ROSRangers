@@ -65,7 +65,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 
 - Issue forms in `.github/ISSUE_TEMPLATE/`: Task, Bug, Incident/crash, Test session, Spike. Blank issues are disabled.
 - Labels are defined in `.github/labels.yml`. Change them there, then run `scripts/sync-labels.sh` (needs `gh` + `yq` v4).
-- Each issue gets one `type:` label (task/bug/incident/test/spike/docs/chore), one `track:` label (A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures, shared) and one priority label (`P0 🔴`/`P1 🟠`/`P2 🟡`). Flags: `safety-critical`, `deliverable`, `stretch`, `blocked`, `needs-instructor`, `props-off`, `in-cage-flight`.
+- Each issue gets one `type:` label (task/bug/incident/test/spike/docs/chore), one `track:` label (A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures, shared; a second track for cross-track tasks is an open decision, `Open Questions.md` §2 Process) and one priority label (`P0 🔴`/`P1 🟠`/`P2 🟡`). Flags: `safety-critical`, `deliverable`, `stretch`, `blocked`, `needs-instructor`, `props-off`, `in-cage-flight`.
 - Board: GitHub Project #111 "Team1 ROSRangers Board", https://github.com/orgs/SEAME-pt/projects/111 (project node id `PVT_kwDOCx6Z1M4Bm4OL`).
   - Status: Backlog → Todo (this sprint) → In Progress → In Review → Done, plus Blocked.
   - Fields: Sprint (2-week iterations: Sprint 0 = 7–18 Oct 2026, Sprint 1 from 19 Oct, … Sprint 4 ends 13 Dec), Phase (Development Plan 1–6), Requirement (text).
