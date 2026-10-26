@@ -3,7 +3,7 @@ title: Team Tracks
 type: plan
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 tags:
   - plan
@@ -27,6 +27,8 @@ The program evaluates **individual** contributions, and everyone must understand
 | E · Sim, Estimation & Gestures | PX4 SITL/Gazebo, flow estimation, [[00 Gesture Pipeline\|Gesture Pipeline]] | C | sim-to-real report |
 
 **Owners (team decision 2026-10-23):** A · BrunoBMFT (also the safety pilot), D · Dot99. Tracks **B, C and E have no fixed owner**: people rotate between them so everyone understands the whole drone. This replaces the 2026-10-20 line (A · BrunoBMFT, C · Dot99).
+
+**Team size (2026-10-26):** the team is now **four people**; one member left the group. There are still five tracks, so A and D keep their owners and the other two people rotate across B, C and E. A cross-track task (for example A+B bench tests) may carry a second `track:` label; that rule is still open ([[Open Questions]] §2, Process).
 
 ## 2. Rules
 

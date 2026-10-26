@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-10-23
+updated: 2026-10-26
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -14,7 +14,7 @@ tags: [plan]
 # Study Plan v2 — Sprint 0 and Module 1
 
 > [!summary] What changed from v1 (single learner, 8 weeks; archived in `Outdated/`)
-> - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner.
+> - Written for **5 people in parallel tracks** ([[Team Tracks]]) with a shared core, instead of one learner. *Changed 2026-10-26: the team is now **4 people**; tracks stay the same, B, C and E share two people ([[Team Tracks]] §1).*
 > - Aligned to the **Module 1 deliverables**: architecture document, green CI (>80% coverage + HIL), real-time profile, sim-to-real report, E-stop under fault injection, sprint demos every 2 weeks.
 > - **Gestures are part of the plan.** The webcam prototype already exists, now the ROS 2 node `gesture_node` ([[02 Gesture Node|Gesture Node]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
 > - **Betaflight upgrade to 2026.6.2** in week 2 (may slip to week 3), before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]], update 2026-10-23).
