@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker or ROS 2 Jazzy, workspace, build, run an
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 tags:
   - gestures
@@ -192,11 +192,11 @@ Run from `drone/ground/`:
 | `make test` | with Jazzy: `colcon test` of the three packages + the tests in `drone/tests/ros` (§10). Without Jazzy: `make unit` |
 | `make smoke` | the Docker smoke test `docker/smoke_test.sh` (§10) |
 | `make clean` | `down` + removes this project's images |
-| `make fclean` | `clean` + removes `gesture-venv/`, `ros2_ws/`, everything in `logs/` and Python caches, then runs `docker system prune -af`: `drone/ground/` as it was cloned |
+| `make fclean` | `clean` + removes `gesture-venv/`, `ros2_ws/`, everything in `logs/`, Python caches and the rest of this project's Docker objects (also `make smoke`'s): `drone/ground/` as it was cloned |
 | `make re` | `fclean`, then `make` |
 
-> [!WARNING] `make fclean` prunes all of Docker, not only this project
-> `docker system prune -af` removes **every** stopped container, unused network, image that no container uses, and the build cache on your PC, also from other projects. Use `make clean` if you only want this project's images gone.
+> [!NOTE] `make fclean` touches only this project's Docker objects
+> It removes the containers (with their anonymous volumes), images (also the old untagged ones a rebuild leaves) and networks of the compose projects `ground` (`make`) and `ground-smoke` (`make smoke`), found by their `com.docker.compose.project` label. Nothing else on your PC is pruned: the `ros:jazzy-ros-base` base image and Docker's build cache stay, as other projects may use them (#112).
 
 Every test target ends with a summary, one row per package or test file (`PASS 135/135`), then `ALL PASSED` or `FAILED`, and keeps its full output in `logs/test/`:
 
