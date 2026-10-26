@@ -63,6 +63,15 @@ Team decision, from the #61 spike. The instructors set no extra criteria beyond 
 - **Coverage:** minimum 80 % (REQ-SW-003). Reaching 100 % is allowed.
 - Open: the USB Wi-Fi dongle for the Wi-Fi tests.
 
+### Update 2026-10-26: Wi-Fi tests by time-slicing, no dongle
+
+Team decision, from the experiment in GitHub #48. Replaces the open dongle item in the update above.
+
+- The Pi has one Wi-Fi radio and no free Ethernet port at the bench. It **time-slices** the radio: a job step leaves the lab Wi-Fi, joins the spare ESP's SoftAP, runs the test and re-joins the lab Wi-Fi. A watchdog outside the job re-joins the lab Wi-Fi if the job dies.
+- **Keep each offline window under 2 minutes.** Measured 2026-10-26: jobs survived 180 s and 300 s offline. GitHub failed a job whose runner vanished after about 11 minutes. GitHub does not document a limit.
+- A USB Wi-Fi dongle is no longer needed. This replaces "Ethernet for GitHub" in [[ADR-006 Network|ADR-006]] §3.
+- The runner service is enabled on boot. A runner offline for more than 14 days is deleted by GitHub.
+
 ## 3. Related pages
 
 - [[HIL Runner]] · [[CI-CD Overview]] · [[Decision Register]]

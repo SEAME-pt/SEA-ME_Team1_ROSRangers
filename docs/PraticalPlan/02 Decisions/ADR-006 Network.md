@@ -3,7 +3,7 @@ title: ADR-006 — Wi-Fi Network Topology and Security
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 aliases:
   - D06
@@ -42,6 +42,10 @@ Port numbers are **not fixed yet**. They are still open in [[Protocol Spec v0]] 
 
 - The [[HIL Runner]] Pi joins the ESP SoftAP on Wi-Fi and uses Ethernet for GitHub.
 - The ground laptop loses internet while connected to the drone network unless it has a second interface.
+
+### Update 2026-10-26: HIL Pi without Ethernet
+
+There is no free Ethernet port at the HIL bench. The Pi uses its one Wi-Fi radio for both: the lab Wi-Fi for GitHub, and short windows (under 2 minutes) on the spare ESP's SoftAP for the tests ([[ADR-020 HIL Runner|ADR-020]] update 2026-10-26). This replaces the "Ethernet for GitHub" line in §3.
 
 ## 4. Related pages
 
