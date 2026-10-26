@@ -23,6 +23,12 @@
 #ifndef WITH_TIMING // env esp_diag_timing: timestamps per request on UDP 5761
 #define WITH_TIMING 0
 #endif
+#ifndef WITH_TCP_ECHO // env esp_diag_tcp (S1-07): TCP echo server on 5762
+#define WITH_TCP_ECHO 0
+#endif
+#ifndef WITH_WDT_TEST // env esp_diag_wdt (S1-10): hang on command, UDP 5763
+#define WITH_WDT_TEST 0
+#endif
 
 constexpr uint16_t kPort = 5760;
 // The FC sends a reply back to back (87 us per byte at 115200): 1 ms of UART
@@ -123,6 +129,82 @@ void report() {
 }
 #endif
 
+#if WITH_TCP_ECHO
+// S1-07: one TCP client at a time (ADR-005), everything it sends is echoed
+// back (read by scripts/tcp_load.py). Never blocks the loop: it only moves
+// what the TCP send buffer can take, so a TCP stall cannot stall UDP here.
+constexpr uint16_t kTcpPort = 5762;
+WiFiServer tcp_server(kTcpPort);
+WiFiClient tcp_client;
+
+void tcp_echo() {
+  WiFiClient incoming = tcp_server.accept();
+  if (incoming) {
+    if (tcp_client.connected()) {
+      incoming.stop(); // a second client is refused
+    } else {
+      tcp_client = incoming;
+      tcp_client.setNoDelay(true);
+    }
+  }
+  if (!tcp_client.connected()) {
+    return;
+  }
+  uint8_t buf[512];
+  size_t n = static_cast<size_t>(tcp_client.available());
+  n = std::min(
+      {n, static_cast<size_t>(tcp_client.availableForWrite()), sizeof buf});
+  if (n > 0) {
+    n = tcp_client.read(buf, n);
+    tcp_client.write(buf, n);
+  }
+}
+#endif
+
+#if WITH_WDT_TEST
+// S1-10: "HANG" stops the loop without yielding, so the software watchdog
+// resets the ESP after about 3 s. "HANG_HW" also turns the software watchdog
+// off, so the hardware watchdog does it (about 8 s). "REASON?" answers with
+// the reset reason and the uptime (read by scripts/esp_wdt.py). The serial
+// port goes to the FC, so nothing is printed there.
+constexpr uint16_t kWdtPort = 5763;
+WiFiUDP wdt_udp;
+
+void wdt_test() {
+  char cmd[16];
+  int n = wdt_udp.parsePacket();
+  if (n <= 0) {
+    return;
+  }
+  n = wdt_udp.read(cmd, sizeof cmd - 1);
+  cmd[n > 0 ? n : 0] = '\0';
+  char reply[96];
+  int len = 0;
+  bool hang = strcmp(cmd, "HANG") == 0, hang_hw = strcmp(cmd, "HANG_HW") == 0;
+  if (strcmp(cmd, "REASON?") == 0) {
+    len =
+        snprintf(reply, sizeof reply, "REASON,%s,%u",
+                 ESP.getResetReason().c_str(), static_cast<uint32_t>(millis()));
+  } else if (hang || hang_hw) {
+    len = snprintf(reply, sizeof reply, "HANGING,%s", cmd);
+  } else {
+    return;
+  }
+  wdt_udp.beginPacket(wdt_udp.remoteIP(), wdt_udp.remotePort());
+  wdt_udp.write(reply, len);
+  wdt_udp.endPacket();
+  if (hang || hang_hw) {
+    delay(50); // let the reply leave
+    if (hang_hw) {
+      ESP.wdtDisable();
+    }
+    while (true) {
+      asm volatile(""); // keep the empty loop, never yield
+    }
+  }
+}
+#endif
+
 void setup() {
   Serial.begin(115200);   // UART0 = GPIO1/3 = FC UART4
   WiFi.persistent(false); // do not rewrite the Wi-Fi settings in flash at boot
@@ -136,11 +218,23 @@ void setup() {
 #if WITH_UDP || WITH_UART
   udp.begin(kPort);
 #endif
+#if WITH_TCP_ECHO
+  tcp_server.begin();
+#endif
+#if WITH_WDT_TEST
+  wdt_udp.begin(kWdtPort);
+#endif
 }
 
 void loop() {
 #if WITH_OTA
   ArduinoOTA.handle();
+#endif
+#if WITH_TCP_ECHO
+  tcp_echo();
+#endif
+#if WITH_WDT_TEST
+  wdt_test();
 #endif
 
 #if WITH_TIMING

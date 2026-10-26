@@ -37,6 +37,8 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
 | `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5761 (`WITH_TIMING=1`), see below |
+| `esp_diag_tcp` | Wi-Fi (OTA) | S1-07: TCP echo server on 5762 next to the bridge, plus the timestamps (`WITH_TCP_ECHO=1 WITH_TIMING=1`) |
+| `esp_diag_wdt` | Wi-Fi (OTA) | S1-10: hangs on command (UDP 5763) so the watchdog resets the ESP (`WITH_WDT_TEST=1`) |
 
 ## Build
 
@@ -158,6 +160,39 @@ pio run -d drone/firmware/esp8266 -e esp_ota -t upload                   # back 
 
 The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this build.
 
+## S1-07: TCP and UDP at the same time (`esp_diag_tcp`)
+
+The ESP accepts one TCP client on 5762 (a second one is refused, as in ADR-005) and echoes what it receives. It only moves what the TCP send buffer can take, so a TCP stall can't block the loop. The UDP bridge and the timestamps on 5761 run as usual. Setup as for S1-05: PC next to the drone, props off, PC Wi-Fi power save off.
+
+```bash
+pio run -d drone/firmware/esp8266 -e esp_diag_tcp -t upload            # OTA, then wait for the network
+python3 scripts/esp_timing.py listen --csv s1-07_run1_esp.csv          # terminal 1
+python3 scripts/tcp_load.py --duration 600 --csv s1-07_run1_tcp.csv    # terminal 2: 20 kbit/s, new connection every 30 s
+python3 scripts/seame.py msp ping --stream --duration 600 --csv s1-07_run1.csv   # terminal 3
+```
+
+Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05 maximum. `tcp_load.py` also reports the TCP echo times; slow TCP with fine UDP is allowed, as ADR-005 says UDP decides liveness.
+
+## S1-10: watchdog recovery (`esp_diag_wdt`)
+
+| Command on UDP 5763 | ESP |
+|---|---|
+| `REASON?` | `REASON,<reset reason>,<uptime ms>` |
+| `HANG` | Answers `HANGING`, then loops without yielding: the software watchdog resets it after about 3 s |
+| `HANG_HW` | Same with the software watchdog off: the hardware watchdog resets it (about 8 s) |
+
+Props off, no battery. FC on USB, so the FC can be watched while the ESP reboots. **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
+
+```bash
+pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network
+python3 scripts/seame.py msp --usb status-watch --csv s1-10_fc.csv     # terminal 1, FC over USB
+python3 scripts/esp_wdt.py cycle -n 5 --csv s1-10_sw.csv               # terminal 2, software watchdog
+python3 scripts/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv          # hardware watchdog
+pio run -d drone/firmware/esp8266 -e esp_ota -t upload                 # back to the normal firmware
+```
+
+Pass: every cycle comes back by itself with the expected reason (`Software Watchdog` / `Hardware Watchdog`) and a small uptime; `status-watch` shows the FC never armed, no change in the arming flags, and no FC reboot. This is the bridge part of REQ-SAF-016. "Forwarding only inside a session" waits for the gateway firmware.
+
 ## Files
 
 | File | What |
@@ -166,4 +201,6 @@ The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this 
 | `secrets.py` | Pre-build script: Wi-Fi and OTA secrets, channel |
 | `src/main.cpp` | The bridge (and the `WITH_*` diagnosis switches) |
 | `../../../scripts/esp_timing.py` | Reads the `esp_diag_timing` reports |
+| `../../../scripts/tcp_load.py` | S1-07 TCP load against `esp_diag_tcp` |
+| `../../../scripts/esp_wdt.py` | S1-10 hang / reason cycles against `esp_diag_wdt` |
 | `backup/README.md` | Flash backups (AT and custom), SHA-256, restore |
