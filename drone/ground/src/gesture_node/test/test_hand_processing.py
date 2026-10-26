@@ -3,6 +3,7 @@
 recognize() takes 21 (x, y) landmarks (pixels, y down) and returns a gesture
 name. The hands below are built from known finger states and a known
 direction, so each test says: "this hand shape must give this gesture".
+detect_gesture() runs it on each raised hand Holistic finds and names both.
 
 MediaPipe is only needed to run the camera. If it is not installed, a stub is
 used so these tests still run with the system Python.
@@ -20,17 +21,21 @@ try:
     import mediapipe  # noqa: F401
 except ImportError:
     _mp = types.ModuleType("mediapipe")
-    _mp.solutions = types.SimpleNamespace(hands=None, drawing_utils=None)
+    _mp.solutions = types.SimpleNamespace(holistic=None, drawing_utils=None)
     sys.modules["mediapipe"] = _mp
 
 from gesture_node.hand_processing import (  # noqa: E402
     EXTENDED_ANGLE,
     INDEX,
+    LEFT_ELBOW,
+    LEFT_WRIST,
     THUMB,
     angle,
-    create_hands,
+    combine_hands,
+    create_holistic,
     detect_gesture,
-    draw_hand,
+    draw_body,
+    is_arm_raised,
     is_finger_extended,
     pointing_direction,
     recognize,
@@ -73,14 +78,15 @@ def make_hand(extended=(), direction="UP", scale=200.0, origin=(320.0, 240.0)):
             lm[mcp + 2] = (x + 0.05, -1.25)
             lm[mcp + 3] = (x, -1.1)
 
-    # Rotate so the summed knuckle->tip vector of the extended fingers points
-    # exactly at `direction` (same sum as pointing_direction()).
+    # Rotate so the hand points exactly at `direction`, measured like
+    # recognize(): the summed knuckle->tip vectors of the extended non-thumb
+    # fingers, or the knuckle line (pinky -> index knuckle) for the thumb alone.
     rotation = 0.0
-    tips = {"THUMB": (2, 4), "INDEX": (5, 8), "MIDDLE": (9, 12)}
-    tips.update({"RING": (13, 16), "PINKY": (17, 20)})
+    tips = {"INDEX": (5, 8), "MIDDLE": (9, 12), "RING": (13, 16), "PINKY": (17, 20)}
+    lines = [tips[f] for f in extended if f != "THUMB"] or [(17, 5)]
     if extended:
-        dx = sum(lm[tips[f][1]][0] - lm[tips[f][0]][0] for f in extended)
-        dy = sum(lm[tips[f][1]][1] - lm[tips[f][0]][1] for f in extended)
+        dx = sum(lm[tip][0] - lm[mcp][0] for mcp, tip in lines)
+        dy = sum(lm[tip][1] - lm[mcp][1] for mcp, tip in lines)
         degrees = DIRECTIONS.get(direction, direction)
         rotation = math.radians(degrees) - math.atan2(dx, -dy)
 
@@ -126,6 +132,19 @@ class RecognizeTests(unittest.TestCase):
 
     def test_names_follow_thumb_to_pinky_order(self):
         self.assertGesture(("MIDDLE", "INDEX", "THUMB"), "UP", "THUMB_INDEX_MIDDLE_UP")
+
+    def test_thumb_alone_points_along_the_knuckles(self):
+        # Upright hand, thumb out but leaning up (31 deg from vertical), as a
+        # real thumb can't stick out at 90 deg. The knuckles point right.
+        hand = make_hand(("THUMB",), "RIGHT")
+        hand[4] = (320.0 + 200 * 0.95, 240.0 + 200 * -1.3)
+        self.assertEqual(recognize(hand), "THUMB_RIGHT")
+
+    def test_thumb_does_not_change_the_direction_of_other_fingers(self):
+        # L shape: index up, thumb straight out. Only the index points.
+        hand = make_hand(("THUMB", "INDEX"), "UP")
+        hand[4] = (320.0 + 200 * 1.4, 240.0 + 200 * -0.2)
+        self.assertEqual(recognize(hand), "THUMB_INDEX_UP")
 
     def test_closed_hand_ignores_rotation(self):
         hand = make_hand((), "UP")
@@ -190,18 +209,33 @@ WIDTH, HEIGHT = 640, 480
 IMAGE = types.SimpleNamespace(shape=(HEIGHT, WIDTH, 3))  # only .shape is read
 
 
-def mediapipe_results(*hands):
-    """What hands.process() returns: landmarks as 0..1 fractions of the image."""
-    found = [
-        types.SimpleNamespace(
-            landmark=[types.SimpleNamespace(x=x / WIDTH, y=y / HEIGHT) for x, y in lm]
-        )
-        for lm in hands
-    ]
-    return types.SimpleNamespace(multi_hand_landmarks=found or None)
+def camera_hand(lm):
+    """A hand as Holistic reports it: 0..1 fractions of the camera frame, which
+    is NOT mirrored. lm is in the mirrored view, like make_hand() builds it."""
+    return types.SimpleNamespace(
+        landmark=[types.SimpleNamespace(x=1 - x / WIDTH, y=y / HEIGHT) for x, y in lm]
+    )
 
 
-class FakeHands:
+def holistic_results(left=None, right=None, left_up=True, right_up=True, pose=True):
+    """What holistic.process() returns. left/right: landmarks of the person's
+    own left/right hand (mirrored view), or None when that hand is not seen.
+    *_up: whether that wrist is above its elbow."""
+    body = None
+    if pose:
+        points = [types.SimpleNamespace(x=0.5, y=0.5) for _ in range(33)]
+        for elbow, wrist, up in ((13, 15, left_up), (14, 16, right_up)):
+            points[elbow] = types.SimpleNamespace(x=0.5, y=0.6)
+            points[wrist] = types.SimpleNamespace(x=0.5, y=0.4 if up else 0.8)
+        body = types.SimpleNamespace(landmark=points)
+    return types.SimpleNamespace(
+        pose_landmarks=body,
+        left_hand_landmarks=camera_hand(left) if left else None,
+        right_hand_landmarks=camera_hand(right) if right else None,
+    )
+
+
+class FakeHolistic:
     def __init__(self, results):
         self.results = results
 
@@ -209,25 +243,75 @@ class FakeHands:
         return self.results
 
 
+def detect(results):
+    gesture, _ = detect_gesture(FakeHolistic(results), IMAGE)
+    return gesture
+
+
 class DetectGestureTests(unittest.TestCase):
-    def test_no_hand(self):
-        hands = FakeHands(mediapipe_results())
-        self.assertEqual(detect_gesture(hands, IMAGE), (None, None))
+    def test_nobody(self):
+        self.assertIsNone(detect(holistic_results(pose=False)))
+
+    def test_both_hands_left_first(self):
+        left = make_hand((), "UP", scale=60.0, origin=(200.0, 240.0))
+        right = make_hand(("THUMB", "INDEX"), "UP", scale=60.0, origin=(450.0, 240.0))
+        self.assertEqual(
+            detect(holistic_results(left, right)), "L:CLOSED_HAND+R:THUMB_INDEX_UP"
+        )
+
+    def test_one_hand_names_the_other_none(self):
+        right = make_hand(("INDEX",), "UP", scale=60.0)
+        self.assertEqual(detect(holistic_results(right=right)), "L:NONE+R:INDEX_UP")
+        left = make_hand(("INDEX",), "UP", scale=60.0)
+        self.assertEqual(detect(holistic_results(left=left)), "L:INDEX_UP+R:NONE")
+
+    def test_lowered_arm_does_not_count(self):
+        left = make_hand((), "UP", scale=60.0, origin=(200.0, 240.0))
+        right = make_hand(("INDEX",), "UP", scale=60.0, origin=(450.0, 240.0))
+        both = holistic_results(left, right, left_up=False)
+        self.assertEqual(detect(both), "L:NONE+R:INDEX_UP")
+        down = holistic_results(left, right, left_up=False, right_up=False)
+        self.assertIsNone(detect(down))
+
+    def test_hand_without_pose_does_not_count(self):
+        hand = make_hand(("INDEX",), "UP", scale=60.0)
+        self.assertIsNone(detect(holistic_results(hand, hand, pose=False)))
+
+    def test_directions_are_in_the_mirrored_view(self):
+        # Holistic sees the camera frame as it is; RIGHT must still be the
+        # pilot's right, as in the mirrored window.
+        right = make_hand(("INDEX",), "RIGHT", scale=60.0)
+        self.assertEqual(detect(holistic_results(right=right)), "L:NONE+R:INDEX_RIGHT")
 
     def test_landmarks_are_scaled_to_pixels(self):
         # Index finger at 50 deg in pixels = RIGHT. Read as raw 0..1 values on
         # a 4:3 image it would be at 42 deg = UP, so this fails without scaling.
         lm = make_hand(("INDEX",), 50, scale=100.0)
-        gesture, _ = detect_gesture(FakeHands(mediapipe_results(lm)), IMAGE)
-        self.assertEqual(gesture, "INDEX_RIGHT")
+        self.assertEqual(detect(holistic_results(right=lm)), "L:NONE+R:INDEX_RIGHT")
 
-    def test_first_hand_is_used_and_returned_for_drawing(self):
-        first = make_hand(("INDEX",), "LEFT", scale=60.0, origin=(200.0, 240.0))
-        second = make_hand((), "UP", scale=60.0, origin=(450.0, 240.0))
-        results = mediapipe_results(first, second)
-        gesture, hand = detect_gesture(FakeHands(results), IMAGE)
-        self.assertEqual(gesture, "INDEX_LEFT")
-        self.assertIs(hand, results.multi_hand_landmarks[0])
+    def test_results_are_returned_for_drawing(self):
+        results = holistic_results(pose=False)
+        _, returned = detect_gesture(FakeHolistic(results), IMAGE)
+        self.assertIs(returned, results)
+
+
+class TwoHandTests(unittest.TestCase):
+    def test_arm_raised_when_wrist_above_elbow(self):
+        pose = [types.SimpleNamespace(x=0.5, y=0.5) for _ in range(33)]
+        pose[LEFT_ELBOW] = types.SimpleNamespace(x=0.5, y=0.6)
+        pose[LEFT_WRIST] = types.SimpleNamespace(x=0.5, y=0.4)
+        self.assertTrue(is_arm_raised(pose, LEFT_ELBOW, LEFT_WRIST))
+        pose[LEFT_WRIST] = types.SimpleNamespace(x=0.5, y=0.7)
+        self.assertFalse(is_arm_raised(pose, LEFT_ELBOW, LEFT_WRIST))
+
+    def test_combine_hands(self):
+        self.assertIsNone(combine_hands(None, None))
+        self.assertEqual(combine_hands("CLOSED_HAND", None), "L:CLOSED_HAND+R:NONE")
+        self.assertEqual(combine_hands(None, "INDEX_UP"), "L:NONE+R:INDEX_UP")
+        self.assertEqual(
+            combine_hands("OPEN_HAND_UP", "OPEN_HAND_RIGHT"),
+            "L:OPEN_HAND_UP+R:OPEN_HAND_RIGHT",
+        )
 
 
 # ---------- the real MediaPipe (venv, CI, gesture Docker image) ----------
@@ -236,19 +320,23 @@ class RealMediaPipeTests(unittest.TestCase):
     def test_blank_frame_has_no_hand(self):
         import numpy as np
 
-        with create_hands(static_image_mode=True) as hands:
+        with create_holistic(static_image_mode=True) as holistic:
             frame = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
-            self.assertEqual(detect_gesture(hands, frame), (None, None))
+            gesture, _ = detect_gesture(holistic, frame)
+            self.assertIsNone(gesture)
 
-    def test_draw_hand_draws_the_landmarks(self):
+    def test_draw_body_draws_the_landmarks(self):
         import numpy as np
         from mediapipe.framework.formats import landmark_pb2
 
         hand = landmark_pb2.NormalizedLandmarkList()
         for x, y in make_hand(("INDEX",), "UP", scale=100.0):
             hand.landmark.add(x=x / WIDTH, y=y / HEIGHT)
+        results = types.SimpleNamespace(
+            pose_landmarks=None, left_hand_landmarks=hand, right_hand_landmarks=None
+        )
         image = np.zeros((HEIGHT, WIDTH, 3), np.uint8)
-        draw_hand(image, hand)
+        draw_body(image, results)  # parts not found (None) are skipped
         self.assertGreater(int(image.sum()), 0)
 
 

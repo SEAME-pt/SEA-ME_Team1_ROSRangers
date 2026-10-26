@@ -6,10 +6,11 @@
 #      image's own OpenCV, MediaPipe and ROS must work, not only CI's install.
 #   3. Across containers: gesture_node's real main() with a fake camera
 #      (src/gesture_node/test/fake_camera.py) in the gesture image publishes
-#      INDEX_RIGHT -> intent container -> MOVE_RIGHT on /gesture/intent ->
+#      L:INDEX_RIGHT+R:NONE -> intent container -> MOVE_RIGHT on
+#      /gesture/intent ->
 #      mission container (pretend /flight/state from the flight container)
 #      sees MOVE_RIGHT on /mission/state but never engages: nobody showed
-#      HOLD_POSITION. The echo image's own command (docker/echo/monitor.py,
+#      ENGAGE_OR_HOLD. The echo image's own command (docker/echo/monitor.py,
 #      the table of `docker compose up`, here one line per change) shows it.
 #   4. docker stop the gesture container: it exits 0 at once, intent falls
 #      back to HOVER_LAND_REQUEST (reason no_packets) and mission, airborne,
@@ -196,13 +197,13 @@ docker run -d --name "$GESTURE" "${ROS[@]}" rosrangers/gesture:jazzy \
     python3 /ws/src/gesture_node/test/fake_camera.py run >/dev/null
 wait_for "$ECHO" '"intent":"MOVE_RIGHT"' 60 ||
     fail "no MOVE_RIGHT on /gesture/intent within 60 s"
-echo "    INDEX_RIGHT from the gesture container became MOVE_RIGHT"
+echo "    L:INDEX_RIGHT+R:NONE from the gesture container became MOVE_RIGHT"
 wait_for "$MISSION_ECHO" '"intent":"MOVE_RIGHT","reason":"ok"' 15 ||
     fail "mission did not see MOVE_RIGHT on /mission/state within 15 s"
 ! docker logs "$MISSION_ECHO" 2>&1 | grep -F '"mode":"ENGAGED"' >/dev/null ||
-    fail "mission engaged without HOLD_POSITION"
-echo "    mission saw MOVE_RIGHT and stayed READY (no HOLD_POSITION, no motion)"
-wait_for "$MONITOR" "intent: MOVE_RIGHT ok INDEX_RIGHT" 15 ||
+    fail "mission engaged without ENGAGE_OR_HOLD"
+echo "    mission saw MOVE_RIGHT and stayed READY (no ENGAGE_OR_HOLD, no motion)"
+wait_for "$MONITOR" "intent: MOVE_RIGHT ok L:INDEX_RIGHT+R:NONE" 15 ||
     fail "the echo image's monitor did not show MOVE_RIGHT within 15 s"
 wait_for "$MONITOR" "mission: READY" 15 ||
     fail "the echo image's monitor did not show mission READY within 15 s"

@@ -163,7 +163,7 @@ class GestureNodeProcessTests(unittest.TestCase):
         while len(raw) < 3 and time.monotonic() < end:
             executor.spin_once(timeout_sec=0.05)
         self.assertGreaterEqual(len(raw), 3, node.output)
-        self.assertEqual({m["gesture"] for m in raw}, {"INDEX_RIGHT"})
+        self.assertEqual({m["gesture"] for m in raw}, {"L:INDEX_RIGHT+R:NONE"})
 
 
 if __name__ == "__main__":

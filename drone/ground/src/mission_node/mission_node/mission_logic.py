@@ -12,7 +12,7 @@ Rules (docs: "04 Mission Node" §4-5):
   * Bad JSON or an unknown intent -> NEUTRAL. "Unknown" is never "keep moving".
   * Modes IDLE -> READY -> ENGAGED -> LAND_REQUEST. Override off, link lost,
     ESP not STREAMING or stale flight state -> IDLE from any mode.
-  * Engaging needs a deliberate HOLD_POSITION that starts while READY. A
+  * Engaging needs a deliberate ENGAGE_OR_HOLD that starts while READY. A
     hand already held when the node starts does not count.
   * Only the axes in the override mask are commanded (8, 11 or 15).
   * Speeds ramp up at `max_accel` and are clamped to the limits and to a
@@ -32,10 +32,12 @@ ENGAGED = "ENGAGED"
 LAND_REQUEST = "LAND_REQUEST"
 
 # ---------- Intents (published by intent_node, "03 Intent Node" §4) ----------
-HOLD_POSITION = "HOLD_POSITION"
-STOP_HOVER = "STOP_HOVER"
-CLIMB_SLOWLY = "CLIMB_SLOWLY"
-DESCEND = "DESCEND_SLOWLY_LAND_REQUEST"
+ENGAGE_OR_HOLD = "ENGAGE_OR_HOLD"
+STOP_OR_HOVER = "STOP_OR_HOVER"
+CLIMB_UP = "CLIMB_UP"
+DESCEND = "DESCEND_ONLY"
+MOVE_FORWARD = "MOVE_FORWARD"
+MOVE_BACKWARD = "MOVE_BACKWARD"
 MOVE_LEFT = "MOVE_LEFT"
 MOVE_RIGHT = "MOVE_RIGHT"
 YAW_LEFT = "YAW_LEFT"
@@ -46,11 +48,13 @@ HOVER_LAND_REQUEST = "HOVER_LAND_REQUEST"
 # Direction of each intent per axis (vx, vy, vz, wz), in units of the limit.
 # Body frame FLU (REP-103): x forward, y LEFT, z up, yaw + = counter-clockwise.
 INTENT_DIRECTION = {
-    HOLD_POSITION: (0, 0, 0, 0),
-    STOP_HOVER: (0, 0, 0, 0),
+    ENGAGE_OR_HOLD: (0, 0, 0, 0),
+    STOP_OR_HOVER: (0, 0, 0, 0),
+    MOVE_FORWARD: (+1, 0, 0, 0),
+    MOVE_BACKWARD: (-1, 0, 0, 0),
     MOVE_LEFT: (0, +1, 0, 0),
     MOVE_RIGHT: (0, -1, 0, 0),
-    CLIMB_SLOWLY: (0, 0, +1, 0),
+    CLIMB_UP: (0, 0, +1, 0),
     DESCEND: (0, 0, -1, 0),
     YAW_LEFT: (0, 0, 0, +1),
     YAW_RIGHT: (0, 0, 0, -1),
@@ -281,15 +285,15 @@ class MissionLogic:
         self.mode_reason = reason
 
     def _update_mode(self, now, intent, reason, blocker, airborne):
-        # Engaging needs HOLD_POSITION to START. Only fresh messages count, so
+        # Engaging needs ENGAGE_OR_HOLD to START. Only fresh messages count, so
         # a short delivery gap (synthetic NEUTRAL) never looks like a re-show.
         # The first message ever is no start either: the hand may have been
         # held before this node (re)started.
         fresh = reason not in WATCHDOG_REASONS
         new_hold = (
             fresh
-            and intent == HOLD_POSITION
-            and self._prev_fresh_intent not in (None, HOLD_POSITION)
+            and intent == ENGAGE_OR_HOLD
+            and self._prev_fresh_intent not in (None, ENGAGE_OR_HOLD)
         )
         if fresh:
             self._prev_fresh_intent = intent
@@ -304,10 +308,10 @@ class MissionLogic:
             if intent == HOVER_LAND_REQUEST and airborne:
                 self._set_mode(LAND_REQUEST, reason)
             elif new_hold:
-                self._set_mode(ENGAGED, "hold_position")
+                self._set_mode(ENGAGED, "engage_or_hold")
         elif self.mode == ENGAGED:
-            if intent == STOP_HOVER:
-                self._set_mode(READY, "stop_hover")
+            if intent == STOP_OR_HOVER:
+                self._set_mode(READY, "stop_or_hover")
             elif intent == HOVER_LAND_REQUEST:
                 # On the ground there is nothing to land: just disengage.
                 if airborne:
@@ -322,7 +326,7 @@ class MissionLogic:
             else:
                 self._neutral_since = None
         elif self.mode == LAND_REQUEST:
-            if intent == HOLD_POSITION:
+            if intent == ENGAGE_OR_HOLD:
                 self._set_mode(READY, "operator_back")
             elif not airborne:
                 self._set_mode(READY, "landed")

@@ -38,7 +38,12 @@ except ImportError:
         raise
     rclpy = None
 
-from mission_node.fake_inputs import flight_state_json, intent_json, script_duration
+from mission_node.fake_inputs import (
+    FAKE_GESTURE,
+    flight_state_json,
+    intent_json,
+    script_duration,
+)
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
@@ -225,7 +230,7 @@ class MissionProbe(Recorder, RosTestCase):
 
     def engage(self):
         self.feed(0.3, "NEUTRAL")
-        self.wait(self.mode_is("ENGAGED"), intent="HOLD_POSITION")
+        self.wait(self.mode_is("ENGAGED"), intent="ENGAGE_OR_HOLD")
 
     def move_right(self):
         self.engage()
@@ -296,7 +301,7 @@ class MissionNodeTests(MissionProbe):
         state = self.state()
         self.assertEqual(
             (state["mode"], state["intent"], state["gesture"], state["reason"]),
-            ("ENGAGED", "MOVE_RIGHT", "INDEX_RIGHT", "ok"),
+            ("ENGAGED", "MOVE_RIGHT", FAKE_GESTURE["MOVE_RIGHT"], "ok"),
         )
 
     def test_yaw_left_is_in_rad_per_s(self):
@@ -308,7 +313,7 @@ class MissionNodeTests(MissionProbe):
     def test_mask_11_never_commands_z(self):
         self.engage()
         start = len(self.velocities)
-        self.feed(1.0, "CLIMB_SLOWLY")
+        self.feed(1.0, "CLIMB_UP")
         self.assertTrue(all(v[2] == 0.0 for _, v, _ in self.velocities[start:]))
         self.assertIn("axis_not_owned:z", self.state()["limited"])
 
@@ -391,7 +396,7 @@ class MissionNodeTests(MissionProbe):
         count = len(self.states) - start
         self.assertTrue(3 <= count <= 6, f"{count} states in 2 s without a change")
         sent = time.monotonic()
-        self.wait(self.mode_is("ENGAGED"), timeout=1.0, intent="HOLD_POSITION")
+        self.wait(self.mode_is("ENGAGED"), timeout=1.0, intent="ENGAGE_OR_HOLD")
         received = next(
             t for t, s in self.states if t >= sent and s["mode"] == "ENGAGED"
         )
@@ -439,7 +444,7 @@ class MissionNodeTests(MissionProbe):
         logger = mock.Mock()
         with mock.patch.object(self.node, "get_logger", return_value=logger):
             self.engage()
-            self.feed(0.3, "CLIMB_SLOWLY")
+            self.feed(0.3, "CLIMB_UP")
             self.wait(
                 self.mode_is("LAND_REQUEST"),
                 intent="HOVER_LAND_REQUEST",
@@ -448,7 +453,7 @@ class MissionNodeTests(MissionProbe):
             self.feed(0.3, raw_intent="{")
         infos = [c.args[0] for c in logger.info.call_args_list]
         warnings = [c.args[0] for c in logger.warning.call_args_list]
-        self.assertIn("Mode -> ENGAGED (hold_position)", infos)
+        self.assertIn("Mode -> ENGAGED (engage_or_hold)", infos)
         self.assertIn("Not commanded, mask 11: ['axis_not_owned:z']", infos)
         self.assertIn("Mode -> LAND_REQUEST (no_hand_long)", warnings)
         self.assertTrue(
@@ -592,7 +597,7 @@ class FakeIntentTests(RosTestCase):
         self.assertEqual(set(last), INTENT_KEYS)
         self.assertEqual(
             (last["intent"], last["gesture"], last["reason"]),
-            ("MOVE_LEFT", "INDEX_LEFT", "ok"),
+            ("MOVE_LEFT", FAKE_GESTURE["MOVE_LEFT"], "ok"),
         )
 
     def test_constant_intent_and_reason_change_while_running(self):
@@ -684,7 +689,7 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
     def move_right(self):
         self.show("NEUTRAL")
         self.spin_for(0.3)
-        self.show("HOLD_POSITION")
+        self.show("ENGAGE_OR_HOLD")
         self.wait(self.mode_is("ENGAGED"))
         self.show("MOVE_RIGHT")
         self.wait(lambda: self.vel()[1] <= -0.3 + 1e-9)
@@ -707,9 +712,9 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
         self.spin_for(0.3)
         self.show("NEUTRAL")
         self.spin_for(0.3)
-        self.show("HOLD_POSITION")
+        self.show("ENGAGE_OR_HOLD")
         self.wait(self.mode_is("ENGAGED"))
-        self.show("CLIMB_SLOWLY")
+        self.show("CLIMB_UP")
         self.wait(lambda: abs(self.vel()[2] - 0.2) < 1e-9)
         self.flight.set_parameters(overrides({"mask": 11}))
         self.wait(lambda: self.vel()[2] == 0.0, timeout=1.0)

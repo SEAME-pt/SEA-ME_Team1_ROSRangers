@@ -4,7 +4,7 @@
     ros2 run mission_node fake_intent                       # scripted demo (~29 s)
     ros2 run mission_node fake_intent --ros-args -p loop:=true
     ros2 run mission_node fake_intent --ros-args -p mode:=constant
-    ros2 param set /fake_intent intent HOLD_POSITION        # then MOVE_RIGHT, ...
+    ros2 param set /fake_intent intent ENGAGE_OR_HOLD        # then MOVE_RIGHT, ...
     ros2 param set /fake_intent reason no_hand_long         # constant: the reason sent
 
 Do not run it together with intent_node: both publish on /gesture/intent.

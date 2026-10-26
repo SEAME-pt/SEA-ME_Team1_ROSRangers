@@ -244,7 +244,7 @@ class LastTargetTests(ProbeTestCase):
     def assertLastTargetIsZero(self, sig):
         node = self.start("mission_node")
         self.assertTrue(self.run_probe(lambda: self.mode == "READY", 20.0), node.output)
-        self.intent = "HOLD_POSITION"
+        self.intent = "ENGAGE_OR_HOLD"
         self.assertTrue(
             self.run_probe(lambda: self.mode == "ENGAGED", 3.0), node.output
         )
@@ -311,7 +311,7 @@ class DemoLaunchTests(ProbeTestCase):
                 self.executor.spin_once(timeout_sec=0.01)
             return bool(condition())
 
-        # Demo script: NEUTRAL 2 s, HOLD_POSITION 2 s, MOVE_RIGHT from 4 s
+        # Demo script: NEUTRAL 2 s, ENGAGE_OR_HOLD 2 s, MOVE_RIGHT from 4 s
         self.assertTrue(spin_until(lambda: self.mode == "ENGAGED", 20.0), launch.output)
         self.assertTrue(
             spin_until(lambda: self.velocities and self.velocities[-1][0] < -0.1, 6.0),

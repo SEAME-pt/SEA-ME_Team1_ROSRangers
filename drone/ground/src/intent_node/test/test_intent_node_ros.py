@@ -163,13 +163,13 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         self.assertEqual(self.intents[0]["reason"], "no_packets_yet")
 
     def test_five_packets_give_move_right(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT", "ok")
-        self.assertEqual(self.latest()["gesture"], "INDEX_RIGHT")
+        self.assertEqual(self.latest()["gesture"], "L:INDEX_RIGHT+R:NONE")
 
     # REQ-SAF-020
     def test_four_packets_are_not_enough(self):
-        self.send(packet("INDEX_RIGHT"), n=4)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=4)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["intent"], "NEUTRAL")
         self.assertEqual(self.latest()["reason"], "unconfirmed")
@@ -177,7 +177,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
 
     # REQ-SAF-019
     def test_silence_goes_neutral_then_hover_land(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
         self.wait_intent("NEUTRAL", "no_hand", timeout=3.0)
         start = len(self.intents)
@@ -187,7 +187,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
 
     # REQ-SAF-019
     def test_no_hand_packets_go_neutral_then_hover_land(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
         self.send(packet(None), n=25, dt=0.05)  # 1.25 s of "no hand"
         self.assertEqual(self.latest()["intent"], "NEUTRAL")
@@ -197,25 +197,25 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         self.assertEqual(self.latest()["reason"], "no_hand_long")
 
     def test_switching_gesture(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
-        self.send(packet("CLOSED_HAND"), n=5)
-        self.wait_intent("STOP_HOVER")
+        self.send(packet("L:NONE+R:CLOSED_HAND"), n=5)
+        self.wait_intent("STOP_OR_HOVER")
 
     def test_unknown_gesture_is_neutral(self):
         self.send(packet("PEACE_SIGN"), n=6)
         self.wait_intent("NEUTRAL", "unmapped_gesture")
 
     def test_bad_datagrams_are_ignored(self):
-        for text in ("not json", "[1, 2]", "", '"INDEX_RIGHT"'):
+        for text in ("not json", "[1, 2]", "", '"L:INDEX_RIGHT+R:NONE"'):
             self.send(text)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["reason"], "no_packets_yet")
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
 
     def test_t_and_xy_are_passed_through(self):
-        self.send(packet("INDEX_LEFT", t=12.5, xy=[0.25, 0.75]), n=5)
+        self.send(packet("L:NONE+R:INDEX_LEFT", t=12.5, xy=[0.25, 0.75]), n=5)
         self.wait_intent("MOVE_LEFT")
         self.assertEqual(self.latest()["t"], 12.5)
         self.assertEqual(self.latest()["xy"], [0.25, 0.75])
@@ -237,7 +237,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
 
     def test_link_report_counts_ignored_packets(self):
         self.send("not json", n=2)
-        self.send(packet("INDEX_RIGHT"), n=3)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=3)
         level, text = self.link_report()
         self.assertEqual(level, "info")
         self.assertIn("2 ignored", text)
@@ -267,7 +267,7 @@ class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
         self.sock.close()
 
     def test_five_datagrams_give_move_right(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT", "ok")
 
     def test_bad_datagrams_are_ignored(self):
@@ -275,7 +275,7 @@ class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
             self.send(data)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["reason"], "no_packets_yet")
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
 
     def test_second_node_on_the_same_port_fails(self):

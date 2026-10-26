@@ -11,7 +11,7 @@ Use it from gestures.py, once per camera frame:
 
     from .gesture_sender import send_gesture
 
-    # gesture_name: e.g. "INDEX_RIGHT", or None when no hand / unknown
+    # gesture_name: e.g. "L:NONE+R:INDEX_RIGHT", or None when no hand is raised
     # palm_xy: optional [x, y] of the palm in 0..1, or None
     send_gesture(gesture_name, palm_xy)
 
