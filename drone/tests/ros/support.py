@@ -25,22 +25,40 @@ for _name in ("mediapipe", "cv2"):
         __import__(_name)
     except ImportError:
         _stub = types.ModuleType(_name)
-        _stub.solutions = types.SimpleNamespace(hands=None, drawing_utils=None)
+        _stub.solutions = types.SimpleNamespace(holistic=None, drawing_utils=None)
         sys.modules[_name] = _stub
 
 from test_hand_processing import make_hand  # noqa: E402
+
+from gesture_node.hand_processing import combine_hands, recognize  # noqa: E402
 
 FINGER_ORDER = ("THUMB", "INDEX", "MIDDLE", "RING", "PINKY")
 
 
 def hand_for(gesture):
-    """Landmarks of a hand that should be recognised as `gesture`."""
+    """Landmarks of one hand that should be recognised as `gesture`."""
     if gesture == "CLOSED_HAND":
         return make_hand((), "UP")
     *fingers, direction = gesture.split("_")
     if fingers == ["OPEN", "HAND"]:
         fingers = list(FINGER_ORDER)
     return make_hand(tuple(fingers), direction)
+
+
+def hands_for(name):
+    """(left, right) landmarks for a two-hand name like "L:NONE+R:INDEX_UP".
+    A hand named NONE is None (lowered, so it doesn't count)."""
+    left, right = name.split("+")
+    return tuple(
+        None if part[2:] == "NONE" else hand_for(part[2:]) for part in (left, right)
+    )
+
+
+def gesture_name(hands):
+    """The name gesture_node sends for (left, right) raised-hand landmarks:
+    recognize() on each hand, then combine_hands()."""
+    left, right = (recognize(lm) if lm else None for lm in hands)
+    return combine_hands(left, right)
 
 
 def ros_available():

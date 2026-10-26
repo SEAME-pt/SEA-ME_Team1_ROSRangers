@@ -78,8 +78,8 @@ class Chain:
 
     def move_right(self):
         self.run(0.5, None)
-        self.run(0.5, "OPEN_HAND_UP")
-        self.run(1.5, "INDEX_RIGHT")
+        self.run(0.5, "L:OPEN_HAND_UP+R:OPEN_HAND_UP")
+        self.run(1.5, "L:INDEX_RIGHT+R:NONE")
 
 
 class VocabularyTests(unittest.TestCase):
@@ -117,13 +117,13 @@ class ChainTests(unittest.TestCase):
 
     def test_open_hand_engages_and_index_moves(self):
         self.chain.run(0.5, None)
-        self.chain.run(0.5, "OPEN_HAND_UP")
+        self.chain.run(0.5, "L:OPEN_HAND_UP+R:OPEN_HAND_UP")
         self.assertEqual(self.chain.mode(), "ENGAGED")
-        self.chain.run(1.5, "INDEX_RIGHT")
+        self.chain.run(1.5, "L:INDEX_RIGHT+R:NONE")
         self.assertAlmostEqual(self.chain.vel()[1], -0.3)
 
     def test_gesture_before_open_hand_never_moves(self):
-        ticks = self.chain.run(2.0, "INDEX_RIGHT")
+        ticks = self.chain.run(2.0, "L:INDEX_RIGHT+R:NONE")
         self.assertEqual(self.chain.intent["intent"], "MOVE_RIGHT")
         self.assertTrue(all(out["velocity"] == [0.0] * 4 for _, _, out in ticks))
 
@@ -154,18 +154,18 @@ class ChainTests(unittest.TestCase):
 
     def test_closed_hand_disengages(self):
         self.chain.move_right()
-        self.chain.run(0.5, "CLOSED_HAND")
+        self.chain.run(0.5, "L:NONE+R:CLOSED_HAND")
         self.assertEqual(self.chain.mode(), "READY")
         self.assertEqual(self.chain.vel(), [0.0] * 4)
 
     def test_every_gesture_moves_only_owned_axes_under_mask_11(self):
         for gesture, intent in GESTURE_TO_INTENT.items():
-            if intent in ("STOP_HOVER", "HOLD_POSITION"):
+            if intent in ("STOP_OR_HOVER", "ENGAGE_OR_HOLD"):
                 continue
             with self.subTest(gesture=gesture):
                 chain = Chain()
                 chain.run(0.5, None)
-                chain.run(0.5, "OPEN_HAND_UP")
+                chain.run(0.5, "L:OPEN_HAND_UP+R:OPEN_HAND_UP")
                 chain.run(1.5, gesture)
                 self.assertEqual(chain.out["state"]["intent"], intent)
                 self.assertEqual(chain.vel()[2], 0.0)  # throttle is the pilot's

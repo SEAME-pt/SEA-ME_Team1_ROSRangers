@@ -147,11 +147,16 @@ class GesturesLaunchTests(unittest.TestCase):
         self.assertTrue(self.show(None, lambda: self.mode == "READY", 30.0), output())
         self.assertIs(self.airborne, False, "airborne:=false did not reach the node")
         self.assertTrue(
-            self.show("OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0), output()
+            self.show(
+                "L:OPEN_HAND_UP+R:OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0
+            ),
+            output(),
         )
         self.assertTrue(
             self.show(
-                "INDEX_RIGHT", lambda: self.vy is not None and self.vy < -0.1, 5.0
+                "L:INDEX_RIGHT+R:NONE",
+                lambda: self.vy is not None and self.vy < -0.1,
+                5.0,
             ),
             output(),
         )
