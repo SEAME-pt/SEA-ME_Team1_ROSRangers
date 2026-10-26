@@ -3,7 +3,7 @@ title: Open Questions
 type: tracking
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 tags:
   - questions
@@ -65,6 +65,9 @@ tags:
 - [ ] **Network isolation for the transparent bridge:** is an isolated network needed, or is the shared SEAME Wi-Fi acceptable? Under evaluation (team, 2026-10-20). Not a rule yet ([[Safety Rules]] §2).
 - [ ] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Team to decide (2026-10-20).
 - [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
+
+### Process
+- [ ] **Second track label per issue:** allow one extra `track:` label when a task really belongs to two tracks (e.g. A+B bench tests, B+E ThoneFlow spike), instead of exactly one. Raised 2026-10-26; the team leans towards allowing it. Sprint 2 issues #104 and #108 already use two. Decide at the next weekly; then update the rule in `CLAUDE.md` (GitHub #110).
 
 ### Tests
 - [ ] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? (week 2)
