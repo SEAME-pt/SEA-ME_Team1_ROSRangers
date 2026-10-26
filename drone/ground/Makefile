@@ -6,8 +6,10 @@
 #                 terminal, each node's output in logs/<service>/latest.log
 #   make down     stop the containers
 #   make clean    down + remove this project's Docker images
-#   make fclean   clean + remove the venv, the workspace, logs/ and Python caches,
-#                 leaving drone/ground/ as it was cloned
+#   make fclean   clean + remove the venv, the workspace, logs/, Python caches and
+#                 the rest of this project's Docker objects (make smoke's too),
+#                 leaving drone/ground/ as it was cloned. The rest of Docker on
+#                 this PC is not touched
 #   make re       fclean, then all
 #   make test     every test: colcon test (unit + node) and drone/tests/ros
 #                 (pipeline). Without Jazzy: the unit tests only (= make unit)
@@ -33,6 +35,11 @@ WS      := ros2_ws
 PKGS    := gesture_node intent_node mission_node
 E2E     := ../tests/ros
 TESTLOG := logs/test
+
+# Compose projects: ground (make, make up: named after this folder) and
+# ground-smoke (make smoke). Compose labels their containers, images and
+# networks with the name, so fclean removes only those.
+DOCKER_PROJECTS := ground ground-smoke
 
 # Teammates without Jazzy only get the containers and the unit tests
 ifneq ($(wildcard $(ROS)),)
@@ -208,13 +215,24 @@ down:
 clean:
 	$(COMPOSE) down --rmi all --remove-orphans
 
-# logs/: everything but its .gitignore, which keeps the folder out of git
+# logs/: everything but its .gitignore, which keeps the folder out of git.
+# Docker: only this project's objects, never a host-wide prune. Containers
+# with their anonymous volumes (the smoke test's `docker run` ones are named
+# ground-smoke-*), then the images left, also the old untagged ones a rebuild
+# leaves, and networks. Kept, as other projects may use them: the
+# ros:jazzy-ros-base base image and Docker's build cache.
 fclean: clean
 	rm -rf $(VENV) $(WS) ../.pytest_cache
 	find logs -mindepth 1 -maxdepth 1 ! -name .gitignore -exec rm -rf {} +
 	find src docker $(E2E) -path src/sd_protocol_py -prune -o \
 		\( -name __pycache__ -o -name .pytest_cache -o -name '*.egg-info' \) -prune -exec rm -rf {} +
-	docker system prune -af
+	docker ps -aq --filter name=^ground-smoke- | xargs -r docker rm -fv
+	for p in $(DOCKER_PROJECTS); do \
+		label=label=com.docker.compose.project=$$p; \
+		docker ps -aq --filter $$label | xargs -r docker rm -fv; \
+		docker image prune -af --filter $$label; \
+		docker network prune -f --filter $$label; \
+	done
 
 re: fclean all
 

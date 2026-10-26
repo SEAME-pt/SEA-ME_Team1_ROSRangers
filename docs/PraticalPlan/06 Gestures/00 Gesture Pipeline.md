@@ -3,7 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 tags:
   - gestures
@@ -150,10 +150,10 @@ Everything runs from `drone/ground/` with `make`. ROS 2 Jazzy does **not** have 
 | `make down` | stops the containers |
 | `make unit` / `make test` / `make smoke` | the tests (§8 Step 1). Each ends with a pass/total summary and keeps its full output in `logs/test/`: `unit.log`; `pkg-test.log` + `e2e-test.log` for `make test` (`unit.log` without Jazzy); `smoke.log` |
 | `make clean` | `down` + removes this project's Docker images |
-| `make fclean` / `make re` | `clean` + removes the venv, the workspace, `logs/` and Python caches, and runs `docker system prune -af` / `fclean`, then `make` |
+| `make fclean` / `make re` | `clean` + removes the venv, the workspace, `logs/`, Python caches and the rest of this project's Docker objects / `fclean`, then `make` |
 
-> [!WARNING] `make fclean` prunes all of Docker, not only this project
-> `docker system prune -af` removes **every** stopped container, unused network, image that no container uses, and the build cache on your PC, also from other projects. Use `make clean` if you only want this project's images gone.
+> [!NOTE] `make fclean` touches only this project's Docker objects
+> It removes the containers (with their anonymous volumes), images (also the old untagged ones a rebuild leaves) and networks of the compose projects `ground` (`make`) and `ground-smoke` (`make smoke`), found by their `com.docker.compose.project` label. Nothing else on your PC is pruned: the `ros:jazzy-ros-base` base image and Docker's build cache stay, as other projects may use them (#112).
 
 Press `q` in the "Gestures" window to stop `gesture_node`, and Ctrl+C (or `make down` in another terminal) to stop the rest. `MASK=15 make` gives the pretend flight state mask 15, `AIRBORNE=false make` puts the pretend drone on the ground ([[04 Mission Node|04]] §9.4).
 
