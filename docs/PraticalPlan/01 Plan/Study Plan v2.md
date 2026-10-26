@@ -117,7 +117,7 @@ tags: [plan]
 - **All:** review and freeze [[Protocol Spec v0]] in a 1-hour design review. Write the architecture document (layer diagram, node graph, message contracts, timing budget). This is a Module 1 deliverable.
 - **B:** implement the C++ protocol lib (encode/decode, HMAC, sequence window) with tests. Replace the transparent bridge with the **allow-listed gateway** firmware.
 - **C:** Python implementation of the same spec. Shared **golden test vectors** pass in both languages.
-- **D:** extend the Betaflight SITL tests (the job itself is done, week 2). Extend the registered Pi 4 HIL runner ([[HIL Runner]] §3.1, #48): a USB Wi-Fi dongle for the Wi-Fi tests, since the Pi has only its built-in Wi-Fi.
+- **D:** extend the Betaflight SITL tests (the job itself is done, week 2). Extend the registered Pi 4 HIL runner ([[HIL Runner]] §3.1, #48): a USB Wi-Fi dongle for the Wi-Fi tests, since the Pi has only its built-in Wi-Fi. *Changed 2026-10-26: no dongle. The Pi time-slices its Wi-Fi ([[ADR-020 HIL Runner|ADR-020]], #48).*
 - **E:** ThoneFlow **sensor-alone characterisation** ([[ThoneFlow]] §9.2): serial framing, frame rate (66 Hz datasheet vs 25 Hz ArduPilot), byte order, checksum. Write the parser.
 
 ## 6. Week 4 · 9–13 Nov · Failsafe and sessions · *Sprint 2 demo Fri*
