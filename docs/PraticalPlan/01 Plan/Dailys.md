@@ -81,6 +81,15 @@ Guilherme - Ler documentacao
 **Blockers**
 Paulo - Verificar os testes por causa de problemas de cabos no dia anterior.
 
+26/Oct - 15:47:15:56
+Bruno - Update ao gestures para processamentos de mais gestoe + scalability para os dois braços
+Guilherme - HIL a funcionar, com a funcionar
+Paulo - Sprint 07 -  UDP e TCP ao mesmo tempo, em principio está a funcionar, problemas relacionados com cabos, a realizar os testes de momento.
+Tiago - Gazebo operacional e comunicação com ele operacional. Comunicação com o firmware.(tentativa).
+**Blockers**
+Bruno - Falta de confiança nos gestures, testar mais a fundo com eles.
+
+
 
 ---
 
