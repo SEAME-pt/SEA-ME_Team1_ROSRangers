@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-10-23
+updated: 2026-10-26
 project: SEA autonomous drone
 tags:
   - safety
@@ -34,6 +34,7 @@ tags:
 14. **MSP Override is bench-only until Betaflight 2026.6.2** (added 2026-10-20). It stays props-off on 4.5.1 ([[ADR-010 MSP Override|ADR-010]] condition 6).
 15. **Nobody flies alone** (added 2026-10-20). Nobody powers up, arms, test-runs or flies the drone alone. A pilot and at least one other person are always present ([[Team Tracks]] §2).
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
+17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Rule #15 covers the drone, not this bench, but #10 still applies.
 
 ---
 
