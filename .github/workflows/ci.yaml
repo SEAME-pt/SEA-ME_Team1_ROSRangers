@@ -29,6 +29,7 @@ jobs:
     outputs:
       cpp: ${{ steps.check.outputs.cpp }}
       python: ${{ steps.check.outputs.python }}
+      scripts: ${{ steps.check.outputs.scripts }}
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
       ros: ${{ steps.check.outputs.ros }}
@@ -57,6 +58,13 @@ jobs:
           else
             echo "python=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=ground-python skipped::drone/ground/src/sd_protocol_py/pyproject.toml not found"
+          fi
+
+          if find tests/scripts -maxdepth 1 -name 'test_*.py' -print -quit 2>/dev/null | grep -q .; then
+            echo "scripts=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "scripts=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=scripts-python skipped::no test in tests/scripts"
           fi
 
           if [[ -f drone/firmware/esp8266/platformio.ini ]]; then
@@ -165,6 +173,20 @@ jobs:
       - run: pip install pytest pytest-cov
       - run: pip install -e drone/ground/src/sd_protocol_py
       - run: pytest drone/ground/src/sd_protocol_py --cov=sd_protocol --cov-fail-under=80
+
+  # Unit tests of the bench tools in scripts/ (no hardware)
+  scripts-python:
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.scripts == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r scripts/requirements.txt
+      - run: pytest tests/scripts -q
 
   # gesture_node + intent_node, plus mission_node once its package.xml exists
   # (list in check-components ros_pkgs): unit, node, launch and pipeline tests
