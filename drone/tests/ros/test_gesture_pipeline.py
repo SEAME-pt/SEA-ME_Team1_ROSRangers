@@ -110,15 +110,15 @@ class PipelineTests(unittest.TestCase):
             with self.subTest(gesture=gesture):
                 self.show(gesture, intent, "ok")
 
-    def test_hand_lost_goes_neutral_then_hover_land(self):
+    def test_hand_lost_stays_neutral(self):
         self.show("L:INDEX_RIGHT+R:NONE", "MOVE_RIGHT")
         self.show(None, "NEUTRAL", "no_hand", timeout=1.0)
         start = len(self.intents)
-        self.show(None, "HOVER_LAND_REQUEST", "no_hand_long", timeout=3.0)
+        self.show(None, "NEUTRAL", "no_hand_long", timeout=3.0)
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents[start:]])
 
-    def test_recogniser_stops_goes_hover_land(self):
-        self.show("L:NONE+R:CLOSED_HAND", "STOP_OR_HOVER")
+    def test_recogniser_stops_stays_neutral(self):
+        self.show("L:CLOSED_HAND+R:CLOSED_HAND", "LOCK_TOGGLE")
         # Camera loop ends: gesture_node stops publishing altogether
         self.assertTrue(
             self.spin_until(
@@ -126,7 +126,7 @@ class PipelineTests(unittest.TestCase):
             ),
             f"last {self.intents[-1]}",
         )
-        self.assertEqual(self.intents[-1]["intent"], "HOVER_LAND_REQUEST")
+        self.assertEqual(self.intents[-1]["intent"], "NEUTRAL")
 
 
 if __name__ == "__main__":

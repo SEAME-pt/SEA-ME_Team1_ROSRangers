@@ -24,9 +24,9 @@ from mission_node.mission_logic import (
     ENGAGED,
     IDLE,
     INTENT_DIRECTION,
-    LAND_REQUEST,
+    LOCKED,
     MASK_AXES,
-    READY,
+    WAITING,
     MissionLogic,
     parse_flight_state,
     parse_intent,
@@ -34,8 +34,12 @@ from mission_node.mission_logic import (
 )
 
 DT = 0.05  # 20 Hz
+HOLD = 1.0  # lock_hold: both fists for 1 s lock and unlock
 YAW_20 = math.radians(20.0)
 ZERO = [0.0, 0.0, 0.0, 0.0]
+# intent_node reasons that describe the hands ("03 Intent Node" §4). Written
+# out here instead of imported, so the tests check the rule, not a copy of it.
+HAND_REASONS = {"ok", "no_hand", "no_hand_long", "unmapped_gesture"}
 STATE_KEYS = {
     "mode",
     "mode_reason",
@@ -116,20 +120,25 @@ class Base(unittest.TestCase):
 
     def engage(self):
         self.run_for(0.2, "NEUTRAL")
-        self.run_for(0.2, "ENGAGE_OR_HOLD")
+        self.run_for(0.2, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
+
+    def lock(self):
+        self.engage()
+        self.run_for(HOLD + 0.2, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), LOCKED)
 
 
 class ModeTests(Base):
     def test_starts_idle_without_flight_state(self):
-        self.run_for(0.2, "ENGAGE_OR_HOLD", flight=False)
+        self.run_for(0.2, "ENGAGE", flight=False)
         self.assertEqual(self.mode(), IDLE)
         self.assertEqual(self.out["state"]["mode_reason"], "no_flight_state")
         self.assertEqual(self.vel(), [0.0, 0.0, 0.0, 0.0])
 
-    def test_ready_when_override_on(self):
+    def test_waiting_when_override_on(self):
         self.run_for(0.2)
-        self.assertEqual(self.mode(), READY)
+        self.assertEqual(self.mode(), WAITING)
 
     def test_idle_for_each_flight_blocker(self):
         cases = [
@@ -142,45 +151,47 @@ class ModeTests(Base):
             with self.subTest(key=key):
                 self.setUp()
                 self.flight[key] = value
-                self.run_for(0.2, "ENGAGE_OR_HOLD")
+                self.run_for(0.2, "ENGAGE")
                 self.assertEqual(self.mode(), IDLE)
                 self.assertEqual(self.out["state"]["mode_reason"], reason)
 
-    def test_engage_only_after_engage_or_hold(self):
+    def test_engage_only_after_engage(self):
         self.run_for(0.2, "NEUTRAL")
         self.run_for(1.0, "MOVE_RIGHT")  # a stray gesture never starts motion
-        self.assertEqual(self.mode(), READY)
+        self.assertEqual(self.mode(), WAITING)
         self.assertEqual(self.vel(), [0.0, 0.0, 0.0, 0.0])
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
+        self.run_for(0.1, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
 
     def test_hold_already_shown_before_override_does_not_engage(self):
         self.flight["override_active"] = False
-        self.run_for(0.5, "ENGAGE_OR_HOLD")
+        self.run_for(0.5, "ENGAGE")
         self.flight["override_active"] = True
-        self.run_for(0.5, "ENGAGE_OR_HOLD")
-        self.assertEqual(self.mode(), READY)  # must be shown again on purpose
+        self.run_for(0.5, "ENGAGE")
+        self.assertEqual(self.mode(), WAITING)  # must be shown again on purpose
         self.run_for(0.2, "NEUTRAL")
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
+        self.run_for(0.1, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
 
     def test_delivery_gap_while_holding_does_not_engage(self):
-        self.engage()
-        self.run_for(0.2, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.run_for(0.2, "ENGAGE_OR_HOLD")  # operator back -> READY, hand held
-        self.assertEqual(self.mode(), READY)
+        self.flight["override_active"] = False
+        self.run_for(0.2, "NEUTRAL", "no_hand")
+        self.run_for(0.2, "ENGAGE")  # shown while IDLE: does not count
+        self.flight["override_active"] = True
+        self.run_for(0.2, "ENGAGE")
+        self.assertEqual(self.mode(), WAITING)
         self.run_for(0.4, None)  # delivery gap: synthetic NEUTRAL (intent_stale)
         self.assertEqual(self.out["state"]["reason"], "intent_stale")
-        self.run_for(0.5, "ENGAGE_OR_HOLD")  # same hand, still held
-        self.assertEqual(self.mode(), READY)
+        self.run_for(0.5, "ENGAGE")  # same hands, still held
+        self.assertEqual(self.mode(), WAITING)
         self.run_for(0.2, "NEUTRAL", "no_hand")  # a real release from intent_node
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
+        self.run_for(0.1, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
 
-    def test_stop_or_hover_disengages(self):
+    def test_both_fists_held_lock(self):
         self.engage()
-        self.run_for(0.1, "STOP_OR_HOVER")
-        self.assertEqual(self.mode(), READY)
+        self.run_for(HOLD + 0.1, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), LOCKED)
 
     def test_override_off_goes_idle_from_engaged(self):
         self.engage()
@@ -203,11 +214,16 @@ class ModeTests(Base):
         self.assertEqual(self.mode(), ENGAGED)
         self.assertEqual(self.vel(), [0.0, 0.0, 0.0, 0.0])
 
-    def test_neutral_too_long_disengages(self):
+    def test_no_hands_for_a_long_time_stays_engaged_and_hovers(self):
         self.engage()
-        self.run_for(2.2, "NEUTRAL", "unconfirmed")
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["mode_reason"], "neutral_too_long")
+        self.run_for(1.0, "MOVE_RIGHT")
+        self.run_for(2.0, "NEUTRAL", "no_hand")
+        self.run_for(30.0, "NEUTRAL", "no_hand_long")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.vel(), ZERO)
+        self.assertFalse(self.out["state"]["land_request"])
+        self.run_for(1.0, "MOVE_RIGHT")  # hands back: no new engage needed
+        self.assertAlmostEqual(self.vel()[1], -0.3)
 
 
 class InputTests(Base):
@@ -222,15 +238,19 @@ class InputTests(Base):
 
     def test_never_received_is_not_lost(self):
         self.run_for(5.0, None)  # intent_node not started yet, airborne
-        self.assertEqual(self.mode(), READY)
+        self.assertEqual(self.mode(), WAITING)
         self.assertEqual(self.out["state"]["reason"], "no_intent_yet")
 
-    def test_lost_intent_topic_requests_landing_when_airborne(self):
+    def test_lost_intent_topic_hovers_and_stays_engaged(self):
         self.engage()
-        self.run_for(2.1, None)
+        self.run_for(1.0, "MOVE_RIGHT")
+        self.run_for(10.0, None)
         self.assertEqual(self.out["state"]["reason"], "intent_topic_lost")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertTrue(self.out["state"]["land_request"])
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.vel(), ZERO)
+        self.assertFalse(self.out["state"]["land_request"])
+        self.run_for(1.0, "MOVE_RIGHT")  # intent_node back: moves again
+        self.assertAlmostEqual(self.vel()[1], -0.3)
 
     def test_unknown_intent_is_neutral(self):
         self.engage()
@@ -267,52 +287,222 @@ class InputTests(Base):
         self.assertIsNone(parse_flight_state("nope"))
 
 
-class LandRequestTests(Base):
-    def test_ignored_on_the_ground(self):
-        self.flight["airborne"] = False
-        self.run_for(0.5, "HOVER_LAND_REQUEST", "no_packets_yet")
-        self.assertEqual(self.mode(), READY)
+class NoLandRequestTests(Base):
+    """Nothing asks for a landing any more: only the flight controller
+    telemetry will (not built yet). land_request stays false."""
+
+    def test_intent_node_start_up_is_only_neutral(self):
+        self.run_for(1.0, "NEUTRAL", "no_packets_yet")  # airborne
+        self.assertEqual(self.mode(), WAITING)
+        self.assertEqual(self.out["state"]["intent"], "NEUTRAL")
         self.assertFalse(self.out["state"]["land_request"])
 
-    def test_intent_node_start_up_is_not_a_land_request(self):
-        self.run_for(1.0, "HOVER_LAND_REQUEST", "no_packets_yet")  # airborne
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["intent"], "NEUTRAL")
-
-    def test_engaged_on_the_ground_just_disengages(self):
-        self.flight["airborne"] = False
-        self.engage()
-        self.run_for(0.1, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["mode_reason"], "land_request_on_ground")
-
-    def test_mask_11_hovers_and_leaves_landing_to_the_pilot(self):
-        self.engage()
-        self.run_for(5.0, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertEqual(self.vel(), [0.0, 0.0, 0.0, 0.0])
-
-    def test_mask_15_hovers_then_descends(self):
+    def test_dead_recogniser_hovers_and_stays_engaged(self):
         self.flight["mask"] = 15
         self.engage()
-        self.run_for(1.9, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.vel()[2], 0.0)  # still hovering
-        self.run_for(1.5, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertAlmostEqual(self.vel()[2], -0.2)
+        self.run_for(1.0, "CLIMB_UP")
+        self.run_for(10.0, "NEUTRAL", "no_packets")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.vel(), ZERO)  # no descent either
+        self.assertFalse(self.out["state"]["land_request"])
 
-    def test_operator_back_returns_to_ready(self):
+    def test_old_hover_land_request_intent_is_unknown(self):
+        """An old intent_node that still sends it: NEUTRAL, never a landing."""
         self.engage()
-        self.run_for(0.5, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.run_for(0.5, "ENGAGE_OR_HOLD")
-        self.assertEqual(self.mode(), READY)
+        self.run_for(1.0, "MOVE_RIGHT")
+        self.run_for(1.0, "HOVER_LAND_REQUEST", "no_hand_long")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.vel(), ZERO)
+        self.assertEqual(self.out["state"]["intent"], "NEUTRAL")
+        self.assertEqual(self.out["state"]["reason"], "unknown_intent")
+        self.assertFalse(self.out["state"]["land_request"])
 
-    def test_touchdown_returns_to_ready(self):
-        self.engage()
-        self.run_for(0.5, "HOVER_LAND_REQUEST", "no_hand_long")
+    def test_on_the_ground_the_rules_are_the_same(self):
         self.flight["airborne"] = False
-        self.run_for(0.1, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["mode_reason"], "landed")
+        self.engage()
+        self.run_for(5.0, "NEUTRAL", "no_hand_long")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertFalse(self.out["state"]["land_request"])
+
+
+class LockTests(Base):
+    def test_lock_needs_1_s_of_both_fists_and_hovers_meanwhile(self):
+        self.flight["mask"] = 15
+        self.engage()
+        self.run_for(2.0, "CLIMB_UP")
+        self.assertAlmostEqual(self.vel()[2], 0.2)
+        self.run_for(DT, "LOCK_TOGGLE")  # held from t = 0
+        self.assertEqual(self.vel(), ZERO)  # hovering at once
+        self.run_for(HOLD - 0.15, "LOCK_TOGGLE")  # last tick at t = 0.85
+        self.assertEqual(self.mode(), ENGAGED)
+        self.run_for(0.25, "LOCK_TOGGLE")  # last tick at t = 1.1
+        self.assertEqual(self.mode(), LOCKED)
+        self.assertEqual(self.out["state"]["mode_reason"], "lock")
+        self.assertEqual(self.vel(), ZERO)
+
+    def test_hold_is_measured_from_the_first_fists_message(self):
+        self.engage()
+        self.run_for(0.5, "MOVE_RIGHT")
+        ticks = 0
+        while self.mode() == ENGAGED:
+            self.run_for(DT, "LOCK_TOGGLE")
+            ticks += 1
+            self.assertLess(ticks, 40, "never locked")
+        # the toggle tick is HOLD after the first one (float clock: +1 tick)
+        self.assertIn(ticks, (round(HOLD / DT) + 1, round(HOLD / DT) + 2))
+
+    def test_fists_dropped_before_1_s_do_not_lock(self):
+        self.engage()
+        for _ in range(3):
+            self.run_for(HOLD - 0.2, "LOCK_TOGGLE")
+            self.run_for(0.4, "NEUTRAL", "no_hand")
+        self.assertEqual(self.mode(), ENGAGED)
+
+    def test_another_gesture_restarts_the_hold(self):
+        self.engage()
+        self.run_for(HOLD - 0.2, "LOCK_TOGGLE")
+        self.run_for(0.2, "MOVE_LEFT")
+        self.run_for(HOLD - 0.2, "LOCK_TOGGLE")  # a new hold, not 1.4 s in total
+        self.assertEqual(self.mode(), ENGAGED)
+        self.run_for(0.3, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), LOCKED)
+
+    def test_delivery_gap_breaks_the_hold(self):
+        """A gap is NEUTRAL (intent_stale): the hold ends, and the same fists
+        after the gap are no new gesture."""
+        self.engage()
+        self.run_for(HOLD - 0.2, "LOCK_TOGGLE")
+        self.run_for(0.4, None)
+        self.run_for(2 * HOLD, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), ENGAGED)
+
+    def test_held_fists_toggle_only_once(self):
+        self.lock()
+        self.run_for(5.0, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), LOCKED)
+
+    def test_every_other_intent_is_ignored_while_locked(self):
+        for intent in INTENT_DIRECTION:
+            if intent == "LOCK_TOGGLE":
+                continue
+            with self.subTest(intent=intent):
+                self.setUp()
+                self.flight["mask"] = 15
+                self.lock()
+                self.run_for(1.5, intent)
+                self.assertEqual(self.mode(), LOCKED)
+                self.assertEqual(self.vel(), ZERO)
+
+    def test_locked_has_no_timeout(self):
+        self.lock()
+        self.run_for(30.0, "NEUTRAL", "no_hand_long")
+        self.run_for(30.0, None)  # intent_topic_lost
+        self.assertEqual(self.mode(), LOCKED)
+        self.assertEqual(self.vel(), ZERO)
+        self.assertFalse(self.out["state"]["land_request"])
+
+    def test_unlock_needs_new_fists_held_1_s(self):
+        self.lock()
+        self.run_for(0.5, "NEUTRAL", "no_hand")
+        self.run_for(HOLD - 0.15, "LOCK_TOGGLE")  # last tick at t = 0.8
+        self.assertEqual(self.mode(), LOCKED)
+        self.run_for(0.3, "LOCK_TOGGLE")  # last tick at t = 1.1
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.out["state"]["mode_reason"], "unlock")
+        self.assertEqual(self.vel(), ZERO)  # the fists themselves are a hover
+        self.run_for(1.0, "MOVE_RIGHT")
+        self.assertAlmostEqual(self.vel()[1], -0.3)
+
+    def test_fists_after_an_ignored_gesture_unlock(self):
+        self.lock()
+        self.run_for(0.5, "MOVE_LEFT")  # ignored, but the fists were dropped
+        self.run_for(HOLD + 0.1, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), ENGAGED)
+
+    def test_lock_unlock_lock(self):
+        self.lock()
+        for expected in (ENGAGED, LOCKED, ENGAGED):
+            self.run_for(0.4, "NEUTRAL", "no_hand")
+            self.run_for(HOLD + 0.1, "LOCK_TOGGLE")
+            self.assertEqual(self.mode(), expected)
+
+    def test_messages_that_say_nothing_about_the_hands_are_no_release(self):
+        """Only intent_node's hand reasons can end held fists: not a delivery
+        gap, bad JSON, intent_node (re)starting, a dead recogniser or a
+        gesture still being confirmed."""
+        for gap in (
+            [(None, "")],
+            [("NEUTRAL", "no_packets_yet")],
+            [("NEUTRAL", "no_packets")],
+            [("NEUTRAL", "unconfirmed")],
+            [("BANANA", "ok")],
+        ):
+            with self.subTest(gap=gap):
+                self.setUp()
+                self.lock()
+                for intent, reason in gap:
+                    self.run_for(0.4, intent, reason)
+                self.run_for(2 * HOLD, "LOCK_TOGGLE")
+                self.assertEqual(self.mode(), LOCKED)
+
+    def test_bad_json_is_no_release(self):
+        self.lock()
+        for _ in range(4):
+            self.m.on_intent("{not json")
+            self.m.on_flight_state(flight_state_json(**self.flight))
+            self.m.tick()
+            self.clock.advance(DT)
+        self.run_for(2 * HOLD, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), LOCKED)
+
+    def test_fists_while_waiting_do_nothing(self):
+        self.run_for(0.2, "NEUTRAL", "no_hand")
+        self.run_for(2 * HOLD, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), WAITING)
+
+    def test_locked_goes_idle_then_waiting(self):
+        self.lock()
+        self.flight["override_active"] = False
+        self.run_for(0.2, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), IDLE)
+        self.flight["override_active"] = True
+        self.run_for(0.2, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), WAITING)  # both open hands needed again
+        self.run_for(0.2, "NEUTRAL", "no_hand")
+        self.run_for(2 * HOLD, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), WAITING)
+
+    def test_hold_cut_by_idle_does_not_lock_after_engaging_again(self):
+        self.engage()
+        self.run_for(HOLD - 0.2, "LOCK_TOGGLE")
+        self.flight["link_ok"] = False
+        self.run_for(0.2, "LOCK_TOGGLE")
+        self.flight["link_ok"] = True
+        self.run_for(0.4, "NEUTRAL", "no_hand")
+        self.run_for(0.2, "ENGAGE")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.run_for(HOLD - 0.2, "LOCK_TOGGLE")  # a new hold from zero
+        self.assertEqual(self.mode(), ENGAGED)
+
+    def test_lock_hold_parameter(self):
+        for hold, ticks_to_lock in ((0.0, 1), (0.5, 11), (-1.0, 1), (float("nan"), 1)):
+            with self.subTest(hold=hold):
+                self.setUp()
+                self.m = MissionLogic(lock_hold=hold, clock=self.clock)
+                self.engage()
+                self.run_for(0.2, "MOVE_RIGHT")
+                ticks = 0
+                while self.mode() == ENGAGED and ticks < 40:
+                    self.run_for(DT, "LOCK_TOGGLE")
+                    ticks += 1
+                self.assertIn(ticks, (ticks_to_lock, ticks_to_lock + 1))
+                self.assertEqual(self.mode(), LOCKED)
+
+    def test_infinite_lock_hold_never_toggles(self):
+        self.m = MissionLogic(lock_hold=float("inf"), clock=self.clock)
+        self.engage()
+        self.run_for(10.0, "LOCK_TOGGLE")
+        self.assertEqual(self.mode(), ENGAGED)
 
 
 class VelocityTests(Base):
@@ -326,7 +516,7 @@ class VelocityTests(Base):
             "YAW_RIGHT": [0.0, 0.0, 0.0, -YAW_20],
             "CLIMB_UP": [0.0, 0.0, 0.2, 0.0],
             "DESCEND_ONLY": [0.0, 0.0, -0.2, 0.0],
-            "ENGAGE_OR_HOLD": [0.0, 0.0, 0.0, 0.0],
+            "ENGAGE": [0.0, 0.0, 0.0, 0.0],
         }
         for intent, expected in cases.items():
             with self.subTest(intent=intent):
@@ -368,8 +558,9 @@ class VelocityTests(Base):
     def test_stopping_is_immediate(self):
         self.engage()
         self.run_for(2.0, "MOVE_RIGHT")
-        self.run_for(DT, "ENGAGE_OR_HOLD")
+        self.run_for(DT, "ENGAGE")  # both open hands while engaged: hover
         self.assertEqual(self.vel()[1], 0.0)
+        self.assertEqual(self.mode(), ENGAGED)
 
     def test_reversing_goes_through_zero(self):
         self.engage()
@@ -436,9 +627,13 @@ class DemoScriptTests(Base):
                 modes.append((index + 1, self.mode()))
         self.assertEqual(
             [mode for _, mode in modes],
-            [READY, ENGAGED, READY, ENGAGED, LAND_REQUEST, READY, LAND_REQUEST],
+            [WAITING, ENGAGED, LOCKED, ENGAGED],
         )
+        self.assertEqual([index for index, _ in modes], [1, 2, 7, 9])
         self.assertEqual(len(DEMO_SCRIPT), 14)
+        # Ends with intent_node silent: still engaged, hovering
+        self.assertEqual(self.out["state"]["reason"], "intent_topic_lost")
+        self.assertEqual(self.vel(), ZERO)
 
 
 class TimingTests(Base):
@@ -489,11 +684,23 @@ class TimingTests(Base):
 
 class EngageTests(Base):
     def test_hold_shown_at_start_up_does_not_engage(self):
-        """mission_node (re)started while the operator already holds an open hand."""
-        self.run_for(1.0, "ENGAGE_OR_HOLD")
-        self.assertEqual(self.mode(), READY)
+        """mission_node (re)started while the operator already holds both hands up."""
+        self.run_for(1.0, "ENGAGE")
+        self.assertEqual(self.mode(), WAITING)
         self.run_for(0.2, "NEUTRAL", "no_hand")
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
+        self.run_for(0.1, "ENGAGE")
+        self.assertEqual(self.mode(), ENGAGED)
+
+    def test_hands_up_while_intent_node_starts_does_not_engage(self):
+        """Everything started together: intent_node first says no_packets_yet,
+        then confirms the hands that were already up."""
+        self.run_for(1.0, "NEUTRAL", "no_packets_yet")
+        self.run_for(0.2, "NEUTRAL", "unconfirmed")
+        self.run_for(1.0, "ENGAGE")
+        self.assertEqual(self.mode(), WAITING)
+        self.run_for(0.4, "NEUTRAL", "no_hand")
+        self.run_for(0.2, "NEUTRAL", "unconfirmed")
+        self.run_for(0.2, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
 
     def test_back_from_idle_needs_a_new_engage(self):
@@ -503,105 +710,39 @@ class EngageTests(Base):
         self.run_for(0.2, "MOVE_RIGHT")
         self.flight["override_active"] = True
         self.run_for(1.0, "MOVE_RIGHT")
-        self.assertEqual(self.mode(), READY)
+        self.assertEqual(self.mode(), WAITING)
         self.assertEqual(self.vel(), ZERO)
 
     def test_hold_kept_through_idle_does_not_re_engage(self):
         self.engage()
         self.flight["link_ok"] = False
-        self.run_for(0.2, "ENGAGE_OR_HOLD")
+        self.run_for(0.2, "ENGAGE")
         self.flight["link_ok"] = True
-        self.run_for(0.5, "ENGAGE_OR_HOLD")
-        self.assertEqual(self.mode(), READY)
+        self.run_for(0.5, "ENGAGE")
+        self.assertEqual(self.mode(), WAITING)
 
-    def test_unknown_intents_count_as_neutral_for_disengaging(self):
+    def test_unknown_intents_never_change_the_mode(self):
         self.engage()
-        self.run_for(2.2, "BANANA")
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["mode_reason"], "neutral_too_long")
+        self.run_for(10.0, "BANANA")
+        self.assertEqual(self.mode(), ENGAGED)
+        self.assertEqual(self.vel(), ZERO)
 
-    def test_neutral_timer_restarts_after_a_real_intent(self):
-        self.engage()
-        self.run_for(1.5, "NEUTRAL", "no_hand")
-        self.run_for(0.2, "MOVE_RIGHT")
-        self.run_for(1.5, "NEUTRAL", "no_hand")
+    def test_unmapped_gesture_is_a_release(self):
+        self.run_for(1.0, "ENGAGE")  # held at start-up
+        self.run_for(0.4, "NEUTRAL", "unmapped_gesture")  # one hand lowered
+        self.run_for(0.2, "ENGAGE")
         self.assertEqual(self.mode(), ENGAGED)
 
-    def test_mode_reasons_on_the_way_up(self):
+    def test_mode_reasons(self):
         self.run_for(0.2, "NEUTRAL")
         self.assertEqual(self.out["state"]["mode_reason"], "override_on")
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
-        self.assertEqual(self.out["state"]["mode_reason"], "engage_or_hold")
-        self.run_for(0.1, "STOP_OR_HOVER")
-        self.assertEqual(self.out["state"]["mode_reason"], "stop_or_hover")
-
-
-class MoreLandRequestTests(Base):
-    def test_ready_and_airborne_goes_to_land_request(self):
-        self.run_for(0.2, "NEUTRAL")
-        self.run_for(0.1, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertEqual(self.out["state"]["mode_reason"], "no_hand_long")
-
-    def test_motion_intents_are_ignored_while_landing(self):
-        self.engage()
-        self.run_for(0.5, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.run_for(1.0, "MOVE_RIGHT")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertEqual(self.vel(), ZERO)
-
-    def test_mask_15_keeps_descending_whatever_the_intent(self):
-        self.flight["mask"] = 15
-        self.engage()
-        self.run_for(3.0, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.run_for(1.0, "CLIMB_UP")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertEqual(self.vel()[:2] + self.vel()[3:], [0.0, 0.0, 0.0])
-        self.assertAlmostEqual(self.vel()[2], -0.2)
-
-    def test_mask_15_keeps_descending_when_intent_node_dies(self):
-        self.flight["mask"] = 15
-        self.engage()
-        self.run_for(5.0, None)  # intent_topic_lost after 2 s, hover 2 s, descend
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertAlmostEqual(self.vel()[2], -0.2)
-
-    def test_mask_15_touchdown_stops_the_descent(self):
-        self.flight["mask"] = 15
-        self.engage()
-        self.run_for(3.0, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.flight["airborne"] = False
-        self.run_for(DT, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), READY)
-        self.assertEqual(self.out["state"]["mode_reason"], "landed")
-        self.assertEqual(self.vel(), ZERO)
-
-    def test_mask_15_hover_starts_again_on_a_new_land_request(self):
-        self.flight["mask"] = 15
-        self.engage()
-        self.run_for(3.0, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.run_for(0.2, "ENGAGE_OR_HOLD")  # operator back
-        self.assertEqual(self.mode(), READY)
-        self.run_for(1.5, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.mode(), LAND_REQUEST)
-        self.assertEqual(self.vel(), ZERO)  # hovering again, not descending
-
-    def test_mask_drop_during_landing_stops_the_descent_at_once(self):
-        self.flight["mask"] = 15
-        self.engage()
-        self.run_for(3.0, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.flight["mask"] = 11  # pilot took throttle back
-        self.run_for(DT, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertEqual(self.vel()[2], 0.0)
-        self.assertEqual(self.mode(), LAND_REQUEST)
-
-    def test_land_request_flag_follows_the_mode(self):
-        self.engage()
-        self.assertFalse(self.out["state"]["land_request"])
-        self.run_for(0.1, "HOVER_LAND_REQUEST", "no_hand_long")
-        self.assertTrue(self.out["state"]["land_request"])
-        self.run_for(0.1, "ENGAGE_OR_HOLD")
-        self.assertFalse(self.out["state"]["land_request"])
+        self.run_for(0.1, "ENGAGE")
+        self.assertEqual(self.out["state"]["mode_reason"], "engage")
+        self.run_for(HOLD + 0.1, "LOCK_TOGGLE")
+        self.assertEqual(self.out["state"]["mode_reason"], "lock")
+        self.run_for(0.1, "NEUTRAL", "no_hand")
+        self.run_for(HOLD + 0.1, "LOCK_TOGGLE")
+        self.assertEqual(self.out["state"]["mode_reason"], "unlock")
 
 
 class MaskTests(Base):
@@ -616,8 +757,8 @@ class MaskTests(Base):
     def test_every_mask_and_intent(self):
         for mask, owned in MASK_AXES.items():
             for intent, direction in INTENT_DIRECTION.items():
-                if intent in ("STOP_OR_HOVER", "HOVER_LAND_REQUEST"):
-                    continue  # they leave ENGAGED
+                if intent == "LOCK_TOGGLE":
+                    continue  # it leaves ENGAGED
                 with self.subTest(mask=mask, intent=intent):
                     self.setUp()
                     self.flight["mask"] = mask
@@ -658,7 +799,7 @@ class FlightStateTests(Base):
                 self.setUp()
                 state = dict(self.flight, **change)
                 for _ in range(4):
-                    self.m.on_intent(intent_json("ENGAGE_OR_HOLD", "ok"))
+                    self.m.on_intent(intent_json("ENGAGE", "ok"))
                     self.m.on_flight_state(json.dumps(state))
                     self.out = self.m.tick()
                     self.clock.advance(DT)
@@ -674,17 +815,13 @@ class FlightStateTests(Base):
 
     def test_airborne_must_be_a_real_true(self):
         state = json.dumps(dict(self.flight, airborne="true"))
-        for intent, reason in (
-            ("NEUTRAL", "ok"),
-            ("HOVER_LAND_REQUEST", "no_hand_long"),
-        ):
-            for _ in range(4):
-                self.m.on_intent(intent_json(intent, reason))
-                self.m.on_flight_state(state)  # not flight_state_json: it fixes types
-                self.out = self.m.tick()
-                self.clock.advance(DT)
-        self.assertEqual(self.mode(), READY)  # treated as on the ground
-        self.assertFalse(self.out["state"]["airborne"])
+        for _ in range(4):
+            self.m.on_intent(intent_json("NEUTRAL", "ok"))
+            self.m.on_flight_state(state)  # not flight_state_json: it fixes types
+            self.out = self.m.tick()
+            self.clock.advance(DT)
+        self.assertEqual(self.mode(), WAITING)
+        self.assertFalse(self.out["state"]["airborne"])  # treated as on the ground
 
     def test_blocked_state_hides_mask_and_airborne(self):
         self.flight["override_active"] = False
@@ -856,7 +993,8 @@ class InvariantTests(Base):
 
     def test_random_inputs_keep_the_safety_rules(self):
         rng = random.Random(27)
-        intents = sorted(INTENT_DIRECTION) + ["BANANA", None, None]
+        intents = sorted(INTENT_DIRECTION) + ["BANANA", "HOVER_LAND_REQUEST"]
+        intents += ["ENGAGE", "LOCK_TOGGLE", None, None]  # more mode changes
         reasons = [
             "ok",
             "ok",
@@ -864,11 +1002,20 @@ class InvariantTests(Base):
             "no_hand_long",
             "no_packets",
             "no_packets_yet",
+            "unconfirmed",
+            "unmapped_gesture",
         ]
+        allowed = {
+            (WAITING, ENGAGED): ("ENGAGE", "engage"),
+            (ENGAGED, LOCKED): ("LOCK_TOGGLE", "lock"),
+            (LOCKED, ENGAGED): ("LOCK_TOGGLE", "unlock"),
+        }
         limits = (0.3, 0.3, 0.2, YAW_20)
         steps = (0.5 * DT, 0.5 * DT, 0.5 * DT, math.radians(40.0) * DT)
         previous, mode = ZERO, IDLE
-        intent, reason, flight_on, last_sent = "NEUTRAL", "ok", True, None
+        intent, reason, flight_on, last_hand = "NEUTRAL", "ok", True, None
+        lock_start = None  # tick where a new lock hold started
+        seen = set()
         for i in range(24000):
             if rng.random() < 0.05:  # a new intent every second on average
                 intent, reason = rng.choice(intents), rng.choice(reasons)
@@ -881,9 +1028,9 @@ class InvariantTests(Base):
                     airborne=rng.random() < 0.7,
                 )
                 flight_on = rng.random() < 0.9
-            sent_before = last_sent
-            if intent is not None:
-                last_sent = intent
+            hand_before = last_hand
+            if intent in INTENT_DIRECTION and reason in HAND_REASONS:
+                last_hand = intent
             out = self.run_for(DT, intent, reason, flight=flight_on)
             v, s = out["velocity"], out["state"]
             where = f"tick {i}: {s}, velocity {v}"
@@ -898,19 +1045,39 @@ class InvariantTests(Base):
                     self.assertLessEqual(
                         abs(v[k]) - abs(previous[k]), steps[k] + 1e-9, where
                     )
-            if s["mode"] in (IDLE, READY):
+            self.assertFalse(s["land_request"], where)
+            if s["mode"] != ENGAGED:
                 self.assertEqual(v, ZERO, where)
-            if s["mode"] == LAND_REQUEST:
-                self.assertEqual([v[0], v[1], v[3]], [0.0, 0.0, 0.0], where)
-                self.assertLessEqual(v[2], 0.0, where)
             if s["reason"] in ("intent_stale", "no_intent_yet", "intent_topic_lost"):
-                if s["mode"] != LAND_REQUEST:
-                    self.assertEqual(v, ZERO, where)
-            if s["mode"] == ENGAGED and mode != ENGAGED:
-                # Only a fresh ENGAGE_OR_HOLD that just started engages
-                self.assertEqual(intent, "ENGAGE_OR_HOLD", where)
-                self.assertNotIn(sent_before, ("ENGAGE_OR_HOLD", None), where)
+                self.assertEqual(v, ZERO, where)
+            if s["intent"] != "LOCK_TOGGLE":
+                lock_start = None
+            elif (
+                intent == "LOCK_TOGGLE"
+                and reason in HAND_REASONS
+                and hand_before not in ("LOCK_TOGGLE", None)
+            ):
+                lock_start = i
+            # A mode change other than to/from IDLE only happens on the
+            # gesture that rules it: ENGAGE when it has just STARTED, the
+            # lock gesture once held for HOLD s since it started
+            before = WAITING if mode == IDLE else mode
+            if s["mode"] not in (IDLE, before):
+                gesture, mode_reason = allowed[(before, s["mode"])]
+                self.assertEqual(
+                    (s["intent"], s["mode_reason"]), (gesture, mode_reason), where
+                )
+                if gesture == "ENGAGE":
+                    self.assertEqual(intent, "ENGAGE", where)
+                    self.assertIn(reason, HAND_REASONS, where)
+                    self.assertNotIn(hand_before, (gesture, None), where)
+                else:
+                    self.assertIsNotNone(lock_start, where)
+                    self.assertGreaterEqual(i - lock_start, round(HOLD / DT), where)
+                    lock_start = None  # one toggle per hold
+                seen.add(s["mode"])
             previous, mode = v, s["mode"]
+        self.assertEqual(seen, {ENGAGED, LOCKED})  # the run really changed modes
 
 
 class FakeInputTests(unittest.TestCase):

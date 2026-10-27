@@ -55,7 +55,7 @@ class FilterTests(unittest.TestCase):
 
     # REQ-SAF-019
     def test_nothing_received_yet(self):
-        self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
+        self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_packets_yet")
 
     # REQ-SAF-020
@@ -98,28 +98,28 @@ class FilterTests(unittest.TestCase):
 
     def test_switching_gesture_needs_five_packets(self):
         self.accept_right()
-        self.send("L:NONE+R:CLOSED_HAND", 2)
+        self.send("L:CLOSED_HAND+R:CLOSED_HAND", 2)
         self.assertEqual(self.intent(), "MOVE_RIGHT")  # still debouncing
-        self.send("L:NONE+R:CLOSED_HAND", 3)
-        self.assertEqual(self.intent(), "STOP_OR_HOVER")
+        self.send("L:CLOSED_HAND+R:CLOSED_HAND", 3)
+        self.assertEqual(self.intent(), "LOCK_TOGGLE")
 
     # REQ-SAF-019
-    def test_no_hand_goes_neutral_then_hover_land(self):
+    def test_no_hand_long_stays_neutral(self):
         self.accept_right()
         self.send(None, 6)  # sender keeps sending "no hand" for 0.6 s
         self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_hand")
-        self.send(None, 20)  # ... and for 2 s more
-        self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
+        self.send(None, 20)  # ... and for 2 s more: still no land request
+        self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_hand_long")
 
     # REQ-SAF-019
-    def test_silent_sender_goes_neutral_then_hover_land(self):
+    def test_silent_sender_stays_neutral(self):
         self.accept_right()
         self.clock.advance(0.5)
         self.assertEqual(self.intent(), "NEUTRAL")
         self.clock.advance(2.0)
-        self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
+        self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_packets")
 
     # REQ-SAF-020
@@ -133,6 +133,16 @@ class FilterTests(unittest.TestCase):
         for gesture, intent in GESTURE_TO_INTENT.items():
             words = set(intent.split("_"))
             self.assertFalse(words & {"ARM", "DISARM", "OVERRIDE"}, gesture)
+
+    # Only the flight controller telemetry will ever ask for a landing
+    def test_no_gesture_and_no_timeout_requests_a_landing(self):
+        self.assertNotIn("HOVER_LAND_REQUEST", GESTURE_TO_INTENT.values())
+        self.assertEqual(self.intent(), "NEUTRAL")  # no_packets_yet
+        self.accept_right()
+        self.send(None, 30)  # no_hand_long
+        self.assertEqual(self.intent(), "NEUTRAL")
+        self.clock.advance(5.0)  # no_packets
+        self.assertEqual(self.intent(), "NEUTRAL")
 
     def test_every_vocabulary_gesture_maps(self):
         for gesture, expected in GESTURE_TO_INTENT.items():
@@ -148,6 +158,8 @@ class FilterTests(unittest.TestCase):
             "L:INDEX_UP+R:INDEX_UP",
             "L:CLOSED_HAND+R:INDEX_RIGHT",
             "L:OPEN_HAND_UP+R:NONE",
+            "L:NONE+R:CLOSED_HAND",  # a single fist does nothing
+            "L:CLOSED_HAND+R:NONE",
             "INDEX_RIGHT",
         ):
             f = GestureFilter(clock=self.clock)
@@ -157,14 +169,14 @@ class FilterTests(unittest.TestCase):
 
     def test_lowering_one_hand_never_gives_a_motion(self):
         # #81: when one hand of a two-hand gesture drops (lowered or lost),
-        # what's left must not map to a different motion command.
-        motionless = {"ENGAGE_OR_HOLD", "STOP_OR_HOVER", None}
+        # what's left must not map to any command: not a motion, and half of
+        # the lock gesture (a single fist) does not toggle the lock either.
         for gesture in GESTURE_TO_INTENT:
             left, right = gesture.split("+")
             if "NONE" in (left[2:], right[2:]):
                 continue  # one-hand gesture already
             for rest in (f"{left}+R:NONE", f"L:NONE+{right}"):
-                self.assertIn(GESTURE_TO_INTENT.get(rest), motionless, rest)
+                self.assertIsNone(GESTURE_TO_INTENT.get(rest), rest)
 
     def test_lowercase_and_spaces_are_accepted(self):
         self.send("  l:index_right+r:none ", 5)
@@ -243,12 +255,12 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(out["t"], 6.0)
         self.assertIsNone(out["xy"])
 
-    def test_recogniser_starting_without_hand_after_idle_is_hover_land(self):
+    def test_recogniser_starting_without_hand_after_idle_is_no_hand_long(self):
         # intent_node ran > stale_timeout before the first packet, and that
         # packet has no hand: the hand counts as gone since the node started
         self.clock.advance(5.0)
         self.f.update(packet(None))
-        self.assertEqual(self.intent(), "HOVER_LAND_REQUEST")
+        self.assertEqual(self.intent(), "NEUTRAL")
         self.assertEqual(self.reason(), "no_hand_long")
 
 

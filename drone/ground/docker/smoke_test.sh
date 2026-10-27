@@ -10,11 +10,11 @@
 #      /gesture/intent ->
 #      mission container (pretend /flight/state from the flight container)
 #      sees MOVE_RIGHT on /mission/state but never engages: nobody showed
-#      ENGAGE_OR_HOLD. The echo image's own command (docker/echo/monitor.py,
+#      ENGAGE. The echo image's own command (docker/echo/monitor.py,
 #      the table of `docker compose up`, here one line per change) shows it.
 #   4. docker stop the gesture container: it exits 0 at once, intent falls
-#      back to HOVER_LAND_REQUEST (reason no_packets) and mission, airborne,
-#      goes to LAND_REQUEST.
+#      back to NEUTRAL (reason no_packets) and mission, airborne, stays
+#      WAITING: no land request.
 #   5. docker stop the intent, mission, flight, echo and monitor containers:
 #      exit 0 at once.
 #   6. Node logs (docker/entrypoint.sh): intent, mission and flight, started
@@ -201,26 +201,31 @@ echo "    L:INDEX_RIGHT+R:NONE from the gesture container became MOVE_RIGHT"
 wait_for "$MISSION_ECHO" '"intent":"MOVE_RIGHT","reason":"ok"' 15 ||
     fail "mission did not see MOVE_RIGHT on /mission/state within 15 s"
 ! docker logs "$MISSION_ECHO" 2>&1 | grep -F '"mode":"ENGAGED"' >/dev/null ||
-    fail "mission engaged without ENGAGE_OR_HOLD"
-echo "    mission saw MOVE_RIGHT and stayed READY (no ENGAGE_OR_HOLD, no motion)"
+    fail "mission engaged without ENGAGE"
+echo "    mission saw MOVE_RIGHT and stayed WAITING (no ENGAGE, no motion)"
 wait_for "$MONITOR" "intent: MOVE_RIGHT ok L:INDEX_RIGHT+R:NONE" 15 ||
     fail "the echo image's monitor did not show MOVE_RIGHT within 15 s"
-wait_for "$MONITOR" "mission: READY" 15 ||
-    fail "the echo image's monitor did not show mission READY within 15 s"
-echo "    the echo image's monitor shows intent MOVE_RIGHT and mission READY"
+wait_for "$MONITOR" "mission: WAITING" 15 ||
+    fail "the echo image's monitor did not show mission WAITING within 15 s"
+echo "    the echo image's monitor shows intent MOVE_RIGHT and mission WAITING"
 
-step 4 "stop the gesture container: HOVER_LAND_REQUEST, mission LAND_REQUEST"
+step 4 "stop the gesture container: NEUTRAL, mission stays WAITING"
 seen=$(docker logs "$ECHO" 2>&1 | wc -l)
 mission_seen=$(docker logs "$MISSION_ECHO" 2>&1 | wc -l)
 stop_and_check "$GESTURE"
-wait_for "$ECHO" '"reason":"no_packets"' 15 "$seen" ||
-    fail "no HOVER_LAND_REQUEST (no_packets) within 15 s of stopping the gesture container"
-echo "    intent fell back to HOVER_LAND_REQUEST (no_packets)"
-wait_for "$MISSION_ECHO" '"mode":"LAND_REQUEST","mode_reason":"no_packets"' 15 "$mission_seen" ||
-    fail "mission did not go to LAND_REQUEST within 15 s of stopping the gesture container"
-echo "    mission went to LAND_REQUEST (airborne, pretend flight state)"
-wait_for "$MONITOR" "mission: LAND_REQUEST no_packets" 15 ||
-    fail "the echo image's monitor did not show LAND_REQUEST within 15 s"
+wait_for "$ECHO" '"intent":"NEUTRAL","gesture":null,"reason":"no_packets"' 15 "$seen" ||
+    fail "no NEUTRAL (no_packets) within 15 s of stopping the gesture container"
+echo "    intent fell back to NEUTRAL (no_packets)"
+wait_for "$MISSION_ECHO" '"intent":"NEUTRAL","reason":"no_packets"' 15 "$mission_seen" ||
+    fail "mission did not see NEUTRAL (no_packets) within 15 s of stopping the gesture container"
+docker logs "$MISSION_ECHO" 2>&1 | grep -F '"reason":"no_packets"' | tail -n 1 |
+    grep -F '"mode":"WAITING"' >/dev/null ||
+    fail "mission left WAITING after the gesture container stopped"
+! docker logs "$MISSION_ECHO" 2>&1 | grep -F '"land_request":true' >/dev/null ||
+    fail "mission asked for a landing"
+echo "    mission stayed WAITING, no land request (airborne, pretend flight state)"
+wait_for "$MONITOR" "intent: NEUTRAL no_packets" 15 ||
+    fail "the echo image's monitor did not show NEUTRAL no_packets within 15 s"
 echo "    the monitor shows it too"
 
 step 5 "stop the intent, mission, flight, echo and monitor containers"
@@ -242,7 +247,7 @@ check_log() {
     echo "    $log: $(wc -l <"$log") timestamped lines, \"$2\" among them"
 }
 check_log intent "Intent -> MOVE_RIGHT (reason: ok"
-check_log mission "Mode -> LAND_REQUEST (no_packets)"
+check_log mission "Intent -> NEUTRAL (reason: no_packets)"
 check_log flight "PRETEND flight state"
 # A pretend node that prints 5000 lines and "stopping" on SIGTERM. The
 # entrypoint is PID 1: when PID 1 exits the kernel kills the logger, so it

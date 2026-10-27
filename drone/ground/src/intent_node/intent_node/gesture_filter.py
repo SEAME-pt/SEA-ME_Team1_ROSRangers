@@ -8,9 +8,10 @@ Rules (see "Gesture Pipeline" safety logic):
     is accepted.
   * No hand for more than `neutral_timeout` seconds -> NEUTRAL, and the
     accepted gesture is forgotten (an old gesture is never replayed).
-  * No hand / no packets for more than `stale_timeout` seconds
-    -> HOVER_LAND_REQUEST.
-  * Nothing received yet -> HOVER_LAND_REQUEST (reason "no_packets_yet").
+  * No hand / no packets for more than `stale_timeout` seconds -> NEUTRAL
+    with reason "no_hand_long" / "no_packets". Never a land request: with no
+    hands the drone just hovers.
+  * Nothing received yet -> NEUTRAL (reason "no_packets_yet").
   * Unknown gestures are NEUTRAL. "No data" is never "keep moving".
 """
 
@@ -18,15 +19,14 @@ import math
 import time
 
 INTENT_NEUTRAL = "NEUTRAL"
-INTENT_HOVER_LAND = "HOVER_LAND_REQUEST"
 
 # Names as gesture_node sends them: "L:<left hand>+R:<right hand>", NONE for a
-# lowered hand. Commands use one raised hand; only ENGAGE_OR_HOLD uses both.
+# lowered hand. Commands use one raised hand; only ENGAGE (both open hands) and
+# LOCK_TOGGLE (both fists) use both. A single fist is unmapped.
 # Any other combination is unmapped (NEUTRAL).
 GESTURE_TO_INTENT = {
-    "L:OPEN_HAND_UP+R:OPEN_HAND_UP": "ENGAGE_OR_HOLD",
-    "L:NONE+R:CLOSED_HAND": "STOP_OR_HOVER",
-    "L:CLOSED_HAND+R:NONE": "STOP_OR_HOVER",
+    "L:OPEN_HAND_UP+R:OPEN_HAND_UP": "ENGAGE",
+    "L:CLOSED_HAND+R:CLOSED_HAND": "LOCK_TOGGLE",
     "L:NONE+R:INDEX_UP": "CLIMB_UP",
     "L:INDEX_UP+R:NONE": "CLIMB_UP",
     "L:NONE+R:INDEX_DOWN": "DESCEND_ONLY",
@@ -147,12 +147,12 @@ class GestureFilter:
             }
 
         if self._last_packet is None:
-            return result(INTENT_HOVER_LAND, None, "no_packets_yet")
+            return result(INTENT_NEUTRAL, None, "no_packets_yet")
         if now - self._last_packet > self.stale_timeout:
-            return result(INTENT_HOVER_LAND, None, "no_packets")
+            return result(INTENT_NEUTRAL, None, "no_packets")
         hand_age = now - self._last_hand
         if hand_age > self.stale_timeout:
-            return result(INTENT_HOVER_LAND, None, "no_hand_long")
+            return result(INTENT_NEUTRAL, None, "no_hand_long")
         if hand_age > self.neutral_timeout:
             return result(INTENT_NEUTRAL, None, "no_hand")
         if self._accepted is None:

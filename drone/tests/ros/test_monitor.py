@@ -64,7 +64,7 @@ INTENT = {
 }
 STATE = {
     "mode": "ENGAGED",
-    "mode_reason": "engage_or_hold",
+    "mode_reason": "engage",
     "intent": "MOVE_RIGHT",
     "reason": "ok",
     "gesture": "INDEX_RIGHT",
@@ -146,7 +146,7 @@ class RowTests(MonitorTestCase):
             rows["mission"],
             {
                 "mode": "ENGAGED",
-                "why": "engage_or_hold",
+                "why": "engage",
                 "mask": 11,
                 "airborne": True,
                 "limited": "ramping:y",

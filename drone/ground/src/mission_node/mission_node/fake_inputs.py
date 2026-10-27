@@ -9,27 +9,27 @@ import json
 # With the default fake flight state (override on, mask 11, airborne) the
 # mission_node should go through the modes in the comments.
 DEMO_SCRIPT = [
-    ("NEUTRAL", "no_hand", 2.0),  # READY, zero
-    ("ENGAGE_OR_HOLD", "ok", 2.0),  # ENGAGED (deliberate open hand)
+    ("NEUTRAL", "no_hand", 2.0),  # WAITING, zero
+    ("ENGAGE", "ok", 2.0),  # ENGAGED (both open hands, shown on purpose)
     ("MOVE_RIGHT", "ok", 3.0),  # linear.y ramps to -0.3
     ("YAW_LEFT", "ok", 2.0),  # angular.z ramps to +0.349 rad/s
     ("CLIMB_UP", "ok", 2.0),  # zero under mask 11: axis_not_owned:z
     ("BANANA", "ok", 1.0),  # unknown intent -> NEUTRAL, zero, still ENGAGED
-    ("STOP_OR_HOVER", "ok", 2.0),  # READY
-    ("MOVE_LEFT", "ok", 2.0),  # stays zero: not engaged
-    ("ENGAGE_OR_HOLD", "ok", 2.0),  # ENGAGED again
+    ("LOCK_TOGGLE", "ok", 2.0),  # zero; LOCKED after 1 s (both fists held)
+    ("MOVE_LEFT", "ok", 2.0),  # stays zero: locked
+    ("LOCK_TOGGLE", "ok", 2.0),  # ENGAGED again after 1 s (both fists again)
     ("MOVE_LEFT", "ok", 2.0),  # linear.y ramps to +0.3
-    ("NEUTRAL", "no_hand", 1.0),  # dead-man: zero at once, still ENGAGED
-    ("HOVER_LAND_REQUEST", "no_hand_long", 3.0),  # LAND_REQUEST (airborne)
-    ("ENGAGE_OR_HOLD", "ok", 2.0),  # READY: operator back
-    (None, "", 3.0),  # silence: intent_stale, then intent_topic_lost -> LAND_REQUEST
+    ("NEUTRAL", "no_hand", 1.0),  # hands gone: zero at once, still ENGAGED
+    ("NEUTRAL", "no_hand_long", 3.0),  # still ENGAGED and hovering: no land request
+    ("MOVE_LEFT", "ok", 2.0),  # hands back: moves again, no new engage needed
+    (None, "", 3.0),  # silence: intent_stale, intent_topic_lost; zero, ENGAGED
 ]
 
 # One gesture per intent, as gesture_node names it (see intent_node's
 # GESTURE_TO_INTENT, which has a left- and a right-hand form of most).
 FAKE_GESTURE = {
-    "ENGAGE_OR_HOLD": "L:OPEN_HAND_UP+R:OPEN_HAND_UP",
-    "STOP_OR_HOVER": "L:NONE+R:CLOSED_HAND",
+    "ENGAGE": "L:OPEN_HAND_UP+R:OPEN_HAND_UP",
+    "LOCK_TOGGLE": "L:CLOSED_HAND+R:CLOSED_HAND",
     "CLIMB_UP": "L:NONE+R:INDEX_UP",
     "DESCEND_ONLY": "L:NONE+R:INDEX_DOWN",
     "MOVE_FORWARD": "L:NONE+R:INDEX_MIDDLE_LEFT",

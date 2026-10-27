@@ -5,20 +5,23 @@ machine (no ROS 2 needed) and the clock can be injected for tests.
 
 Rules (docs: "04 Mission Node" §4-5):
   * Input freshness: the zero target goes out no later than `intent_timeout`
-    s after the last intent (REQ-SAF-017), whatever the phase of the tick;
-    no intent for `intent_lost` s -> HOVER_LAND_REQUEST (reason
-    "intent_topic_lost"). Before the first intent ever arrives it is only
-    NEUTRAL ("no_intent_yet").
+    s after the last intent (REQ-SAF-017), whatever the phase of the tick.
+    After `intent_lost` s the reason becomes "intent_topic_lost" (still
+    NEUTRAL). Before the first intent ever arrives it is "no_intent_yet".
   * Bad JSON or an unknown intent -> NEUTRAL. "Unknown" is never "keep moving".
-  * Modes IDLE -> READY -> ENGAGED -> LAND_REQUEST. Override off, link lost,
-    ESP not STREAMING or stale flight state -> IDLE from any mode.
-  * Engaging needs a deliberate ENGAGE_OR_HOLD that starts while READY. A
-    hand already held when the node starts does not count.
+  * Modes IDLE -> WAITING -> ENGAGED <-> LOCKED. Override off, link lost,
+    ESP not STREAMING or stale flight state -> IDLE from any mode, then
+    WAITING once the flight state is OK again.
+  * ENGAGE (both open hands) engages from WAITING. LOCK_TOGGLE (both fists)
+    locks and unlocks once it has been held for `lock_hold` s. Both count
+    only from when the gesture STARTS: hands already up when the node starts,
+    or held through IDLE, do not count, and a held lock gesture toggles once.
+  * No hands, or no intents at all: zero (hover), the mode does not change.
+    Nothing here asks for a landing; LOCKED has no timeout.
   * Only the axes in the override mask are commanded (8, 11 or 15).
   * Speeds ramp up at `max_accel` and are clamped to the limits and to a
     hard-coded ceiling. Slowing down and stopping are immediate.
-  * Land requests are ignored on the ground, and intent_node's start-up
-    HOVER_LAND_REQUEST ("no_packets_yet") is only NEUTRAL. The node never arms or disarms.
+  * The node never arms or disarms.
 """
 
 import json
@@ -27,13 +30,13 @@ import time
 
 # ---------- Modes ----------
 IDLE = "IDLE"
-READY = "READY"
+WAITING = "WAITING"
 ENGAGED = "ENGAGED"
-LAND_REQUEST = "LAND_REQUEST"
+LOCKED = "LOCKED"
 
 # ---------- Intents (published by intent_node, "03 Intent Node" §4) ----------
-ENGAGE_OR_HOLD = "ENGAGE_OR_HOLD"
-STOP_OR_HOVER = "STOP_OR_HOVER"
+ENGAGE = "ENGAGE"
+LOCK_TOGGLE = "LOCK_TOGGLE"
 CLIMB_UP = "CLIMB_UP"
 DESCEND = "DESCEND_ONLY"
 MOVE_FORWARD = "MOVE_FORWARD"
@@ -43,13 +46,12 @@ MOVE_RIGHT = "MOVE_RIGHT"
 YAW_LEFT = "YAW_LEFT"
 YAW_RIGHT = "YAW_RIGHT"
 NEUTRAL = "NEUTRAL"
-HOVER_LAND_REQUEST = "HOVER_LAND_REQUEST"
 
 # Direction of each intent per axis (vx, vy, vz, wz), in units of the limit.
 # Body frame FLU (REP-103): x forward, y LEFT, z up, yaw + = counter-clockwise.
 INTENT_DIRECTION = {
-    ENGAGE_OR_HOLD: (0, 0, 0, 0),
-    STOP_OR_HOVER: (0, 0, 0, 0),
+    ENGAGE: (0, 0, 0, 0),
+    LOCK_TOGGLE: (0, 0, 0, 0),
     MOVE_FORWARD: (+1, 0, 0, 0),
     MOVE_BACKWARD: (-1, 0, 0, 0),
     MOVE_LEFT: (0, +1, 0, 0),
@@ -59,12 +61,15 @@ INTENT_DIRECTION = {
     YAW_LEFT: (0, 0, 0, +1),
     YAW_RIGHT: (0, 0, 0, -1),
     NEUTRAL: (0, 0, 0, 0),
-    HOVER_LAND_REQUEST: (0, 0, 0, 0),
 }
 KNOWN_INTENTS = frozenset(INTENT_DIRECTION)
 
-# Reasons this node makes up itself when /gesture/intent is late or missing.
-WATCHDOG_REASONS = frozenset({"no_intent_yet", "intent_stale", "intent_topic_lost"})
+# Reasons that say what the operator's hands are doing ("03 Intent Node" §4).
+# Only these count when deciding whether a gesture just STARTED. A delivery
+# gap, bad JSON, intent_node starting (no_packets_yet), a dead recogniser
+# (no_packets) or a gesture still being confirmed (unconfirmed) never looks
+# like "hands dropped, then shown again".
+HAND_REASONS = frozenset({"ok", "no_hand", "no_hand_long", "unmapped_gesture"})
 
 # ---------- Axes the ground owns per override mask ("04 Mission Node" §5.3) ----------
 AXES = ("x", "y", "z", "yaw")
@@ -105,9 +110,6 @@ def parse_intent(text):
     reason = data.get("reason") if isinstance(data.get("reason"), str) else ""
     if intent not in KNOWN_INTENTS:
         return NEUTRAL, "unknown_intent", gesture, "unknown_intent"
-    if intent == HOVER_LAND_REQUEST and reason == "no_packets_yet":
-        # intent_node at start-up: "no recogniser yet", not a real land request.
-        return NEUTRAL, reason, gesture, None
     return intent, reason, gesture, None
 
 
@@ -171,7 +173,7 @@ class MissionLogic:
         max_yaw_rate_dps=20.0,
         max_accel_mps2=0.5,
         max_yaw_accel_dps2=40.0,
-        land_hover_sec=2.0,
+        lock_hold=1.0,
         tick_period=0.05,
         clock=time.monotonic,
     ):
@@ -180,7 +182,8 @@ class MissionLogic:
         # stale before the next tick is treated as stale now, so the zero
         # target is never late.
         self.tick_period = max(0.0, float(tick_period))
-        # Losing the topic can never be decided before it is stale.
+        # Losing the topic can never be decided before it is stale. It only
+        # changes the reason in /mission/state: the target is zero either way.
         self.intent_lost = max(self.intent_timeout, float(intent_lost))
         self.flight_state_timeout = max(0.0, float(flight_state_timeout))
         self.max_lateral = _limit(max_lateral_mps, CEILING_LINEAR_MPS)
@@ -188,7 +191,7 @@ class MissionLogic:
         self.max_yaw = math.radians(_limit(max_yaw_rate_dps, CEILING_YAW_DPS))
         self.max_accel = max(0.0, float(max_accel_mps2))
         self.max_yaw_accel = math.radians(max(0.0, float(max_yaw_accel_dps2)))
-        self.land_hover_sec = max(0.0, float(land_hover_sec))
+        self.lock_hold = max(0.0, float(lock_hold))  # NaN -> 0: toggles at once
         self._clock = clock
 
         # Requested values above the ceilings are reported once by the node.
@@ -218,9 +221,8 @@ class MissionLogic:
         # State machine
         self.mode = IDLE
         self.mode_reason = "no_flight_state"
-        self._prev_fresh_intent = None  # last intent from a fresh message
-        self._neutral_since = None
-        self._land_since = None
+        self._prev_hand_intent = None  # intent of the last HAND_REASONS message
+        self._lock_since = None  # start of the current LOCK_TOGGLE hold
         # Ramp
         self._last_tick = None
         self._velocity = [0.0, 0.0, 0.0, 0.0]  # vx, vy, vz (m/s), wz (rad/s)
@@ -256,7 +258,7 @@ class MissionLogic:
             return NEUTRAL, "no_intent_yet", now - self._start
         age = now - self._intent_time
         if age > self.intent_lost:
-            return HOVER_LAND_REQUEST, "intent_topic_lost", age
+            return NEUTRAL, "intent_topic_lost", age
         if age + self.tick_period > self.intent_timeout:
             return NEUTRAL, "intent_stale", age
         return self._intent, self._intent_reason, age
@@ -278,76 +280,53 @@ class MissionLogic:
         return None
 
     def _set_mode(self, mode, reason):
-        if mode != self.mode:
-            self._neutral_since = None
-            self._land_since = None
         self.mode = mode
         self.mode_reason = reason
 
-    def _update_mode(self, now, intent, reason, blocker, airborne):
-        # Engaging needs ENGAGE_OR_HOLD to START. Only fresh messages count, so
-        # a short delivery gap (synthetic NEUTRAL) never looks like a re-show.
-        # The first message ever is no start either: the hand may have been
-        # held before this node (re)started.
-        fresh = reason not in WATCHDOG_REASONS
-        new_hold = (
-            fresh
-            and intent == ENGAGE_OR_HOLD
-            and self._prev_fresh_intent not in (None, ENGAGE_OR_HOLD)
-        )
-        if fresh:
-            self._prev_fresh_intent = intent
+    def _update_mode(self, now, intent, reason, blocker):
+        # ENGAGE and LOCK_TOGGLE count from when they START: the previous
+        # message about the hands said something else. The first message ever
+        # is no start either: the hands may have been up before this node
+        # (re)started.
+        started = None
+        if reason in HAND_REASONS:
+            if self._prev_hand_intent not in (None, intent):
+                started = intent
+            self._prev_hand_intent = intent
+        # The lock gesture must then be held without a break (a delivery gap
+        # is NEUTRAL, so it is a break too). It toggles once per hold.
+        if intent != LOCK_TOGGLE:
+            self._lock_since = None
+        elif started == LOCK_TOGGLE:
+            self._lock_since = now
+        held = self._lock_since is not None and now - self._lock_since >= self.lock_hold
 
         if blocker is not None:
             self._set_mode(IDLE, blocker)
             return
         if self.mode == IDLE:
-            self._set_mode(READY, "override_on")
+            self._set_mode(WAITING, "override_on")
 
-        if self.mode == READY:
-            if intent == HOVER_LAND_REQUEST and airborne:
-                self._set_mode(LAND_REQUEST, reason)
-            elif new_hold:
-                self._set_mode(ENGAGED, "engage_or_hold")
-        elif self.mode == ENGAGED:
-            if intent == STOP_OR_HOVER:
-                self._set_mode(READY, "stop_or_hover")
-            elif intent == HOVER_LAND_REQUEST:
-                # On the ground there is nothing to land: just disengage.
-                if airborne:
-                    self._set_mode(LAND_REQUEST, reason)
-                else:
-                    self._set_mode(READY, "land_request_on_ground")
-            elif intent == NEUTRAL:
-                if self._neutral_since is None:
-                    self._neutral_since = now
-                elif now - self._neutral_since > self.intent_lost:
-                    self._set_mode(READY, "neutral_too_long")
-            else:
-                self._neutral_since = None
-        elif self.mode == LAND_REQUEST:
-            if intent == ENGAGE_OR_HOLD:
-                self._set_mode(READY, "operator_back")
-            elif not airborne:
-                self._set_mode(READY, "landed")
+        if self.mode == WAITING and started == ENGAGE:
+            self._set_mode(ENGAGED, "engage")
+        elif self.mode == ENGAGED and held:
+            self._lock_since = None
+            self._set_mode(LOCKED, "lock")
+        elif self.mode == LOCKED and held:
+            self._lock_since = None
+            self._set_mode(ENGAGED, "unlock")
 
-    def _raw_target(self, now, intent, mask):
+    def _raw_target(self, intent):
         """Velocity target before masking, ramping and clamping."""
-        if self.mode == ENGAGED:
-            d = INTENT_DIRECTION[intent]
-            return [
-                d[0] * self.max_lateral,
-                d[1] * self.max_lateral,
-                d[2] * self.max_vertical,
-                d[3] * self.max_yaw,
-            ]
-        if self.mode == LAND_REQUEST and mask == 15:
-            # Throttle is ours: hover first, then descend slowly.
-            if self._land_since is None:
-                self._land_since = now
-            if now - self._land_since >= self.land_hover_sec:
-                return [0.0, 0.0, -self.max_vertical, 0.0]
-        return [0.0, 0.0, 0.0, 0.0]
+        if self.mode != ENGAGED:
+            return [0.0, 0.0, 0.0, 0.0]
+        d = INTENT_DIRECTION[intent]
+        return [
+            d[0] * self.max_lateral,
+            d[1] * self.max_lateral,
+            d[2] * self.max_vertical,
+            d[3] * self.max_yaw,
+        ]
 
     # ---------- One 20 Hz tick ----------
     def tick(self):
@@ -366,9 +345,9 @@ class MissionLogic:
         airborne = blocker is None and flight.get("airborne", False)
         mask = flight.get("mask") if blocker is None else None
 
-        self._update_mode(now, intent, reason, blocker, airborne)
+        self._update_mode(now, intent, reason, blocker)
 
-        target = self._raw_target(now, intent, mask)
+        target = self._raw_target(intent)
 
         # Axis masking: zero what the ground does not own.
         owned = MASK_AXES.get(mask, set())
@@ -397,7 +376,9 @@ class MissionLogic:
             "gesture": self._gesture if self._intent_time is not None else None,
             "mask": mask,
             "airborne": bool(airborne),
-            "land_request": self.mode == LAND_REQUEST,
+            # Kept for the flight controller telemetry trigger (not built
+            # yet). Nothing here asks for a landing.
+            "land_request": False,
             "limited": limited,
             "intent_age_ms": int(age * 1000),
         }
