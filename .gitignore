@@ -6,8 +6,10 @@ __pycache__/
 .pytest_cache/
 config/
 .claude/settings*.json
-
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/
 drone/ground/ros2_ws/
+results/
+.pio
+.vscode/
 .coverage

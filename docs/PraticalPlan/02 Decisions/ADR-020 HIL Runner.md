@@ -50,6 +50,28 @@ The team has **one spare ESP** (same board as the flight ESP) and permission to 
 - The 2026-10-20 correction (no USB data, OTA only) stays in force for any ESP that is wired to an FC, including the flight unit.
 - Without an FC, the first HIL tests cover the ESP alone (flash, boot, Wi-Fi, protocol). FC-side checks come from Betaflight SITL or the flight unit when it is on the bench. That split is GitHub #61.
 
+### Update 2026-10-26: HIL scope decided (GitHub #61)
+
+Team decision, from the #61 spike. The instructors set no extra criteria beyond "make sure everything works correctly".
+
+- **The HIL target is the spare ESP only.** The FC side is tested in simulation: Betaflight 2026.6.2 SITL for MSP-level behaviour and PX4 SITL + Gazebo for flight behaviour ([[ADR-019 Sim Backends|ADR-019]]). The flight unit is not part of the HIL job.
+- **Tested by hand, props off, on a booked slot:** the wired connections, the kill switch and the radio failsafe. Real FC reaction to MSP Override ([[ESP_to_FC]] §11, GitHub #104) and the real-time profile also need the flight unit.
+- **When it runs:** after each merge to `dev` (push trigger, as in `hil.yaml`), never on pull requests. HIL must be green before `dev` → `main`. This gate is **not set up yet** (no required checks exist, ADR-022).
+- **Evidence:** a green run of the job.
+- **Unattended:** only this bench (Pi 4 + spare ESP on USB, no FC, no LiPo, no motors) may run unattended ([[Safety Rules]] #17). Every other bench or flight session is attended.
+- **Repo stays public.** Only collaborators can open PRs (interaction limit `collaborators_only`, set 2026-10-26, expires 2027-04-26, renew it). Fork-PR workflows need approval for all external contributors.
+- **Coverage:** minimum 80 % (REQ-SW-003). Reaching 100 % is allowed.
+- Open: the USB Wi-Fi dongle for the Wi-Fi tests.
+
+### Update 2026-10-26: Wi-Fi tests by time-slicing, no dongle
+
+Team decision, from the experiment in GitHub #48. Replaces the open dongle item in the update above.
+
+- The Pi has one Wi-Fi radio and no free Ethernet port at the bench. It **time-slices** the radio: a job step leaves the lab Wi-Fi, joins the spare ESP's SoftAP, runs the test and re-joins the lab Wi-Fi. A watchdog outside the job re-joins the lab Wi-Fi if the job dies.
+- **Keep each offline window under 2 minutes.** Measured 2026-10-26: jobs survived 180 s and 300 s offline. GitHub failed a job whose runner vanished after about 11 minutes. GitHub does not document a limit.
+- A USB Wi-Fi dongle is no longer needed. This replaces "Ethernet for GitHub" in [[ADR-006 Network|ADR-006]] §3.
+- The runner service is enabled on boot. A runner offline for more than 14 days is deleted by GitHub.
+
 ## 3. Related pages
 
 - [[HIL Runner]] · [[CI-CD Overview]] · [[Decision Register]]

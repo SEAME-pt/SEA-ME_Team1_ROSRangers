@@ -294,6 +294,28 @@ def test_decode_status_short_payload_has_only_basic_fields():
     assert st["armed"] is False and "reboot_required" not in st
 
 
+def test_attitude_reply_bytes_decode_to_degrees():
+    # Raw MSP_ATTITUDE replies as the FC sends them: roll and pitch in 0.1 deg,
+    # yaw in whole degrees. The first matches the reading of 2026-10-23.
+    parser = msp.Parser()
+    frames = parser.feed(
+        bytes.fromhex("244d3e066cb1065c005100d0")
+        + bytes.fromhex("244d3e066c3bfe81ff6701b7")
+    )
+    assert [f.cmd for f in frames] == [msp.MSP_ATTITUDE, msp.MSP_ATTITUDE]
+    assert msp.decode(frames[0].cmd, frames[0].payload) == {
+        "roll_deg": 171.3,
+        "pitch_deg": 9.2,
+        "yaw_deg": 81,
+    }
+    assert msp.decode(frames[1].cmd, frames[1].payload) == {
+        "roll_deg": -45.3,
+        "pitch_deg": -12.7,
+        "yaw_deg": 359,
+    }
+    assert parser.bad_checksums == 0
+
+
 def test_rc_payload_roundtrip_and_analog_rssi():
     channels = [1500, 1000, 2000, 1234]
     assert msp.decode(msp.MSP_RC, msp.encode_rc(channels))["channels"] == channels
