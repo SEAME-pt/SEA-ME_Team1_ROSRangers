@@ -24,6 +24,9 @@ if profile and profile.get("scenario") != "production":
     env.Exit("ERROR: bridge.json is the TEST scenario. Run setup_production.py first.")
 
 ssid = os.environ.get("SEAME_AP_SSID") or profile.get("ssid", "")
+if not ssid:
+    # An image with no SSID has no network to join, so OTA recovery is lost.
+    env.Exit("ERROR: AP_SSID missing. Run setup_production.py or set SEAME_AP_SSID.")
 values = {
     "AP_SSID": ssid,
     "AP_PASS": os.environ.get("SEAME_AP_PASS") or secrets.get(f"wifi:{ssid}", ""),

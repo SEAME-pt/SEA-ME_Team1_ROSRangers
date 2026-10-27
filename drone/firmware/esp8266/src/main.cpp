@@ -249,18 +249,6 @@ void loop() {
   }
 #endif
 
-#if WITH_TIMING
-  uint32_t now_us = micros();
-  if (last_loop_us != 0 && now_us - last_loop_us > loop_max_us) {
-    loop_max_us = now_us - last_loop_us; // the ESP itself stalled
-  }
-  last_loop_us = now_us;
-  if (millis() - last_report_ms >= kReportMs) {
-    last_report_ms = millis();
-    report();
-  }
-#endif
-
 #if WITH_UDP
   uint8_t buf[256];
   int n = udp.parsePacket();

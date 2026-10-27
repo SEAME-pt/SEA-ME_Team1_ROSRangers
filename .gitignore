@@ -10,7 +10,6 @@ config/
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/
 drone/ground/ros2_ws/
-/config/
 .pio/
 /results/
 .vscode/

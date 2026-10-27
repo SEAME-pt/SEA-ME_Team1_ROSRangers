@@ -24,7 +24,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 
 Same as before: SoftAP `seame-drone-0850`, 192.168.4.1, at most 1 client, UDP 5760 both ways, replies go to whoever sent the last packet. Nothing is printed on UART0 except the boot ROM (~731 bytes at 74880 baud at power-up, no MSP headers, ESP-S1-03) and crash dumps.
 
-Not there yet: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. A status port on UDP 5761 was tried on 2026-10-22 and removed again.
+Not there yet: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. The normal build has no status port; the timestamps on UDP 5761 exist only in the diagnostic env `esp_diag_timing` (see below).
 
 **Env rename (2026-10-22).** The envs were called `d1_mini*`, but the board is an ESP-12F module, not a D1 mini. They are now `esp*` with `board = esp12e`. The binary is the same code: compared with the 2026-10-21 image (`firmware.bin` SHA-256 `836717987db3…`), only 12 bytes differ (the board name string `d1_mini` → `esp12e`, a build stamp and the image checksum).
 
