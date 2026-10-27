@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-10-26
+updated: 2026-10-27
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -79,11 +79,16 @@ tags:
   - [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]: the UIDs shown are the pre-update values.
 - [[ADR-010 MSP Override|ADR-010]] names two radio switches (team decision): the **kill switch** (SA, disarms) and the **takeover switch** (MSP Override off, radio only).
 
-## 6. Still open
+## 6. What changed on 2026-10-27
+
+- Dated update, no decision changed: [[ADR-015 Gesture Input Source|ADR-015]]. Gestures still come from the ground webcam; `gesture_node` now reads two hands with MediaPipe Holistic and only counts a raised arm (wrist above elbow), #81.
+- Not an ADR: `mission_node` no longer asks for a landing when the operator or the recogniser is gone; it hovers. Recorded in [[04 Mission Node]] §10, `safety-critical`, waiting for a team review.
+
+## 7. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 7. Glossary
+## 8. Glossary
 
 | Term | Meaning |
 | --- | --- |
