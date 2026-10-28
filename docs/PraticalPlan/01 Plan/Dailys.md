@@ -89,6 +89,15 @@ Tiago - Gazebo operacional e comunicação com ele operacional. Comunicação co
 **Blockers**
 Bruno - Falta de confiança nos gestures, testar mais a fundo com eles.
 
+28/Oct - 10:55:11:00
+Bruno - Continuar a trabalhar nos nodes e melhorar los.
+Paulo - Ajudar Tiago relativamente as latencias do drone e comunicaçao com os parametros do drone.
+Tiago - Paramentros de safety do drone para fazer o drone voar em principio hoje
+Guilherme - Trabalhar diretamente com o drone(hélices, bateria, etc etc)
+A equipa quer colocar o drone no primeiro voo hoje.
+**Blockers**
+Tiago - FC e latencias( Ajuda do Paulo hoje)
+
 
 
 ---
