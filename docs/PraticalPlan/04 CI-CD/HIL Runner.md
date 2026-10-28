@@ -15,7 +15,7 @@ tags:
 
 > [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
-> [!info] Decision: [[ADR-020 HIL Runner|ADR-020]]
+> [!info] Decision: [[ADR-020 HIL Runner|ADR-020]] · What it does and why: [[HIL Overview]]
 > Instructors confirmed (2026-10-14) there are no lab self-hosted runners. We set up and own the Pi runner ourselves.
 
 > [!warning] One spare ESP, no spare FC (2026-10-22)
@@ -84,7 +84,7 @@ Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.
 ## 4. First HIL tests (`drone/tests/hil/`)
 
 1. **Smoke:** OTA flash → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received. *Today (`test_smoke.py`): USB flash → `boot mode:(3,…)` in the ROM output, no crash markers → UART0 silent for 10 s at 115200.*
-2. **Passthrough:** send a SETPOINT → read `MSP_RC` from the FC over USB → expected channel values (checks the AETR mapping end to end).
+2. **Passthrough (ESP only, GitHub #106):** allowed MSP messages go through the gateway firmware (#101), all others are dropped. The 2026-10-26 scope decision ([[ADR-020 HIL Runner|ADR-020]]) takes the FC off the bench, so the AETR mapping on the real FC is checked by hand (GitHub #104) and in Betaflight SITL, not here.
 3. **Failsafe timing:** stop sending → measure time until telemetry reports `LINK_FAILSAFE` (expect 250 ms ± one loop).
 4. **Security:** bad tag / stale seq → counters increase, FC values unchanged.
 5. **Latency:** RTT histogram saved as an artifact.

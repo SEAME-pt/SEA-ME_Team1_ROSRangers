@@ -120,7 +120,7 @@ Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (accepted; issue #73, PR
 
 ## 5. Related pages
 
-- [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] · [[PX4 SITL Setup]] · [[Dev_Strategy]] · [[ADR-022 CI Gates and Lint Rules|ADR-022]]
+- [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Overview]] · [[HIL Runner]] · [[PX4 SITL Setup]] · [[Dev_Strategy]] · [[ADR-022 CI Gates and Lint Rules|ADR-022]]
 
 ## 6. Glossary
 

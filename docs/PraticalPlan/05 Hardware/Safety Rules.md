@@ -41,7 +41,7 @@ tags:
 ## 2. Open items (not rules yet)
 
 - **Network isolation for the bridge (open, 2026-10-20).** Whether bridge tests need an isolated network is still being tested. The shared SEAME Wi-Fi is under evaluation. Tracked in [[Open Questions]]. Until the team decides, treat the bridge as props-off only (#13).
-- **Conflict between #13 and #10 (open, 2026-10-20).** #13 allows a battery for bridge tests, but #10 says the HIL bench never has a LiPo ([[HIL Runner]]). When the flight unit is also the HIL target (GitHub #61), a bridge test there would need a battery. The team must decide: a separate bridge setup, a spare FC for the HIL bench, or a stated exception. Until then, **no battery on the HIL bench** (#10 wins).
+- ~~**Conflict between #13 and #10 (open, 2026-10-20).**~~ **Closed 2026-10-26.** The HIL scope decision (GitHub #61, [[ADR-020 HIL Runner|ADR-020]]) keeps the flight unit off the HIL bench, so bridge tests with a battery (#13) never run there. #10 stands unchanged: no battery on the HIL bench.
 
 ## 3. Safety roles
 
