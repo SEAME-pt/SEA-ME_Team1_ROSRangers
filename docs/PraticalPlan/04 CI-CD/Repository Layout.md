@@ -75,7 +75,7 @@ SEA-ME_Team1_ROSRangers/
 > The bench tools sit in `scripts/` and their tests in `tests/scripts/`.
 
 > [!note] Generated, not committed
-> `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §6).
+> `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §4).
 
 ## 2. Rule for testability
 
