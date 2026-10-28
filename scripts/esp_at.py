@@ -144,7 +144,7 @@ def reboot(ser):
 
 
 def hard_reset(ser):
-    """Pulse EN through RTS (D1 mini auto-reset circuit), like esptool's hard reset.
+    """Pulse EN through RTS (the ESP board's auto-reset circuit), like esptool's hard reset.
     Works in transparent mode too, where AT+RST is not available."""
     ser.dtr = False
     ser.rts = True

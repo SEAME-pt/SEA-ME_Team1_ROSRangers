@@ -201,9 +201,14 @@ class UdpTransport:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.bind(("0.0.0.0", local_port))
         self.sock.settimeout(0.001)
+        self.send_errors = 0
 
     def send(self, data: bytes):
-        self.sock.sendto(data, self.addr)
+        # Wi-Fi down (send queue full, no route): the request is lost, the run goes on
+        try:
+            self.sock.sendto(data, self.addr)
+        except OSError:
+            self.send_errors += 1
 
     def recv(self) -> bytes:
         try:

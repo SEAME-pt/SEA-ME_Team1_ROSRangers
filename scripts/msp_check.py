@@ -410,6 +410,12 @@ def cmd_ping(args):
         c.close()
     print_stats(rtts, lost, c.parser.bad_checksums)
     print_timing(extra)
+    send_errors = getattr(c.t, "send_errors", 0)
+    if send_errors:
+        print(
+            f"Could not send {send_errors} requests (Wi-Fi down?): counted as lost. "
+            "Check `journalctl -u NetworkManager` for the drops."
+        )
     save_csv(args.csv, records, lost, c.parser.bad_checksums, extra)
 
 

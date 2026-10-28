@@ -26,14 +26,18 @@ tags:
 
 ## 2. Decision
 
-- **Custom ESP8266 firmware**: Arduino core 3.1.2 via PlatformIO, board `d1_mini`.
+- **Custom ESP8266 firmware**: Arduino core 3.1.2 via PlatformIO, board `esp12e`.
 - All logic with branches (framing, MAC, sequence window, failsafe timers, MSP encode/decode, ThoneFlow parser) lives in a **portable C++17 library**, built for the host (GoogleTest) and for the ESP.
 - A **Python twin** implements the same spec on the ground. Both must pass shared **golden test vectors**.
 - The spec lives in the docs repo ([[Protocol Spec v0]]). The code lives in the software repo ([[Repository Layout]]).
 
 > [!tip] Before the first flash
 > Back up the original AT firmware so it can be restored at any time:
-> `esptool.py --port /dev/ttyUSB0 read_flash 0 0x400000 d1mini_at_1.7.4.0_backup.bin` (4 MB flash on the ESP; check with `esptool.py flash_id`).
+> `esptool.py --port /dev/ttyUSB0 read_flash 0 0x400000 esp_at_1.7.4.0_backup.bin` (4 MB flash on the ESP; check with `esptool.py flash_id`).
+
+### Update 2026-10-23: one repository
+
+Since 2026-10-20 the docs and the code are in one repository ([[Repository Layout]]). The spec lives in the vault (`docs/`, [[Protocol Spec v0]]). The code lives in `drone/lib/protocol/` (C++ library), `drone/ground/src/sd_protocol_py/` (Python twin) and `drone/firmware/esp8266/` (firmware). Read "docs repo" and "software repo" above as these folders, and `esp_firmware/src` below as `drone/firmware/esp8266/src`. The decision is unchanged.
 
 ### Update 2026-10-23: one repository
 
@@ -57,7 +61,7 @@ Since 2026-10-20 the docs and the code are in one repository ([[Repository Layou
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `d1_mini`, `d1_mini_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |

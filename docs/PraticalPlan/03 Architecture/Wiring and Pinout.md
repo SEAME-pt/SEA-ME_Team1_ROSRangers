@@ -20,6 +20,9 @@ tags:
 
 ---
 
+> [!info] Update 2026-10-26: ESP soldered directly to the FC
+> The ESP's solder pins were removed and the ESP was soldered directly to the FC pads (#69). Before this, the FC stopped answering on UART4 for 10 s to 8 min at a time while the FC stayed alive on USB (2026-10-22, 2026-10-23, 2026-10-26), which pointed to an intermittent contact. Three 10-min ESP-S1-07 runs right after the change had no dead period ([[ESP Bench Test Plan]] §4).
+
 ## 1. FC pads (team inspection 2026-10-12, multimeter 2026-10-16)
 
 Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.rotorama.com/cms/assets/docs/6d96909d797b5e734f781ca47138a567/35018-0/6x.jpg)) and the Betaflight target `ODDITYRCF7AIO`. Multimeter checks: GitHub #16.

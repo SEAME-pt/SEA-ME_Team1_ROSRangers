@@ -54,6 +54,14 @@ The decision is unchanged. This entry corrects the wording of §2.1:
 - `T_loss` stays at the initial **250 ms**. The link-loss measurements of 2026-10-19 are being redone after hardware problems (GitHub #30). A new value needs its own dated entry here.
 - The E-stop, the kill switch and the takeover switch are defined in [[Safety Rules]] §3 and in [[ADR-010 MSP Override|ADR-010]] (update 2026-10-23).
 
+### 2.3 `T_loss` measured (2026-10-23)
+
+The decision is unchanged. ESP-S1-05 on 2026-10-23 (custom ESP firmware, soldered link, production AP, short range, 3 × 10 min at 50 Hz) measured a worst silence of **203 ms** and no silence over 250 ms ([[ESP Bench Test Plan]] §4). By the OD-07 method, **`T_loss` = 250 ms is confirmed at short range**. ESP-S1-09 at the real distance can still change it; if it does, it gets a new dated entry here.
+
+### 2.4 `T_loss` at the cage distance (2026-10-23)
+
+The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-09 (cage, PC in the coding room, 3 × 10 min) measured longest silences of 272, 343 and 247 ms, so the ESP failsafe would have fired 1, 11 and 0 times. Run 2 followed run 1 with the drone on for more than 30 minutes and more interference. The team takes it as the expected worst case, because the drone will not be that far for that long in flight. A trip is safe by design (neutral sticks, pilot takes over), so the occasional trip at range is accepted rather than raising `T_loss` ([[ESP Bench Test Plan]] §4).
+
 ## 3. Safety layers (inner → outer)
 
 1. Betaflight ELRS failsafe (radio loss → Stage 1 → Stage 2).

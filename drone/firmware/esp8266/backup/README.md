@@ -1,6 +1,6 @@
-# ESP8266 factory firmware backup (AT 1.7.4)
+# ESP8266 firmware backups (AT 1.7.4 and the custom bridge)
 
-The flash images are **not** in Git. The first one contains Wi-Fi credentials saved by `AT+CWJAP` / `AT+CWSAP`.
+The flash images are **not** in Git. Most contain Wi-Fi credentials: saved by `AT+CWJAP` / `AT+CWSAP` in the AT images, compiled in (Wi-Fi and OTA passwords) in the custom one.
 They are kept outside the repositories, on the machine that made them.
 
 Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev board with an FTDI FT232R and micro-USB.
@@ -20,9 +20,12 @@ Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev
 |---|---|---|
 | `esp8266_AT1.7.4_807d3a1d0850_2026-10-13.bin` | `ecbc494c933f7e47cb2a65ae316a3b96ae71815a2a94fb8664f8d8de1656523b` | Before `AT+RESTORE`. **Contains Wi-Fi credentials.** Never publish. |
 | `esp8266_AT1.7.4_807d3a1d0850_2026-10-13_factory-reset.bin` | `26436ff4af3828561c30fa37a1a316be85f98ad237717b5ef326278d36823d5c` | After `AT+RESTORE`. No credentials found. Differs from the first only in sectors `0x3FD000`–`0x3FFFFF` (system parameters). |
-| `esp8266_flash_2026-10-16_164249.bin` | `c6a2dfc5a50b1a2d113b1d959937d8af7f106e3a0cba40a479bd7e2b6d3c5506` | Bench settings of 16 Oct: drone SoftAP and the transparent UDP bridge at boot. **Contains Wi-Fi credentials.** Never publish. Current restore point. |
+| `esp8266_flash_2026-10-16_164249.bin` | `c6a2dfc5a50b1a2d113b1d959937d8af7f106e3a0cba40a479bd7e2b6d3c5506` | Bench settings of 16 Oct: drone SoftAP and the transparent UDP bridge at boot. **Contains Wi-Fi credentials.** Never publish. Last AT restore point. |
+| `esp8266_flash_2026-10-22_105644.bin` | `51232e495734894f3389d71c1ecd4fa0187fcc9e9d637dcda5a718dcfc36d062` | Custom UART↔UDP bridge (`drone/firmware/esp8266`, env `esp_ota`), app `firmware.bin` SHA-256 `836717987db33b7723b37457e23de7a0be598339d1a925117f61b1d25c1d2f51` at `0x0`. S1-05 on 22 Oct: 0 % lost in 1 min close range, 0.43 % at 12 m. **Contains Wi-Fi and OTA credentials.** Never publish. Current restore point. |
 
 All were checked with `esptool verify_flash 0 <image>` (digest matched).
+
+The 22 Oct image was read with `scripts/esp_at.py backup` (ESP off the drone, on USB). `flash_id` on the same day: ESP8266EX, 26 MHz, MAC `80:7d:3a:1d:08:50`, flash `0x5e`/`0x4016`, 4 MB, as above. Its first 333 888 bytes are exactly the `esp_ota` app build. To restore it, use `esp_at.py write-flash` and check `verify_flash`: the `AT` check at the end fails because the custom firmware does not answer AT commands.
 
 The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and ESP-S1-02: blink was flashed, then this image was written back and verified, and the ESP booted into the AT firmware again (`ready`, same boot output as before).
 
