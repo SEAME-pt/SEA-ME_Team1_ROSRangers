@@ -2,10 +2,14 @@ import math
 
 import mediapipe as mp
 
-mp_hands = mp.solutions.hands
+mp_holistic = mp.solutions.holistic
 mp_draw = mp.solutions.drawing_utils
 
-# Landmark cheat sheet (MCP = knuckle, PIP = middle joint):
+# Pose landmarks used for the arm check (the person's own left and right)
+LEFT_ELBOW, RIGHT_ELBOW = 13, 14
+LEFT_WRIST, RIGHT_WRIST = 15, 16
+
+# Hand landmark cheat sheet (MCP = knuckle, PIP = middle joint):
 #   0 wrist
 #   thumb:  2 MCP, 3 IP,  4 tip
 #   index:  5 MCP, 6 PIP, 8 tip
@@ -27,6 +31,8 @@ FINGERS = {
     "PINKY": PINKY,
 }
 
+KNUCKLE_LINE = (17, None, 5)  # pinky knuckle -> index knuckle, used like a finger
+
 EXTENDED_ANGLE = 140  # degrees at the middle joint; above this the finger is extended
 THUMB_OUT_RATIO = (
     0.5  # how far the thumb tip sticks out past the palm edge, in hand sizes (a guess)
@@ -34,33 +40,69 @@ THUMB_OUT_RATIO = (
 
 
 # ---------- MediaPipe ----------
-def create_hands(static_image_mode=False):
-    """False = video (tracks the hand between frames), True = single unrelated images."""
-    return mp_hands.Hands(
+def create_holistic(static_image_mode=False):
+    """False = video (tracks the body between frames), True = single unrelated images.
+    model_complexity 1 ships with the mediapipe package (2 is downloaded at
+    run time); 0 is faster if the frame rate drops."""
+    return mp_holistic.Holistic(
         static_image_mode=static_image_mode,
-        max_num_hands=2,
+        model_complexity=1,
         min_detection_confidence=0.7,
         min_tracking_confidence=0.5,
     )
 
 
-def detect_gesture(hands, rgb_image):
-    """rgb_image: NumPy array, shape (height, width, 3), dtype uint8, RGB order.
-    Returns (gesture, hand): the gesture string and the MediaPipe hand object
-    (needed for drawing), or (None, None) if no hand was found."""
-    results = hands.process(rgb_image)
-    if not results.multi_hand_landmarks:
-        return None, None
+def detect_gesture(holistic, rgb_image):
+    """rgb_image: NumPy array, shape (height, width, 3), dtype uint8, RGB order,
+    NOT mirrored: Holistic's left/right is then the person's own left/right.
 
-    hand = results.multi_hand_landmarks[0]
+    Returns (gesture, results). gesture names both hands, left first, e.g.
+    "L:CLOSED_HAND+R:THUMB_INDEX_UP" or "L:NONE+R:INDEX_UP", and is None when
+    neither hand is raised. results is the Holistic output, for draw_body()."""
+    results = holistic.process(rgb_image)
     height, width = rgb_image.shape[:2]
-    lm = [(p.x * width, p.y * height) for p in hand.landmark]
-    return recognize(lm), hand
+    pose = results.pose_landmarks
+    left = raised_hand_gesture(
+        results.left_hand_landmarks, pose, LEFT_ELBOW, LEFT_WRIST, width, height
+    )
+    right = raised_hand_gesture(
+        results.right_hand_landmarks, pose, RIGHT_ELBOW, RIGHT_WRIST, width, height
+    )
+    return combine_hands(left, right), results
 
 
-def draw_hand(image, hand):
-    """Draw the landmarks and connections onto the image (in place)."""
-    mp_draw.draw_landmarks(image, hand, mp_hands.HAND_CONNECTIONS)
+def raised_hand_gesture(hand, pose, elbow, wrist, width, height):
+    """Gesture of one hand, or None when the hand or the pose is not seen or
+    the arm is down (wrist not above elbow)."""
+    if hand is None or pose is None:
+        return None
+    if not is_arm_raised(pose.landmark, elbow, wrist):
+        return None
+    # Mirrored like the window (x -> width - x), so RIGHT is the pilot's right
+    lm = [((1 - p.x) * width, p.y * height) for p in hand.landmark]
+    return recognize(lm)
+
+
+def is_arm_raised(pose, elbow, wrist):
+    """True when the wrist is above the elbow (image y grows downwards)."""
+    return pose[wrist].y < pose[elbow].y
+
+
+def combine_hands(left, right):
+    """One name for both hands, always left first so it doesn't flip between
+    frames: "L:<gesture>+R:<gesture>", NONE for a hand that doesn't count.
+    None when neither hand counts."""
+    if left is None and right is None:
+        return None
+    return f"L:{left or 'NONE'}+R:{right or 'NONE'}"
+
+
+def draw_body(image, results):
+    """Draw the pose and both hands onto the image (in place). Parts that
+    were not found are skipped."""
+    mp_draw.draw_landmarks(image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS)
+    for hand in (results.left_hand_landmarks, results.right_hand_landmarks):
+        mp_draw.draw_landmarks(image, hand, mp_holistic.HAND_CONNECTIONS)
 
 
 # ---------- Math ----------
@@ -125,8 +167,15 @@ def recognize(lm):
         name for name, finger in FINGERS.items() if is_finger_extended(lm, finger)
     ]
 
-    # Which way the extended fingers point (not used when the hand is closed)
-    direction = pointing_direction(lm, [FINGERS[name] for name in extended])
+    # Which way the hand points (not used when the hand is closed). The thumb
+    # can't stick out at 90 degrees, so its own line leans toward the fingers:
+    # it only counts as out or not. Thumb alone: the knuckle line points where
+    # the thumb sticks out. Otherwise: the other extended fingers.
+    if extended == ["THUMB"]:
+        pointing = [KNUCKLE_LINE]
+    else:
+        pointing = [FINGERS[name] for name in extended if name != "THUMB"]
+    direction = pointing_direction(lm, pointing)
 
     match extended:
         case []:

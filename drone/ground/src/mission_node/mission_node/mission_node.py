@@ -32,7 +32,7 @@ NUMBER_PARAMS = {
     "max_yaw_rate_dps": 20.0,
     "max_accel_mps2": 0.5,
     "max_yaw_accel_dps2": 40.0,
-    "land_hover_sec": 2.0,
+    "lock_hold_sec": 1.0,
     "publish_rate_hz": 20.0,
 }
 
@@ -70,7 +70,7 @@ class MissionNode(Node):
             max_yaw_rate_dps=number("max_yaw_rate_dps"),
             max_accel_mps2=number("max_accel_mps2"),
             max_yaw_accel_dps2=number("max_yaw_accel_dps2"),
-            land_hover_sec=number("land_hover_sec"),
+            lock_hold=number("lock_hold_sec"),
             tick_period=1.0 / rate,
         )
         for name in self._logic.clamped_params:
@@ -157,12 +157,7 @@ class MissionNode(Node):
         self._last_signature = signature
         if state["mode"] != self._last_mode:
             self._last_mode = state["mode"]
-            text = f"Mode -> {state['mode']} ({state['mode_reason']})"
-            # rclpy needs one severity per call site, so two separate calls.
-            if state["land_request"]:
-                self.get_logger().warning(text)
-            else:
-                self.get_logger().info(text)
+            self.get_logger().info(f"Mode -> {state['mode']} ({state['mode_reason']})")
         if (state["intent"], state["reason"]) != (old.get("intent"), old.get("reason")):
             self.get_logger().info(
                 f"Intent -> {state['intent']} (reason: {state['reason']})"

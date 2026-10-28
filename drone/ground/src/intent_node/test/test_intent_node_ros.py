@@ -158,64 +158,64 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
         pass
 
     # REQ-SAF-019
-    def test_starts_with_hover_land_before_any_packet(self):
-        self.assertEqual(self.intents[0]["intent"], "HOVER_LAND_REQUEST")
+    def test_starts_neutral_before_any_packet(self):
+        self.assertEqual(self.intents[0]["intent"], "NEUTRAL")
         self.assertEqual(self.intents[0]["reason"], "no_packets_yet")
 
     def test_five_packets_give_move_right(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT", "ok")
-        self.assertEqual(self.latest()["gesture"], "INDEX_RIGHT")
+        self.assertEqual(self.latest()["gesture"], "L:INDEX_RIGHT+R:NONE")
 
     # REQ-SAF-020
     def test_four_packets_are_not_enough(self):
-        self.send(packet("INDEX_RIGHT"), n=4)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=4)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["intent"], "NEUTRAL")
         self.assertEqual(self.latest()["reason"], "unconfirmed")
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents])
 
     # REQ-SAF-019
-    def test_silence_goes_neutral_then_hover_land(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+    def test_silence_stays_neutral(self):
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
         self.wait_intent("NEUTRAL", "no_hand", timeout=3.0)
         start = len(self.intents)
-        self.wait_intent("HOVER_LAND_REQUEST", "no_packets", timeout=3.0)
+        self.wait_intent("NEUTRAL", "no_packets", timeout=3.0)
         # Once the hand is gone the old gesture is never replayed
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents[start:]])
 
     # REQ-SAF-019
-    def test_no_hand_packets_go_neutral_then_hover_land(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+    def test_no_hand_packets_stay_neutral(self):
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
         self.send(packet(None), n=25, dt=0.05)  # 1.25 s of "no hand"
         self.assertEqual(self.latest()["intent"], "NEUTRAL")
         self.assertEqual(self.latest()["reason"], "no_hand")
         self.send(packet(None), n=25, dt=0.05)  # 2.5 s in total
-        self.assertEqual(self.latest()["intent"], "HOVER_LAND_REQUEST")
+        self.assertEqual(self.latest()["intent"], "NEUTRAL")
         self.assertEqual(self.latest()["reason"], "no_hand_long")
 
     def test_switching_gesture(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
-        self.send(packet("CLOSED_HAND"), n=5)
-        self.wait_intent("STOP_HOVER")
+        self.send(packet("L:CLOSED_HAND+R:CLOSED_HAND"), n=5)
+        self.wait_intent("LOCK_TOGGLE")
 
     def test_unknown_gesture_is_neutral(self):
         self.send(packet("PEACE_SIGN"), n=6)
         self.wait_intent("NEUTRAL", "unmapped_gesture")
 
     def test_bad_datagrams_are_ignored(self):
-        for text in ("not json", "[1, 2]", "", '"INDEX_RIGHT"'):
+        for text in ("not json", "[1, 2]", "", '"L:INDEX_RIGHT+R:NONE"'):
             self.send(text)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["reason"], "no_packets_yet")
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
 
     def test_t_and_xy_are_passed_through(self):
-        self.send(packet("INDEX_LEFT", t=12.5, xy=[0.25, 0.75]), n=5)
+        self.send(packet("L:NONE+R:INDEX_LEFT", t=12.5, xy=[0.25, 0.75]), n=5)
         self.wait_intent("MOVE_LEFT")
         self.assertEqual(self.latest()["t"], 12.5)
         self.assertEqual(self.latest()["xy"], [0.25, 0.75])
@@ -237,7 +237,7 @@ class IntentNodeTopicTests(IntentProbe, unittest.TestCase):
 
     def test_link_report_counts_ignored_packets(self):
         self.send("not json", n=2)
-        self.send(packet("INDEX_RIGHT"), n=3)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=3)
         level, text = self.link_report()
         self.assertEqual(level, "info")
         self.assertIn("2 ignored", text)
@@ -267,7 +267,7 @@ class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
         self.sock.close()
 
     def test_five_datagrams_give_move_right(self):
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT", "ok")
 
     def test_bad_datagrams_are_ignored(self):
@@ -275,7 +275,7 @@ class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
             self.send(data)
         self.spin_for(0.2)
         self.assertEqual(self.latest()["reason"], "no_packets_yet")
-        self.send(packet("INDEX_RIGHT"), n=5)
+        self.send(packet("L:INDEX_RIGHT+R:NONE"), n=5)
         self.wait_intent("MOVE_RIGHT")
 
     def test_second_node_on_the_same_port_fails(self):
@@ -286,6 +286,30 @@ class IntentNodeUdpTests(IntentProbe, unittest.TestCase):
         level, text = self.link_report()
         self.assertEqual(level, "warning")
         self.assertIn("gestures.py", text)
+
+    def test_receive_error_is_logged_and_ends_the_poll(self):
+        real = self.node._sock
+        broken = mock.Mock()
+        broken.recvfrom.side_effect = OSError("network is down")
+        self.node._sock = broken
+        logger = mock.Mock()
+        try:
+            with mock.patch.object(self.node, "get_logger", return_value=logger):
+                self.node._poll_udp()
+        finally:
+            self.node._sock = real
+        self.assertEqual(broken.recvfrom.call_count, 1)
+        self.assertIn(
+            "UDP receive error: network is down", logger.warning.call_args.args[0]
+        )
+
+    def test_socket_close_error_does_not_stop_the_shutdown(self):
+        self.node._sock.close()  # frees the port for the next test
+        broken = mock.Mock()
+        broken.close.side_effect = OSError("bad file descriptor")
+        self.node._sock = broken
+        # tearDown() calls destroy_node(): it must swallow the error
+        self.addCleanup(lambda: self.assertTrue(broken.close.called))
 
 
 if __name__ == "__main__":

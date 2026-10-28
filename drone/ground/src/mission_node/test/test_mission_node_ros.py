@@ -38,7 +38,12 @@ except ImportError:
         raise
     rclpy = None
 
-from mission_node.fake_inputs import flight_state_json, intent_json, script_duration
+from mission_node.fake_inputs import (
+    FAKE_GESTURE,
+    flight_state_json,
+    intent_json,
+    script_duration,
+)
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
@@ -225,7 +230,7 @@ class MissionProbe(Recorder, RosTestCase):
 
     def engage(self):
         self.feed(0.3, "NEUTRAL")
-        self.wait(self.mode_is("ENGAGED"), intent="HOLD_POSITION")
+        self.wait(self.mode_is("ENGAGED"), intent="ENGAGE")
 
     def move_right(self):
         self.engage()
@@ -257,18 +262,12 @@ class MissionNodeTests(MissionProbe):
     # REQ-SW-001
     def test_publishes_at_20_hz_in_every_mode(self):
         self.feed(0.3, "NEUTRAL")
-        self.assertEqual(self.state()["mode"], "READY")
-        rates = {"READY": self.count_velocities(1.0, intent="NEUTRAL")}
+        self.assertEqual(self.state()["mode"], "WAITING")
+        rates = {"WAITING": self.count_velocities(1.0, intent="NEUTRAL")}
         self.engage()
         rates["ENGAGED"] = self.count_velocities(1.0, intent="MOVE_RIGHT")
-        self.wait(
-            self.mode_is("LAND_REQUEST"),
-            intent="HOVER_LAND_REQUEST",
-            reason="no_hand_long",
-        )
-        rates["LAND_REQUEST"] = self.count_velocities(
-            1.0, intent="HOVER_LAND_REQUEST", reason="no_hand_long"
-        )
+        self.wait(self.mode_is("LOCKED"), intent="LOCK_TOGGLE")
+        rates["LOCKED"] = self.count_velocities(1.0, intent="LOCK_TOGGLE")
         self.wait(self.mode_is("IDLE"), flight=False)
         rates["IDLE"] = self.count_velocities(1.0, flight=False)
         for mode, count in rates.items():
@@ -279,7 +278,7 @@ class MissionNodeTests(MissionProbe):
         start = len(self.velocities)
         self.feed(1.0, "MOVE_RIGHT")
         self.assertTrue(all(v == ZERO for _, v, _ in self.velocities[start:]))
-        self.assertEqual(self.state()["mode"], "READY")
+        self.assertEqual(self.state()["mode"], "WAITING")
 
     def test_move_right_ramps_up_on_one_axis(self):
         self.engage()
@@ -296,7 +295,7 @@ class MissionNodeTests(MissionProbe):
         state = self.state()
         self.assertEqual(
             (state["mode"], state["intent"], state["gesture"], state["reason"]),
-            ("ENGAGED", "MOVE_RIGHT", "INDEX_RIGHT", "ok"),
+            ("ENGAGED", "MOVE_RIGHT", FAKE_GESTURE["MOVE_RIGHT"], "ok"),
         )
 
     def test_yaw_left_is_in_rad_per_s(self):
@@ -308,7 +307,7 @@ class MissionNodeTests(MissionProbe):
     def test_mask_11_never_commands_z(self):
         self.engage()
         start = len(self.velocities)
-        self.feed(1.0, "CLIMB_SLOWLY")
+        self.feed(1.0, "CLIMB_UP")
         self.assertTrue(all(v[2] == 0.0 for _, v, _ in self.velocities[start:]))
         self.assertIn("axis_not_owned:z", self.state()["limited"])
 
@@ -332,11 +331,11 @@ class MissionNodeTests(MissionProbe):
         self.assertLessEqual(first_zero - last_sent, 0.25 + TRANSPORT_SLACK_SEC)
         self.wait(lambda: self.state()["reason"] == "intent_stale", timeout=0.5)
 
-    def test_lost_intent_topic_requests_landing(self):
+    def test_lost_intent_topic_hovers_and_stays_engaged(self):
         self.move_right()
-        self.wait(self.mode_is("LAND_REQUEST"), timeout=3.5)
-        self.assertEqual(self.state()["mode_reason"], "intent_topic_lost")
-        self.assertTrue(self.state()["land_request"])
+        self.wait(lambda: self.state()["reason"] == "intent_topic_lost", timeout=3.5)
+        self.assertEqual(self.state()["mode"], "ENGAGED")
+        self.assertFalse(self.state()["land_request"])
         self.assertEqual(self.vel(), ZERO)
 
     def test_lost_flight_state_goes_idle(self):
@@ -391,7 +390,7 @@ class MissionNodeTests(MissionProbe):
         count = len(self.states) - start
         self.assertTrue(3 <= count <= 6, f"{count} states in 2 s without a change")
         sent = time.monotonic()
-        self.wait(self.mode_is("ENGAGED"), timeout=1.0, intent="HOLD_POSITION")
+        self.wait(self.mode_is("ENGAGED"), timeout=1.0, intent="ENGAGE")
         received = next(
             t for t, s in self.states if t >= sent and s["mode"] == "ENGAGED"
         )
@@ -439,18 +438,14 @@ class MissionNodeTests(MissionProbe):
         logger = mock.Mock()
         with mock.patch.object(self.node, "get_logger", return_value=logger):
             self.engage()
-            self.feed(0.3, "CLIMB_SLOWLY")
-            self.wait(
-                self.mode_is("LAND_REQUEST"),
-                intent="HOVER_LAND_REQUEST",
-                reason="no_hand_long",
-            )
+            self.feed(0.3, "CLIMB_UP")
+            self.wait(self.mode_is("LOCKED"), intent="LOCK_TOGGLE")
             self.feed(0.3, raw_intent="{")
         infos = [c.args[0] for c in logger.info.call_args_list]
         warnings = [c.args[0] for c in logger.warning.call_args_list]
-        self.assertIn("Mode -> ENGAGED (hold_position)", infos)
+        self.assertIn("Mode -> ENGAGED (engage)", infos)
         self.assertIn("Not commanded, mask 11: ['axis_not_owned:z']", infos)
-        self.assertIn("Mode -> LAND_REQUEST (no_hand_long)", warnings)
+        self.assertIn("Mode -> LOCKED (lock)", infos)
         self.assertTrue(
             any(w.startswith("Bad /gesture/intent (bad_json)") for w in warnings)
         )
@@ -592,18 +587,18 @@ class FakeIntentTests(RosTestCase):
         self.assertEqual(set(last), INTENT_KEYS)
         self.assertEqual(
             (last["intent"], last["gesture"], last["reason"]),
-            ("MOVE_LEFT", "INDEX_LEFT", "ok"),
+            ("MOVE_LEFT", FAKE_GESTURE["MOVE_LEFT"], "ok"),
         )
 
     def test_constant_intent_and_reason_change_while_running(self):
         self.start(mode="constant")
         self.fake.set_parameters(
-            overrides({"intent": "HOVER_LAND_REQUEST", "reason": "no_hand_long"})
+            overrides({"intent": "LOCK_TOGGLE", "reason": "no_hand_long"})
         )
         self.assertTrue(
             self.spin_until(
                 lambda: (self.received[-1]["intent"], self.received[-1]["reason"])
-                == ("HOVER_LAND_REQUEST", "no_hand_long")
+                == ("LOCK_TOGGLE", "no_hand_long")
             )
         )
 
@@ -670,7 +665,7 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
         )
         self.probe = self.add(rclpy.create_node("fake_inputs_test_probe"))
         self.record_outputs(self.probe, "/mission/velocity_target", "/mission/state")
-        self.assertTrue(self.spin_until(self.mode_is("READY")), self.state())
+        self.assertTrue(self.spin_until(self.mode_is("WAITING")), self.state())
 
     def show(self, intent, reason="ok"):
         self.intent.set_parameters(overrides({"intent": intent, "reason": reason}))
@@ -684,7 +679,7 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
     def move_right(self):
         self.show("NEUTRAL")
         self.spin_for(0.3)
-        self.show("HOLD_POSITION")
+        self.show("ENGAGE")
         self.wait(self.mode_is("ENGAGED"))
         self.show("MOVE_RIGHT")
         self.wait(lambda: self.vel()[1] <= -0.3 + 1e-9)
@@ -697,7 +692,7 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
                 self.wait(lambda: self.vel() == ZERO, timeout=1.5)
                 self.wait(self.mode_is("IDLE", reason), timeout=1.0)
                 self.flight.set_parameters(overrides(self.DEFAULTS))
-                self.wait(self.mode_is("READY"), timeout=1.5)
+                self.wait(self.mode_is("WAITING"), timeout=1.5)
                 start = len(self.velocities)
                 self.spin_for(0.5)  # MOVE_RIGHT still shown: no motion
                 self.assertTrue(all(v == ZERO for _, v, _ in self.velocities[start:]))
@@ -707,21 +702,29 @@ class FakeInputsDriveMissionTests(Recorder, RosTestCase):
         self.spin_for(0.3)
         self.show("NEUTRAL")
         self.spin_for(0.3)
-        self.show("HOLD_POSITION")
+        self.show("ENGAGE")
         self.wait(self.mode_is("ENGAGED"))
-        self.show("CLIMB_SLOWLY")
+        self.show("CLIMB_UP")
         self.wait(lambda: abs(self.vel()[2] - 0.2) < 1e-9)
         self.flight.set_parameters(overrides({"mask": 11}))
         self.wait(lambda: self.vel()[2] == 0.0, timeout=1.0)
 
-    def test_land_request_reasons_from_fake_intent(self):
-        self.show("HOVER_LAND_REQUEST", "no_packets_yet")  # intent_node start-up
+    def test_no_hands_and_lock_from_fake_intent_never_land(self):
+        self.show("NEUTRAL", "no_packets_yet")  # intent_node start-up
         self.spin_for(0.5)
-        self.assertEqual(self.state()["mode"], "READY")
-        self.show("HOVER_LAND_REQUEST", "no_hand_long")
-        self.wait(self.mode_is("LAND_REQUEST", "no_hand_long"))
+        self.assertEqual(self.state()["mode"], "WAITING")
+        self.show("ENGAGE")
+        self.wait(self.mode_is("ENGAGED", "engage"))
+        self.show("NEUTRAL", "no_hand_long")
+        self.spin_for(1.0)
+        self.assertEqual(self.state()["mode"], "ENGAGED")
+        self.assertFalse(self.state()["land_request"])
+        self.show("LOCK_TOGGLE")
+        self.wait(self.mode_is("LOCKED", "lock"))
         self.flight.set_parameters(overrides({"airborne": False}))
-        self.wait(self.mode_is("READY", "landed"))
+        self.spin_for(0.5)
+        self.assertEqual(self.state()["mode"], "LOCKED")
+        self.assertFalse(self.state()["land_request"])
 
 
 if __name__ == "__main__":

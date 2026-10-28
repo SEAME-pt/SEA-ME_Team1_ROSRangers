@@ -1,6 +1,7 @@
 """End-to-end gesture -> mission pipeline with real ROS 2 topics, no camera.
 
-landmarks -> recognize() -> send_gesture() -> gesture_node -> /gesture/raw
+two hands' landmarks -> recognize() + combine_hands() -> send_gesture()
+-> gesture_node -> /gesture/raw
 -> intent_node (input_source:=topic) -> /gesture/intent -> mission_node
 (+ fake_flight_state on /flight/state) -> /mission/velocity_target
 
@@ -18,9 +19,7 @@ import json
 import time
 import unittest
 
-from support import hand_for, ros_available
-
-from gesture_node.hand_processing import recognize
+from support import gesture_name, hands_for, ros_available
 
 if ros_available():
     import rclpy
@@ -90,7 +89,7 @@ class MissionPipelineTests(unittest.TestCase):
         self.assertTrue(
             self.spin_until(
                 lambda: self.nodes[0].count_subscribers("/gesture/raw") > 0
-                and self.state().get("mode") == "READY"
+                and self.state().get("mode") == "WAITING"
             ),
             f"the nodes never discovered each other, last state {self.state()}",
         )
@@ -116,10 +115,10 @@ class MissionPipelineTests(unittest.TestCase):
 
     def show(self, gesture, until, timeout=3.0):
         """Show `gesture` to the "camera" (None = no hand) until until()."""
-        landmarks = hand_for(gesture) if gesture else None
+        hands = hands_for(gesture) if gesture else None
         end = time.monotonic() + timeout
         while time.monotonic() < end:
-            name = recognize(landmarks) if landmarks else None
+            name = gesture_name(hands) if hands else None
             gesture_sender.send_gesture(name, None)
             frame_end = time.monotonic() + 1.0 / FPS
             while time.monotonic() < frame_end:
@@ -135,53 +134,66 @@ class MissionPipelineTests(unittest.TestCase):
 
     def move_right(self):
         self.show(None, lambda: self.state().get("reason") == "no_hand")
-        self.show("OPEN_HAND_UP", self.mode_is("ENGAGED"))
-        self.show("INDEX_RIGHT", lambda: self.vel()[1] <= -0.3 + 1e-9)
+        self.show("L:OPEN_HAND_UP+R:OPEN_HAND_UP", self.mode_is("ENGAGED"))
+        self.show("L:INDEX_RIGHT+R:NONE", lambda: self.vel()[1] <= -0.3 + 1e-9)
 
     def test_gesture_before_open_hand_never_moves(self):
-        self.show("INDEX_RIGHT", lambda: self.state().get("intent") == "MOVE_RIGHT")
+        self.show(
+            "L:INDEX_RIGHT+R:NONE", lambda: self.state().get("intent") == "MOVE_RIGHT"
+        )
         start = len(self.velocities)
         end = time.monotonic() + 1.0
-        self.show("INDEX_RIGHT", lambda: time.monotonic() > end)
+        self.show("L:INDEX_RIGHT+R:NONE", lambda: time.monotonic() > end)
         self.assertTrue(all(v == ZERO for _, v in self.velocities[start:]))
-        self.assertEqual(self.state()["mode"], "READY")
+        self.assertEqual(self.state()["mode"], "WAITING")
 
     def test_open_hand_engages_and_index_moves(self):
         self.move_right()
         self.assertEqual(self.vel(), (0.0, -0.3, 0.0, 0.0))
-        self.assertEqual(self.state()["gesture"], "INDEX_RIGHT")
+        self.assertEqual(self.state()["gesture"], "L:INDEX_RIGHT+R:NONE")
 
-    def test_thumb_up_does_not_climb_under_mask_11(self):
+    def test_index_up_does_not_climb_under_mask_11(self):
         self.move_right()
-        self.show("THUMB_UP", lambda: self.state().get("intent") == "CLIMB_SLOWLY")
+        self.show("L:NONE+R:INDEX_UP", lambda: self.state().get("intent") == "CLIMB_UP")
         start = len(self.velocities)
         end = time.monotonic() + 1.0
-        self.show("THUMB_UP", lambda: time.monotonic() > end)
+        self.show("L:NONE+R:INDEX_UP", lambda: time.monotonic() > end)
         self.assertTrue(all(v == ZERO for _, v in self.velocities[start:]))
         self.assertIn("axis_not_owned:z", self.state()["limited"])
 
-    def test_closed_hand_stops_and_disengages(self):
+    def test_closed_hand_locks_and_hovers(self):
         self.move_right()
-        self.show("CLOSED_HAND", lambda: self.state().get("mode") == "READY")
+        # both fists: 5 frames to confirm, then held for 1 s
+        self.show("L:CLOSED_HAND+R:CLOSED_HAND", self.mode_is("LOCKED"), 4.0)
         self.assertTrue(self.spin_until(lambda: self.vel() == ZERO, 0.5))
+        start = len(self.velocities)
+        end = time.monotonic() + 1.0
+        self.show("L:INDEX_RIGHT+R:NONE", lambda: time.monotonic() > end)  # ignored
+        self.assertTrue(all(v == ZERO for _, v in self.velocities[start:]))
+        self.assertEqual(self.state()["mode"], "LOCKED")
 
-    def test_hand_lost_stops_then_requests_landing(self):
+    def test_hand_lost_stops_and_stays_engaged(self):
         self.move_right()
         start = time.monotonic()
         self.show(None, lambda: self.vel() == ZERO, timeout=1.0)
         # intent_node: NEUTRAL after 0.3 s without a hand, then one tick each
         self.assertLessEqual(time.monotonic() - start, 0.3 + 0.1 + 0.1)
-        self.show(None, self.mode_is("LAND_REQUEST"), timeout=3.0)
-        self.assertEqual(self.state()["mode_reason"], "no_hand_long")
+        self.show(None, lambda: self.state().get("reason") == "no_hand_long", 3.0)
+        self.assertEqual(self.state()["mode"], "ENGAGED")
+        self.assertFalse(self.state()["land_request"])
+        self.assertEqual(self.vel(), ZERO)
 
-    def test_recogniser_stops_requests_landing(self):
+    def test_recogniser_stops_and_stays_engaged(self):
         self.move_right()
         # Camera loop ends: gesture_node stops publishing altogether
         self.assertTrue(self.spin_until(lambda: self.vel() == ZERO, timeout=1.0))
         self.assertTrue(
-            self.spin_until(self.mode_is("LAND_REQUEST"), timeout=4.0), self.state()
+            self.spin_until(lambda: self.state().get("reason") == "no_packets", 4.0),
+            self.state(),
         )
-        self.assertEqual(self.state()["mode_reason"], "no_packets")
+        self.assertEqual(self.state()["mode"], "ENGAGED")
+        self.assertFalse(self.state()["land_request"])
+        self.assertEqual(self.vel(), ZERO)
 
 
 if __name__ == "__main__":

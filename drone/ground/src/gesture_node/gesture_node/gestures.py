@@ -1,7 +1,7 @@
 import cv2 as opencv
 
 from .gesture_sender import send_gesture
-from .hand_processing import create_hands, detect_gesture, draw_hand
+from .hand_processing import create_holistic, detect_gesture, draw_body
 
 # Why the camera loop ended. gesture_node turns these into its exit code.
 QUIT = "quit"  # q pressed in the window
@@ -19,18 +19,19 @@ def main(should_stop=lambda: False):
     last_gesture = None
 
     try:
-        with create_hands() as hands:
+        with create_holistic() as holistic:
             while not should_stop():
                 ok, frame = cap.read()
                 if not ok:
                     return CAMERA_LOST
 
-                frame = opencv.flip(frame, 1)  # mirror view
+                # Detect on the camera frame as it is: Holistic's left/right is
+                # then the person's own. detect_gesture() mirrors the landmarks.
                 rgb = opencv.cvtColor(frame, opencv.COLOR_BGR2RGB)
-
-                gesture, hand = detect_gesture(hands, rgb)
-                if hand:
-                    draw_hand(frame, hand)
+                gesture, results = detect_gesture(holistic, rgb)
+                if results:
+                    draw_body(frame, results)
+                frame = opencv.flip(frame, 1)  # mirror view
 
                 if gesture and gesture != last_gesture:
                     print(gesture, flush=True)  # flush: shows at once in docker logs

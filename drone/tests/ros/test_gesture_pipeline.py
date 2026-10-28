@@ -1,6 +1,7 @@
 """End-to-end gesture pipeline with real ROS 2 topics, no camera.
 
-landmarks -> recognize() -> send_gesture() -> gesture_node -> /gesture/raw
+two hands' landmarks -> recognize() + combine_hands() -> send_gesture()
+-> gesture_node -> /gesture/raw
 -> intent_node (input_source:=topic, default timeouts) -> /gesture/intent
 
 Each "frame" is what the camera loop in gestures.py does: recognise the hand,
@@ -17,9 +18,8 @@ import json
 import time
 import unittest
 
-from support import hand_for, ros_available
+from support import gesture_name, hands_for, ros_available
 
-from gesture_node.hand_processing import recognize
 from intent_node.gesture_filter import GESTURE_TO_INTENT
 
 if ros_available():
@@ -90,10 +90,10 @@ class PipelineTests(unittest.TestCase):
 
     def show(self, gesture, until_intent, reason=None, timeout=3.0):
         """Show `gesture` to the "camera" (None = no hand) until the intent arrives."""
-        landmarks = hand_for(gesture) if gesture else None
+        hands = hands_for(gesture) if gesture else None
         end = time.monotonic() + timeout
         while time.monotonic() < end:
-            name = recognize(landmarks) if landmarks else None
+            name = gesture_name(hands) if hands else None
             gesture_sender.send_gesture(name, None)
             frame_end = time.monotonic() + 1.0 / FPS
             while time.monotonic() < frame_end:
@@ -110,15 +110,15 @@ class PipelineTests(unittest.TestCase):
             with self.subTest(gesture=gesture):
                 self.show(gesture, intent, "ok")
 
-    def test_hand_lost_goes_neutral_then_hover_land(self):
-        self.show("INDEX_RIGHT", "MOVE_RIGHT")
+    def test_hand_lost_stays_neutral(self):
+        self.show("L:INDEX_RIGHT+R:NONE", "MOVE_RIGHT")
         self.show(None, "NEUTRAL", "no_hand", timeout=1.0)
         start = len(self.intents)
-        self.show(None, "HOVER_LAND_REQUEST", "no_hand_long", timeout=3.0)
+        self.show(None, "NEUTRAL", "no_hand_long", timeout=3.0)
         self.assertNotIn("MOVE_RIGHT", [i["intent"] for i in self.intents[start:]])
 
-    def test_recogniser_stops_goes_hover_land(self):
-        self.show("CLOSED_HAND", "STOP_HOVER")
+    def test_recogniser_stops_stays_neutral(self):
+        self.show("L:CLOSED_HAND+R:CLOSED_HAND", "LOCK_TOGGLE")
         # Camera loop ends: gesture_node stops publishing altogether
         self.assertTrue(
             self.spin_until(
@@ -126,7 +126,7 @@ class PipelineTests(unittest.TestCase):
             ),
             f"last {self.intents[-1]}",
         )
-        self.assertEqual(self.intents[-1]["intent"], "HOVER_LAND_REQUEST")
+        self.assertEqual(self.intents[-1]["intent"], "NEUTRAL")
 
 
 if __name__ == "__main__":
