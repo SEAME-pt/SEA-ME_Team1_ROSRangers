@@ -10,8 +10,9 @@ MODE:
   no_camera    camera 0 cannot be opened
   camera_lost  the camera stops delivering frames after 10 frames
 
-Every frame "sees" INDEX_RIGHT, at about 30 FPS. Everything else is the real
-gesture_node: rclpy, the spin thread, gestures.main() and gesture_sender.
+Every frame "sees" L:INDEX_RIGHT+R:NONE (MOVE_RIGHT), at about 30 FPS.
+Everything else is the real gesture_node: rclpy, the spin thread,
+gestures.main() and gesture_sender.
 No webcam, no window, no MediaPipe model.
 """
 
@@ -24,7 +25,7 @@ for _name in ("mediapipe", "cv2"):
         __import__(_name)
     except ImportError:
         _stub = types.ModuleType(_name)
-        _stub.solutions = types.SimpleNamespace(hands=None, drawing_utils=None)
+        _stub.solutions = types.SimpleNamespace(holistic=None, drawing_utils=None)
         sys.modules[_name] = _stub
 
 from gesture_node import gesture_node, gestures  # noqa: E402
@@ -77,7 +78,7 @@ class FakeOpenCV:
         pass
 
 
-class FakeHands:
+class FakeHolistic:
     def __enter__(self):
         return self
 
@@ -86,9 +87,9 @@ class FakeHands:
 
 
 gestures.opencv = FakeOpenCV
-gestures.create_hands = FakeHands
-gestures.detect_gesture = lambda hands, rgb: ("INDEX_RIGHT", None)
-gestures.draw_hand = lambda frame, hand: None
+gestures.create_holistic = FakeHolistic
+gestures.detect_gesture = lambda holistic, rgb: ("L:INDEX_RIGHT+R:NONE", None)
+gestures.draw_body = lambda frame, results: None
 
 if __name__ == "__main__":
     gesture_node.main()

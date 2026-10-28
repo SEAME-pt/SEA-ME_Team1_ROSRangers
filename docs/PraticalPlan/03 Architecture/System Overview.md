@@ -3,7 +3,7 @@ title: System Overview
 type: architecture
 status: draft
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-27
 project: SEA autonomous drone
 tags:
   - architecture
@@ -60,7 +60,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
-| Webcam + MediaPipe | ≥ 20 FPS | [[02 Gesture Node\|Gesture Node]] |
+| Webcam + MediaPipe | ≥ 20 FPS (target). MediaPipe Holistic measured 14.5 FPS on 2026-10-27; 10 FPS is the minimum for the 10 Hz keep-alive | [[02 Gesture Node\|Gesture Node]] §3.1 |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.
 

@@ -8,9 +8,10 @@ Rules (see "Gesture Pipeline" safety logic):
     is accepted.
   * No hand for more than `neutral_timeout` seconds -> NEUTRAL, and the
     accepted gesture is forgotten (an old gesture is never replayed).
-  * No hand / no packets for more than `stale_timeout` seconds
-    -> HOVER_LAND_REQUEST.
-  * Nothing received yet -> HOVER_LAND_REQUEST (reason "no_packets_yet").
+  * No hand / no packets for more than `stale_timeout` seconds -> NEUTRAL
+    with reason "no_hand_long" / "no_packets". Never a land request: with no
+    hands the drone just hovers.
+  * Nothing received yet -> NEUTRAL (reason "no_packets_yet").
   * Unknown gestures are NEUTRAL. "No data" is never "keep moving".
 """
 
@@ -18,17 +19,30 @@ import math
 import time
 
 INTENT_NEUTRAL = "NEUTRAL"
-INTENT_HOVER_LAND = "HOVER_LAND_REQUEST"
 
+# Names as gesture_node sends them: "L:<left hand>+R:<right hand>", NONE for a
+# lowered hand. Commands use one raised hand; only ENGAGE (both open hands) and
+# LOCK_TOGGLE (both fists) use both. A single fist is unmapped.
+# Any other combination is unmapped (NEUTRAL).
 GESTURE_TO_INTENT = {
-    "OPEN_HAND_UP": "HOLD_POSITION",
-    "CLOSED_HAND": "STOP_HOVER",
-    "THUMB_UP": "CLIMB_SLOWLY",
-    "THUMB_DOWN": "DESCEND_SLOWLY_LAND_REQUEST",
-    "INDEX_LEFT": "MOVE_LEFT",
-    "INDEX_RIGHT": "MOVE_RIGHT",
-    "INDEX_MIDDLE_LEFT": "YAW_LEFT",
-    "INDEX_MIDDLE_RIGHT": "YAW_RIGHT",
+    "L:OPEN_HAND_UP+R:OPEN_HAND_UP": "ENGAGE",
+    "L:CLOSED_HAND+R:CLOSED_HAND": "LOCK_TOGGLE",
+    "L:NONE+R:INDEX_UP": "CLIMB_UP",
+    "L:INDEX_UP+R:NONE": "CLIMB_UP",
+    "L:NONE+R:INDEX_DOWN": "DESCEND_ONLY",
+    "L:INDEX_DOWN+R:NONE": "DESCEND_ONLY",
+    "L:NONE+R:INDEX_MIDDLE_LEFT": "MOVE_FORWARD",
+    "L:INDEX_MIDDLE_RIGHT+R:NONE": "MOVE_FORWARD",
+    "L:NONE+R:INDEX_MIDDLE_RING_PINKY_LEFT": "MOVE_BACKWARD",
+    "L:INDEX_MIDDLE_RING_PINKY_RIGHT+R:NONE": "MOVE_BACKWARD",
+    "L:NONE+R:THUMB_RIGHT": "MOVE_RIGHT",
+    "L:INDEX_RIGHT+R:NONE": "MOVE_RIGHT",
+    "L:NONE+R:INDEX_LEFT": "MOVE_LEFT",
+    "L:THUMB_LEFT+R:NONE": "MOVE_LEFT",
+    "L:NONE+R:THUMB_INDEX_UP": "YAW_RIGHT",
+    "L:THUMB_INDEX_RIGHT+R:NONE": "YAW_RIGHT",
+    "L:NONE+R:THUMB_INDEX_LEFT": "YAW_LEFT",
+    "L:THUMB_INDEX_UP+R:NONE": "YAW_LEFT",
 }
 
 # Values that mean "no hand / nothing recognised".
@@ -133,12 +147,12 @@ class GestureFilter:
             }
 
         if self._last_packet is None:
-            return result(INTENT_HOVER_LAND, None, "no_packets_yet")
+            return result(INTENT_NEUTRAL, None, "no_packets_yet")
         if now - self._last_packet > self.stale_timeout:
-            return result(INTENT_HOVER_LAND, None, "no_packets")
+            return result(INTENT_NEUTRAL, None, "no_packets")
         hand_age = now - self._last_hand
         if hand_age > self.stale_timeout:
-            return result(INTENT_HOVER_LAND, None, "no_hand_long")
+            return result(INTENT_NEUTRAL, None, "no_hand_long")
         if hand_age > self.neutral_timeout:
             return result(INTENT_NEUTRAL, None, "no_hand")
         if self._accepted is None:

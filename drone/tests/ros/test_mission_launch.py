@@ -2,16 +2,13 @@
 
 Starts the launch file as a subprocess (intent_node on the topic input,
 fake_flight_state, mission_node) and plays gesture_node: JSON packets on
-/gesture/raw at 10 Hz, like gesture_sender.py. Checks that an open hand
-engages, an index finger moves the target, and Ctrl+C stops everything
-cleanly: ros2 launch exits 0 and none of its nodes is left running.
+/gesture/raw at 10 Hz, like gesture_sender.py. Checks that both open hands,
+shown after the hands were seen down, engage, an index finger moves the
+target, and Ctrl+C stops everything cleanly: ros2 launch exits 0 and none of
+its nodes is left running.
 
 Launched with airborne:=false (also checks that the launch argument reaches
-fake_flight_state). intent_node counts "no hand" from its own start, so when
-the test's first packet arrives more than 2 s after launch (slow DDS
-discovery, seen in the CI container: 2.5 s) it says HOVER_LAND_REQUEST
-(no_hand_long). Airborne, mission_node would go to LAND_REQUEST and never
-show READY; on the ground it ignores land requests and stays READY.
+fake_flight_state).
 
 Needs ROS 2 Jazzy sourced and intent_node + mission_node installed (colcon
 build, workspace sourced). Without them the test is skipped, unless
@@ -99,6 +96,7 @@ class GesturesLaunchTests(unittest.TestCase):
         self.probe = rclpy.create_node("mission_launch_test_probe")
         self.raw_pub = self.probe.create_publisher(String, "/gesture/raw", 10)
         self.mode = None
+        self.reason = None
         self.airborne = None
         self.vy = None
         self.probe.create_subscription(String, "/mission/state", self._on_state, 10)
@@ -123,6 +121,7 @@ class GesturesLaunchTests(unittest.TestCase):
     def _on_state(self, msg):
         state = json.loads(msg.data)
         self.mode = state["mode"]
+        self.reason = state["reason"]
         self.airborne = state["airborne"]
 
     def _on_velocity(self, msg):
@@ -144,14 +143,29 @@ class GesturesLaunchTests(unittest.TestCase):
 
     def test_open_hand_engages_index_moves_and_ctrl_c_stops(self):
         output = lambda: "".join(self.lines)  # noqa: E731
-        self.assertTrue(self.show(None, lambda: self.mode == "READY", 30.0), output())
+        # Hands down first: hands already up when everything starts never
+        # engage, so intent_node must have reported "no hand" once.
+        self.assertTrue(
+            self.show(
+                None,
+                lambda: self.mode == "WAITING"
+                and self.reason in ("no_hand", "no_hand_long"),
+                30.0,
+            ),
+            output(),
+        )
         self.assertIs(self.airborne, False, "airborne:=false did not reach the node")
         self.assertTrue(
-            self.show("OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0), output()
+            self.show(
+                "L:OPEN_HAND_UP+R:OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0
+            ),
+            output(),
         )
         self.assertTrue(
             self.show(
-                "INDEX_RIGHT", lambda: self.vy is not None and self.vy < -0.1, 5.0
+                "L:INDEX_RIGHT+R:NONE",
+                lambda: self.vy is not None and self.vy < -0.1,
+                5.0,
             ),
             output(),
         )

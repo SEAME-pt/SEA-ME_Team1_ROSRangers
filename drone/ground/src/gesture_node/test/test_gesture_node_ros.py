@@ -25,7 +25,7 @@ for _name in ("mediapipe", "cv2"):
         __import__(_name)
     except ImportError:
         _stub = types.ModuleType(_name)
-        _stub.solutions = types.SimpleNamespace(hands=None, drawing_utils=None)
+        _stub.solutions = types.SimpleNamespace(holistic=None, drawing_utils=None)
         sys.modules[_name] = _stub
 
 try:
