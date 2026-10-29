@@ -36,4 +36,4 @@ esptool --port /dev/hil-esp write-flash 0 <image>
 esptool --port /dev/hil-esp verify-flash 0 <image>
 ```
 
-Stop the runner first (`sudo ~/actions-runner/svc.sh stop`) so a CI job can't use the port at the same time, and start it again afterwards.
+Stop the runner first (`sudo systemctl stop actions.runner.SEAME-pt-SEA-ME_Team1_ROSRangers.hil-drone-pi`, then `start` with the same name; it is installed in `/home/runner/actions-runner` under the `runner` user) so a CI job can't use the port at the same time.

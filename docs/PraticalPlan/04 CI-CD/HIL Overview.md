@@ -128,7 +128,7 @@ A self-hosted runner executes whatever code the workflow gives it, and the repo 
 
 ## 10. Maintenance
 
-- Before touching the board by hand, stop the runner (`sudo ~/actions-runner/svc.sh stop`) so a CI job cannot grab the port. Start it again afterwards.
+- Before touching the board by hand, stop the runner (`sudo systemctl stop actions.runner.SEAME-pt-SEA-ME_Team1_ROSRangers.hil-drone-pi`, then `start` with the same name; it is installed in `/home/runner/actions-runner` under the `runner` user) so a CI job cannot grab the port.
 - If the Pi is unpowered or offline, `hil` jobs wait in the queue until it comes back.
 - GitHub deletes a runner that has been offline for more than 14 days.
 - Backup and restore commands: `drone/firmware/esp8266/hil_esp/README.md`.
