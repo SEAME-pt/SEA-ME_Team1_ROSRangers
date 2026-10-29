@@ -3,7 +3,7 @@ title: Hardware Inventory
 type: hardware
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-29
 project: SEA autonomous drone
 tags:
   - hardware
@@ -42,7 +42,7 @@ tags:
 | Ground computer | Linux laptop (Ubuntu 24.04 + ROS 2 Jazzy, [[ADR-018 Ground OS and ROS 2\|ADR-018]]) + webcam for gestures | team |
 | Raspberry Pi 5 | Ground-computer option (Hailo in the program) | [[2.5Drone]] |
 | CI bench | A dedicated Pi 4 + one spare ESP, no spare FC (§3.1 of the HIL Runner note) | [[HIL Runner]] |
-| Lab | Netted cage, Bambu P2S printer, LiPo station, simulation workstations | SEA:ME README |
+| Lab | Flight area ("cage"): a clear space with at least 1.20 m to obstacles on each side, no net and no roof (the README says "netted cage"; corrected 2026-10-29, #126), Bambu P2S printer, LiPo station, simulation workstations | SEA:ME README |
 
 ## 3. Glossary
 

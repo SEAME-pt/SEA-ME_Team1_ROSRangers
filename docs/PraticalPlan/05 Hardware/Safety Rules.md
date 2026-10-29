@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-10-26
+updated: 2026-10-29
 project: SEA autonomous drone
 tags:
   - safety
@@ -41,6 +41,7 @@ tags:
 ## 2. Open items (not rules yet)
 
 - **Network isolation for the bridge (open, 2026-10-20).** Whether bridge tests need an isolated network is still being tested. The shared SEAME Wi-Fi is under evaluation. Tracked in [[Open Questions]]. Until the team decides, treat the bridge as props-off only (#13).
+- **Height limit and overhead clearance (open, 2026-10-29).** The flight area has no roof; on 2026-10-28 the drone climbed into a steel ceiling beam at about 2 m (incident #126). The team decides a maximum flight height and keeps flights away from beams and anything else overhead.
 - ~~**Conflict between #13 and #10 (open, 2026-10-20).**~~ **Closed 2026-10-26.** The HIL scope decision (GitHub #61, [[ADR-020 HIL Runner|ADR-020]]) keeps the flight unit off the HIL bench, so bridge tests with a battery (#13) never run there. #10 stands unchanged: no battery on the HIL bench.
 
 ## 3. Safety roles
@@ -78,7 +79,7 @@ tags:
 | **Bridge** | The transparent UART↔UDP bridge: the ESP forwards bytes between the FC UART and the ground over Wi-Fi without parsing them. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
-| **Cage** | The netted flight area in the lab. Flights happen only there. |
+| **Cage** | Not a physical cage: a clear area in the lab with at least 1.20 m to any obstacle on every side, and no net or roof. Flights happen only there. (Corrected 2026-10-29: earlier pages said "netted cage", #126.) |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
 | **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
