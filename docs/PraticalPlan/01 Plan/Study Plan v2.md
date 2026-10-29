@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-10-26
+updated: 2026-10-29
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -33,7 +33,7 @@ tags: [plan]
 | Daily split | 1 h review + goal, 2 h study, 4 h practice, 1 h documentation |
 | Records | English (code, notes, this vault) |
 | Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, ThoneFlow-3901U (not installed), MS210x USB video grabber |
-| Flight | Netted cage only, safety pilot on the radio ([[Safety Rules]]) |
+| Flight | Flight area ("cage") only, no net or roof, safety pilot on the radio ([[Safety Rules]]) |
 
 ### Sprints
 
