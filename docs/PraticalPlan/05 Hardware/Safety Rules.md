@@ -35,6 +35,7 @@ tags:
 15. **Nobody flies alone** (added 2026-10-20). Nobody powers up, arms, test-runs or flies the drone alone. A pilot and at least one other person are always present ([[Team Tracks]] §2).
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
 17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Every other bench or flight session is attended. Rule #15 covers the drone, not this bench, but #10 still applies.
+18. **Hands off an armed drone** (added 2026-10-29, incident GitHub #131). Nobody touches, catches, pushes or guards an armed drone by hand, even close to the ground. Everyone except the pilot stays outside the flight area while it is armed. If the drone moves towards someone, the pilot disarms with the kill switch (SA) and the person steps back. Hands only after disarm and the props have stopped.
 
 ---
 
