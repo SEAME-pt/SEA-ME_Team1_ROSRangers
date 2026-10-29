@@ -77,7 +77,11 @@ jobs:
       - name: Flash the spare ESP over USB
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp -t nobuild -t upload --upload-port "$HIL_ESP_PORT"
+          # No -t nobuild: it skips the Arduino build script that puts the
+          # LD script on LIBPATH, and the esptool upload needs it for the
+          # flash size ("Could not find LD script"). The build above is
+          # reused, so nothing is recompiled.
+          pio run -d drone/firmware/esp8266 -e esp -t upload --upload-port "$HIL_ESP_PORT"
 
       - name: Bench tests (no battery, no props)
         run: |
