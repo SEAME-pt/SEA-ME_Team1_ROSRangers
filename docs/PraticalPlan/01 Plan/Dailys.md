@@ -98,6 +98,11 @@ A equipa quer colocar o drone no primeiro voo hoje.
 **Blockers**
 Tiago - FC e latencias( Ajuda do Paulo hoje)
 
+29/Oct - 12:37/12:46
+Tiago - Considerações da weekly e obter telemetria da blackbox.
+Guilherme - Preparação da retroespective.
+Bruno - Preparar parte da apresentação da retrospective relativamente aos nodes.
+Paulo - Ajudar o Tiago com o drone.
 
 
 ---
