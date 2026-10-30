@@ -30,8 +30,15 @@ tags:
 10. HIL bench: **no LiPo** connected, ever.
 11. **Nothing is soldered to the FC** until the [[ESP Bench Test Plan]] Stages 1–2 and the [[ESP_to_FC]] §10 checklist have passed. (2026-10-20: the ESP was soldered on 2026-10-19 before these passed; logged as incident GitHub #69. The rule still applies to every new joint.)
 12. Every crash, incident or fault goes in GitHub Issues with cause and fix (program rule; spares are limited).
-13. **Transparent UART↔UDP bridge: props off only** (added 2026-10-20). A battery is allowed, because the drone needs it to power the FC and the ESP. The existing LiPo rules still apply (#2, #3, #8). Network isolation is **not a rule yet**: see §2.
-14. **MSP Override is bench-only (props off) until GitHub #123 and #104 pass** (added 2026-10-20, updated 2026-10-30). The rule first said "until Betaflight 2026.6.2" ([[ADR-010 MSP Override|ADR-010]] condition 6). 2026.6.2 is installed since 2026-10-28, but the MSP budget spike (#123) and the props-off override bench test (#104) must still pass before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30).
+13. **Transparent UART↔UDP bridge: props off only** (added 2026-10-20). A battery is allowed, because the drone needs it to power the FC and the ESP. The existing LiPo rules still apply (#2, #3, #8). Network isolation is **not a rule yet**: see §2. **Exception (team decision 2026-10-30):** props on for a throttle-only MSP Override flight under all the conditions of #14.
+14. **MSP Override flies only throttle-only, with ALTHOLD, under these conditions** (added 2026-10-20, updated 2026-10-30, team decision 2026-10-30). Until 2026-10-30 it was bench-only until GitHub #123 and #104 passed. Now a flight is allowed when all of these hold:
+    - mask **4** (throttle only) with ALTHOLD on, so the ground commands vertical speed (`alt_hold_climb_rate`, 30 cm/s). Roll, pitch and yaw stay with the pilot ([[ADR-010 MSP Override|ADR-010]] update 2026-10-30);
+    - on the bench, props off, the same week: the FC reads the ground throttle back in `MSP_RC`, falls back to the radio within 300 ms when the ground stops sending, and the takeover switch (SD) hands control back to the radio at once;
+    - the kill switch (SA) and the radio failsafe tested the same day;
+    - height at most 1 m above take-off, enforced in the ground program;
+    - a pilot holds the radio for the whole flight (#15, #18).
+
+    Other masks (8, 11, 15) still wait for #123 and #104.
 15. **Nobody flies alone** (added 2026-10-20). Nobody powers up, arms, test-runs or flies the drone alone. A pilot and at least one other person are always present ([[Team Tracks]] §2).
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
 17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Every other bench or flight session is attended. Rule #15 covers the drone, not this bench, but #10 still applies.

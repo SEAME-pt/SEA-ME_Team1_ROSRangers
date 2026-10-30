@@ -3,7 +3,7 @@ title: ADR-010 — MSP Override for Setpoints
 type: adr
 status: accepted-with-conditions
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-30
 project: SEA autonomous drone
 aliases:
   - D10
@@ -55,6 +55,14 @@ The radio has two separate safety switches. The conditions above are unchanged.
 
 - **Kill switch:** SA, which is also the ARM switch. Releasing SA disarms and stops the motors. Tested on the bench on 2026-10-22 ([[Radio Link Tests]] RL-12, GitHub #22).
 - **Takeover switch:** the MSP Override switch (the "override switch" in condition 3). Turning it off ends ground control: from that moment until it is turned on again, the drone takes commands only from the radio. Its AUX channel is not mapped yet ([[Betaflight Setup]] §1). It stays out of the mask (condition 1).
+
+### Update 2026-10-30: throttle-only stage with ALTHOLD (team decision)
+
+Betaflight 2026.6.2 with ALTHOLD is installed ([[ADR-014 Betaflight Version|ADR-014]]). With ALTHOLD on, the throttle channel is a vertical-speed command: centre holds the height, full stick climbs or descends at `alt_hold_climb_rate` (30 cm/s). That makes a throttle-only stage the smallest step for "take off, hold a height, land" from the ground.
+
+- **New first stage, mask 4 (throttle only), only with ALTHOLD on.** The pilot keeps roll, pitch and yaw, the kill switch (SA) and the takeover switch (SD, MSP OVERRIDE). The staged masks in condition 4 (8 → 11 → 15) follow it and are unchanged.
+- Conditions 1, 2, 3 and 5 apply as written. On takeover the ground starts from the pilot's throttle (`MSP_RC`), with no jump.
+- Flight conditions: [[Safety Rules]] #14 (update 2026-10-30).
 
 ## 3. Consequences
 
