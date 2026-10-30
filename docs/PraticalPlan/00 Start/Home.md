@@ -86,7 +86,7 @@ The values used in the frontmatter `status` of these notes:
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **VTX** | Video transmitter: hardware that sends the aircraft video feed. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
-| **Betaflight** | The open-source FC firmware on the drone: 4.5.1 installed, 2026.6.2 planned (ADR-014). |
+| **Betaflight** | The open-source FC firmware on the drone: 2026.6.2 installed since 2026-10-28, 4.5.1 before (ADR-014). |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
 | **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

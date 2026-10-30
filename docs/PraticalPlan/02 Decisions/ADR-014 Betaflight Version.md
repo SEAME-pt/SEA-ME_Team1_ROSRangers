@@ -3,7 +3,7 @@ title: ADR-014 — Upgrade Betaflight to 2026.6.2
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-10-30
 project: SEA autonomous drone
 aliases:
   - D14
@@ -38,6 +38,14 @@ Upgrade to **2026.6.2** in week 2 of Module 1. Do it after a recorded 4.5.1 base
 
 The upgrade follows the recorded 4.5.1 failsafe test (done 2026-10-22, GitHub #22) and the baseline hover (GitHub #23). If the hover is late, the upgrade may slip to Study Plan week 3 (from 2026-11-02). The rule is unchanged: **no MSP Override flight before the upgrade**.
 
+### Update 2026-10-30: upgrade done on 2026-10-28
+
+- The FC runs **2026.6.2** since 2026-10-28 (cloud build, full chip erase, settings re-entered by hand). Configuration and changes: `drone/config/betaflight/2026.6.2/` and its CHANGELOG.
+- **ALTHOLD fits:** the build with Altitude Hold and Position Hold is 408 935 bytes. This closes the open point in §1. ALTHOLD is on SC (AUX3) and has been flown in the lab area. With the baro uncovered under the props it is not reliable yet (CHANGELOG, blackbox findings).
+- **The 4.5.1 hover baseline was not recorded.** The attempt on 2026-10-28 ended in GitHub #126, and the upgrade went ahead without it. The last 4.5.1 configuration is `drone/config/betaflight/4.5.1/diff_all_2026-10-28_before_upgrade.txt`. #23 has to be redone on 2026.6.2.
+- Settings renamed in 2026.6: `d_min_X` → `d_X`, the old `d_X` → `d_max_X`, `dshot_idle_value` → `motor_idle`. The board needed `align_board_roll = 180`.
+- **Unchanged:** MSP Override is still bench-only until #123 and #104 pass ([[Safety Rules]] #13, #14, [[ADR-010 MSP Override|ADR-010]]).
+
 ## 3. Consequences
 
 | Cost | Mitigation |
@@ -65,7 +73,7 @@ If permission is refused: stay on 4.5.1, use masks 8/11 only, the ESP streams ne
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
-| **Betaflight** | The open-source FC firmware on the drone: 4.5.1 installed, 2026.6.2 planned (ADR-014). |
-| **ALTHOLD** | Betaflight altitude-hold mode that uses the barometer. Only in 2026.6.x builds, and not default on 512 KB F7 targets (ADR-014). |
+| **Betaflight** | The open-source FC firmware on the drone: 2026.6.2 installed since 2026-10-28, 4.5.1 before (ADR-014). |
+| **ALTHOLD** | Betaflight altitude-hold mode that uses the barometer. Only in 2026.6.x builds, and not default on 512 KB F7 targets. Our cloud build includes it (2026-10-28, ADR-014). |
 | **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
 | **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |

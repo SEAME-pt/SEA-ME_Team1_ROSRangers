@@ -5,6 +5,8 @@ __pycache__/
 *.bin
 .pytest_cache/
 config/
+# drone/config holds the tracked Betaflight baselines
+!drone/config/
 .claude/settings*.json
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/

@@ -50,3 +50,14 @@ Kept outside the repository: `~/Projects/SEAME/backups/betaflight/betaflight_4.5
 | Contains | Betaflight 4.5.1 for `ODDITYRCF7AIO` plus configuration v3 (UART4 = MSP 115200) |
 | Made with | `fc_cli.py backup-firmware` (DFU, read twice and compared) |
 | Restore | `dfu-util -a 0 -s 0x08000000:leave -D <file>` (FC in DFU mode) |
+
+## 2026-10-28 · `diff_all_2026-10-28_before_upgrade.txt` (last 4.5.1 configuration)
+
+Read just before the 2026.6.2 flash.
+
+| Change | Before | After | Why |
+|---|---|---|---|
+| `blackbox_disable_alt` | ON | **OFF** | Log the barometer altitude during the first hover (#23), to see whether the baro is usable for ALTHOLD. |
+
+This is the configuration of the #126 flight. The 4.5.1 hover baseline (#23) was not recorded: that attempt ended in the incident.
+No firmware backup was taken of this state. The 2026-10-16 backup (v3) is still the 4.5.1 restore point, plus this `diff all`.
