@@ -63,7 +63,9 @@ Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_20
 1. `version`, `status`, `diff all`. Commit them to the software repo under `drone/config/betaflight/4.5.1/`.
 2. Hover test + blackbox log (16 MB onboard flash).
 
-## 3. Upgrade to 2026.6.2 (week 2, [[ADR-014 Betaflight Version|ADR-014]])
+## 3. Upgrade to 2026.6.2 (done 2026-10-28, [[ADR-014 Betaflight Version|ADR-014]])
+
+Configuration and every change since: `drone/config/betaflight/2026.6.2/CHANGELOG.md`.
 
 1. Instructor permission granted (2026-10-14, [[Open Questions]]). Save `diff all` and screenshots of every tab.
 2. Configurator → Firmware Flasher → board `ODDITYRCF7AIO`, 2026.6.2, cloud build. Include CRSF and Tramp. Try ALTHOLD only if the baro is detected. It may not fit 512 KB.
@@ -119,9 +121,9 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
 | **Props out** | Motor layout where the front propellers sweep outwards at the front (`yaw_motors_reversed = ON` in Betaflight). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |
-| **ALTHOLD** | Betaflight altitude-hold mode that uses the barometer. Only in 2026.6.x builds, and not default on 512 KB F7 targets (ADR-014). |
+| **ALTHOLD** | Betaflight altitude-hold mode that uses the barometer. Only in 2026.6.x builds, and not default on 512 KB F7 targets. Our cloud build includes it (2026-10-28, ADR-014). |
 | **Angle mode** | Betaflight mode where the sticks command a tilt angle; centred sticks level the drone. It does not hold position: the drone can drift. |
-| **Betaflight** | The open-source FC firmware on the drone: 4.5.1 installed, 2026.6.2 planned (ADR-014). |
+| **Betaflight** | The open-source FC firmware on the drone: 2026.6.2 installed since 2026-10-28, 4.5.1 before (ADR-014). |
 | **diff all** | Betaflight CLI command that prints every setting changed from default. Baselines are in `drone/config/betaflight/`. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
