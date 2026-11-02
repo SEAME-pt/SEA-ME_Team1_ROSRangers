@@ -3,7 +3,7 @@ title: HIL Runner
 type: ci-cd
 status: draft
 date: 2026-10-12
-updated: 2026-10-26
+updated: 2026-11-02
 project: SEA autonomous drone
 tags:
   - ci
@@ -80,6 +80,16 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{seria
 Gotcha: our ESP boards are ESP-12F dev boards (PlatformIO board `esp12e`) with an FTDI FT232R (`0403:6001`), not the CH340 (`1a86:7523`) that many ESP8266 boards use. Check `lsusb` before writing the rule.
 
 Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.4.1:8266`), and the Pi's only Wi-Fi is its internet link. USB flashing also recovers a build that broke OTA by itself, with no one at the bench.
+
+### 3.2 Runner gotchas (found 2026-10-26, GitHub #48)
+
+| Symptom | Cause / fix |
+|---|---|
+| Jobs stay queued, the runner looks online in GitHub | The service had exited on 2026-10-22 ("runner registration has been deleted") while GitHub still listed it. Check `systemctl status` on the Pi. The service is now **enabled** (`systemctl enable --now`), so it starts on boot. |
+| Runner refused after an unclean shutdown ("A session for this runner already exists") | GitHub holds the old session for about 2.5 min, then accepts the runner. Wait, don't re-register. |
+| A job stays queued for minutes with the runner online and idle | `sudo systemctl restart` the runner service. Seen on 2026-10-26 (20 min); two `dev` runs on 2026-10-28 waited 21 h and 24 h before being cancelled. |
+| A job loses the runner | GitHub fails a job about 11 min after the runner disappears. Off-network windows of 3 and 5 min survived, so keep Wi-Fi test windows **under 2 min** (§3.1 Network). |
+| Runner logs gone after a reboot | The journal is not persistent on this image. Fix: `sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald` (open in #48). |
 
 ## 4. First HIL tests (`drone/tests/hil/`)
 
