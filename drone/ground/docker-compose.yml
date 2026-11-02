@@ -54,7 +54,10 @@ services:
       dockerfile: docker/gesture/Dockerfile
     image: rosrangers/gesture:jazzy
     devices:
-      - /dev/video0:/dev/video0
+      # CAMERA=/dev/v4l/by-id/<your webcam>-video-index0 picks another webcam
+      - ${CAMERA:-/dev/video0}:/dev/video0
+      # MediaPipe needs EGL: without the GPU it hangs at start, no window
+      - /dev/dri:/dev/dri
     environment:
       <<: *node-env
       LOG_NAME: gesture
