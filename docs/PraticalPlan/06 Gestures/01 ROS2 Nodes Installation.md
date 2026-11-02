@@ -58,7 +58,7 @@ The full chain: [[00 Gesture Pipeline]] §1. Why the recogniser is a node: [[02 
 
 ### 4.1 What you need
 
-Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/dev/video0` (another one: `CAMERA=/dev/v4l/by-id/<name>-video-index0 make`), a GPU at `/dev/dri` (MediaPipe needs EGL) and an X11 or XWayland display for the "Gestures" window.
+Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/dev/video0` and an X11 or XWayland display for the "Gestures" window.
 
 ### 4.2 The services
 
