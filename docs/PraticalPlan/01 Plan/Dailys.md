@@ -104,6 +104,12 @@ Guilherme - Preparação da retroespective.
 Bruno - Preparar parte da apresentação da retrospective relativamente aos nodes.
 Paulo - Ajudar o Tiago com o drone.
 
+02/Nov - 10:17/10:22
+Guilherme - A sprint correu bem, foi uma sprint bem. Hoje - Passar pelas issues
+Tiago - Foco num sensor de laser (possivelmente)
+Paulo - Ver as issues assigned a ele
+Bruno - Ver issues assigned a ele, foco no flight interface.
+
 
 ---
 
