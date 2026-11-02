@@ -86,11 +86,21 @@ jobs:
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
-          pytest drone/tests/hil -v --junitxml=hil-report.xml
+          pytest drone/tests/hil -v --ignore=drone/tests/hil/wifi --junitxml=hil-report.xml
+
+      # The Pi's only Wi-Fi radio leaves the lab network for this step, so
+      # the runner is offline: under 2 min in total (ADR-020 update
+      # 2026-10-26). A watchdog outside the job re-joins the lab Wi-Fi if the
+      # job dies inside the window.
+      - name: Wi-Fi tests on the spare ESP's SoftAP (offline window)
+        run: |
+          . .venv/bin/activate
+          drone/tests/hil/softap_window.sh 60 -- \
+            pytest drone/tests/hil/wifi -v --junitxml=hil-wifi-report.xml
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: hil-report
-          path: hil-report.xml
+          path: hil-*report.xml
           if-no-files-found: ignore
