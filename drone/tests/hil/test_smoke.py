@@ -11,7 +11,9 @@ hil.yaml) turns the skip into a failure.
 
 import os
 import re
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -20,6 +22,10 @@ ROM_BAUD = 74880
 APP_BAUD = 115200
 ROM_WINDOW_S = 2.0
 SILENT_WINDOW_S = 10.0
+BOOT_RESETS = 3
+BOOT_WINDOW_S = 3.0
+# MSP v1 and v2 frame starts, in every direction
+MSP_HEADERS = (b"$M<", b"$M>", b"$M!", b"$X<", b"$X>", b"$X!")
 
 BOOT_MODE = re.compile(rb"boot mode:\((\d+),")
 CRASH_MARKERS = (
@@ -40,6 +46,15 @@ def crash_markers(output: bytes) -> list[bytes]:
     return [marker for marker in CRASH_MARKERS if marker in output]
 
 
+def msp_like(output: bytes) -> list:
+    """MSP headers in `output`, plus any valid MSP v1 frame the FC would take."""
+    # The bench tools' parser, the one tests/scripts/test_msp.py covers
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    from msp import Parser
+
+    return [h for h in MSP_HEADERS if h in output] + Parser().feed(output)
+
+
 def read_for(port, seconds: float) -> bytes:
     data = bytearray()
     deadline = time.monotonic() + seconds
@@ -58,6 +73,13 @@ def test_crash_markers_found():
     dump = b"\r\nException (28):\r\nepc1=0x40201234\r\n"
     assert crash_markers(dump) == [b"Exception ("]
     assert crash_markers(b"") == []
+
+
+def test_msp_like_finds_headers_and_frames():
+    assert msp_like(b"\r\n ets Jan  8 2013,rst cause:2, boot mode:(3,6)\r\n") == []
+    found = msp_like(b"noise$M<\x00\x01\x01noise")  # MSP_API_VERSION request
+    assert found[0] == b"$M<" and found[1].cmd == 1
+    assert msp_like(b"$X>") == [b"$X>"]
 
 
 def skip_or_fail(reason: str):
@@ -105,5 +127,29 @@ def test_esp_boots_from_flash_and_stays_up():
             f"UART0 should be silent after boot, got {len(after)} bytes "
             f"(markers {crash_markers(after)}): {after[:300]!r}"
         )
+    finally:
+        port.close()
+
+
+def test_boot_bytes_never_look_like_msp():
+    """ESP-S1-03: what the FC's UART sees at 115200 from the reset edge.
+
+    The ROM banner at 74880 reads as noise at 115200, and Betaflight's MSP
+    parser must never find a frame start in it (ADR-012, REQ-SAF-016). With
+    the gateway firmware (#101) the ESP sends MSP_API_VERSION requests at
+    boot on purpose: this test is then replaced by a check of the BOOT and
+    NO_SESSION output (#106).
+    """
+    port = open_esp()
+    try:
+        port.baudrate = APP_BAUD
+        for reset in range(BOOT_RESETS):
+            port.reset_input_buffer()
+            port.rts = True
+            time.sleep(0.1)
+            port.rts = False
+            boot = read_for(port, BOOT_WINDOW_S)
+            assert boot, f"reset {reset}: no boot output at all, did the reset work?"
+            assert msp_like(boot) == [], f"reset {reset}: MSP in boot output: {boot!r}"
     finally:
         port.close()

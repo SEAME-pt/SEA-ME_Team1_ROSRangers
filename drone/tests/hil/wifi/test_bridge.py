@@ -20,9 +20,12 @@ BAUD = 115200
 DEADLINE_S = 15.0  # covers an ESP reset when the serial port opens
 
 
-@pytest.fixture
+# Module scope: opening the FTDI port may reset the ESP (and drop the SoftAP),
+# so open it once per window, not once per test
+@pytest.fixture(scope="module")
 def uart():
-    serial = pytest.importorskip("serial")
+    import serial  # an error, not a skip: this test runs only on the bench
+
     if not os.path.exists(PORT):
         pytest.fail(f"{PORT} not found: is the spare ESP plugged into the Pi?")
     port = serial.Serial()
@@ -58,15 +61,19 @@ def test_udp_to_uart(uart, udp):
 
 
 def test_uart_to_udp(uart, udp):
-    # The bridge answers the last UDP sender, so register first
-    udp.sendto(b"\n", ESP_ADDR)
     probe = b"$HIL-probe-uart-to-udp\n"
     got = b""
     deadline = time.monotonic() + DEADLINE_S
     while probe not in got and time.monotonic() < deadline:
+        try:
+            # The bridge answers the last UDP sender: (re-)register every
+            # round, in case the ESP restarted
+            udp.sendto(b"\n", ESP_ADDR)
+        except OSError:
+            pass  # not associated yet: try again
         uart.write(probe)
         try:
             got += udp.recvfrom(512)[0]
         except TimeoutError:
-            udp.sendto(b"\n", ESP_ADDR)  # the ESP may have restarted
+            pass
     assert probe in got, f"probe never came back over UDP, got {got[-200:]!r}"

@@ -187,6 +187,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r scripts/requirements.txt
       - run: pytest tests/scripts -q
+      # HIL Wi-Fi window script, against a fake nmcli: tested before it reaches the Pi
+      - run: pytest drone/tests/hil/test_softap_window.py -q
 
   # gesture_node + intent_node, plus mission_node once its package.xml exists
   # (list in check-components ros_pkgs): unit, node, launch and pipeline tests

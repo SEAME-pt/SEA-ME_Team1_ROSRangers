@@ -86,16 +86,19 @@ jobs:
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
-          pytest drone/tests/hil -v --ignore=drone/tests/hil/wifi --junitxml=hil-report.xml
+          # The window script's self-test runs in PR CI (ci.yaml), not here
+          pytest drone/tests/hil -v --ignore=drone/tests/hil/wifi \
+            --ignore=drone/tests/hil/test_softap_window.py --junitxml=hil-report.xml
 
       # The Pi's only Wi-Fi radio leaves the lab network for this step, so
       # the runner is offline: under 2 min in total (ADR-020 update
       # 2026-10-26). A watchdog outside the job re-joins the lab Wi-Fi if the
       # job dies inside the window.
       - name: Wi-Fi tests on the spare ESP's SoftAP (offline window)
+        timeout-minutes: 4
         run: |
           . .venv/bin/activate
-          drone/tests/hil/softap_window.sh 60 -- \
+          drone/tests/hil/softap_window.sh 50 -- \
             pytest drone/tests/hil/wifi -v --junitxml=hil-wifi-report.xml
 
       - uses: actions/upload-artifact@v4
