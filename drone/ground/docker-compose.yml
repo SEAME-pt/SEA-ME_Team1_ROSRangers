@@ -55,6 +55,7 @@ services:
     image: rosrangers/gesture:jazzy
     devices:
       - /dev/video0:/dev/video0
+      - /dev/dri:/dev/dri   # GPU for the OpenGL (libGL/EGL) the window and MediaPipe use
     environment:
       <<: *node-env
       LOG_NAME: gesture
