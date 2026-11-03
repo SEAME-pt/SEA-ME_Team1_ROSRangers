@@ -30,6 +30,7 @@ jobs:
       cpp: ${{ steps.check.outputs.cpp }}
       python: ${{ steps.check.outputs.python }}
       scripts: ${{ steps.check.outputs.scripts }}
+      hil_unit: ${{ steps.check.outputs.hil_unit }}
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
       ros: ${{ steps.check.outputs.ros }}
@@ -65,6 +66,13 @@ jobs:
           else
             echo "scripts=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=scripts-python skipped::no test in tests/scripts"
+          fi
+
+          if [[ -f drone/tests/hil/softap_window.sh ]]; then
+            echo "hil_unit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hil_unit=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=hil-unit skipped::drone/tests/hil/softap_window.sh not found"
           fi
 
           if [[ -f drone/firmware/esp8266/platformio.ini ]]; then
@@ -187,6 +195,22 @@ jobs:
           python-version: "3.12"
       - run: pip install -r scripts/requirements.txt
       - run: pytest tests/scripts -q
+
+  # The HIL tests that need no bench, on every PR: the Wi-Fi window script
+  # against a fake nmcli, and the smoke test's parsers. The hardware tests
+  # skip here (no /dev/hil-esp, no HIL_REQUIRED); they run in hil.yaml
+  hil-unit:
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.hil_unit == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "pytest==9.2.*" "pyserial==3.5"
+      - run: pytest drone/tests/hil --ignore=drone/tests/hil/wifi -v
 
   # gesture_node + intent_node, plus mission_node once its package.xml exists
   # (list in check-components ros_pkgs): unit, node, launch and pipeline tests
