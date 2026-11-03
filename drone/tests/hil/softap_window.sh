@@ -55,6 +55,10 @@ con="hil-softap-${GITHUB_RUN_ID:-local}-$$"
 window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + JOIN_WAIT_S))
 RUNNER_TRACKING_ID="" setsid -f bash -c '
   sleep "$1" || exit 1 # killed while waiting: someone stopped the watchdog
+  # Never act while this run is still alive: nothing bounds how long a
+  # stalled nmcli takes, and its own restore re-joins. A run stuck for good
+  # is killed by the step timeout (hil.yaml), and then this goes on
+  while kill -0 "$7" 2>/dev/null; do sleep 5 || exit 1; done
   # Its own profile first, lock or not: the name is unique to this run, and
   # a leftover autoconnect profile could pull the Pi onto the SoftAP later
   sudo nmcli connection delete "$3" >/dev/null 2>&1
@@ -64,7 +68,7 @@ RUNNER_TRACKING_ID="" setsid -f bash -c '
   nmcli -t -f NAME connection show --active | grep -qxF "$2" && exit 0
   sudo nmcli --wait "$6" connection up "$2"
 ' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + JOIN_WAIT_S + WATCHDOG_GRACE_S))" \
-  "$LAB_CON" "$con" "$lock" "$window_max_s" "$JOIN_WAIT_S" >/dev/null 2>&1 9>&-
+  "$LAB_CON" "$con" "$lock" "$window_max_s" "$JOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
 
 # RUNNER_TEMP is wiped after each job, so a SIGKILL does not leave the
 # password behind. mktemp creates it 0600.
@@ -80,7 +84,10 @@ bg_pid=
 step() {
   "$@" 9>&- &
   bg_pid=$!
-  wait "$bg_pid"
+  local rc=0
+  wait "$bg_pid" || rc=$?
+  bg_pid= # finished: restore must not signal a PID that may be reused
+  return "$rc"
 }
 
 restore() {
@@ -92,8 +99,13 @@ restore() {
   # Network first: a SIGKILL can follow a cancel within about 10 s. Once
   # nmcli has asked NetworkManager to activate the lab, killing nmcli no
   # longer stops the activation. A join or test still running gets a TERM
-  # (timeout passes it on, and kills the test KILL_GRACE_S later)
-  [[ -z $bg_pid ]] || kill -TERM "$bg_pid" 2>/dev/null || true
+  # (timeout passes it on, and kills the test KILL_GRACE_S later). Its child
+  # gets one too: sudo may not pass on a signal sent from its own process
+  # group, so the TERM also goes to nmcli directly
+  if [[ -n $bg_pid ]]; then
+    pkill -TERM -P "$bg_pid" 2>/dev/null || true
+    kill -TERM "$bg_pid" 2>/dev/null || true
+  fi
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
   if ! sudo nmcli --wait "$JOIN_WAIT_S" connection up "$LAB_CON"; then

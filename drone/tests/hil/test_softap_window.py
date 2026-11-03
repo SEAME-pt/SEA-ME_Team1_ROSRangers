@@ -299,6 +299,27 @@ def test_watchdog_waits_for_a_later_window(env):
     open_gate_and_wait_for(env, WATCHDOG_REJOIN, after=before)
 
 
+def test_watchdog_waits_while_the_run_is_alive(env):
+    # A stalled nmcli can keep a run alive past the watchdog's delay: the
+    # watchdog must not pull the SoftAP profile from under a live test
+    job = subprocess.Popen(
+        ["bash", str(SCRIPT), "10", "--", "/bin/sleep", "3.5"],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_for_window(env)
+        before = len(nmcli_calls(env))
+        Path(env["SLEEP_GATE"]).touch()  # the watchdog's delay is over
+        time.sleep(1)
+        assert nmcli_calls(env)[before:] == [], "watchdog acted on a live run"
+        assert job.wait(timeout=10) == 0
+    finally:
+        job.kill()
+        subprocess.run(["pkill", "-f", "/bin/sleep 3.5"], check=False)
+
+
 def test_watchdog_leaves_an_active_lab_alone(env):
     assert run(env, "10", "--", "true").returncode == 0
     before = len(nmcli_calls(env))
