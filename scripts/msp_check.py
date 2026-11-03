@@ -39,9 +39,13 @@ import time
 
 import bridge_config as cfg
 import esp_at
-import msp
 import serial
 from fc_cli import find_port as find_fc_port
+
+# msp.py lives in the flight_interface ROS 2 package (#96)
+REPO = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface"))
+from flight_interface import msp  # noqa: E402
 
 # MSP_SET_RAW_RC input order is the radio's (map AETR1234): roll, pitch, throttle, yaw.
 # Index of each input in Betaflight's rcData (roll, pitch, yaw, throttle).

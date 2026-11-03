@@ -5,8 +5,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
 
 import esp_at  # noqa: E402
 import fc_cli  # noqa: E402
-import msp  # noqa: E402
 import setup_production  # noqa: E402
+
+from flight_interface import msp  # noqa: E402  (path set by esp_at)
 
 
 def test_flash_size_from_esptool_output():
