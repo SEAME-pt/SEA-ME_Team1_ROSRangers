@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.0
+version: 1.0.1
 date: 2026-10-12
 updated: 2026-11-03
 project: SEA autonomous drone
@@ -51,28 +51,30 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 
 ## 3. Messages v0
 
-| Type | Name | Payload |
-|---|---|---|
-| 0x01 | HELLO | proto u8, ground_nonce[16] (tag uses the PSK) |
-| 0x02 | HELLO_ACK | session_id u32, esp_nonce[16], fw_version[12] |
-| 0x03 | ARM_CONTROL_REQUEST | mask u8 (expected override mask) |
-| 0x04 | ARM_CONTROL_ACK | result u8 |
-| 0x05 | RESUME_REQUEST | none |
-| 0x06 | RESUME_ACK | result u8 |
-| 0x07 | BYE | reason u8 |
-| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | key u8, value i32. Keys in §7.3. `CONFIG_SET` is rejected while control is enabled (OD-16) |
-| 0x40 | EVENT | code u16, text[≤64] |
-| 0x60 | SETPOINT | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 |
-| 0x80 | STATE | esp_state u8, override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
+| Type | Name | Bytes | Payload |
+|---|---|---|---|
+| 0x01 | HELLO | 17 | proto u8, ground_nonce[16] (tag uses the PSK) |
+| 0x02 | HELLO_ACK | 32 | session_id u32, esp_nonce[16], fw_version[12] |
+| 0x03 | ARM_CONTROL_REQUEST | 1 | mask u8 (expected override mask) |
+| 0x04 | ARM_CONTROL_ACK | 1 | result u8 |
+| 0x05 | RESUME_REQUEST | 0 | none |
+| 0x06 | RESUME_ACK | 1 | result u8 |
+| 0x07 | BYE | 1 | reason u8 |
+| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | 5 | key u8, value i32. Keys in §7.3. `CONFIG_SET` is rejected while control is enabled (OD-16) |
+| 0x40 | EVENT | 2–66 | code u16, text[≤64] |
+| 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 |
+| 0x80 | STATE | 28 | esp_state u8, override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
+
+Bytes is the payload size. A payload of any other size is rejected (EVENT: 2 + text length, text ≤ 64).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
 
 ## 4. Receive rules
 
-1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
+1. Check length (shorter than the header + `payload_len` + tag: truncated; `payload_len` > 256 or extra bytes after the tag: bad length), magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
-3. Control (0x60) is accepted only if `seq > last_ctrl_seq` ([[ADR-003 Sequence Acceptance|ADR-003]]). Otherwise drop and count.
-4. Values are clamped. The ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs.
+3. Control (0x60) is accepted only if `seq > last_ctrl_seq` ([[ADR-003 Sequence Acceptance|ADR-003]]). Otherwise drop and count. `seq` 0 is never accepted.
+4. Values are clamped. The ESP maps −1000..1000 → 1000..2000 µs as `1500 + v/2` (integer division, rounding toward 1500), and throttle 0..1000 → 1000..2000 µs.
 
 ## 5. Command → RC channel mapping (resolves FC-08 in [[ESP_to_FC]])
 
@@ -86,9 +88,11 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 
 Clamps apply on the ground **and** on the ESP, the last point under team control (FC-08).
 
+In the C++ library, `setpoint_to_rc` (#99) does only the clamp and map step. Choosing neutral for `mode 0`, a stale setpoint or an unmasked throttle is the link state machine's job (#102).
+
 ## 6. Test vectors
 
-Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and Python (#100) implementations must both pass every vector in CI ([[Testing Strategy]]). List agreed at the 2026-11-03 review:
+Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/tests/vectors/README.md`; the JSON files are added with #99). The C++ (#99) and Python (#100) implementations must both pass every vector in CI ([[Testing Strategy]]). List agreed at the 2026-11-03 review:
 
 | Group | Cases | Proves |
 |---|---|---|
@@ -96,7 +100,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and P
 | 2 HMAC | Tag with the PSK (`HELLO`) and with the session key; one flipped payload bit; one flipped tag bit | Any changed bit is rejected |
 | 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame | Garbage is rejected before it is read (§4 rule 1) |
 | 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
-| 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
+| 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq` 0, `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
 | 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500 | The RC channels sent to the FC (§4–5) |
 
 - A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
@@ -186,7 +190,7 @@ The diagnostic builds and their scripts still use the old ports (timing 5761, TC
 
 ### 7.5 Still open after the review
 
-Found while preparing the review, not discussed for lack of time. Each has a suggested answer in GitHub #142 and is tracked in [[Open Questions]]. Do not assume them until a dated entry in §8 records the decision.
+Found while preparing the review, not discussed for lack of time. Each has a suggested answer in GitHub #142 and is tracked in [[Open Questions]]. Do not assume them until a dated entry in §8 records the decision. The last four rows were found on 2026-11-03 while writing the C++ library (#99) and have no suggested answer yet.
 
 | Item | Suggested answer |
 |---|---|
@@ -197,9 +201,13 @@ Found while preparing the review, not discussed for lack of time. Each has a sug
 | `SETPOINT.flags` | Reserved in v0: sent as 0, ignored |
 | Key that tags `HELLO_ACK` | The PSK |
 | `seq` on TCP | One counter per sender, session and transport, from 1; only `seq > last seen` accepted |
-| Range limits (REQ-COM-002) | §4 clamps are the range check; unknown `mode` rejected; max tilt stays in Betaflight |
+| Range limits (REQ-COM-002) | §4 clamps are the range check; unknown `mode` rejected; max tilt stays in Betaflight. The C++ decoders do not check `mode`, `SETPOINT.flags` or the header `reserved` byte yet |
 | Repeated malformed TCP input (REQ-COM-019) | Bad tag: drop and count. Bad magic, version or length: close the TCP connection |
 | Wi-Fi re-association (REQ-COM-023) | Settle with the gateway firmware (#101) |
+| `CONFIG_GET.value` | Not decided: ignored and sent as 0? The codec carries it |
+| `STATE.rx_rejected` width | u16 on the wire, 32-bit counter in the library: saturate or wrap? Does a frame with no session open count? |
+| ADR-003 counters (duplicates, old, gaps) | How they reach the ground: `STATE` carries only `rx_rejected` |
+| `CONFIG_SET` while control is enabled | §3 rejects it always; [[PC_to_ESP]] OD-16 says "except disable-control", and no such key exists in §7.3 |
 
 ## 8. Changelog
 
@@ -207,6 +215,7 @@ Found while preparing the review, not discussed for lack of time. Each has a sug
 |---|---|---|
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
+| 2026-11-03 | 1.0.1 | Clarifications from the C++ library (#99), no wire change: payload sizes (§3), length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Four new open items in §7.5. |
 
 ## 9. Glossary
 
@@ -229,4 +238,5 @@ Found while preparing the review, not discussed for lack of time. Each has a sug
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
+| **Session key** | Key that tags every frame after `HELLO`: `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)` (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |

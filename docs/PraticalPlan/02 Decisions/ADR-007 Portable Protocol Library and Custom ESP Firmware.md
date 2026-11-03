@@ -3,7 +3,7 @@ title: ADR-007 — Portable Protocol Library and Custom ESP Firmware
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-03
 project: SEA autonomous drone
 aliases:
   - D07
@@ -39,10 +39,6 @@ tags:
 
 Since 2026-10-20 the docs and the code are in one repository ([[Repository Layout]]). The spec lives in the vault (`docs/`, [[Protocol Spec v0]]). The code lives in `drone/lib/protocol/` (C++ library), `drone/ground/src/sd_protocol_py/` (Python twin) and `drone/firmware/esp8266/` (firmware). Read "docs repo" and "software repo" above as these folders, and `esp_firmware/src` below as `drone/firmware/esp8266/src`. The decision is unchanged.
 
-### Update 2026-10-23: one repository
-
-Since 2026-10-20 the docs and the code are in one repository ([[Repository Layout]]). The spec lives in the vault (`docs/`, [[Protocol Spec v0]]). The code lives in `drone/lib/protocol/` (C++ library), `drone/ground/src/sd_protocol_py/` (Python twin) and `drone/firmware/esp8266/` (firmware). Read "docs repo" and "software repo" above as these folders, and `esp_firmware/src` below as `drone/firmware/esp8266/src`. The decision is unchanged.
-
 ## 3. Consequences
 
 - More firmware work for the team, contained by testing the logic off-target.
@@ -66,3 +62,7 @@ Since 2026-10-20 the docs and the code are in one repository ([[Repository Layou
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
+| **GoogleTest** | C++ unit-test framework used for `drone/lib/protocol` on the PC and in CI. |
+| **Golden test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass ([[Protocol Spec v0]] §6). |
+| **MAC** | Message Authentication Code: a keyed tag that proves a message is intact and from a key holder (ADR-002: truncated HMAC-SHA256). |
+| **Python twin** | The Python implementation of the same spec on the ground (`drone/ground/src/sd_protocol_py`). |
