@@ -11,9 +11,7 @@ hil.yaml) turns the skip into a failure.
 
 import os
 import re
-import sys
 import time
-from pathlib import Path
 
 import pytest
 
@@ -24,7 +22,8 @@ ROM_WINDOW_S = 2.0
 SILENT_WINDOW_S = 10.0
 BOOT_RESETS = 3
 BOOT_WINDOW_S = 3.0
-# MSP v1 and v2 frame starts, in every direction
+# MSP v1 and v2 frame starts, in every direction. Every valid MSP frame
+# starts with one of these, so no parser is needed to find one
 MSP_HEADERS = (b"$M<", b"$M>", b"$M!", b"$X<", b"$X>", b"$X!")
 
 BOOT_MODE = re.compile(rb"boot mode:\((\d+),")
@@ -46,13 +45,9 @@ def crash_markers(output: bytes) -> list[bytes]:
     return [marker for marker in CRASH_MARKERS if marker in output]
 
 
-def msp_like(output: bytes) -> list:
-    """MSP headers in `output`, plus any valid MSP v1 frame the FC would take."""
-    # The bench tools' parser, the one tests/scripts/test_msp.py covers
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
-    from msp import Parser
-
-    return [h for h in MSP_HEADERS if h in output] + Parser().feed(output)
+def msp_like(output: bytes) -> list[bytes]:
+    """MSP frame starts in `output`: what Betaflight's MSP parser would act on."""
+    return [h for h in MSP_HEADERS if h in output]
 
 
 def read_for(port, seconds: float) -> bytes:
@@ -77,8 +72,7 @@ def test_crash_markers_found():
 
 def test_msp_like_finds_headers_and_frames():
     assert msp_like(b"\r\n ets Jan  8 2013,rst cause:2, boot mode:(3,6)\r\n") == []
-    found = msp_like(b"noise$M<\x00\x01\x01noise")  # MSP_API_VERSION request
-    assert found[0] == b"$M<" and found[1].cmd == 1
+    assert msp_like(b"noise$M<\x00\x01\x01noise") == [b"$M<"]  # MSP_API_VERSION
     assert msp_like(b"$X>") == [b"$X>"]
 
 
