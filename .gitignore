@@ -16,3 +16,4 @@ results/
 .pio
 .vscode/
 .coverage
+temp/

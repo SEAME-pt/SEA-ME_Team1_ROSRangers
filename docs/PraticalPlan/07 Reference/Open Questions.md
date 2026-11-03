@@ -3,7 +3,7 @@ title: Open Questions
 type: tracking
 status: active
 date: 2026-10-12
-updated: 2026-10-26
+updated: 2026-11-03
 project: SEA autonomous drone
 tags:
   - questions
@@ -65,6 +65,19 @@ tags:
 - [ ] **Network isolation for the transparent bridge:** is an isolated network needed, or is the shared SEAME Wi-Fi acceptable? Under evaluation (team, 2026-10-20). Not a rule yet ([[Safety Rules]] §2).
 - [ ] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Team to decide (2026-10-20).
 - [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
+
+### Protocol (after the 2026-11-03 review)
+Not discussed at the Protocol Spec v0 review for lack of time (#97). Suggested answers are in [[Protocol Spec v0]] §7.5. Decide in writing on GitHub #142, then record a dated entry in the spec.
+- [ ] `CONFIG_ACK` message (reply to `CONFIG_GET` / `CONFIG_SET`, REQ-COM-018)
+- [ ] Header `flags` bit 0 "ack requested": keep or remove in v0
+- [ ] Values of `ARM_CONTROL_ACK.result`, `RESUME_ACK.result`, `BYE.reason`, `EVENT.code`
+- [ ] Values of `STATE.esp_state`
+- [ ] Meaning of `SETPOINT.flags`
+- [ ] Key that tags `HELLO_ACK` (PSK or session key)
+- [ ] `seq` rules for TCP messages and for `HELLO`
+- [ ] Range limits beyond the §4 clamps (REQ-COM-002)
+- [ ] Handling of repeated malformed TCP input (REQ-COM-019)
+- [ ] Wi-Fi re-association: retry and backoff (REQ-COM-023), with the gateway firmware (#101)
 
 ### Process
 - [ ] **Second track label per issue:** allow one extra `track:` label when a task really belongs to two tracks (e.g. A+B bench tests, B+E ThoneFlow spike), instead of exactly one. Raised 2026-10-26; the team leans towards allowing it. Sprint 2 issues #104 and #108 already use two. Decide at the next weekly; then update the rule in `CLAUDE.md` (GitHub #110).

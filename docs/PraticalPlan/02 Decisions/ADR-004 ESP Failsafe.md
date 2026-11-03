@@ -3,7 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-03
 project: SEA autonomous drone
 aliases:
   - D04
@@ -61,6 +61,10 @@ The decision is unchanged. ESP-S1-05 on 2026-10-23 (custom ESP firmware, soldere
 ### 2.4 `T_loss` at the cage distance (2026-10-23)
 
 The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-09 (cage, PC in the coding room, 3 × 10 min) measured longest silences of 272, 343 and 247 ms, so the ESP failsafe would have fired 1, 11 and 0 times. Run 2 followed run 1 with the drone on for more than 30 minutes and more interference. The team takes it as the expected worst case, because the drone will not be that far for that long in flight. A trip is safe by design (neutral sticks, pilot takes over), so the occasional trip at range is accepted rather than raising `T_loss` ([[ESP Bench Test Plan]] §4).
+
+### 2.5 `T_fresh` set (2026-11-03)
+
+The decision and `T_loss` = 250 ms are unchanged. The protocol review of 2026-11-03 (#97) set **`T_fresh` = 150 ms** as a separate timer (OD-06, [[Protocol Spec v0]] §7.2). A setpoint older than 150 ms is replaced by neutral sticks, and the next valid setpoint is used at once, with no failsafe and no handshake. Only `T_loss` enters `LINK_FAILSAFE`. The ground streams `SETPOINT` at 50 Hz at all times (`mode 0` when there is no gesture), so an operator who does not gesture never triggers the failsafe.
 
 ## 3. Safety layers (inner → outer)
 

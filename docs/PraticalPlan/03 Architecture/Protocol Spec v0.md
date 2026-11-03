@@ -1,9 +1,10 @@
 ---
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
-status: draft
-version: 0.1
+status: accepted
+version: 1.0
 date: 2026-10-12
+updated: 2026-11-03
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -15,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!warning] Status: DRAFT v0.1. To be frozen in the week-3 design review.
+> [!success] Status: ACCEPTED v1.0, frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items still open are listed in §7.5.
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -35,6 +36,8 @@ tags:
 | 16 | 4 | t_send_us | sender monotonic µs, **for latency logging only** (OD-10). Freshness uses the ESP's receive clock. |
 | 20 | n | payload | |
 | 20+n | 8 | tag | HMAC-SHA256(session key, bytes 0..20+n-1), first 8 bytes |
+
+Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` is tagged with the PSK.
 
 ## 2. Type ranges (five categories)
 
@@ -57,7 +60,7 @@ tags:
 | 0x05 | RESUME_REQUEST | none |
 | 0x06 | RESUME_ACK | result u8 |
 | 0x07 | BYE | reason u8 |
-| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | key u8, value i32 (rejected while control is enabled, OD-16) |
+| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | key u8, value i32. Keys in §7.3. `CONFIG_SET` is rejected while control is enabled (OD-16) |
 | 0x40 | EVENT | code u16, text[≤64] |
 | 0x60 | SETPOINT | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 |
 | 0x80 | STATE | esp_state u8, override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
@@ -85,15 +88,127 @@ Clamps apply on the ground **and** on the ESP, the last point under team control
 
 ## 6. Test vectors
 
-Stored in `drone/tests/vectors/*.json` in the software repo. The C++ and Python implementations must both pass them ([[Testing Strategy]]).
+Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and Python (#100) implementations must both pass every vector in CI ([[Testing Strategy]]). List agreed at the 2026-11-03 review:
 
-## 7. Still open
+| Group | Cases | Proves |
+|---|---|---|
+| 1 Valid frames | One per message type in §3 | Both sides encode and decode the same bytes |
+| 2 HMAC | Tag with the PSK (`HELLO`) and with the session key; one flipped payload bit; one flipped tag bit | Any changed bit is rejected |
+| 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame | Garbage is rejected before it is read (§4 rule 1) |
+| 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
+| 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
+| 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500 | The RC channels sent to the FC (§4–5) |
 
-- Port numbers (OD-04).
-- `T_fresh` (OD-06). Initial: equal to `T_loss` = 250 ms.
-- Configuration keys.
+- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
+- The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
+- Adding a vector is free. Changing or deleting one changes the protocol and needs a dated entry in §8.
 
-## 8. Glossary
+## 7. Decisions of the 2026-11-03 review
+
+Attendees: Guilherme, Bruno, Paulo. These close the three items that were open in v0.1 (OD-04, OD-06, configuration keys).
+
+### 7.1 Ports (OD-04, 11:10)
+
+Static IPs are set by [[ADR-006 Network|ADR-006]].
+
+| Port | Use | Status |
+|---|---|---|
+| UDP 5759 | Control and telemetry (told apart by `type`) | v0 |
+| TCP 5759 | Session | v0 |
+| 5760 | Reserved for a future channel. Until the gateway firmware (#101) replaces it, this is the transparent bridge's port | reserved |
+| TCP 5761–5768 | Betaflight SITL on the PC (UART1–8). Never used | taken |
+| UDP 5770 | Timing test, diagnostic build only | test |
+| UDP 5771 | Watchdog test, diagnostic build only | test |
+
+- 5759 and not 5760: the transparent bridge forwards every byte on UDP 5760 to the FC. Protocol traffic sent to a drone that still runs the bridge then gets no answer instead of reaching the FC.
+- New data is first a new message `type` on these ports. A new port only for a separate program or transport, and a new UDP port must fit the ESP's limit of 4 UDP sockets (`MEMP_NUM_UDP_PCB`).
+
+### 7.2 Freshness and link loss (OD-06, 11:12)
+
+| Timer | Value | Counted from | On expiry | Recovery |
+|---|---|---|---|---|
+| `T_fresh` | **150 ms** | Last accepted `SETPOINT` (ESP receive clock, OD-10) | Neutral sticks: roll/pitch/yaw 1500, throttle not taken from the ground. The drone levels in Angle mode | Next valid `SETPOINT` is used at once |
+| `T_loss` | **250 ms** (unchanged, [[ADR-004 ESP Failsafe\|ADR-004]]) | Last accepted control message | `LINK_FAILSAFE` | Only through `RESUME_REQUEST` ([[ESP Link State Machine]]) |
+
+- "No command" is not "no link". The ground sends `SETPOINT` at a fixed 50 Hz at all times. With no gesture it sends `mode 0` (neutral). So an operator who does not gesture never triggers the failsafe; only real link loss does.
+- Liveness comes from accepted UDP control messages, never from the Wi-Fi or TCP state ([[ADR-005 TCP Session|ADR-005]], REQ-COM-016). There is no separate heartbeat message in v0: the setpoint stream is the heartbeat.
+- Why 150 ms: silences per 10 min at 50 Hz ([[ESP Bench Test Plan]] §4).
+
+| Run | ≥ 100 ms | ≥ 150 ms | ≥ 200 ms | ≥ 250 ms |
+|---|---|---|---|---|
+| Close range, ESP-S1-05 (3 runs) | 15–19 | 2–4 | 0–1 | 0 |
+| Close + TCP load, ESP-S1-07 (3 runs) | 28–37 | 0–4 | 0–1 | 0 |
+| Cage, ESP-S1-09 runs 1 and 3 | 94–103 | 20–24 | 4–6 | 0–1 |
+| Cage, ESP-S1-09 run 2 (worst case) | 205 | 66 | 28 | 11 |
+
+### 7.3 Configuration keys (11:28)
+
+`key` is one byte. Its range says what the key is and who may change it.
+
+| Range | Group | Access |
+|---|---|---|
+| `0x00` | Invalid, never used | – |
+| `0x01–0x3F` | Info (versions, IDs) | Read-only |
+| `0x40–0x7F` | Safety parameters (timeouts, limits) | Read-only from the ground, set in firmware only |
+| `0x80–0xBF` | Tunable (rates, logging) | Read and write |
+| `0xC0–0xEF` | Reserved. A new group is defined here by a dated entry in §8 | – |
+| `0xF0–0xFF` | Diagnostic builds only | Test firmware only |
+
+Rules:
+
+1. Every key belongs to a range. No key outside a defined range.
+2. A key number is never reused or renumbered. An unused key is marked "retired" and keeps its number.
+3. An unknown key is answered with "unknown key", so a newer ground can find out what an older firmware supports.
+4. Writes out of range are refused, never quietly clamped.
+5. No writes while control is enabled (OD-16).
+6. No saving across reboots in v0: after a reboot the ESP is back to its defaults.
+7. Every key is documented: number, name with its unit (`_ms`, `_hz`), range, default, access, version added.
+8. Adding a key = next free number in its range + a new row below + `config_table_version` + 1. No protocol change.
+9. More than 256 keys would need a two-byte key, which is a new protocol version.
+
+v0 keys:
+
+| Key | Name | Unit | Range | Default | Access |
+|---|---|---|---|---|---|
+| `0x01` | `config_table_version` | – | – | 1 | RO |
+| `0x02` | `proto_version` | – | – | 1 | RO |
+| `0x40` | `t_loss_ms` | ms | – | 250 | RO |
+| `0x41` | `t_fresh_ms` | ms | – | 150 | RO |
+| `0x42` | `setpoint_limit` | ± units | – | 1000 | RO |
+| `0x80` | `telemetry_rate_hz` | Hz | 1–50 | 20 | RW |
+| `0x81` | `event_level` | – | 0–3 | 1 | RW |
+
+`telemetry_rate_hz` fixes the v0 telemetry rate ([[ADR-008 Telemetry Transport|ADR-008]]: 20–50 Hz).
+
+### 7.4 Implementation of the port changes
+
+The diagnostic builds and their scripts still use the old ports (timing 5761, TCP echo 5762, watchdog 5763). They move to 5770, 5759 and 5771 in #101. Recorded bench results keep the ports they were measured with.
+
+### 7.5 Still open after the review
+
+Found while preparing the review, not discussed for lack of time. Each has a suggested answer in GitHub #142 and is tracked in [[Open Questions]]. Do not assume them until a dated entry in §8 records the decision.
+
+| Item | Suggested answer |
+|---|---|
+| Reply to `CONFIG_GET` / `CONFIG_SET` (REQ-COM-018) | New `0x22 CONFIG_ACK`: key u8, result u8 (0 OK, 1 unknown key, 2 read-only, 3 out of range, 4 refused while control is enabled), value i32 |
+| Header `flags` bit 0 "ack requested" | Remove in v0: reserved, sent as 0, ignored |
+| `result`, `BYE.reason`, `EVENT.code` values | Short numbered lists; event codes grouped by range, never reused |
+| `STATE.esp_state` values | 0 BOOT, 1 NO_SESSION, 2 SESSION_IDLE, 3 STREAMING, 4 LINK_FAILSAFE |
+| `SETPOINT.flags` | Reserved in v0: sent as 0, ignored |
+| Key that tags `HELLO_ACK` | The PSK |
+| `seq` on TCP | One counter per sender, session and transport, from 1; only `seq > last seen` accepted |
+| Range limits (REQ-COM-002) | §4 clamps are the range check; unknown `mode` rejected; max tilt stays in Betaflight |
+| Repeated malformed TCP input (REQ-COM-019) | Bad tag: drop and count. Bad magic, version or length: close the TCP connection |
+| Wi-Fi re-association (REQ-COM-023) | Settle with the gateway firmware (#101) |
+
+## 8. Changelog
+
+| Date | Version | Change |
+|---|---|---|
+| 2026-10-12 | 0.1 | Draft. |
+| 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
+
+## 9. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -108,4 +223,10 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ and Python 
 | **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
+| **T_fresh** | Maximum age of the last accepted setpoint (150 ms, §7.2). Older → neutral sticks until the next valid setpoint; no failsafe. |
+| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left only through `RESUME_REQUEST` ([[ESP Link State Machine]]). |
+| **Configuration key** | One-byte number in `CONFIG_GET` / `CONFIG_SET` that names one setting on the ESP (§7.3). |
+| **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
+| **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
+| **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |
