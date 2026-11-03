@@ -15,13 +15,11 @@ def test_api_version_request_matches_known_bytes():
     assert msp.encode_request(msp.MSP_API_VERSION) == bytes.fromhex("244d3c000101")
 
 
-
 def test_request_rejects_out_of_range():
     with pytest.raises(ValueError):
         msp.encode_request(256)
     with pytest.raises(ValueError):
         msp.encode_request(1, bytes(256))
-
 
 
 def test_parser_roundtrip_and_split_feed():
@@ -36,7 +34,6 @@ def test_parser_roundtrip_and_split_feed():
     )
 
 
-
 def test_parser_skips_noise_and_counts_bad_checksum():
     good = msp.encode_response(msp.MSP_FC_VARIANT, b"BTFL")
     bad = bytearray(good)
@@ -47,11 +44,9 @@ def test_parser_skips_noise_and_counts_bad_checksum():
     assert p.bad_checksums == 1
 
 
-
 def test_parser_error_frame():
     (f,) = msp.Parser().feed(msp.encode_response(200, error=True))
     assert f.direction == "!" and f.cmd == 200
-
 
 
 def test_decoders():
@@ -63,7 +58,6 @@ def test_decoders():
     assert att == {"roll_deg": -12.3, "pitch_deg": 4.5, "yaw_deg": 270}
     st = msp.decode(msp.MSP_STATUS, struct.pack("<HHHI", 125, 0, 0x23, 1))
     assert st["armed"] is True and st["cycle_time_us"] == 125
-
 
 
 def test_client_refuses_write_commands():
@@ -81,7 +75,6 @@ def test_client_refuses_write_commands():
         msp.Client(Dummy()).request(200)  # MSP_SET_RAW_RC
 
 
-
 def test_client_trace_is_disabled_by_default():
     class Dummy:
         def send(self, data):
@@ -95,7 +88,6 @@ def test_client_trace_is_disabled_by_default():
 
     frame, _ = msp.Client(Dummy()).request(msp.MSP_API_VERSION)
     assert frame.payload == bytes([0, 1, 46])
-
 
 
 def test_decode_status_reads_betaflight_extended_fields():
@@ -113,7 +105,6 @@ def test_decode_status_reads_betaflight_extended_fields():
     assert st["armed"] and st["i2c_errors"] == 2 and st["cpu_load"] == 17
     assert st["arming_disable_flags"] == 0x40000
     assert st["reboot_required"] is True
-
 
 
 def test_attitude_reply_bytes_decode_to_degrees():
@@ -136,7 +127,6 @@ def test_attitude_reply_bytes_decode_to_degrees():
         "yaw_deg": 359,
     }
     assert parser.bad_checksums == 0
-
 
 
 def test_rc_payload_roundtrip_and_analog_rssi():
