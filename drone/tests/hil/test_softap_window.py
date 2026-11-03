@@ -2,7 +2,7 @@
 
 Runs in PR CI (ci.yaml, hil-unit), not on the Pi. The fake `sleep`
 holds the watchdog until the test opens a gate file, so the watchdog can be
-tested without waiting its real 3 minutes.
+tested without waiting for its real delay.
 """
 
 import fcntl
@@ -18,17 +18,18 @@ import pytest
 SCRIPT = Path(__file__).with_name("softap_window.sh")
 LAB = "netplan-wlan0-SEAME"
 PASSWORD = "not-a-real-password"
-REJOIN = f"--wait 30 connection up {LAB}"  # the script's own re-join
+REJOIN = f"--wait 25 connection up {LAB}"  # the script's own re-join
 WATCHDOG_REJOIN = REJOIN  # the watchdog re-joins the same way, after the script
 LAB_AUTO_OFF = f"connection modify --temporary {LAB} connection.autoconnect no"
 LAB_AUTO_ON = f"connection modify --temporary {LAB} connection.autoconnect yes"
 
 # LAB_ACTIVE=0: the lab is down. FAIL_JOIN / FAIL_REJOIN: those calls fail.
-# SLOW_JOIN / SLOW_REJOIN: those calls take that many seconds; a finished
+# SLOW_ADD / SLOW_JOIN / SLOW_REJOIN: those calls take that many seconds; a finished
 # re-join logs "rejoined"
 FAKE_NMCLI = f"""#!/usr/bin/env bash
 echo "$*" >> "$NMCLI_LOG"
 case "$*" in
+  "connection add "*) /bin/sleep "${{SLOW_ADD:-0}}" ;;
   *"show --active"*) [[ $LAB_ACTIVE == 0 ]] || echo {LAB} ;;
   *"connection up hil-softap-"*)
     /bin/sleep "${{SLOW_JOIN:-0}}"
@@ -122,7 +123,7 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert lab_off == LAB_AUTO_OFF  # no fallback to the lab inside the window
     assert add.startswith("connection add save no ")  # in memory: gone on reboot
     assert "autoconnect yes" in add and "ssid seame-hil-test" in add
-    assert up.startswith(f"--wait 30 connection up hil-softap-{env['GITHUB_RUN_ID']}-")
+    assert up.startswith(f"--wait 25 connection up hil-softap-{env['GITHUB_RUN_ID']}-")
     assert "passwd-file" in up
     assert delete.startswith("connection delete hil-softap-")
     assert lab_on == LAB_AUTO_ON
@@ -147,9 +148,13 @@ def test_overrunning_command_is_killed_and_lab_rejoined(env):
     assert calls[-2:] == [LAB_AUTO_ON, REJOIN]
 
 
-def test_cancel_restores_at_once_and_stops_the_test(env):
+def test_cancel_rejoins_first_then_stops_the_test(env):
+    # A test slow to exit on TERM (here: it ignores it, so timeout's KILL ends
+    # it 5 s later) must not hold up the re-join: a SIGKILL can follow a
+    # cancel within about 10 s
+    stubborn = ["bash", "-c", 'trap "" TERM; exec /bin/sleep 7.5']
     job = subprocess.Popen(
-        ["bash", str(SCRIPT), "10", "--", "/bin/sleep", "7.5"],
+        ["bash", str(SCRIPT), "10", "--", *stubborn],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -158,9 +163,11 @@ def test_cancel_restores_at_once_and_stops_the_test(env):
         wait_for_window(env)
         start = time.monotonic()
         job.send_signal(signal.SIGTERM)  # what a cancel or step timeout sends
-        assert job.wait(timeout=5) == 143
-        assert time.monotonic() - start < 2, "restore waited for the test"
-        assert nmcli_calls(env)[-1] == REJOIN
+        while REJOIN not in nmcli_calls(env):
+            assert time.monotonic() - start < 1, "the re-join waited for the test"
+            time.sleep(0.02)
+        assert job.wait(timeout=10) == 143  # after the test is gone
+        assert time.monotonic() - start > 4, "restore did not wait for the test"
         gone = subprocess.run(["pgrep", "-f", "/bin/sleep 7.5"], capture_output=True)
         assert gone.returncode == 1, "the test command outlived the window"
     finally:
@@ -182,6 +189,31 @@ def test_signal_during_the_join_restores_at_once(env):
         job.send_signal(signal.SIGTERM)
         assert job.wait(timeout=5) == 143
         assert time.monotonic() - start < 2, "restore waited for the join"
+        assert nmcli_calls(env)[-1] == REJOIN
+        # The join, still running for a few seconds, must not hold the lock
+        with open(env["HIL_WIFI_LOCK"], "w") as next_window:
+            fcntl.flock(next_window, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        job.kill()
+
+
+def test_signal_before_the_join_restores_at_once(env):
+    # NetworkManager can be slow to add the profile too (busy rescanning)
+    job = subprocess.Popen(
+        ["bash", str(SCRIPT), "10", "--", "true"],
+        env=env | {"SLOW_ADD": "5"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not any(c.startswith("connection add ") for c in nmcli_calls(env)):
+            assert time.monotonic() < deadline, "never started the add"
+            time.sleep(0.02)
+        start = time.monotonic()
+        job.send_signal(signal.SIGTERM)
+        assert job.wait(timeout=5) == 143
+        assert time.monotonic() - start < 2, "restore waited for the add"
         assert nmcli_calls(env)[-1] == REJOIN
     finally:
         job.kill()
@@ -260,7 +292,10 @@ def test_watchdog_waits_for_a_later_window(env):
         fcntl.flock(later_window, fcntl.LOCK_EX)  # a later run is in its window
         Path(env["SLEEP_GATE"]).touch()
         time.sleep(1)
-        assert nmcli_calls(env)[before:] == [], "watchdog raced a later window"
+        # Only its own profile goes, lock or not: a leftover autoconnect
+        # profile could pull the Pi onto the SoftAP later
+        calls = nmcli_calls(env)[before:]
+        assert len(calls) == 1 and calls[0].startswith("connection delete hil-softap-")
     open_gate_and_wait_for(env, WATCHDOG_REJOIN, after=before)
 
 

@@ -39,6 +39,14 @@ def uart():
     port.close()
 
 
+@pytest.fixture(autouse=True)
+def fresh_uart(uart):
+    # The port is shared by the module: drop what an earlier test left in it
+    # (stray probes, the "\n" sent to register a UDP peer)
+    uart.reset_input_buffer()
+    uart.reset_output_buffer()
+
+
 @pytest.fixture
 def udp():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

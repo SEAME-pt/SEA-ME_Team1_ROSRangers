@@ -67,7 +67,7 @@ jobs:
         run: |
           python3 -m venv .venv
           . .venv/bin/activate
-          pip install "platformio==6.1.*" pytest pyserial
+          pip install "platformio==6.1.*" "pytest==9.2.*" "pyserial==3.5"
 
       - name: Build firmware
         run: |

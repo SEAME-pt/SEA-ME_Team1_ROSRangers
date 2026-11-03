@@ -101,14 +101,18 @@ def open_esp():
     return port
 
 
+def pulse_reset(port):
+    """Pulse EN through RTS, like esptool's hard reset."""
+    port.reset_input_buffer()
+    port.rts = True
+    time.sleep(0.1)
+    port.rts = False
+
+
 def test_esp_boots_from_flash_and_stays_up():
     port = open_esp()
     try:
-        # Pulse EN through RTS, like esptool's hard reset
-        port.reset_input_buffer()
-        port.rts = True
-        time.sleep(0.1)
-        port.rts = False
+        pulse_reset(port)
 
         rom = read_for(port, ROM_WINDOW_S)
         assert boot_mode(rom) == 3, f"no normal flash boot in ROM output: {rom[:300]!r}"
@@ -136,12 +140,18 @@ def test_boot_bytes_never_look_like_msp():
     """
     port = open_esp()
     try:
-        port.baudrate = APP_BAUD
         for reset in range(BOOT_RESETS):
-            port.reset_input_buffer()
-            port.rts = True
-            time.sleep(0.1)
-            port.rts = False
+            # The banner can only be read at 74880, the FC's view only at
+            # 115200: so first prove this reset pulse gives a normal flash
+            # boot (not the bootloader), then capture the FC's view of the
+            # same pulse
+            port.baudrate = ROM_BAUD
+            pulse_reset(port)
+            rom = read_for(port, ROM_WINDOW_S)
+            assert boot_mode(rom) == 3, f"reset {reset}: no flash boot: {rom[:300]!r}"
+
+            port.baudrate = APP_BAUD
+            pulse_reset(port)
             boot = read_for(port, BOOT_WINDOW_S)
             assert boot, f"reset {reset}: no boot output at all, did the reset work?"
             assert msp_like(boot) == [], f"reset {reset}: MSP in boot output: {boot!r}"
