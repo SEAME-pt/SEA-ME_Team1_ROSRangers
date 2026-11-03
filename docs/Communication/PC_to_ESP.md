@@ -27,6 +27,9 @@ tags:
 > [!warning] Status: DRAFT / PROPOSED
 > This page records agreed design directions and *proposes* further detail. Nothing described here has been implemented or tested. Exact packet formats, port numbers, timeouts, rates and numerical limits are deliberately **not** specified and are listed as open decisions in [§12](#12-open-decisions).
 
+> [!success] Update 2026-11-03: Protocol Spec v0 accepted
+> The design review of 2026-11-03 (#97) froze [[Protocol Spec v0]]. OD-04 (ports: UDP and TCP 5759) and OD-06 (`T_fresh` = 150 ms) are now accepted, see §12 and the spec §7. Items still open after the review are in the spec §7.5.
+
 > [!info] Update 2026-10-23: custom firmware
 > The 2026-10-20 note below is out of date. Since 2026-10-21 the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`) instead of AT 1.7.4. It is still a transparent bridge: the protocol on the ESP and the failsafe are not implemented yet. ESP-S1-05 passed on 2026-10-23 at short range (worst silence 203 ms, below `T_loss` = 250 ms, [[ESP Bench Test Plan]] §4).
 
@@ -521,9 +524,9 @@ The communication design is accepted for a given phase only when the relevant cr
 | OD-01 | ESP8266 firmware path: keep AT firmware or move to custom C++ | Implementation |  | Accepted | Custom ESP8266 firmware; portable protocol library tested off-target. [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
 | OD-02 | Wire message format: encoding, field layout, message IDs, versioning scheme | Implementation |  | Accepted (draft spec) | Fixed-layout binary, 20-byte header + 8-byte tag: [[Protocol Spec v0]] (to freeze in week 3). |
 | OD-03 | TCP framing method | Implementation |  | Accepted | Length-prefixed: the header `payload_len` field frames TCP messages ([[Protocol Spec v0]] §1). |
-| OD-04 | Port numbers and addressing scheme (static IP / discovery) | Implementation |  | Partly resolved | Static IPs on the ESP SoftAP [[ADR-006 Network\|ADR-006]]. Port numbers still to pick in [[Protocol Spec v0]]. |
+| OD-04 | Port numbers and addressing scheme (static IP / discovery) | Implementation |  | Accepted (2026-11-03) | Static IPs on the ESP SoftAP [[ADR-006 Network\|ADR-006]]. UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved ([[Protocol Spec v0]] §7.1). |
 | OD-05 | Control-setpoint update rate (and acceptable jitter) | Implementation |  | Method + initial value | Start at 50 Hz; confirm by measurement ([[Testing Strategy]]). |
-| OD-06 | Freshness age limit `T_fresh` | Bench testing |  | Method + initial value | Initial `T_fresh` = `T_loss` = 250 ms [[ADR-004 ESP Failsafe\|ADR-004]]; refine from measurement. |
+| OD-06 | Freshness age limit `T_fresh` | Bench testing |  | Accepted (2026-11-03) | `T_fresh` = 150 ms, separate from `T_loss` = 250 ms. Stale setpoint → neutral sticks, next valid setpoint used at once ([[Protocol Spec v0]] §7.2, from the ESP-S1-05/07/09 silence counts). |
 | OD-07 | Loss timeout `T_loss` | Bench testing |  | Method + initial value | Initial `T_loss` = 250 ms [[ADR-004 ESP Failsafe\|ADR-004]]; set just above the worst measured gap. |
 | OD-08 | Sequence-number width, wrap handling, and session/epoch mechanism | Implementation |  | Accepted | 32-bit seq per sender per session + random 32-bit session ID; seq ≥ 2^31 forces a new session. [[ADR-003 Sequence Acceptance\|ADR-003]] |
 | OD-09 | Whether a gap in sequence numbers (size/rate) triggers any action | Bench testing |  | Accepted | Count gaps, no action on a gap alone. [[ADR-003 Sequence Acceptance\|ADR-003]] |
@@ -573,7 +576,7 @@ The communication design is accepted for a given phase only when the relevant cr
 
 - Exact packet fields, port values, update rate and `T_fresh`/`T_loss` values (to be derived from measurement), the definition of the failsafe safe output (coordinated with the FC document), whether a message authentication code is needed, telemetry transport, key management, overload policy, shared-definition location, ground-side bridge form, acceptance thresholds and firmware update mechanism. See [§12](#12-open-decisions).
 
-**Resolved by ADRs (2026-10-12):** see [[Decision Register]]. ESP SoftAP instead of a ground-side access point: ADR-006 (OD-04/17). Custom firmware: ADR-007 (OD-01). HMAC: ADR-002 (OD-11). Sequence and sessions: ADR-003 (OD-08/09). Failsafe and resume: ADR-004 (OD-13). TCP session: ADR-005 (OD-14). Port numbers are still open (OD-04, [[Protocol Spec v0]] §7).
+**Resolved by ADRs (2026-10-12):** see [[Decision Register]]. ESP SoftAP instead of a ground-side access point: ADR-006 (OD-04/17). Custom firmware: ADR-007 (OD-01). HMAC: ADR-002 (OD-11). Sequence and sessions: ADR-003 (OD-08/09). Failsafe and resume: ADR-004 (OD-13). TCP session: ADR-005 (OD-14). Port numbers: accepted 2026-11-03 (OD-04, [[Protocol Spec v0]] §7.1).
 
 **Not covered here:** the ESP8266 ↔ flight controller interface, which belongs in a separate document.
 

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-10-27
+updated: 2026-11-03
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -28,7 +28,7 @@ tags:
 | [[ADR-003 Sequence Acceptance\|ADR-003]] | 32-bit seq + random session ID, newer-only | ✅ Accepted | OD-08, OD-09, P3 |
 | [[ADR-004 ESP Failsafe\|ADR-004]] | 250 ms link failsafe, explicit resume | ✅ Accepted (values to confirm) | OD-06/07 (initial), OD-12 (partly), OD-13, P4 |
 | [[ADR-005 TCP Session\|ADR-005]] | Session over TCP; UDP decides liveness | ✅ Accepted | OD-14, P5 |
-| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted | OD-17, OD-04 (partly), P6 |
+| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted (ports set in [[Protocol Spec v0]] §7.1, 2026-11-03) | OD-17, OD-04, P6 |
 | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] | Custom firmware + portable C++ lib + Python twin | ✅ Accepted | OD-01, OD-19, FC-07, P7 |
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
@@ -84,11 +84,19 @@ tags:
 - Dated update, no decision changed: [[ADR-015 Gesture Input Source|ADR-015]]. Gestures still come from the ground webcam; `gesture_node` now reads two hands with MediaPipe Holistic and only counts a raised arm (wrist above elbow), #81.
 - Not an ADR: `mission_node` no longer asks for a landing when the operator or the recogniser is gone; it hovers. Recorded in [[04 Mission Node]] §10, `safety-critical`, waiting for a team review.
 
-## 7. Still open
+## 7. What changed on 2026-11-03
+
+- Not an ADR: [[Protocol Spec v0]] is **accepted** (v1.0) at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97).
+  - **OD-04** resolved: UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved (spec §7.1). Completes [[ADR-006 Network|ADR-006]].
+  - **OD-06** resolved: `T_fresh` = 150 ms, separate from `T_loss` (spec §7.2). [[ADR-004 ESP Failsafe|ADR-004]] is unchanged: `T_loss` stays 250 ms.
+  - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
+  - Items still open after the review: spec §7.5.
+
+## 8. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 8. Glossary
+## 9. Glossary
 
 | Term | Meaning |
 | --- | --- |
