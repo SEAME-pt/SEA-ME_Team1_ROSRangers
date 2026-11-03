@@ -173,6 +173,14 @@ class FcTelemetryRosTests(unittest.TestCase):
         self.assertEqual(self.attitudes, [])
         self.assertEqual(self.node._missed["attitude"], 1)
 
+    def test_no_battery_publishes_not_present(self):
+        self.start({msp.MSP_ANALOG: [analog_payload(0.0)]})
+        self.node._battery_tick()
+        self.deliver()
+        self.assertEqual(len(self.batteries), 1)
+        self.assertFalse(self.batteries[0].present)
+        self.assertTrue(math.isnan(self.batteries[0].voltage))
+
     def test_link_report_with_and_without_replies(self):
         self.start({msp.MSP_ANALOG: [analog_payload(16.0)]})
         self.node._report_link()  # nothing yet: warning

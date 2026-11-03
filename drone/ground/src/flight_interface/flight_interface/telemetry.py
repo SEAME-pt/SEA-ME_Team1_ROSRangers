@@ -19,6 +19,9 @@ BF_YAW_SIGN = -1.0
 
 POWER_SUPPLY_TECHNOLOGY_LIPO = 3  # sensor_msgs/BatteryState constant
 POWER_SUPPLY_UNKNOWN = 0  # status and health: unknown
+# Below this the FC runs on USB power only: Betaflight reports ~0 V with no
+# battery, and even an empty 4S pack reads above 12 V.
+NO_BATTERY_BELOW_V = 1.0
 
 
 def wrap_pi(angle):
@@ -60,10 +63,14 @@ def battery_fields(analog, cell_count):
     """MSP_ANALOG decode() dict -> sensor_msgs/BatteryState fields.
 
     Uses the 0.01 V field when the FC sends it, else the legacy 0.1 V byte.
+    With no battery connected: present is False and the voltage NaN, never a
+    0 V reading that looks like a real one.
     """
     nan = float("nan")
+    voltage = analog.get("voltage_v", analog["vbat_v"])
+    present = voltage >= NO_BATTERY_BELOW_V
     return {
-        "voltage": analog.get("voltage_v", analog["vbat_v"]),
+        "voltage": voltage if present else nan,
         "temperature": nan,
         "current": nan,
         "charge": nan,
@@ -73,7 +80,7 @@ def battery_fields(analog, cell_count):
         "power_supply_status": POWER_SUPPLY_UNKNOWN,
         "power_supply_health": POWER_SUPPLY_UNKNOWN,
         "power_supply_technology": POWER_SUPPLY_TECHNOLOGY_LIPO,
-        "present": True,
+        "present": present,
         # Cell count known, cell voltages not: one NaN per cell (BatteryState.msg)
         "cell_voltage": [nan] * cell_count,
         "cell_temperature": [nan] * cell_count,

@@ -105,6 +105,15 @@ def test_battery_other_fields_are_unknown():
     assert len(fields["cell_temperature"]) == 4
 
 
+@pytest.mark.parametrize("volts", [0.0, 0.4])
+def test_no_battery_is_not_present_and_nan(volts):
+    # FC on USB power only: Betaflight reports about 0 V
+    fields = battery_fields({"vbat_v": volts, "voltage_v": volts}, cell_count=4)
+    assert fields["present"] is False
+    assert math.isnan(fields["voltage"])
+    assert len(fields["cell_voltage"]) == 4
+
+
 def test_msp_analog_decodes_the_centivolt_field():
     payload = struct.pack("<BHHhH", 159, 120, 914, 250, 1587)
     decoded = msp.decode(msp.MSP_ANALOG, payload)
