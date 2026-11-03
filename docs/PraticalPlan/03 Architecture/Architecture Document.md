@@ -59,15 +59,54 @@ Authority order (from [[System Overview]] §2): safety pilot (ELRS) > Betaflight
 
 ## 2. ROS 2 node graph (topics and rates)
 
-> [!todo] BrunoBMFT: check and complete this section
-> The table below is read from the code on `dev` (2026-11-02) so the draft is not empty. Please confirm topics, message types and rates, fill in the gaps (`flight_interface` outputs, QoS, what each rate depends on) and add the node diagram. Details per node: [[00 Gesture Pipeline]], [[04 Mission Node]].
+Checked against the code by BrunoBMFT (2026-11-03). Details per node: [[00 Gesture Pipeline]], [[04 Mission Node]].
+
+```mermaid
+flowchart LR
+  CAM([webcam]) --> GEST[gesture_node]
+  GEST -->|"/gesture/raw<br/>or UDP :5005"| INT[intent_node]
+  INT -->|"/gesture/intent<br/>20 Hz"| MIS[mission_node]
+  MIS -->|"/mission/velocity_target<br/>20 Hz"| FI["flight_interface<br/>lifecycle node (#103)"]
+  MIS -->|"/mission/state"| OUT([logs, rosbag])
+  FI -->|"/flight/state"| MIS
+  FC([FC over MSP:<br/>USB or ESP bridge UDP 5760]) --> FCT["fc_telemetry<br/>flight_interface package (#96)"]
+  FCT -->|"/fc/attitude 20 Hz<br/>/fc/battery 5 Hz"| OUT
+  FFS["fake_flight_state<br/>until #103"] -.->|"/flight/state 10 Hz"| MIS
+```
 
 | Node | Subscribes | Publishes | Rate | State |
 |---|---|---|---|---|
 | `gesture_node` | webcam | `/gesture/raw` (`String`, JSON), or UDP to `intent_node` | per frame, with keep-alive; MediaPipe Holistic 14.5 FPS measured 2026-10-27 | in `dev`, CI + Docker |
 | `intent_node` | `/gesture/raw` or UDP `:5005` (parameter `input_source`) | `/gesture/intent` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, CI + Docker |
-| `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
-| `flight_interface` | `/mission/velocity_target` | `/flight/state` | ? | not built (#103) |
+| `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
+| `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` |
+| `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | branch `feature/96-fc-telemetry-node`, not in CI yet (#96) |
+| `flight_interface` lifecycle node | `/mission/velocity_target` | `/flight/state` | not set | not built (#103) |
+
+**QoS:** every topic uses the rclpy default for a depth of 10: reliable, volatile, keep last 10.
+
+**What each rate depends on:**
+
+- `gesture_node`: the camera and MediaPipe frame rate. `intent_node` turns it into a steady 20 Hz.
+- `mission_node`: 20 Hz, below the 50 Hz `SETPOINT` stream that `flight_interface` will send to the ESP ([[Protocol Spec v0]]).
+- `fc_telemetry`: how fast the FC answers MSP. Each poll waits for its reply (100 ms timeout, `request_timeout_sec`) before the next one starts, so attitude and battery requests never interleave.
+
+### `/fc/attitude` and `/fc/battery`
+
+What the two FC telemetry topics carry. These are BrunoBMFT's proposals for #96: the code follows them and each one is a constant or a parameter, so the team can still change them in review. The attitude rate (20 or 25 Hz) is open in #142.
+
+| Item | `/fc/attitude` | `/fc/battery` |
+|---|---|---|
+| Type | `geometry_msgs/Vector3Stamped`: x roll, y pitch, z yaw, in rad | `sensor_msgs/BatteryState` |
+| Source | `MSP_ATTITUDE` | `MSP_ANALOG` (0.01 V field, else the legacy 0.1 V byte) |
+| Signs | REP-103: roll + right side down, pitch + nose down, yaw + counter-clockwise seen from above. Yaw sign measured 2026-11-02; roll and pitch signs still to check on the bench (props off) | – |
+| Yaw | relative: zero at the first sample after node start, wrapped to (−π, π]. The drone has no magnetometer, so Betaflight's yaw is only the integrated gyro and drifts | – |
+| Fields | – | only `voltage` is measured. Every other number is NaN, `cell_voltage` holds 4 NaN (4S pack), technology LIPO. With no battery (FC on USB power, below 1.0 V): `present: false` and voltage NaN |
+| `frame_id` | `base_link` | `base_link` |
+| `header.stamp` | halfway between MSP request and reply, ROS clock | same |
+| No or bad reply | nothing is published; an old value is never sent again with a new stamp. Subscribers judge freshness from the stamp age | same |
+
+Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/telemetry.py`.
 
 ## 3. Message contracts
 
@@ -98,7 +137,7 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 | Longest silence, close / cage | 163–203 ms / 247–343 ms | #30 |
 | **ESP link failsafe `T_loss`** | **250 ms** without an accepted control packet → neutral | [[ADR-004 ESP Failsafe\|ADR-004]] |
 | Failsafe trips at cage distance | 0–1 per 10 min normally, 11 in the worst run | #30, accepted: a trip is safe by design |
-| `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters (BrunoBMFT to confirm) |
+| `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters `neutral_timeout_sec`, `stale_timeout_sec` |
 | Gesture → motors end to end | **not measured yet** | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
 
 Still to measure: the end-to-end gesture → motors latency, `T_fresh` (OD-06, initially = `T_loss`), and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
@@ -113,6 +152,8 @@ Still to measure: the end-to-end gesture → motors latency, `T_fresh` (OD-06, i
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
 | **AETR** | Channel order aileron (roll), elevator (pitch), throttle, rudder (yaw). |
+| **`base_link`** | Standard ROS name for the drone's body frame (REP-105), used as `frame_id` on the ground topics. |
+| **BatteryState / Vector3Stamped** | Standard ROS message types for a battery reading and for a stamped 3-value vector (here roll, pitch, yaw). |
 | **CRSF** | Crossfire serial protocol between the ELRS receiver and the FC (UART2). |
 | **DDS** | Data Distribution Service: the middleware ROS 2 topics run on. |
 | **ELRS** | ExpressLRS: the radio-control link from the safety pilot's radio to the drone. |
@@ -122,6 +163,8 @@ Still to measure: the end-to-end gesture → motors latency, `T_fresh` (OD-06, i
 | **MSP** | MultiWii Serial Protocol, used to talk to Betaflight. |
 | **MSP Override** | Betaflight feature that lets MSP replace selected RC channels while the pilot's switch is on. |
 | **p99** | 99th percentile: 99 % of samples are at or below this value. |
+| **QoS** | Quality of Service: ROS 2 delivery settings of a topic (reliable or best effort, history depth). |
+| **REP-103** | ROS convention for units and axes: SI units, x forward, y left, z up. |
 | **RTT** | Round-trip time: request sent to reply received. |
 | **SoftAP** | The Wi-Fi network the ESP creates itself, which the ground PC joins. |
 | **`T_loss`** | Time without an accepted control packet after which the ESP enters link failsafe (250 ms). |
