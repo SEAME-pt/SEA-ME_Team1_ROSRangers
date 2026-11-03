@@ -38,4 +38,12 @@ inline std::int16_t get_i16(const std::uint8_t *p) {
   return static_cast<std::int16_t>(get_u16(p));
 }
 
+inline void put_i32(std::uint8_t *p, std::int32_t v) {
+  put_u32(p, static_cast<std::uint32_t>(v));
+}
+
+inline std::int32_t get_i32(const std::uint8_t *p) {
+  return static_cast<std::int32_t>(get_u32(p));
+}
+
 } // namespace sd
