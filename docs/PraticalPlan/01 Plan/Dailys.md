@@ -110,6 +110,14 @@ Tiago - Foco num sensor de laser (possivelmente)
 Paulo - Ver as issues assigned a ele
 Bruno - Ver issues assigned a ele, foco no flight interface.
 
+03/Nov 11:02/11:05
+Guilherme - Hil
+Bruno - Implementar protocolo relativamente a issue, trabalho bloqueado por decisions
+Paulo - Baseado nas decisoes vai trabalhar num protocolo de comunicação entre drone e ground station
+**Blockers**
+Paulo - Decisoes a ser tomadas apos daily
+Bruno - Decisoes a serem tomadas apos daily
+
 
 ---
 
