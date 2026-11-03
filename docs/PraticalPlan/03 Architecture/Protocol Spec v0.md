@@ -186,7 +186,7 @@ The diagnostic builds and their scripts still use the old ports (timing 5761, TC
 
 ### 7.5 Still open after the review
 
-Found while preparing the review, not discussed for lack of time. Each has a suggested answer in the follow-up issue and is tracked in [[Open Questions]]. Do not assume them until a dated entry in §8 records the decision.
+Found while preparing the review, not discussed for lack of time. Each has a suggested answer in GitHub #142 and is tracked in [[Open Questions]]. Do not assume them until a dated entry in §8 records the decision.
 
 | Item | Suggested answer |
 |---|---|

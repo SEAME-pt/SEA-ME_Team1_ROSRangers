@@ -67,7 +67,7 @@ tags:
 - [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
 
 ### Protocol (after the 2026-11-03 review)
-Not discussed at the Protocol Spec v0 review for lack of time (#97). Suggested answers are in [[Protocol Spec v0]] §7.5. Decide in writing, then record a dated entry in the spec.
+Not discussed at the Protocol Spec v0 review for lack of time (#97). Suggested answers are in [[Protocol Spec v0]] §7.5. Decide in writing on GitHub #142, then record a dated entry in the spec.
 - [ ] `CONFIG_ACK` message (reply to `CONFIG_GET` / `CONFIG_SET`, REQ-COM-018)
 - [ ] Header `flags` bit 0 "ack requested": keep or remove in v0
 - [ ] Values of `ARM_CONTROL_ACK.result`, `RESUME_ACK.result`, `BYE.reason`, `EVENT.code`
