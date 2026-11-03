@@ -44,11 +44,11 @@ struct Header {
 // Why a frame was rejected. Every reject is dropped and counted (REQ-COM-004).
 enum class RxError : std::uint8_t {
   kOk = 0,
-  kTruncated,   // shorter than header + tag, or than payload_len says
-  kBadMagic,    // not "SD"
-  kBadVersion,  // version byte is not kWireVersion
-  kBadLength,   // payload_len > kMaxPayload, or bytes after the frame
-  kBadTag,      // HMAC tag does not match
+  kTruncated,  // shorter than header + tag, or than payload_len says
+  kBadMagic,   // not "SD"
+  kBadVersion, // version byte is not kWireVersion
+  kBadLength,  // payload_len > kMaxPayload, or bytes after the frame
+  kBadTag,     // HMAC tag does not match
 };
 
 // A decoded frame. `payload` points into the buffer passed to decode_frame.
@@ -57,19 +57,23 @@ struct Frame {
   const std::uint8_t *payload;
 };
 
-// Builds header + payload + tag into `out`. header.payload_len is set from `payload_len`.
-// Returns the frame size, or 0 if payload_len > kMaxPayload or `out_cap` is too small.
+// Builds header + payload + tag into `out`. header.payload_len is set from
+// `payload_len`. Returns the frame size, or 0 if payload_len > kMaxPayload or
+// `out_cap` is too small.
 std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
-                         std::size_t payload_len, const Key &key, std::uint8_t *out,
-                         std::size_t out_cap);
+                         std::size_t payload_len, const Key &key,
+                         std::uint8_t *out, std::size_t out_cap);
 
-// Checks one complete frame (a UDP datagram, or a TCP frame cut with frame_size()).
-// Order of checks follows spec §4 rule 1: length, magic, version, then the tag.
-// Session and sequence checks are the caller's (§4 rules 2 and 3).
-RxError decode_frame(const std::uint8_t *buf, std::size_t len, const Key &key, Frame &out);
+// Checks one complete frame (a UDP datagram, or a TCP frame cut with
+// frame_size()). Order of checks follows spec §4 rule 1: length, magic,
+// version, then the tag. Session and sequence checks are the caller's (§4 rules
+// 2 and 3).
+RxError decode_frame(const std::uint8_t *buf, std::size_t len, const Key &key,
+                     Frame &out);
 
-// TCP framing (OD-03): given at least kHeaderSize bytes, the size of the whole frame.
-// Returns 0 if fewer than kHeaderSize bytes are given or payload_len > kMaxPayload.
+// TCP framing (OD-03): given at least kHeaderSize bytes, the size of the whole
+// frame. Returns 0 if fewer than kHeaderSize bytes are given or payload_len >
+// kMaxPayload.
 std::size_t frame_size(const std::uint8_t *buf, std::size_t len);
 
 } // namespace sd

@@ -6,8 +6,10 @@
 
 namespace {
 
-std::array<std::uint16_t, sd::kRcChannels> rc(std::int16_t roll, std::int16_t pitch,
-                                               std::int16_t yaw, std::int16_t throttle) {
+std::array<std::uint16_t, sd::kRcChannels> rc(std::int16_t roll,
+                                              std::int16_t pitch,
+                                              std::int16_t yaw,
+                                              std::int16_t throttle) {
   const sd::Setpoint sp{1, roll, pitch, yaw, throttle, 0};
   std::array<std::uint16_t, sd::kRcChannels> ch{};
   sd::setpoint_to_rc(sp, ch.data());
@@ -39,7 +41,8 @@ TEST(Setpoint, WrongSizesRefused) {
   EXPECT_EQ(sd::encode_setpoint(out, buf, sd::kSetpointSize - 1), 0U);
 }
 
-// Group 6 (clamps and mapping), spec §4 rule 4 and §5. Order: roll, pitch, throttle, yaw, aux1-4.
+// Group 6 (clamps and mapping), spec §4 rule 4 and §5. Order: roll, pitch,
+// throttle, yaw, aux1-4.
 TEST(SetpointToRc, MapMin) { EXPECT_EQ(rc(-1000, -1000, -1000, 0)[0], 1000); }
 
 TEST(SetpointToRc, MapCenter) {

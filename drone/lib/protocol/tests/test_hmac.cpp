@@ -27,8 +27,9 @@ std::string sha256_hex(const std::string &msg) {
 
 std::string hmac_hex(const std::string &key, const std::string &msg) {
   std::uint8_t out[sd::kSha256Size];
-  sd::hmac_sha256(reinterpret_cast<const std::uint8_t *>(key.data()), key.size(),
-                  reinterpret_cast<const std::uint8_t *>(msg.data()), msg.size(), out);
+  sd::hmac_sha256(
+      reinterpret_cast<const std::uint8_t *>(key.data()), key.size(),
+      reinterpret_cast<const std::uint8_t *>(msg.data()), msg.size(), out);
   return hex(out, sizeof(out));
 }
 
@@ -36,16 +37,19 @@ std::string hmac_hex(const std::string &key, const std::string &msg) {
 
 // FIPS 180-4 examples.
 TEST(Sha256, EmptyMessage) {
-  EXPECT_EQ(sha256_hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  EXPECT_EQ(sha256_hex(""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 }
 
 TEST(Sha256, Abc) {
-  EXPECT_EQ(sha256_hex("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  EXPECT_EQ(sha256_hex("abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
 }
 
 TEST(Sha256, TwoBlockMessage) {
-  EXPECT_EQ(sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
-            "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  EXPECT_EQ(
+      sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+      "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
 }
 
 TEST(Sha256, SplitUpdatesMatchOneUpdate) {

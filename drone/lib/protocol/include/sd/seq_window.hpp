@@ -4,20 +4,22 @@
 
 namespace sd {
 
-// ADR-003: accept a message only if its seq is newer than the last accepted one.
+// ADR-003: accept a message only if its seq is newer than the last accepted
+// one.
 enum class SeqResult : std::uint8_t {
   kAccepted = 0,
-  kAcceptedGap,     // newer, but some seq numbers were skipped (counted, not an error)
-  kDuplicate,       // same seq as the last accepted one
-  kOld,             // older than the last accepted one (reordered or replayed), or seq 0
-  kNeedNewSession,  // seq >= 2^31: the sender must open a new session
+  kAcceptedGap, // newer, but some seq numbers were skipped (counted, not an
+                // error)
+  kDuplicate,   // same seq as the last accepted one
+  kOld, // older than the last accepted one (reordered or replayed), or seq 0
+  kNeedNewSession, // seq >= 2^31: the sender must open a new session
 };
 
 struct SeqCounters {
   std::uint32_t duplicates;
   std::uint32_t old;
-  std::uint32_t gaps;          // number of accepted messages that came after a gap
-  std::uint32_t missing;       // total seq numbers skipped over all gaps
+  std::uint32_t gaps;    // number of accepted messages that came after a gap
+  std::uint32_t missing; // total seq numbers skipped over all gaps
   std::uint32_t too_high;
 };
 

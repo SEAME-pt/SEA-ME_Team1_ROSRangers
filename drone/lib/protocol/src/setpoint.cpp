@@ -16,7 +16,8 @@ std::uint16_t axis_to_us(std::int16_t v) {
 
 } // namespace
 
-std::size_t encode_setpoint(const Setpoint &sp, std::uint8_t *out, std::size_t out_cap) {
+std::size_t encode_setpoint(const Setpoint &sp, std::uint8_t *out,
+                            std::size_t out_cap) {
   if (out_cap < kSetpointSize) {
     return 0;
   }
@@ -29,7 +30,8 @@ std::size_t encode_setpoint(const Setpoint &sp, std::uint8_t *out, std::size_t o
   return kSetpointSize;
 }
 
-bool decode_setpoint(const std::uint8_t *payload, std::size_t len, Setpoint &out) {
+bool decode_setpoint(const std::uint8_t *payload, std::size_t len,
+                     Setpoint &out) {
   if (payload == nullptr || len != kSetpointSize) {
     return false;
   }
@@ -45,7 +47,8 @@ bool decode_setpoint(const std::uint8_t *payload, std::size_t len, Setpoint &out
 void setpoint_to_rc(const Setpoint &sp, std::uint16_t channels[kRcChannels]) {
   channels[0] = axis_to_us(sp.roll);
   channels[1] = axis_to_us(sp.pitch);
-  channels[2] = static_cast<std::uint16_t>(kRcMin + clamp(sp.throttle, 0, 1000));
+  channels[2] =
+      static_cast<std::uint16_t>(kRcMin + clamp(sp.throttle, 0, 1000));
   channels[3] = axis_to_us(sp.yaw_rate);
   for (std::size_t i = 4; i < kRcChannels; ++i) {
     channels[i] = kRcMid;

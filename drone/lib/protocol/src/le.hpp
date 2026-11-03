@@ -1,6 +1,7 @@
 #pragma once
 
-// Little-endian helpers (spec §1: all integers are little-endian). Internal to the library.
+// Little-endian helpers (spec §1: all integers are little-endian). Internal to
+// the library.
 
 #include <cstdint>
 
@@ -23,8 +24,10 @@ inline std::uint16_t get_u16(const std::uint8_t *p) {
 }
 
 inline std::uint32_t get_u32(const std::uint8_t *p) {
-  return static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8) |
-         (static_cast<std::uint32_t>(p[2]) << 16) | (static_cast<std::uint32_t>(p[3]) << 24);
+  return static_cast<std::uint32_t>(p[0]) |
+         (static_cast<std::uint32_t>(p[1]) << 8) |
+         (static_cast<std::uint32_t>(p[2]) << 16) |
+         (static_cast<std::uint32_t>(p[3]) << 24);
 }
 
 inline void put_i16(std::uint8_t *p, std::int16_t v) {

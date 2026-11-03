@@ -1,0 +1,109 @@
+#include "sd/receiver.hpp"
+
+namespace sd {
+
+bool Receiver::start_session(std::uint32_t session_id, const Key &session_key) {
+  if (session_id == 0) {
+    return false;
+  }
+  key_ = session_key;
+  session_id_ = session_id;
+  in_session_ = true;
+  window_.reset();
+  return true;
+}
+
+void Receiver::end_session() {
+  key_ = {};
+  session_id_ = 0;
+  in_session_ = false;
+  window_.reset();
+}
+
+RxResult Receiver::reject(RxResult r) {
+  ++counters_.rejected;
+  switch (r) {
+  case RxResult::kNoSession:
+    ++counters_.no_session;
+    break;
+  case RxResult::kTruncated:
+    ++counters_.truncated;
+    break;
+  case RxResult::kBadMagic:
+    ++counters_.bad_magic;
+    break;
+  case RxResult::kBadVersion:
+    ++counters_.bad_version;
+    break;
+  case RxResult::kBadLength:
+    ++counters_.bad_length;
+    break;
+  case RxResult::kBadTag:
+    ++counters_.bad_tag;
+    break;
+  case RxResult::kWrongSession:
+    ++counters_.wrong_session;
+    break;
+  case RxResult::kDuplicateSeq:
+    ++counters_.duplicate_seq;
+    break;
+  case RxResult::kOldSeq:
+    ++counters_.old_seq;
+    break;
+  case RxResult::kSeqTooHigh:
+    ++counters_.seq_too_high;
+    break;
+  case RxResult::kAccepted:
+  case RxResult::kAcceptedGap:
+    break;
+  }
+  return r;
+}
+
+RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
+                           Frame &out) {
+  if (!in_session_) {
+    return reject(RxResult::kNoSession);
+  }
+
+  // Rule 1: length, magic, version, tag.
+  switch (decode_frame(buf, len, key_, out)) {
+  case RxError::kOk:
+    break;
+  case RxError::kTruncated:
+    return reject(RxResult::kTruncated);
+  case RxError::kBadMagic:
+    return reject(RxResult::kBadMagic);
+  case RxError::kBadVersion:
+    return reject(RxResult::kBadVersion);
+  case RxError::kBadLength:
+    return reject(RxResult::kBadLength);
+  case RxError::kBadTag:
+    return reject(RxResult::kBadTag);
+  }
+
+  // Rule 2: the current session only.
+  if (out.header.session_id != session_id_) {
+    return reject(RxResult::kWrongSession);
+  }
+
+  // Rule 3: newer than the last accepted message (ADR-003).
+  switch (window_.accept(out.header.seq)) {
+  case SeqResult::kAccepted:
+    ++counters_.accepted;
+    return RxResult::kAccepted;
+  case SeqResult::kAcceptedGap:
+    ++counters_.accepted;
+    return RxResult::kAcceptedGap;
+  case SeqResult::kDuplicate:
+    return reject(RxResult::kDuplicateSeq);
+  case SeqResult::kOld:
+    return reject(RxResult::kOldSeq);
+  case SeqResult::kNeedNewSession:
+    return reject(RxResult::kSeqTooHigh);
+  }
+  // Unreachable: every SeqResult value is handled above.
+  return reject(RxResult::kOldSeq);
+}
+
+} // namespace sd

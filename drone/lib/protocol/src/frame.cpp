@@ -17,8 +17,8 @@ void compute_tag(const std::uint8_t *frame, std::size_t len, const Key &key,
 } // namespace
 
 std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
-                         std::size_t payload_len, const Key &key, std::uint8_t *out,
-                         std::size_t out_cap) {
+                         std::size_t payload_len, const Key &key,
+                         std::uint8_t *out, std::size_t out_cap) {
   if (payload_len > kMaxPayload) {
     return 0;
   }
@@ -39,11 +39,13 @@ std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
   if (payload_len > 0) {
     std::memcpy(out + kHeaderSize, payload, payload_len);
   }
-  compute_tag(out, kHeaderSize + payload_len, key, out + kHeaderSize + payload_len);
+  compute_tag(out, kHeaderSize + payload_len, key,
+              out + kHeaderSize + payload_len);
   return total;
 }
 
-RxError decode_frame(const std::uint8_t *buf, std::size_t len, const Key &key, Frame &out) {
+RxError decode_frame(const std::uint8_t *buf, std::size_t len, const Key &key,
+                     Frame &out) {
   if (buf == nullptr || len < kHeaderSize + kTagSize) {
     return RxError::kTruncated;
   }

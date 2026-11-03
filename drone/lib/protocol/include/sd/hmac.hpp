@@ -31,14 +31,19 @@ private:
 };
 
 // HMAC-SHA256 (RFC 2104) over one contiguous buffer.
-void hmac_sha256(const std::uint8_t *key, std::size_t key_len, const std::uint8_t *data,
-                 std::size_t len, std::uint8_t out[kSha256Size]);
+void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
+                 const std::uint8_t *data, std::size_t len,
+                 std::uint8_t out[kSha256Size]);
 
-// session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce) (ADR-002, spec §1).
-Key derive_session_key(const Key &psk, const std::uint8_t ground_nonce[kNonceSize],
+// session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce) (ADR-002,
+// spec §1).
+Key derive_session_key(const Key &psk,
+                       const std::uint8_t ground_nonce[kNonceSize],
                        const std::uint8_t esp_nonce[kNonceSize]);
 
-// Compares in time that depends only on len, not on where the bytes differ (spec §4 rule 1).
-bool equal_constant_time(const std::uint8_t *a, const std::uint8_t *b, std::size_t len);
+// Compares in time that depends only on len, not on where the bytes differ
+// (spec §4 rule 1).
+bool equal_constant_time(const std::uint8_t *a, const std::uint8_t *b,
+                         std::size_t len);
 
 } // namespace sd
