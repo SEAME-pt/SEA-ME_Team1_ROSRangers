@@ -49,16 +49,20 @@ con="hil-softap-${GITHUB_RUN_ID:-local}-$$"
 # the runner from killing it when the job ends. 9>&-: it must not hold this
 # run's lock. Under the lock it removes this run's profile, switches the lab
 # autoconnect back on and re-joins the lab if it is not up.
+# It fires once this window is over by WATCHDOG_GRACE_S, and waits for a
+# later window for as long as a whole window can last: both follow from the
+# limits above, so changing those keeps the watchdog in step.
+window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + JOIN_WAIT_S))
 RUNNER_TRACKING_ID="" setsid -f nohup bash -c '
-  sleep "$1"
+  sleep "$1" || exit 1 # killed while waiting: someone stopped the watchdog
   exec 9>"$4"
-  flock -w 120 9 || exit 1 # a later window is open: its own restore re-joins
+  flock -w "$5" 9 || exit 1 # a later window is open: its own restore re-joins
   sudo nmcli connection delete "$3" >/dev/null 2>&1
   sudo nmcli connection modify --temporary "$2" connection.autoconnect yes
   nmcli -t -f NAME connection show --active | grep -qxF "$2" && exit 0
-  sudo nmcli connection up "$2"
+  sudo nmcli --wait "$6" connection up "$2"
 ' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + JOIN_WAIT_S + WATCHDOG_GRACE_S))" \
-  "$LAB_CON" "$con" "$lock" >/dev/null 2>&1 9>&- &
+  "$LAB_CON" "$con" "$lock" "$window_max_s" "$JOIN_WAIT_S" >/dev/null 2>&1 9>&- &
 
 # RUNNER_TEMP is wiped after each job, so a SIGKILL does not leave the
 # password behind. mktemp creates it 0600.
@@ -66,10 +70,16 @@ psk_file=$(mktemp -p "${RUNNER_TEMP:-/tmp}")
 cmd_pid=
 restore() {
   local rc=$?
-  trap - EXIT INT TERM
-  # timeout passes the TERM on to the test and kills it KILL_GRACE_S later,
-  # so it lets go of /dev/hil-esp
-  [[ -z $cmd_pid ]] || kill -TERM "$cmd_pid" 2>/dev/null || true
+  # Ignore, not reset: the runner sends SIGTERM 7.5 s after SIGINT, and the
+  # re-join below can take longer than that
+  trap - EXIT
+  trap '' INT TERM
+  # timeout passes the TERM on to the test and kills it KILL_GRACE_S later.
+  # Wait for it, so pytest has let go of /dev/hil-esp before the next step
+  if [[ -n $cmd_pid ]]; then
+    kill -TERM "$cmd_pid" 2>/dev/null || true
+    wait "$cmd_pid" 2>/dev/null || true
+  fi
   rm -f "$psk_file"
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
@@ -80,8 +90,11 @@ restore() {
   exit "$rc"
 }
 trap restore EXIT
-# A cancel or step timeout sends INT/TERM: trapped, they interrupt the `wait`
-# below at once, so restore runs before the runner's SIGKILL
+# A cancel or step timeout sends INT/TERM (hil.yaml execs this script, so the
+# signal reaches it). Bash defers a trap while a foreground command runs, so
+# every slow command below runs in the background and is `wait`ed for: a
+# trapped signal interrupts `wait` at once, and restore runs before the
+# runner's SIGKILL
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -94,7 +107,8 @@ printf '802-11-wireless-security.psk:%s\n' "$SEAME_AP_PASS" >"$psk_file"
 sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect no
 sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con" \
   ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk >/dev/null
-sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
+sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file" &
+wait $!
 
 echo "On $SEAME_AP_SSID, running for at most ${test_s} s: $*"
 timeout -k "$KILL_GRACE_S" "$test_s" "$@" 9>&- &

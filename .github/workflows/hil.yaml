@@ -98,7 +98,9 @@ jobs:
         timeout-minutes: 4
         run: |
           . .venv/bin/activate
-          drone/tests/hil/softap_window.sh 50 -- \
+          # exec: a cancel or step timeout signals the step's shell, so the
+          # script must be that shell to restore the lab Wi-Fi at once
+          exec drone/tests/hil/softap_window.sh 50 -- \
             pytest drone/tests/hil/wifi -v --junitxml=hil-wifi-report.xml
 
       - uses: actions/upload-artifact@v4

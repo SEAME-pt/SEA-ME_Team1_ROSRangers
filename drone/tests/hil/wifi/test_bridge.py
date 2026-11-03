@@ -74,6 +74,6 @@ def test_uart_to_udp(uart, udp):
         uart.write(probe)
         try:
             got += udp.recvfrom(512)[0]
-        except TimeoutError:
+        except OSError:  # timeout, or the SoftAP dropped while the ESP resets
             pass
     assert probe in got, f"probe never came back over UDP, got {got[-200:]!r}"

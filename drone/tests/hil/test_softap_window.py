@@ -1,6 +1,6 @@
 """softap_window.sh against a fake sudo, nmcli and sleep: no network is touched.
 
-Runs in PR CI (ci.yaml, scripts-python), not on the Pi. The fake `sleep`
+Runs in PR CI (ci.yaml, hil-unit), not on the Pi. The fake `sleep`
 holds the watchdog until the test opens a gate file, so the watchdog can be
 tested without waiting its real 3 minutes.
 """
@@ -19,24 +19,33 @@ SCRIPT = Path(__file__).with_name("softap_window.sh")
 LAB = "netplan-wlan0-SEAME"
 PASSWORD = "not-a-real-password"
 REJOIN = f"--wait 30 connection up {LAB}"  # the script's own re-join
-WATCHDOG_REJOIN = f"connection up {LAB}"  # the watchdog's re-join
+WATCHDOG_REJOIN = REJOIN  # the watchdog re-joins the same way, after the script
 LAB_AUTO_OFF = f"connection modify --temporary {LAB} connection.autoconnect no"
 LAB_AUTO_ON = f"connection modify --temporary {LAB} connection.autoconnect yes"
 
 # LAB_ACTIVE=0: the lab is down. FAIL_JOIN / FAIL_REJOIN: those calls fail.
+# SLOW_JOIN / SLOW_REJOIN: those calls take that many seconds; a finished
+# re-join logs "rejoined"
 FAKE_NMCLI = f"""#!/usr/bin/env bash
 echo "$*" >> "$NMCLI_LOG"
 case "$*" in
   *"show --active"*) [[ $LAB_ACTIVE == 0 ]] || echo {LAB} ;;
-  *"connection up hil-softap-"*) [[ -z $FAIL_JOIN ]] || exit 1 ;;
-  "{REJOIN}") [[ -z $FAIL_REJOIN ]] || exit 1 ;;
+  *"connection up hil-softap-"*)
+    /bin/sleep "${{SLOW_JOIN:-0}}"
+    [[ -z $FAIL_JOIN ]] || exit 1 ;;
+  "{REJOIN}")
+    /bin/sleep "${{SLOW_REJOIN:-0}}"
+    [[ -z $FAIL_REJOIN ]] || exit 1
+    echo rejoined >> "$NMCLI_LOG" ;;
 esac
 exit 0
 """
 
-# Waits for the gate, but gives up after 10 s so it never outlives the test
+# Waits for the gate. After 10 s it gives up and fails, so the watchdog
+# stops instead of acting on its own, and never outlives the test
 FAKE_SLEEP = """#!/usr/bin/env bash
 for _ in $(seq 200); do [[ -e $SLEEP_GATE ]] && exit 0; /bin/sleep 0.05; done
+exit 1
 """
 
 
@@ -79,7 +88,12 @@ def run(env, *args):
 
 def nmcli_calls(env):
     log = Path(env["NMCLI_LOG"])
-    return log.read_text().splitlines() if log.exists() else []
+    lines = log.read_text().splitlines() if log.exists() else []
+    return [line for line in lines if line != "rejoined"]
+
+
+def rejoined(env):
+    return "rejoined" in Path(env["NMCLI_LOG"]).read_text().splitlines()
 
 
 def wait_for_window(env):
@@ -147,12 +161,54 @@ def test_cancel_restores_at_once_and_stops_the_test(env):
         assert job.wait(timeout=5) == 143
         assert time.monotonic() - start < 2, "restore waited for the test"
         assert nmcli_calls(env)[-1] == REJOIN
-        time.sleep(0.5)
         gone = subprocess.run(["pgrep", "-f", "/bin/sleep 7.5"], capture_output=True)
         assert gone.returncode == 1, "the test command outlived the window"
     finally:
         job.kill()
         subprocess.run(["pkill", "-f", "/bin/sleep 7.5"], check=False)
+
+
+def test_signal_during_the_join_restores_at_once(env):
+    # The join can take up to 30 s: a cancel must not wait for it
+    job = subprocess.Popen(
+        ["bash", str(SCRIPT), "10", "--", "true"],
+        env=env | {"SLOW_JOIN": "5"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_for_window(env)  # the join has started
+        start = time.monotonic()
+        job.send_signal(signal.SIGTERM)
+        assert job.wait(timeout=5) == 143
+        assert time.monotonic() - start < 2, "restore waited for the join"
+        assert nmcli_calls(env)[-1] == REJOIN
+    finally:
+        job.kill()
+
+
+def test_second_signal_does_not_cut_the_rejoin(env):
+    # The runner sends SIGINT, then SIGTERM 7.5 s later: the re-join started
+    # by the first one must still finish
+    job = subprocess.Popen(
+        ["bash", str(SCRIPT), "10", "--", "/bin/sleep", "6.5"],
+        env=env | {"SLOW_REJOIN": "1"},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        wait_for_window(env)
+        job.send_signal(signal.SIGINT)
+        deadline = time.monotonic() + 5
+        while REJOIN not in nmcli_calls(env):
+            assert time.monotonic() < deadline, "restore never started the re-join"
+            time.sleep(0.02)
+        job.send_signal(signal.SIGTERM)  # while the re-join is running
+        assert job.wait(timeout=5) == 130
+        assert rejoined(env), "the second signal cut the re-join"
+    finally:
+        job.kill()
+        subprocess.run(["pkill", "-f", "/bin/sleep 6.5"], check=False)
 
 
 def test_softap_join_failure_still_rejoins_lab(env, tmp_path):
