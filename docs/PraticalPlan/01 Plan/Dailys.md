@@ -118,6 +118,15 @@ Paulo - Baseado nas decisoes vai trabalhar num protocolo de comunicação entre 
 Paulo - Decisoes a ser tomadas apos daily
 Bruno - Decisoes a serem tomadas apos daily
 
+04/Nov 09:27/09:32
+Guilherme - Continuar a trabalhar no protocolo C++
+Paulo - Continuar a trabalhar no protocolo
+Tiago - Continuar a issue #100
+Bruno - Trabalhar no rosbag com live do drone e trabalhar no flight interface.
+**Blockers**
+Possivelmente arranjar um range finder(Proxima sprint)
+Estudar bem o que está incluido no código de sprint.
+Issues relacionados com o Paulo
 
 ---
 
