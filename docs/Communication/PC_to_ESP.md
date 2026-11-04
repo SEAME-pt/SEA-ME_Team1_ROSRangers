@@ -543,7 +543,7 @@ The communication design is accepted for a given phase only when the relevant cr
 | OD-20 | ESP8266 behaviour under overload (priorities, limits on non-control traffic) | Bench testing |  | Open | — |
 | OD-21 | Ground-side bridge form (ROS 2 node, library, other) | Implementation |  | Accepted | `flight_interface` ROS 2 lifecycle node ([[System Overview]]). |
 | OD-22 | Numerical acceptance thresholds for §11 | Bench testing |  | Open | — |
-| OD-23 | Firmware update mechanism and authentication | Flight testing |  | Recommended | Signed OTA (RSA-2048 + SHA256, supported by the ESP8266 core) in Module 3 ([[Roadmap to April 2027]]). |
+| OD-23 | Firmware update mechanism and authentication | Flight testing |  | Partly decided (2026-11-04) | OTA with a password, only while the FC is disarmed and the link is not STREAMING ([[ADR-024 OTA Firmware Updates\|ADR-024]]). Signed OTA (RSA-2048 + SHA256, supported by the ESP8266 core) in Module 3 ([[Roadmap to April 2027]]). |
 
 ### Suggested related pages *(none confirmed to exist)*
 

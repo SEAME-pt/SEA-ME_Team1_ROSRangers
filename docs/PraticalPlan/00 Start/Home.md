@@ -33,7 +33,7 @@ tags:
 | Area | Notes |
 |---|---|
 | Plan | [[Study Plan v2]] · [[Roadmap to April 2027]] · [[Team Tracks]] · [[Requirements]] · [[Weekly Rituals]] · [[Dailys]] |
-| Decisions | [[Decision Register]] (ADR-001 to ADR-023, all accepted) |
+| Decisions | [[Decision Register]] (ADR-001 to ADR-024; ADR-023 and earlier accepted, ADR-024 proposed) |
 | Architecture | [[System Overview]] · [[Protocol Spec v0]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
 | Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] |

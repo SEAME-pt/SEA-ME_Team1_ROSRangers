@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-11-04
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -46,6 +46,7 @@ tags:
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
+| [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: password required, refused unless the FC is disarmed and the link is not STREAMING | 📝 Proposed (2026-11-04, #62). D1–D3 decided by the team | OD-23 (partly) |
 
 ## 2. What changed on 2026-10-12
 
@@ -92,11 +93,15 @@ tags:
   - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
   - Items still open after the review: spec §7.5.
 
-## 8. Still open
+## 8. What changed on 2026-11-04
+
+- New [[ADR-024 OTA Firmware Updates|ADR-024]] (proposed, #62). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. Whether flight builds keep OTA and the written procedure are proposals, accepted when the PR merges.
+
+## 9. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 9. Glossary
+## 10. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -125,7 +130,7 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **WPA2-PSK** | Wi-Fi security mode where every client uses the same pre-shared key (the ESP SoftAP, ADR-006). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **Binding phrase** | The secret that pairs an ELRS radio with the receiver. Kept by the team outside GitHub (ADR-023). |
-| **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `d1_mini_ota`). |
+| **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `esp_ota`, ADR-024). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
