@@ -19,6 +19,7 @@ Turns a message into bytes and back.
 | `Frame.EmptyPayloadRoundTrip` | Builds and reads a message with no content (RESUME_REQUEST): 28 bytes, content length 0 | Some commands carry no data and must still work |
 | `Frame.MaxPayloadRoundTripAndOneMoreRefused` | 256 bytes of content (the maximum) works; 257 is refused | The ESP has fixed-size memory; a bigger message would overflow it |
 | `Frame.EncodeRefusesSmallBuffer` | Building into a space 1 byte too small returns 0 (nothing built) | The code never writes past the end of its memory |
+| `Frame.EncodeRefusesNullPointers` | Building with missing content (null pointer but length 10) or no output space returns 0 | A programming mistake cannot crash the ESP |
 
 ## FrameReject: frames that must be refused
 Broken or forged frames are dropped. Each test checks one way a frame can be wrong.
@@ -94,6 +95,7 @@ The Receiver runs every check on each incoming frame: seal, session, then seq. O
 | `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | The counters go to the ground in STATE for diagnosis, and a refused frame leaves no trace |
 | `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | Same key on both sides, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
+| `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -109,7 +111,7 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
 | `State.BytesAndRoundTrip` | STATE telemetry (link state, last seq, attitude, heading, battery, flow, counters) gives exactly the 28 expected bytes and reads back the same | This is what the ground sees from the drone |
-| `Messages.WrongSizesRefused` | Every reader refuses 1 byte too few, 1 byte too many, and no data; every builder refuses a space 1 byte too small | A wrong size is never half-read |
+| `Messages.WrongSizesRefused` | Every fixed-size reader refuses 1 byte too few and 1 too many; every reader refuses a null pointer; every builder refuses a space 1 byte too small | A wrong size is never half-read |
 
 ## SeqWindow: the message number rule
 Accept only numbers higher than the last one accepted. Gaps are fine (they are counted).
@@ -128,7 +130,7 @@ Accept only numbers higher than the last one accepted. Gaps are fine (they are c
 | Test | What it does | Why it matters |
 |---|---|---|
 | `Setpoint.RoundTrip` | Extreme values (roll −1000, pitch 1000, yaw −1, throttle 1000) go to 10 bytes and back unchanged | Stick values arrive exactly as sent |
-| `Setpoint.WrongSizesRefused` | 9 bytes, 11 bytes or no data are refused; a 9-byte space is refused | Only a correct-size setpoint is used |
+| `Setpoint.WrongSizesRefused` | 9 bytes, 11 bytes or a null pointer are refused; a 9-byte space is refused | Only a correct-size setpoint is used |
 
 ## SetpointToRc: sticks to flight-controller channels
 Converts −1000..1000 to the 1000..2000 µs channel values Betaflight expects. Order: roll, pitch, throttle, yaw, then 4 aux channels.
@@ -138,7 +140,7 @@ Converts −1000..1000 to the 1000..2000 µs channel values Betaflight expects. 
 | `SetpointToRc.MapMin` | Roll −1000 → 1000 µs | Full left is the lowest channel value |
 | `SetpointToRc.MapCenter` | All 0 → 1500 µs (centre); throttle 0 → 1000 µs | Sticks centred means "hold"; throttle 0 means motors at minimum |
 | `SetpointToRc.MapMax` | Roll 1000 → 2000 µs | Full right is the highest channel value |
-| `SetpointToRc.ClampOver` | Roll 1500 → 2000; −32768 → 1000; 32767 → 2000 | Out-of-range values never reach the FC (safety) |
+| `SetpointToRc.ClampOver` | Roll 1500 → 2000, pitch −32768 → 1000, yaw 32767 → 2000; throttle 500 → 1500 | Out-of-range values never reach the FC (safety) |
 | `SetpointToRc.ThrottleMap` | Throttle 0 → 1000, 1000 → 2000, −50 → 1000, 1200 → 2000 | Throttle is clamped too |
 | `SetpointToRc.AuxAlwaysNeutral` | Channels 5–8 are always 1500, whatever the sticks | The ground can never flip the arm or mode switches (gestures never arm) |
 | `SetpointToRc.AxisOrderIsAetr` | Checks each value lands on the right channel: roll, pitch, throttle, yaw | Swapped channels would make the drone fly the wrong way |
@@ -148,7 +150,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.AllGroupsPresentAndNamesUnique` | Loads every vector file: at least 37 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 40 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
 | `3_header` | Broken envelopes: magic, version, length, truncated | Garbage is refused before it is read |

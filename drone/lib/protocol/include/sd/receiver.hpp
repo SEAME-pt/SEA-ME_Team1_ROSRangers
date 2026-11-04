@@ -61,11 +61,14 @@ public:
   bool start_session(std::uint32_t session_id, const Key &session_key);
   void end_session();
 
+  // `out` is written only when the result is accepted (is_accepted()).
   RxResult receive(const std::uint8_t *buf, std::size_t len, Frame &out);
 
   bool in_session() const { return in_session_; }
   std::uint32_t session_id() const { return session_id_; }
   std::uint32_t last_seq() const { return window_.last(); }
+  // counters() last for the Receiver's lifetime; seq_counters() restart with
+  // each session. How they are reported to the ground is open (spec §7.5).
   const RxCounters &counters() const { return counters_; }
   const SeqCounters &seq_counters() const { return window_.counters(); }
 

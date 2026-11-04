@@ -267,6 +267,10 @@ def group1() -> list[dict]:
         valid("resume_request_basic", "RESUME_REQUEST: no payload, 28-byte frame", msg("RESUME_REQUEST", 3)),
         valid("resume_ack_ok", "RESUME_ACK with result 0 (OK)", msg("RESUME_ACK", 3, result=0), note=PENDING_142),
         valid("bye_normal", "BYE with reason 0 (normal)", msg("BYE", 9, reason=0), note=PENDING_142),
+        valid("bye_replaced", "BYE with reason 3 (replaced by a new session): a non-zero code", msg("BYE", 10, reason=3),
+              note=PENDING_142),
+        valid("resume_ack_wrong_state", "RESUME_ACK with result 1 (wrong state): a non-zero code",
+              msg("RESUME_ACK", 4, result=1), note=PENDING_142),
         valid("config_get_t_loss", "CONFIG_GET of key 0x40 t_loss_ms (value field 0)", msg("CONFIG_GET", 4, config_key=0x40, value=0)),
         valid("config_set_telemetry_rate", "CONFIG_SET of key 0x80 telemetry_rate_hz to 30",
               msg("CONFIG_SET", 5, config_key=0x80, value=30)),
@@ -274,10 +278,10 @@ def group1() -> list[dict]:
               msg("EVENT", 6, code=0x0102, text="no setpoint for 250 ms"), note=PENDING_142),
         valid("setpoint_attitude_basic", "The reference SETPOINT: mode 1, roll 100, pitch -200, yaw 0, throttle 500, seq 7",
               REFERENCE),
-        valid("state_streaming", "STATE while streaming, with every field set (negative roll and flow included)",
+        valid("state_streaming", "STATE while streaming, every field a different value (negative roll and flow included)",
               msg("STATE", 42, esp_state=3, override_active=1, last_ctrl_seq=41, last_ctrl_t_send_us=820000,
                   roll=-15, pitch=30, heading=359, vbat=1110, flow_x=-300, flow_y=300, flow_quality=200,
-                  flow_status=0, rx_rejected=7, msp_errors=0),
+                  flow_status=2, rx_rejected=7, msp_errors=5),
               note="esp_state 3 = STREAMING. " + PENDING_142),
     ]  # fmt: skip
 
@@ -322,10 +326,11 @@ def group3() -> list[dict]:
                  with_tag(header(0x60, 10, magic=b"SE", **h), sp), "bad_magic"),
         rejected("wrong_version", "Version 2 instead of 1; the tag is recomputed so the version is the only fault",
                  with_tag(header(0x60, 10, version=2, **h), sp), "bad_version"),
-        rejected("payload_len_over_256", "payload_len 257 with 257 payload bytes and a valid tag: only the 256 limit is broken",
-                 with_tag(header(0x40, 257, **h), bytes(257)), "bad_length"),
+        rejected("payload_len_over_256", "SETPOINT with payload_len 257, 257 payload bytes and a valid tag: only the 256 limit is broken",
+                 with_tag(header(0x60, 257, **h), bytes(257)), "bad_length"),
         rejected("payload_len_mismatch", "The reference frame with one extra byte after the tag", good + b"\0", "bad_length"),
         rejected("truncated_frame", "The reference frame without its last byte", good[:-1], "truncated"),
+        rejected("truncated_header", "Only the 20-byte header: shorter than header + tag (28 bytes)", good[:20], "truncated"),
     ]  # fmt: skip
 
 
@@ -343,17 +348,17 @@ def group5() -> list[dict]:
     a = "accept"
     return [
         sequence("seq_in_order", "Neutral setpoints 1, 2, 3: all accepted", [1, 2, 3], [a, a, a],
-                 {"last_ctrl_seq": 3, "rx_rejected": 0}),
+                 {"last_ctrl_seq": 3, "rx_rejected": 0, "gaps": 0}),
         sequence("seq_duplicate", "1, 2, 2, 3: the exact replay of 2 is refused", [1, 2, 2, 3],
-                 [a, a, "reject:duplicate_seq", a], {"last_ctrl_seq": 3, "rx_rejected": 1}),
+                 [a, a, "reject:duplicate_seq", a], {"last_ctrl_seq": 3, "rx_rejected": 1, "gaps": 0}),
         sequence("seq_older", "1, 5, 3: 3 arrives late and is refused", [1, 5, 3], [a, a, "reject:old_seq"],
-                 {"last_ctrl_seq": 5, "rx_rejected": 1}),
+                 {"last_ctrl_seq": 5, "rx_rejected": 1, "gaps": 1}),
         sequence("seq_gap", "1, 2, 10: 10 is accepted although 3-9 never arrived", [1, 2, 10], [a, a, a],
-                 {"last_ctrl_seq": 10, "rx_rejected": 0}),
+                 {"last_ctrl_seq": 10, "rx_rejected": 0, "gaps": 1}),
         sequence("seq_zero", "seq 0 is never accepted, even as the first frame", [0, 1], ["reject:old_seq", a],
-                 {"last_ctrl_seq": 1, "rx_rejected": 1}),
+                 {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
         sequence("seq_too_high", "1, then 2^31: the sender must open a new session", [1, 2**31],
-                 [a, "reject:seq_too_high"], {"last_ctrl_seq": 1, "rx_rejected": 1}),
+                 [a, "reject:seq_too_high"], {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
     ]  # fmt: skip
 
 
@@ -396,11 +401,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    names: list[str] = []
+    groups = {file_name: make() for file_name, make in FILES.items()}
+    names = [v["name"] for vectors in groups.values() for v in vectors]
+    if len(names) != len(set(names)):
+        raise SystemExit("duplicate vector names")
     stale = []
-    for file_name, make in FILES.items():
-        vectors = make()
-        names += [v["name"] for v in vectors]
+    for file_name, vectors in groups.items():
         path, text = HERE / file_name, render(vectors)
         if args.check:
             if not path.exists() or path.read_text() != text:
@@ -408,8 +414,6 @@ def main(argv: list[str] | None = None) -> int:
         else:
             path.write_text(text)
             print(f"wrote {file_name}: {len(vectors)} vectors")
-    if len(names) != len(set(names)):
-        raise SystemExit("duplicate vector names")
     if stale:
         print(
             f"Out of date: {', '.join(stale)}. Run drone/tests/vectors/generate.py.",

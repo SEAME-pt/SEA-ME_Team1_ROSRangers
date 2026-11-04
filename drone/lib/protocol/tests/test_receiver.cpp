@@ -186,6 +186,16 @@ TEST(Receiver, NewSessionResetsTheWindowAndEndSessionClosesIt) {
   EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kNoSession);
 }
 
+TEST(Receiver, RejectedFrameNeverReachesTheOutput) {
+  auto rx = open_receiver();
+  ASSERT_EQ(feed(rx, kSeq3), sd::RxResult::kAcceptedGap);
+  const auto replay = from_hex(kSeq2); // valid tag, older seq
+  sd::Frame f{};
+  EXPECT_EQ(rx.receive(replay.data(), replay.size(), f), sd::RxResult::kOldSeq);
+  EXPECT_EQ(f.payload, nullptr);
+  EXPECT_EQ(f.header.seq, 0U);
+}
+
 TEST(Receiver, IsAccepted) {
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAccepted));
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAcceptedGap));

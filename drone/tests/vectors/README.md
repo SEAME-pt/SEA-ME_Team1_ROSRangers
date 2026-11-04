@@ -14,7 +14,7 @@ A **test vector** is one fixed example: an input plus the result it must give. I
 - The JSON file only **describes** examples, so that the C++ tests and the Python tests read **the same examples**.
 - If both pass, the ground (Python) and the drone (C++) agree byte for byte. CI checks this on every PR, without flying.
 
-Each vector holds both sides of one message:
+A valid vector holds both sides of one message (`fields` and `bytes`). A reject vector has only `bytes` and `expect`:
 
 | Field | Meaning |
 |---|---|
@@ -41,7 +41,7 @@ Optional fields:
 | `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
 | `note` | A warning, e.g. a code value that waits for #142 |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. Without `state`, only the frame checks run |
-| `steps`, `final` | Group 5: several frames in order, then `last_ctrl_seq` and `rx_rejected` at the end |
+| `steps`, `final` | Group 5: several frames in order, then `last_ctrl_seq`, `rx_rejected` and `gaps` at the end |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
 | `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
 
@@ -49,9 +49,9 @@ Optional fields:
 
 | File | Group | Vectors |
 |---|---|---|
-| `1_valid_frames.json` | 1 Valid frames | 12 |
+| `1_valid_frames.json` | 1 Valid frames | 14 |
 | `2_hmac.json` | 2 HMAC | 4 |
-| `3_header.json` | 3 Header | 5 |
+| `3_header.json` | 3 Header | 6 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
 | `6_clamps.json` | 6 Clamps and mapping | 8 |
@@ -110,9 +110,9 @@ tag      fb 70 3d 82 4f 5b 58 9e
 
 ## 3. The groups, with one example each
 
-### Group 1: Valid frames (12 vectors)
+### Group 1: Valid frames (14 vectors)
 
-One per message type, all `accept`. Vector names are `<message type>_<what is special>`:
+One per message type, plus `bye_replaced` and `resume_ack_wrong_state` with non-zero codes. All `accept`. Vector names are `<message type>_<what is special>`:
 
 | Message type | Vector name |
 |---|---|
@@ -159,9 +159,9 @@ Example: the reference frame with **one bit flipped in the roll byte** (`64` →
 }
 ```
 
-### Group 3: Header (5 vectors)
+### Group 3: Header (6 vectors)
 
-`wrong_magic`, `wrong_version`, `payload_len_over_256`, `payload_len_mismatch`, `truncated_frame`. All reject.
+`wrong_magic`, `wrong_version`, `payload_len_over_256`, `payload_len_mismatch`, `truncated_frame`, `truncated_header` (shorter than header + tag). All reject.
 
 Proves: garbage is refused before anything is read (spec §4 rule 1).
 
@@ -229,7 +229,7 @@ Example: roll **+1500** (out of range; the ground should clamp it too, but the E
 {
   "name": "clamp_over",
   "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-  "fields": { "type": "SETPOINT", "session_id": 305419896, "seq": 1, "t_send_us": 0,
+  "fields": { "type": "SETPOINT", "flags": 0, "session_id": 305419896, "seq": 1, "t_send_us": 0,
               "mode": 1, "roll": 1500, "pitch": 0, "yaw_rate": 0, "throttle": 500, "sp_flags": 0 },
   "bytes": "5344016000000a0078563412010000000000000001dc0500000000f40100aef509cd5dc0dca2",
   "expect": "accept",
@@ -256,19 +256,19 @@ The `reject:<reason>` names, and the C++ values they map to:
 
 | Reason | Meaning | C++ |
 |---|---|---|
-| `truncated` | Shorter than header + tag, or than `payload_len` says | `RxError::kTruncated` |
-| `bad_magic` | Not `SD` | `RxError::kBadMagic` |
-| `bad_version` | Version byte is not 1 | `RxError::kBadVersion` |
-| `bad_length` | `payload_len` > 256, or bytes after the frame | `RxError::kBadLength` |
-| `bad_tag` | HMAC tag does not match | `RxError::kBadTag` |
-| `wrong_session` | `session_id` is not the current session (§4 rule 2) | Receiver (#99) |
-| `duplicate_seq` | Same seq as the last accepted one | `SeqResult::kDuplicate` |
-| `old_seq` | Older than the last accepted one, or seq 0 | `SeqResult::kOld` |
-| `seq_too_high` | `seq ≥ 2^31`: a new session is needed | `SeqResult::kNeedNewSession` |
+| `truncated` | Shorter than header + tag, or than `payload_len` says | `RxError::kTruncated`, `RxResult::kTruncated` |
+| `bad_magic` | Not `SD` | `RxError::kBadMagic`, `RxResult::kBadMagic` |
+| `bad_version` | Version byte is not 1 | `RxError::kBadVersion`, `RxResult::kBadVersion` |
+| `bad_length` | `payload_len` > 256, or bytes after the frame | `RxError::kBadLength`, `RxResult::kBadLength` |
+| `bad_tag` | HMAC tag does not match | `RxError::kBadTag`, `RxResult::kBadTag` |
+| `wrong_session` | `session_id` is not the current session (§4 rule 2) | `RxResult::kWrongSession` |
+| `duplicate_seq` | Same seq as the last accepted one | `RxResult::kDuplicateSeq` |
+| `old_seq` | Older than the last accepted one, or seq 0 | `RxResult::kOldSeq` |
+| `seq_too_high` | `seq ≥ 2^31`: a new session is needed | `RxResult::kSeqTooHigh` |
+| `no_session` | No session is open (no vector yet) | `RxResult::kNoSession` |
 
 ## 6. Still to come
 
-- Groups 5 and 6 have more vectors than the first list (`seq_zero`, `clamp_under`, `odd_values_round_toward_center`). They cover cases named in spec §4 and §6. Adding a vector is free (rule 1).
 - **Group 7, configuration** (`CONFIG_GET` / `CONFIG_SET` / `CONFIG_ACK` results: OK, unknown key, read-only, out of range, refused while streaming). Waits for the `CONFIG_ACK` decision in #142.
 
 ---

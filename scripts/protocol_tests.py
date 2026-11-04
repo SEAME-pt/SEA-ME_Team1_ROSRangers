@@ -18,8 +18,9 @@ come from drone/lib/protocol/tests/README.md: add a row there for a new test.
 exclusions after `-` (`*-FrameFuzz.*`).
 
 Times are wall-clock times of this PC, measured by this script between the
-GoogleTest start and end lines of each test. They compare tests and catch
-regressions; they do not predict ESP8266 timings.
+GoogleTest start and end lines of each test, so they include about 10 µs of
+pipe overhead: values under ~50 µs are mostly noise. They compare tests and
+catch regressions; they do not predict ESP8266 timings.
 """
 
 from __future__ import annotations
@@ -50,9 +51,9 @@ VECTOR_TEST = "Golden/Vector.Check/"  # test_vectors.cpp: one test per vector
 SECTION_LINE = re.compile(r"^## (.+)")
 ROW_LINE = re.compile(r"^\| `([^`]+)` \| (.+?) \| (.+?) \|$")
 RUN_LINE = re.compile(r"^\[ RUN      \] (\S+)")
-# Parameterized tests add ", where GetParam() = <value>" before the time.
+# Parameterized and typed tests add ", where GetParam() = ..." before the time.
 END_LINE = re.compile(
-    r"^\[ +(OK|FAILED|SKIPPED) +\] ([^\s,]+)(?:, where GetParam\(\) = .*)? \(\d+ ms\)$"
+    r"^\[ +(OK|FAILED|SKIPPED) +\] ([^\s,]+)(?:, where .*)? \(\d+ ms\)$"
 )
 REPEAT_LINE = re.compile(r"^Repeating all tests \(iteration (\d+)\)")
 
@@ -218,6 +219,21 @@ class RunResult:
     skipped: list[str] = field(default_factory=list)
     times_ms: dict[str, list[float]] = field(default_factory=dict)
     wall_s: float = 0.0
+    returncode: int = 0
+    crashed_in: str = ""  # test that was running when the binary died
+
+    @property
+    def ok(self) -> bool:
+        return bool(self.passed) and not self.failed and self.returncode == 0
+
+    def crash_message(self) -> str:
+        how = (
+            f"signal {-self.returncode}"
+            if self.returncode < 0
+            else f"exit code {self.returncode}"
+        )
+        where = f" during {self.crashed_in}" if self.crashed_in else ""
+        return f"The test binary stopped with {how}{where}."
 
 
 def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
@@ -229,7 +245,7 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
         cmd.append(f"--gtest_repeat={repeat}")
 
     result = RunResult()
-    started_at, detail = 0.0, []
+    started_at, detail, current = 0.0, [], ""
     start = time.perf_counter()
     with subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
@@ -243,7 +259,7 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
                 continue
             kind, value = event
             if kind == "run":
-                started_at, detail = now, []
+                started_at, detail, current = now, [], value
                 on_event("run", value, 0.0, [])
             elif kind == "iteration":
                 on_event("iteration", value, 0.0, [])
@@ -252,8 +268,13 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
                 result.times_ms.setdefault(value, []).append(ms)
                 getattr(result, "passed" if kind == "ok" else kind).append(value)
                 on_event(kind, value, ms, detail if kind == "failed" else [])
-                started_at = 0.0
+                started_at, current = 0.0, ""
     result.wall_s = time.perf_counter() - start
+    result.returncode = proc.returncode
+    if current:  # the binary died inside a test: count that test as failed
+        result.crashed_in = current
+        result.failed.append(current)
+        on_event("failed", current, (time.perf_counter() - started_at) * 1000, detail)
     return result
 
 
@@ -311,25 +332,28 @@ def run_tests(binary: Path, test_filter: str, explain: bool = True) -> int:
             sections.setdefault(
                 cat.section_of.get(name, name.split(".", 1)[0]), []
             ).append(name)
-        failed = set(result.failed)
+        passed = set(result.passed)
         for section, names in sections.items():
-            bad = [n for n in names if n in failed]
-            mark = paint("✗", RED) if bad else paint("✓", GREEN)
-            print(f"  {mark} {len(names) - len(bad):>2}/{len(names):<2} {section}")
+            good = sum(n in passed for n in names)
+            mark = paint("✓", GREEN) if good == len(names) else paint("✗", RED)
+            print(f"  {mark} {good:>2}/{len(names):<2} {section}")
 
     print("\n" + paint("Slowest:", BOLD))
     for name, samples in sorted(result.times_ms.items(), key=lambda kv: -kv[1][0])[:5]:
         print(f"  {fmt_ms(samples[0])}  {name}")
-    status = paint("ALL PASSED", GREEN) if not result.failed else paint("FAILED", RED)
+    ok = result.ok and len(result.passed) + len(result.skipped) == total
+    status = paint("ALL PASSED", GREEN) if ok else paint("FAILED", RED)
     print(
         f"\n{status}: {len(result.passed)} passed, {len(result.failed)} failed, "
         f"{len(result.skipped)} skipped, {fmt_s(result.wall_s)}"
     )
     for name in result.failed:
         print(paint(f"  ✗ {name}", RED))
-    if explain and not result.failed and result.passed:
+    if result.returncode:
+        print(paint(result.crash_message(), RED))
+    if explain and ok:
         print(paint("Every check above gave the expected result.", DIM))
-    return 0 if not result.failed and result.passed else 1
+    return 0 if ok else 1
 
 
 def bench_tests(
@@ -363,6 +387,10 @@ def bench_tests(
             state["failed"] += kind == "failed"
             done = state["done"] / (per_iteration * repeat)
             now = time.perf_counter()
+            if not sys.stdout.isatty():  # piped: one line per finished run
+                if state["done"] % per_iteration == 0:
+                    print(f"  run {state['iteration']}/{repeat} done", flush=True)
+                return
             if done < 1 and now - state["shown"] < 0.1:
                 return  # redraw at most 10 times a second
             state["shown"] = now
@@ -377,6 +405,11 @@ def bench_tests(
 
     result = execute(binary, test_filter, repeat, progress)
     print("\n")
+    if result.returncode:
+        print(paint(result.crash_message(), RED))
+    if not result.times_ms:
+        print(paint("No test finished, so there is nothing to measure.", RED))
+        return 1
 
     rows = sorted(
         ((name, summarize(s)) for name, s in result.times_ms.items()),
@@ -414,8 +447,7 @@ def bench_tests(
                 f"{len(result.failed)} failed runs: {sorted(set(result.failed))}", RED
             )
         )
-        return 1
-    return 0
+    return 0 if result.ok else 1
 
 
 # ---------------------------------------------------------------- menu
@@ -470,8 +502,16 @@ def pick_filter(binary: Path) -> str | None:
     return ask("GoogleTest filter", "*")
 
 
-def menu(build_dir: Path) -> int:
-    binary = build(build_dir)
+def ask_runs() -> int:
+    while True:
+        answer = ask("Runs per test", "100")
+        if answer.isdigit() and int(answer) > 0:
+            return int(answer)
+        print("Enter a whole number above 0.")
+
+
+def menu(build_dir: Path, no_build: bool = False) -> int:
+    binary = build_dir / BINARY if no_build else build(build_dir)
     actions = ["Run tests", "Benchmark tests", "List tests", "Rebuild"]
     while True:
         action = choose("Protocol library tests", actions)
@@ -488,12 +528,15 @@ def menu(build_dir: Path) -> int:
         if test_filter is None:
             continue
         print()
-        if action == 0:
-            run_tests(binary, test_filter)
-        else:
-            repeat = int(ask("Runs per test", "100"))
-            csv_path = ask("Save CSV to (empty = no)", "") or None
-            bench_tests(binary, test_filter, max(1, repeat), csv_path)
+        try:
+            if action == 0:
+                run_tests(binary, test_filter)
+            else:
+                repeat = ask_runs()
+                csv_path = ask("Save CSV to (empty = no)", "") or None
+                bench_tests(binary, test_filter, repeat, csv_path)
+        except KeyboardInterrupt:
+            print(paint("\nInterrupted.", YELLOW))
 
 
 # ---------------------------------------------------------------- main
@@ -524,17 +567,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if shutil.which("cmake") is None and not args.no_build:
         raise SystemExit("cmake not found. Install it or use --no-build.")
-    if args.command is None:
-        return menu(args.build_dir)
-
-    binary = args.build_dir / BINARY if args.no_build else build(args.build_dir)
-    if args.command == "list":
-        for name in list_tests(binary):
-            print(name)
-        return 0
-    if args.command == "run":
-        return run_tests(binary, args.filter, explain=not args.brief)
-    return bench_tests(binary, args.filter, max(1, args.runs), args.csv)
+    if args.no_build and not (args.build_dir / BINARY).exists():
+        raise SystemExit(f"No {BINARY} in {args.build_dir}. Run without --no-build.")
+    try:
+        if args.command is None:
+            return menu(args.build_dir, args.no_build)
+        binary = args.build_dir / BINARY if args.no_build else build(args.build_dir)
+        if args.command == "list":
+            for name in list_tests(binary):
+                print(name)
+            return 0
+        if args.command == "run":
+            return run_tests(binary, args.filter, explain=not args.brief)
+        return bench_tests(binary, args.filter, max(1, args.runs), args.csv)
+    except subprocess.CalledProcessError as error:
+        print(paint(f"{BINARY} failed: {error.stderr or error}", RED), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print(paint("\nInterrupted.", YELLOW))
+        return 130
 
 
 if __name__ == "__main__":

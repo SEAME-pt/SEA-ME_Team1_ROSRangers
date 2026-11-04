@@ -59,8 +59,9 @@ struct Frame {
 };
 
 // Builds header + payload + tag into `out`. header.payload_len is set from
-// `payload_len`. Returns the frame size, or 0 if payload_len > kMaxPayload or
-// `out_cap` is too small.
+// `payload_len`. Returns the frame size, or 0 if payload_len > kMaxPayload,
+// `out_cap` is too small, or a pointer is null (payload may be null only when
+// payload_len is 0).
 std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
                          std::size_t payload_len, const Key &key,
                          std::uint8_t *out, std::size_t out_cap);

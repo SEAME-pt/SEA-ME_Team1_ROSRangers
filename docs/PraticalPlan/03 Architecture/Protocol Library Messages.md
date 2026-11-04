@@ -115,11 +115,11 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: not decided) |
 | `SETPOINT.flags` and the header `reserved` byte are not checked | #102 / spec §7.5 (reserved, sent as 0, ignored) |
 
-**Not done yet** (PR #143):
+**Not done yet:**
 
 - No named constants for the config keys of spec §7.3 (`0x01 config_table_version` … `0x81 event_level`). Use the numbers from the spec for now.
 - No numbers for `flow_status` (the [[ThoneFlow]] §8.1 names have no wire values yet).
-- No golden vectors for these messages in `drone/tests/vectors/` (spec §6 group 1); only `README.md` exists. Owner: ptorrao-git + Track C (PR #143 checklist).
+- Group 7 vectors (CONFIG_ACK results) wait for the #142 decision. The 12 message types have vectors in `drone/tests/vectors/1_valid_frames.json`.
 
 ## 7. How to test
 
@@ -129,15 +129,7 @@ cmake --build build
 ctest --test-dir build   # CMake 3.20 or newer; otherwise: cd build && ctest
 ```
 
-GoogleTest (v1.14.0, needs network) is fetched when it is not installed. `tests/test_messages.cpp` checks:
-
-| Test | Checks |
-|---|---|
-| `Hello`, `HelloAck`, `ConfigKv`, `ConfigAck`, `State` `BytesAndRoundTrip` | Exact little-endian bytes, then decode gives back the same struct |
-| `U8Payload.RoundTrip` | One-byte codec (`ByeReason::kReplaced` = 3) |
-| `Event.EmptyAndFullText` | 0 and 64 text bytes |
-| `Event.TooLongRefused` | `text_len` 65, payload of 67 or 1 byte, buffer too small: all refused |
-| `Messages.WrongSizesRefused` | Every fixed-size decoder refuses one byte short, one byte long and `nullptr`; every encoder refuses a buffer one byte short |
+GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are fetched when not installed; this needs network. Every test is explained in `drone/lib/protocol/tests/README.md`. `python3 scripts/protocol_tests.py` builds, runs and explains them.
 
 ## 8. Glossary
 
@@ -156,6 +148,7 @@ GoogleTest (v1.14.0, needs network) is fetched when it is not installed. `tests/
 | **OD-16** | Decision ID in [[PC_to_ESP]] (accepted): configuration is rejected while control is enabled. |
 | **Payload** | The bytes between the 20-byte header and the 8-byte tag of a frame ([[Protocol Spec v0]] §1). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
+| **Receiver** | The library class that checks each frame (tag, session, seq) before any payload is used. |
 | **Session** | One run of the protocol between the ground and the ESP, named by `session_id`; opened by `HELLO` / `HELLO_ACK` ([[ADR-005 TCP Session\|ADR-005]]). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (spec §6). Also called a "golden vector". |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |

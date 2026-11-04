@@ -19,7 +19,8 @@ void compute_tag(const std::uint8_t *frame, std::size_t len, const Key &key,
 std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
                          std::size_t payload_len, const Key &key,
                          std::uint8_t *out, std::size_t out_cap) {
-  if (payload_len > kMaxPayload) {
+  if (payload_len > kMaxPayload || out == nullptr ||
+      (payload == nullptr && payload_len > 0)) {
     return 0;
   }
   const std::size_t total = kHeaderSize + payload_len + kTagSize;

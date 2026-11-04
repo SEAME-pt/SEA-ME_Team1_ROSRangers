@@ -24,6 +24,14 @@ std::uint32_t rotr(std::uint32_t x, unsigned n) {
   return (x >> n) | (x << (32U - n));
 }
 
+// Clears key material from the stack. volatile so the compiler cannot drop it.
+void wipe(void *p, std::size_t n) {
+  volatile std::uint8_t *v = static_cast<volatile std::uint8_t *>(p);
+  for (std::size_t i = 0; i < n; ++i) {
+    v[i] = 0;
+  }
+}
+
 } // namespace
 
 Sha256::Sha256()
@@ -141,6 +149,9 @@ void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
   ho.update(pad, kBlockSize);
   ho.update(inner, kSha256Size);
   ho.finish(out);
+  wipe(block_key, sizeof(block_key));
+  wipe(pad, sizeof(pad));
+  wipe(inner, sizeof(inner));
 }
 
 Key derive_session_key(const Key &psk,

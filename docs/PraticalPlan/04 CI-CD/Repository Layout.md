@@ -52,7 +52,7 @@ SEA-ME_Team1_ROSRangers/
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
 │   └── tests/
-│       ├── vectors/           # golden vectors shared by C++ and Python
+│       ├── vectors/           # golden vectors (generate.py + *.json) shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
 │       ├── hil/               # pytest suites run on the self-hosted runner
 │       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
@@ -97,6 +97,7 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **GoogleTest** | C++ unit-test framework used for `drone/lib/protocol` on the PC and in CI. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |

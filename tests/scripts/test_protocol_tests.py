@@ -142,7 +142,7 @@ def test_real_catalogue_describes_every_test_in_the_sources():
         f"{suite}.{name}"
         for path in sources
         for suite, name in protocol_tests.re.findall(
-            r"^TEST\((\w+),\s*(\w+)\)", path.read_text(), protocol_tests.re.M
+            r"^TEST(?:_F)?\((\w+),\s*(\w+)\)", path.read_text(), protocol_tests.re.M
         )
     }
     missing = names - set(protocol_tests.load_catalogue().does)
@@ -201,3 +201,51 @@ def test_golden_vector_files_match_the_generator():
         [sys.executable, str(generator), "--check"], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+# Passes one test, then dies with SIGSEGV inside the second one.
+CRASHING_RUN = r"""#!/bin/sh
+case "$1" in
+--gtest_list_tests)
+  printf 'Suite.\n  Good\n  Boom\n  Never\n'
+  ;;
+*)
+  echo '[ RUN      ] Suite.Good'
+  echo '[       OK ] Suite.Good (0 ms)'
+  echo '[ RUN      ] Suite.Boom'
+  kill -SEGV $$
+  ;;
+esac
+"""
+
+
+@pytest.fixture
+def crashing_binary(tmp_path):
+    binary = tmp_path / "sd_protocol_tests"
+    binary.write_text(CRASHING_RUN)
+    binary.chmod(0o755)
+    return binary
+
+
+def test_a_crashing_binary_is_a_failure(crashing_binary, capsys):
+    assert protocol_tests.run_tests(crashing_binary, "*") == 1
+    out = capsys.readouterr().out
+    assert "FAILED: 1 passed, 1 failed" in out
+    assert "signal 11 during Suite.Boom" in out
+    assert "✗  1/3" in out  # Never did not run, so the area is not all green
+
+
+def test_bench_with_a_crashing_binary_fails_cleanly(crashing_binary, capsys):
+    assert protocol_tests.bench_tests(crashing_binary, "*", 2, None) == 1
+    assert "signal 11" in capsys.readouterr().out
+
+
+def test_menu_asks_again_for_a_bad_number_of_runs(monkeypatch):
+    answers = iter(["abc", "0", "25"])
+    monkeypatch.setattr("builtins.input", lambda _="": next(answers))
+    assert protocol_tests.ask_runs() == 25
+
+
+def test_no_build_without_a_binary_says_what_to_do(tmp_path):
+    with pytest.raises(SystemExit, match="Run without --no-build"):
+        protocol_tests.main(["--no-build", "--build-dir", str(tmp_path), "list"])

@@ -66,8 +66,12 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
     return reject(RxResult::kNoSession);
   }
 
+  // Decoded into a local frame: `out` is written only for an accepted frame,
+  // so a rejected or replayed payload can never be used by mistake.
+  Frame frame{};
+
   // Rule 1: length, magic, version, tag.
-  switch (decode_frame(buf, len, key_, out)) {
+  switch (decode_frame(buf, len, key_, frame)) {
   case RxError::kOk:
     break;
   case RxError::kTruncated:
@@ -83,17 +87,19 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
   }
 
   // Rule 2: the current session only.
-  if (out.header.session_id != session_id_) {
+  if (frame.header.session_id != session_id_) {
     return reject(RxResult::kWrongSession);
   }
 
   // Rule 3: newer than the last accepted message (ADR-003).
-  switch (window_.accept(out.header.seq)) {
+  switch (window_.accept(frame.header.seq)) {
   case SeqResult::kAccepted:
     ++counters_.accepted;
+    out = frame;
     return RxResult::kAccepted;
   case SeqResult::kAcceptedGap:
     ++counters_.accepted;
+    out = frame;
     return RxResult::kAcceptedGap;
   case SeqResult::kDuplicate:
     return reject(RxResult::kDuplicateSeq);

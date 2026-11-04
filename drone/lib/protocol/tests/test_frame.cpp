@@ -116,6 +116,15 @@ TEST(Frame, EncodeRefusesSmallBuffer) {
   EXPECT_EQ(sd::encode_frame(h, nullptr, 0, test_key(), buf, sizeof(buf)), 0U);
 }
 
+TEST(Frame, EncodeRefusesNullPointers) {
+  const sd::Header h{0x60, 0, 0, kSession, 1, 0};
+  std::uint8_t buf[sd::kMaxFrame];
+  EXPECT_EQ(sd::encode_frame(h, nullptr, 10, test_key(), buf, sizeof(buf)), 0U);
+  const std::uint8_t payload[1] = {0};
+  EXPECT_EQ(sd::encode_frame(h, payload, 1, test_key(), nullptr, sd::kMaxFrame),
+            0U);
+}
+
 // Group 2 (HMAC): one flipped bit anywhere is rejected.
 TEST(FrameReject, PayloadBitFlipped) {
   auto bytes = from_hex(kSetpointBasic);

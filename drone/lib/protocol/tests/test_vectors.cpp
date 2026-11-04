@@ -26,6 +26,7 @@ using json = nlohmann::json;
 using Bytes = std::vector<std::uint8_t>;
 
 Bytes from_hex(const std::string &s) {
+  EXPECT_EQ(s.size() % 2, 0U) << "odd-length hex: " << s;
   Bytes out;
   for (std::size_t i = 0; i + 1 < s.size(); i += 2) {
     out.push_back(
@@ -46,6 +47,7 @@ std::string to_hex(const std::uint8_t *p, std::size_t n) {
 
 sd::Key key_from_hex(const std::string &s) {
   const Bytes b = from_hex(s);
+  EXPECT_EQ(b.size(), sd::kKeySize) << "a key is 32 bytes";
   sd::Key k{};
   std::copy_n(b.begin(), std::min(b.size(), sd::kKeySize), k.bytes);
   return k;
@@ -327,6 +329,9 @@ TEST_P(Vector, Check) {
     if (final.contains("rx_rejected")) {
       EXPECT_EQ(rx.counters().rejected, final["rx_rejected"]);
     }
+    if (final.contains("gaps")) {
+      EXPECT_EQ(rx.seq_counters().gaps, final["gaps"]);
+    }
     return;
   }
 
@@ -337,6 +342,17 @@ TEST_P(Vector, Check) {
           ? result_name(rx.receive(buf.data(), buf.size(), frame))
           : result_name(sd::decode_frame(buf.data(), buf.size(), key, frame));
   ASSERT_EQ(got, v.at("expect"));
+
+  // A rejected frame is also refused by a Receiver and counted (rx_rejected).
+  if (got != "accept") {
+    if (!with_session) {
+      ASSERT_TRUE(rx.start_session(0x12345678, key));
+      sd::Frame ignored{};
+      EXPECT_EQ(result_name(rx.receive(buf.data(), buf.size(), ignored)), got);
+    }
+    EXPECT_EQ(rx.counters().rejected, 1U);
+    EXPECT_EQ(rx.counters().accepted, 0U);
+  }
 
   if (!v.contains("fields")) {
     return;
@@ -371,6 +387,14 @@ TEST_P(Vector, Check) {
                           : fields.at(item.key());
     EXPECT_EQ(item.value(), want) << "decode " << item.key();
   }
+  // Every key in fields is checked: header keys plus what the decoder gives.
+  for (const auto &item : fields.items()) {
+    const bool header_key = item.key() == "type" || item.key() == "flags" ||
+                            item.key() == "session_id" || item.key() == "seq" ||
+                            item.key() == "t_send_us";
+    EXPECT_TRUE(header_key || decoded.contains(item.key()))
+        << "field '" << item.key() << "' is not part of " << type;
+  }
 
   // Group 6: the RC channels sent to the FC.
   if (v.contains("channels")) {
@@ -391,12 +415,12 @@ INSTANTIATE_TEST_SUITE_P(Golden, Vector, ::testing::ValuesIn(vectors()),
 
 } // namespace
 
-TEST(Vectors, AllGroupsPresentAndNamesUnique) {
+TEST(Vectors, FilesLoadedAndNamesUnique) {
   std::vector<std::string> names;
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 37U);
+  EXPECT_GE(names.size(), 40U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";
