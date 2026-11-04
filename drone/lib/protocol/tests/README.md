@@ -143,6 +143,19 @@ Converts −1000..1000 to the 1000..2000 µs channel values Betaflight expects. 
 | `SetpointToRc.AuxAlwaysNeutral` | Channels 5–8 are always 1500, whatever the sticks | The ground can never flip the arm or mode switches (gestures never arm) |
 | `SetpointToRc.AxisOrderIsAetr` | Checks each value lands on the right channel: roll, pitch, throttle, yaw | Swapped channels would make the drone fly the wrong way |
 
+## Golden vectors: examples shared with the Python twin
+Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that folder. The Python ground code (#100) checks the same files. If both pass, the PC and the drone agree byte for byte. Each vector's "does" line is the `description` in its JSON. The rows named after a file give the "why" for that file's vectors.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `Vectors.AllGroupsPresentAndNamesUnique` | Loads every vector file: at least 37 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
+| `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
+| `3_header` | Broken envelopes: magic, version, length, truncated | Garbage is refused before it is read |
+| `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
+| `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
+| `6_clamps` | Setpoints to the 8 RC channels | The FC gets the right channels and never a value out of range |
+
 ## Version: protocol version
 | Test | What it does | Why it matters |
 |---|---|---|

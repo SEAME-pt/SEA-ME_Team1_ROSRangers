@@ -168,3 +168,36 @@ def test_brief_run_has_no_explanations(fake_binary, capsys):
     protocol_tests.run_tests(fake_binary, "*", explain=False)
     out = capsys.readouterr().out
     assert "does:" not in out and "Summary by area" not in out
+
+
+def test_parameterized_end_line_drops_the_param_value():
+    line = "[  FAILED  ] Golden/Vector.Check/wrong_magic, where GetParam() = wrong_magic (0 ms)"
+    assert protocol_tests.parse_line(line) == (
+        "failed",
+        "Golden/Vector.Check/wrong_magic",
+    )
+
+
+def test_vectors_describe_themselves(tmp_path):
+    (tmp_path / "5_sequence.json").write_text(
+        '[{"name": "seq_gap", "description": "1, 2, 10 accepted"}]'
+    )
+    cat = protocol_tests.parse_catalogue(
+        "## Golden vectors\n| `5_sequence` | Frames in a row | No replay |\n"
+    )
+    protocol_tests.add_vectors(cat, tmp_path)
+    name = "Golden/Vector.Check/seq_gap"
+    assert cat.section_of[name] == "Golden vectors"
+    assert cat.does[name] == "1, 2, 10 accepted"
+    assert cat.why[name] == "No replay"
+
+
+def test_golden_vector_files_match_the_generator():
+    """drone/tests/vectors/*.json must be what generate.py writes."""
+    import subprocess
+
+    generator = protocol_tests.VECTOR_DIR / "generate.py"
+    result = subprocess.run(
+        [sys.executable, str(generator), "--check"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

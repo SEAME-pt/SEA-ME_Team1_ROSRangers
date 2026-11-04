@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import re
 import shutil
@@ -43,11 +44,16 @@ SOURCE_DIR = REPO / "drone" / "lib" / "protocol"
 DEFAULT_BUILD_DIR = Path(tempfile.gettempdir()) / "sd_protocol_build"
 BINARY = "sd_protocol_tests"
 CATALOGUE = SOURCE_DIR / "tests" / "README.md"
+VECTOR_DIR = REPO / "drone" / "tests" / "vectors"
+VECTOR_TEST = "Golden/Vector.Check/"  # test_vectors.cpp: one test per vector
 
 SECTION_LINE = re.compile(r"^## (.+)")
 ROW_LINE = re.compile(r"^\| `([^`]+)` \| (.+?) \| (.+?) \|$")
 RUN_LINE = re.compile(r"^\[ RUN      \] (\S+)")
-END_LINE = re.compile(r"^\[ +(OK|FAILED|SKIPPED) +\] (\S+) \(\d+ ms\)")
+# Parameterized tests add ", where GetParam() = <value>" before the time.
+END_LINE = re.compile(
+    r"^\[ +(OK|FAILED|SKIPPED) +\] ([^\s,]+)(?:, where GetParam\(\) = .*)? \(\d+ ms\)$"
+)
 REPEAT_LINE = re.compile(r"^Repeating all tests \(iteration (\d+)\)")
 
 COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
@@ -134,11 +140,30 @@ def parse_catalogue(text: str) -> Catalogue:
     return cat
 
 
+def add_vectors(cat: Catalogue, vector_dir: Path) -> None:
+    """Golden vectors describe themselves: 'description' in each vector, and
+    the row named after the file (e.g. `1_valid_frames`) in tests/README.md
+    gives the section and the why."""
+    for path in sorted(vector_dir.glob("*.json")):
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        group = path.stem
+        for vector in data if isinstance(data, list) else [data]:
+            name = VECTOR_TEST + vector.get("name", "?")
+            cat.section_of[name] = cat.section_of.get(group, "Golden vectors")
+            cat.does[name] = vector.get("description", vector.get("name", ""))
+            cat.why[name] = cat.why.get(group, "Both implementations must agree")
+
+
 def load_catalogue() -> Catalogue:
     try:
-        return parse_catalogue(CATALOGUE.read_text())
+        cat = parse_catalogue(CATALOGUE.read_text())
     except OSError:
         return Catalogue()
+    add_vectors(cat, VECTOR_DIR)
+    return cat
 
 
 def wrapped(label: str, text: str, indent: int) -> str:

@@ -34,6 +34,54 @@ What the tests do with one vector:
 
 Behaviour vectors (sequence, clamps) use `steps` or `channels` instead of a single `expect` (see groups 5 and 6).
 
+Optional fields:
+
+| Field | Meaning |
+|---|---|
+| `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
+| `note` | A warning, e.g. a code value that waits for #142 |
+| `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. Without `state`, only the frame checks run |
+| `steps`, `final` | Group 5: several frames in order, then `last_ctrl_seq` and `rx_rejected` at the end |
+| `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
+| `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
+
+## 1a. The files and how they are made
+
+| File | Group | Vectors |
+|---|---|---|
+| `1_valid_frames.json` | 1 Valid frames | 12 |
+| `2_hmac.json` | 2 HMAC | 4 |
+| `3_header.json` | 3 Header | 5 |
+| `4_session.json` | 4 Session | 2 |
+| `5_sequence.json` | 5 Sequence | 6 |
+| `6_clamps.json` | 6 Clamps and mapping | 8 |
+
+- **Made by `generate.py`** in this folder. It uses only the Python standard library and is written from the spec, so it is independent of both implementations (rule 4 below).
+- **To add a vector:** add it to `generate.py`, run `python3 drone/tests/vectors/generate.py`, and commit both.
+- **CI checks the files are current:** `generate.py --check` runs in `tests/scripts/test_protocol_tests.py`.
+- **Who reads them:**
+  - C++: `drone/lib/protocol/tests/test_vectors.cpp`, one GoogleTest test per vector (`Golden/Vector.Check/<name>`).
+  - Python: `drone/ground/src/sd_protocol_py/tests/test_vectors.py` (#100).
+
+### Field names per message type
+
+Header fields are always `type`, `flags`, `session_id`, `seq`, `t_send_us`. Payload fields follow spec §3. Where a payload name would clash with a header or top-level name, it is renamed:
+
+| Type | Payload fields |
+|---|---|
+| HELLO | `proto`, `ground_nonce` (hex) |
+| HELLO_ACK | `new_session_id`, `esp_nonce` (hex), `fw_version` (ASCII, padded with zero bytes to 12) |
+| ARM_CONTROL_REQUEST | `mask` |
+| ARM_CONTROL_ACK, RESUME_ACK | `result` |
+| RESUME_REQUEST | none |
+| BYE | `reason` |
+| CONFIG_GET, CONFIG_SET | `config_key`, `value` |
+| EVENT | `code`, `text` (ASCII) |
+| SETPOINT | `mode`, `roll`, `pitch`, `yaw_rate`, `throttle`, `sp_flags` |
+| STATE | `esp_state`, `override_active`, `last_ctrl_seq`, `last_ctrl_t_send_us`, `roll`, `pitch`, `heading`, `vbat`, `flow_x`, `flow_y`, `flow_quality`, `flow_status`, `rx_rejected`, `msp_errors` |
+
+Code values for results, BYE reasons, EVENT codes and `esp_state` are the suggested answers in #142, not frozen yet. Those vectors carry a `note`.
+
 ### Common values in all examples
 
 | Value | Used as |
@@ -146,9 +194,9 @@ Example: the ESP's session is `0x12345678`, the frame says `0x12345679`, tag val
 }
 ```
 
-### Group 5: Sequence, ADR-003 (5 vectors)
+### Group 5: Sequence, ADR-003 (6 vectors)
 
-`seq_in_order`, `seq_duplicate`, `seq_older`, `seq_gap` (accepted, gap counted), `seq_too_high` (`seq ≥ 2^31` → new session).
+`seq_in_order`, `seq_duplicate`, `seq_older`, `seq_gap` (accepted, gap counted), `seq_zero` (never accepted), `seq_too_high` (`seq ≥ 2^31` → new session).
 
 Proves: old or replayed control messages are refused (anti-replay). These are **behaviour** vectors: several frames in order, with the result after each one.
 
@@ -169,9 +217,9 @@ Example: neutral setpoints with seq 1, 2, 2 (exact replay), 3:
 }
 ```
 
-### Group 6: Clamps and channel mapping, spec §4–5 (6 vectors)
+### Group 6: Clamps and channel mapping, spec §4–5 (8 vectors)
 
-`map_min` (−1000 → 1000 µs), `map_center` (0 → 1500 µs), `map_max` (+1000 → 2000 µs), `clamp_over` (+1500 → 2000 µs), `throttle_map` (0 → 1000 µs, 1000 → 2000 µs), `aux_always_neutral` (aux1–4 always 1500 µs).
+`map_min` (−1000 and throttle 0 → 1000 µs), `map_center` (0 → 1500 µs), `map_max` (+1000 and throttle 1000 → 2000 µs), `clamp_over` (+1500 → 2000 µs), `clamp_under` (−32768 and throttle −50 → 1000 µs), `throttle_map` (250 → 1250 µs), `odd_values_round_toward_center` (1 and −1 → 1500 µs, 999 → 1999 µs), `aux_always_neutral` (aux1–4 always 1500 µs).
 
 Proves: the ESP turns a setpoint into the right RC channels for `MSP_SET_RAW_RC` (8 channels, AETR order: roll, pitch, throttle, yaw, aux1–4), and never sends a value outside the allowed range.
 
@@ -220,8 +268,8 @@ The `reject:<reason>` names, and the C++ values they map to:
 
 ## 6. Still to come
 
+- Groups 5 and 6 have more vectors than the first list (`seq_zero`, `clamp_under`, `odd_values_round_toward_center`). They cover cases named in spec §4 and §6. Adding a vector is free (rule 1).
 - **Group 7, configuration** (`CONFIG_GET` / `CONFIG_SET` / `CONFIG_ACK` results: OK, unknown key, read-only, out of range, refused while streaming). Waits for the `CONFIG_ACK` decision in #142.
-- Who writes which group is tracked in the #99 PR checklist.
 
 ---
 

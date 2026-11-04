@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "sd/hmac.hpp" // kNonceSize
+
 namespace sd {
 
 // --- Code values. Suggested answers of #142 (spec §7.5), NOT frozen yet:
@@ -56,7 +58,6 @@ enum class EventCode : std::uint16_t {
 
 // --- Payloads.
 
-constexpr std::size_t kNonceSize = 16;
 constexpr std::size_t kFwVersionSize = 12;
 constexpr std::size_t kEventTextMax = 64;
 

@@ -1,0 +1,160 @@
+[
+  {
+    "name": "seq_in_order",
+    "description": "Neutral setpoints 1, 2, 3: all accepted",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a00785634120300000060ea00000100000000000000000074f74adcb71e36f6",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 3,
+      "rx_rejected": 0
+    }
+  },
+  {
+    "name": "seq_duplicate",
+    "description": "1, 2, 2, 3: the exact replay of 2 is refused",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c",
+        "expect": "reject:duplicate_seq"
+      },
+      {
+        "bytes": "5344016000000a00785634120300000060ea00000100000000000000000074f74adcb71e36f6",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 3,
+      "rx_rejected": 1
+    }
+  },
+  {
+    "name": "seq_older",
+    "description": "1, 5, 3: 3 arrives late and is refused",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341205000000a086010001000000000000000000b2f950e312f1f02d",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a00785634120300000060ea00000100000000000000000074f74adcb71e36f6",
+        "expect": "reject:old_seq"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 5,
+      "rx_rejected": 1
+    }
+  },
+  {
+    "name": "seq_gap",
+    "description": "1, 2, 10: 10 is accepted although 3-9 never arrived",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a00785634120a000000400d030001000000000000000000852c0cc5ad5a6285",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 10,
+      "rx_rejected": 0
+    }
+  },
+  {
+    "name": "seq_zero",
+    "description": "seq 0 is never accepted, even as the first frame",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a0078563412000000000000000001000000000000000000353ced5ef042388a",
+        "expect": "reject:old_seq"
+      },
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 1,
+      "rx_rejected": 1
+    }
+  },
+  {
+    "name": "seq_too_high",
+    "description": "1, then 2^31: the sender must open a new session",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a007856341200000080000000000100000000000000000008e27f7757a75f77",
+        "expect": "reject:seq_too_high"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 1,
+      "rx_rejected": 1
+    }
+  }
+]

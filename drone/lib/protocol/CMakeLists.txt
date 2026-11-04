@@ -34,6 +34,15 @@ if(NOT GTest_FOUND)
   FetchContent_MakeAvailable(googletest)
   add_library(GTest::gtest_main ALIAS gtest_main)
 endif()
+# JSON reader for the golden vector test only (never in the library itself).
+# CI installs nlohmann-json3-dev; otherwise fetch the same release.
+find_package(nlohmann_json 3 QUIET)
+if(NOT nlohmann_json_FOUND)
+  include(FetchContent)
+  FetchContent_Declare(nlohmann_json
+    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
+  FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 add_executable(sd_protocol_tests
   tests/test_frame.cpp
@@ -42,7 +51,10 @@ add_executable(sd_protocol_tests
   tests/test_messages.cpp
   tests/test_seq_window.cpp
   tests/test_setpoint.cpp
+  tests/test_vectors.cpp
   tests/test_version.cpp
 )
-target_link_libraries(sd_protocol_tests PRIVATE sd_protocol GTest::gtest_main)
+target_link_libraries(sd_protocol_tests PRIVATE sd_protocol GTest::gtest_main nlohmann_json::nlohmann_json)
+target_compile_definitions(sd_protocol_tests PRIVATE
+  SD_VECTOR_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/vectors")
 add_test(NAME sd_protocol_tests COMMAND sd_protocol_tests)
