@@ -20,7 +20,7 @@ tags:
 ## 1. Context
 
 - The ESP is wired to FC UART4, and its USB shares UART0 with that link. USB is never connected while the ESP is wired to the FC ([[ADR-012 ESP UART Pins|ADR-012]]). Without OTA, every update means taking the ESP off the FC. Until the [[ADR-021 Removable ESP Connector|ADR-021]] connector is fitted, that means removing soldered wires.
-- The HIL runner flashes its ESP over the air ([[ADR-020 HIL Runner|ADR-020]]), and the firmware already has an `esp_ota` env with ArduinoOTA and a password (`drone/firmware/esp8266/`).
+- The firmware already has an `esp_ota` env with ArduinoOTA and a password (`drone/firmware/esp8266/`). This ADR is about the **flight ESP** only. The HIL runner tests a separate spare ESP that is not wired to any FC, and flashes it over USB ([[ADR-020 HIL Runner|ADR-020]], update 2026-10-22).
 - Risks found in the #53 review (follow-up 12):
   - **Mid-flight flash:** while the ESP flashes and reboots, it sends no MSP for 5–20 s.
   - **Unauthorised flash:** anyone on the drone network could replace the firmware.
@@ -29,9 +29,9 @@ tags:
 
 | Option | Pros | Cons |
 |---|---|---|
-| No OTA; USB only | Nothing can flash over Wi-Fi | ESP off the FC for every update; repeated soldering on the FC; no HIL flashing |
+| No OTA; USB only | Nothing can flash over Wi-Fi | ESP off the FC for every update; repeated soldering on the FC |
 | OTA with no limits | Simplest | Anyone on the network can flash; a flash could start in flight |
-| **OTA with credentials, only on the ground** | Fast updates, HIL keeps working, both risks covered | Firmware must know the arm and link state; MD5-based password only (see §4) |
+| **OTA with credentials, only on the ground** | Fast updates without touching the wiring, both risks covered | Firmware must know the arm and link state; MD5-based password only (see §4) |
 
 ## 3. Decision
 
