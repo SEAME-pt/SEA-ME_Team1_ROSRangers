@@ -24,7 +24,9 @@ std::uint32_t rotr(std::uint32_t x, unsigned n) {
   return (x >> n) | (x << (32U - n));
 }
 
-// Clears key material from the stack. volatile so the compiler cannot drop it.
+// Clears the local key copies (block_key, pad, inner) from the stack. volatile
+// so the compiler cannot drop it. Not a full scrub: the key also stays in the
+// Receiver for the whole session.
 void wipe(void *p, std::size_t n) {
   volatile std::uint8_t *v = static_cast<volatile std::uint8_t *>(p);
   for (std::size_t i = 0; i < n; ++i) {
