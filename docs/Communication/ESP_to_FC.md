@@ -27,7 +27,7 @@ tags:
 > This page describes a **proposed** serial link. **No wiring or firmware change has been approved based solely on this proposal.** Nothing here has been physically validated: not UART4, not MSP override, not any pin or pad connection. Pad locations, protocol payloads, baud rate and timeout values are deliberately **not** specified and appear as open decisions in [§12](#12-acceptance-criteria-and-unresolved-decisions).
 
 > [!info] Update 2026-10-20: hardware state
-> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
+> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow; **changed 2026-10-26:** re-soldered directly, no connector), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
 > The team accepted the proposals on this page. Rows marked **Accepted (ADR-0xx)** below are decided. See the linked ADR for the reasoning, and the [[Decision Register]] for the full list. Where an ADR differs from the earlier "Recommended" text, **the ADR wins** (it supersedes it).

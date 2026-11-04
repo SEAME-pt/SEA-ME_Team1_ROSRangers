@@ -12,8 +12,16 @@ tags:
 
 # ADR-021 — Removable ESP Connector
 
-> [!success] Status: ACCEPTED (team, 2026-10-20)
+> [!success] Status: ACCEPTED (team, 2026-10-20). **Changed 2026-10-26: direct soldering, no connector** (see the update below)
 > Amends the mounting part of [[ADR-013 Wiring and Power|ADR-013]].
+
+> [!warning] Update 2026-10-26: direct soldering instead of the connector (team decision)
+> - **Decision:** the ESP stays soldered straight to FC UART4 (T4, R4, 5V, GND) with wires end to end. No connector is fitted. This replaces §3.
+> - **Why:** ThiagoTEP reported to the team that the earlier temporary connection was the cause of the poor link latency, and that the latency improved after the ESP was re-soldered directly. The team accepted this on 2026-10-26, the day PR #116 was opened. Recorded here on 2026-11-04 by ThiagoTEP (incident GitHub #69).
+> - **Measurements:** on 2026-10-19, with the earlier wiring, S2-01 gave RTT median 33 ms, p99 127 ms (#30). On 2026-10-23, with the direct solder, S1-05 gave RTT median 12.2–12.5 ms, p99 58–63 ms (#30, #116). The ESP firmware also changed between the two runs (#116), so these numbers alone do not separate the wiring from the firmware.
+> - **Checks on the new joints:** the [[ESP_to_FC]] §10 checklist, ESP-S2-02 and ESP-S2-06 were run on the direct solder (#69).
+> - **Trade-off:** flashing the ESP over USB now means desoldering it ([[ADR-012 ESP UART Pins|ADR-012]]: USB never connected while the FC link is wired). OTA updates (ADR-024, proposed in #145) remove that need.
+> - **Every new joint** still follows [[Safety Rules]] #11.
 
 > [!info] Update 2026-10-20: accepted (GitHub #55)
 > - The team accepted the proposal: use a removable connector, so we stop soldering and desoldering.

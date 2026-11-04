@@ -71,7 +71,7 @@ Only after Stages 1 and 2 pass:
 
 1. Run the [[ESP_to_FC]] §10 checklist: T4/R4 continuity to the MCU side, no shorts to neighbouring pads, T4 idle level measured.
 2. Check the FC 5V rail can supply the **peak current from ESP-S1-08**.
-3. Mount per [[ADR-021 Removable ESP Connector|ADR-021]] (accepted 2026-10-20: a 4-pin connector, so the ESP can be unplugged). Not fitted yet: on 2026-10-19 the ESP was soldered with wires that are easy to remove.
+3. Mount per [[ADR-021 Removable ESP Connector|ADR-021]] (accepted 2026-10-20: a 4-pin connector, so the ESP can be unplugged; **changed 2026-10-26: direct soldering, no connector**). Not fitted yet: on 2026-10-19 the ESP was soldered with wires that are easy to remove.
 4. Repeat ESP-S2-01 and ESP-S2-03 on the installed hardware.
 
 ## 4. Results log
