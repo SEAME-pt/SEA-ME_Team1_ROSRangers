@@ -43,7 +43,7 @@ flowchart TB
   end
   MIS -->|"/mission/velocity_target"| FI
   FI -->|"/flight/state"| MIS
-  FI <-->|"Wi-Fi SoftAP, WPA2<br/>UDP control 50 Hz / telemetry 25 Hz<br/>TCP session + events, HMAC"| ESP
+  FI <-->|"Wi-Fi SoftAP, WPA2<br/>UDP 5759: control 50 Hz / telemetry 25 Hz<br/>TCP 5759: session + events, HMAC"| ESP
   ESP <-->|"MSP over UART4, 115200"| FC
   PILOT["Safety pilot<br/>RadioMaster Pocket"] -->|"ELRS 2.4 GHz → CRSF, UART2<br/>arm, modes, override switch"| FC
 ```
@@ -114,15 +114,16 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 
 | Contract | Defined in | Transport | Used by |
 |---|---|---|---|
-| Session: `HELLO`, `ARM_CONTROL_REQUEST`, `RESUME_REQUEST`, `BYE` | Protocol Spec v0 §3 | TCP | `flight_interface` ↔ ESP |
-| Control: `SETPOINT` (0x60) | Protocol Spec v0 §3, §5 | UDP, 50 Hz | `flight_interface` → ESP |
-| Telemetry: `STATE` (0x80) | Protocol Spec v0 §3 | UDP, 25 Hz | ESP → `flight_interface` |
-| Events: `EVENT` (0x40) | Protocol Spec v0 §3 | TCP | ESP → `flight_interface` |
+| Session: `HELLO` / `HELLO_ACK`, `ARM_CONTROL_REQUEST` / `ARM_CONTROL_ACK`, `RESUME_REQUEST` / `RESUME_ACK`, `BYE` | Protocol Spec v0 §3 | TCP 5759 | `flight_interface` ↔ ESP |
+| Configuration: `CONFIG_GET` / `CONFIG_SET` (0x20 / 0x21), keys in spec §7.3. The reply (`CONFIG_ACK`) is still open (#142) | Protocol Spec v0 §3, §7.3 | TCP 5759 | `flight_interface` ↔ ESP |
+| Control: `SETPOINT` (0x60) | Protocol Spec v0 §3, §5 | UDP 5759, 50 Hz | `flight_interface` → ESP |
+| Telemetry: `STATE` (0x80) | Protocol Spec v0 §3 | UDP 5759, 25 Hz | ESP → `flight_interface` |
+| Events: `EVENT` (0x40) | Protocol Spec v0 §3 | TCP 5759 | ESP → `flight_interface` |
 | ESP → FC: `MSP_SET_RAW_RC`, 8 channels AETR | Protocol Spec v0 §5, [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP, 50 Hz | ESP → FC |
 | ESP polls `MSP_ATTITUDE` (25 Hz), `MSP_ANALOG` / `MSP_STATUS` (5 Hz) | [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP | ESP ↔ FC |
 | ROS 2 topics | §2 above | DDS, ground only | ground nodes |
 
-Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen when #97 closes. Until then this table points at v0.1.
+Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.0, accepted at the design review of 2026-11-03 (#97). The items still open are in spec §7.5 and #142. Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
 
 ## 4. Timing budget (ground → ESP → FC)
 
@@ -135,12 +136,13 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 | RTT, PC next to the drone | median 12.2–12.5 ms, p99 58–63 ms, 0–0.013 % loss | #30, S1-05 |
 | RTT, cage distance | median 17–19 ms, p99 118–230 ms, 0.14–0.76 % loss | #30, S1-09 |
 | Longest silence, close / cage | 163–203 ms / 247–343 ms | #30 |
+| **Setpoint freshness `T_fresh`** | **150 ms** since the last accepted `SETPOINT` → neutral sticks (roll/pitch/yaw 1500); the next valid `SETPOINT` is used at once. No failsafe, no handshake | Protocol Spec v0 §7.2 |
 | **ESP link failsafe `T_loss`** | **250 ms** without an accepted control packet → neutral | [[ADR-004 ESP Failsafe\|ADR-004]] |
 | Failsafe trips at cage distance | 0–1 per 10 min normally, 11 in the worst run | #30, accepted: a trip is safe by design |
 | `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters `neutral_timeout_sec`, `stale_timeout_sec` |
 | Gesture → motors end to end | **not measured yet** | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
 
-Still to measure: the end-to-end gesture → motors latency, `T_fresh` (OD-06, initially = `T_loss`), and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
+Still to measure: the end-to-end gesture → motors latency and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
 
 ## 5. Related pages
 
@@ -167,4 +169,5 @@ Still to measure: the end-to-end gesture → motors latency, `T_fresh` (OD-06, i
 | **REP-103** | ROS convention for units and axes: SI units, x forward, y left, z up. |
 | **RTT** | Round-trip time: request sent to reply received. |
 | **SoftAP** | The Wi-Fi network the ESP creates itself, which the ground PC joins. |
+| **`T_fresh`** | Maximum age of the last accepted setpoint (150 ms). Older → neutral sticks until the next valid setpoint; no failsafe. |
 | **`T_loss`** | Time without an accepted control packet after which the ESP enters link failsafe (250 ms). |
