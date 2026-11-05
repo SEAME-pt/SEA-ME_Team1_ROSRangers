@@ -93,7 +93,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
 
-`CONFIG_ACK.result`. When more than one refusal applies, the ESP returns the first one in this table, so both implementations give the same answer.
+`CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 
 | Value | Meaning | When |
 |---|---|---|
@@ -155,7 +155,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and P
 | 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
 | 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
 | 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500, `mode` 2 rejected (`reject:bad_mode`) and then a valid `SETPOINT` with the same `seq` accepted | The RC channels sent to the FC (§4–5) |
-| 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` per result 0–5; one `SET` where two refusals apply (first in the table wins); `CONFIG_GET` on a Safety key returns 0 | Config replies (§3.1) |
+| 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` per result 0–5; a `SET` with an out-of-range value while `STREAMING` returns 5 (state checked first); a `GET` while `STREAMING` returns 0; `CONFIG_GET` on a Safety key returns 0 | Config replies (§3.1) |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
 
 - A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
@@ -267,7 +267,7 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 |---|---|---|
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
-| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Test vector groups 7 and 8 added (§6). Wi-Fi re-association left to #101. |
+| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Test vector groups 7 and 8 added (§6). Wi-Fi re-association left to #101. |
 
 ## 9. Glossary
 

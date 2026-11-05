@@ -69,7 +69,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-COM-020 | After loss, control does not resume just because packets arrive again; a defined, validated handshake is required (exact handshake TBD). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 | REQ-COM-021 | On reconnection the receiver is not fooled by replayed or old traffic. | [[PC_to_ESP]] (Reconnection) | test | unit + HIL | accepted |
 | REQ-COM-022 | Ground side can re-establish the TCP session and re-synchronise state after a Wi-Fi or TCP interruption. | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | accepted |
-| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. Still open: to be settled with the gateway firmware (#101), decided on #142 (2026-11-05). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
+| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. Deferred on #142 (2026-11-05): to be settled with the gateway firmware (#101). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 
 ### Safety (`REQ-SAF`)
 
