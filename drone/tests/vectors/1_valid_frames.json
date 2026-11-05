@@ -1,0 +1,253 @@
+[
+  {
+    "name": "hello_basic",
+    "description": "HELLO: protocol 1 and the ground nonce. Session 0, tagged with the PSK (here the test key)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO",
+      "flags": 0,
+      "session_id": 0,
+      "seq": 1,
+      "t_send_us": 1000,
+      "proto": 1,
+      "ground_nonce": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+    },
+    "bytes": "53440101000011000000000001000000e803000001a0a1a2a3a4a5a6a7a8a9aaabacadaeaf9c6f663167270eaf",
+    "expect": "accept"
+  },
+  {
+    "name": "hello_ack_basic",
+    "description": "HELLO_ACK: the new session ID (in the header and the payload), the ESP nonce and the firmware version 'v0.1.0' padded with zero bytes to 12. Tagged with the PSK",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 1,
+      "t_send_us": 1000,
+      "new_session_id": 305419896,
+      "esp_nonce": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "fw_version": "v0.1.0"
+    },
+    "bytes": "53440102000020007856341201000000e803000078563412b0b1b2b3b4b5b6b7b8b9babbbcbdbebf76302e312e3000000000000052ab8f61382528a6",
+    "expect": "accept"
+  },
+  {
+    "name": "arm_control_request_mask_15",
+    "description": "ARM_CONTROL_REQUEST with mask 15 (roll, pitch, yaw and throttle)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "ARM_CONTROL_REQUEST",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 2,
+      "t_send_us": 2000,
+      "mask": 15
+    },
+    "bytes": "53440103000001007856341202000000d00700000f94819d23e3f591e1",
+    "expect": "accept"
+  },
+  {
+    "name": "arm_control_ack_ok",
+    "description": "ARM_CONTROL_ACK with result 0 (OK)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "ARM_CONTROL_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 2,
+      "t_send_us": 2000,
+      "result": 0
+    },
+    "bytes": "53440104000001007856341202000000d0070000004f34110bc7837713",
+    "expect": "accept"
+  },
+  {
+    "name": "resume_request_basic",
+    "description": "RESUME_REQUEST: no payload, 28-byte frame",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "RESUME_REQUEST",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 3,
+      "t_send_us": 3000
+    },
+    "bytes": "53440105000000007856341203000000b80b000056e6c6e1493f3377",
+    "expect": "accept"
+  },
+  {
+    "name": "resume_ack_ok",
+    "description": "RESUME_ACK with result 0 (OK)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "RESUME_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 3,
+      "t_send_us": 3000,
+      "result": 0
+    },
+    "bytes": "53440106000001007856341203000000b80b00000073dd139a8e90ac54",
+    "expect": "accept"
+  },
+  {
+    "name": "bye_normal",
+    "description": "BYE with reason 0 (normal)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "BYE",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 9,
+      "t_send_us": 9000,
+      "reason": 0
+    },
+    "bytes": "534401070000010078563412090000002823000000047dd6e4f86854ba",
+    "expect": "accept"
+  },
+  {
+    "name": "bye_replaced",
+    "description": "BYE with reason 3 (replaced by a new session): a non-zero code",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "BYE",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 10,
+      "t_send_us": 10000,
+      "reason": 3
+    },
+    "bytes": "5344010700000100785634120a00000010270000035d2a6fe3ef494dc4",
+    "expect": "accept"
+  },
+  {
+    "name": "resume_ack_wrong_state",
+    "description": "RESUME_ACK with result 1 (wrong state): a non-zero code",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "RESUME_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 4,
+      "t_send_us": 4000,
+      "result": 1
+    },
+    "bytes": "53440106000001007856341204000000a00f000001ea5bdd6cbce65264",
+    "expect": "accept"
+  },
+  {
+    "name": "config_get_t_loss",
+    "description": "CONFIG_GET of key 0x40 t_loss_ms (value field 0)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_GET",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 4,
+      "t_send_us": 4000,
+      "config_key": 64,
+      "value": 0
+    },
+    "bytes": "53440120000005007856341204000000a00f000040000000007053b9e0776e48fd",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_ok",
+    "description": "CONFIG_ACK for key 0x80 telemetry_rate_hz: result 0 (OK), value 25 (the default)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 5,
+      "t_send_us": 5000,
+      "config_key": 128,
+      "result": 0,
+      "value": 25
+    },
+    "bytes": "5344012200000600785634120500000088130000800019000000605b10974179311d",
+    "expect": "accept"
+  },
+  {
+    "name": "config_set_telemetry_rate",
+    "description": "CONFIG_SET of key 0x80 telemetry_rate_hz to 30",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_SET",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 5,
+      "t_send_us": 5000,
+      "config_key": 128,
+      "value": 30
+    },
+    "bytes": "5344012100000500785634120500000088130000801e000000efeae4a06015a37a",
+    "expect": "accept"
+  },
+  {
+    "name": "event_failsafe_entered",
+    "description": "EVENT code 0x0102 (link failsafe entered) with a short text",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "EVENT",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 6,
+      "t_send_us": 6000,
+      "code": 258,
+      "text": "no setpoint for 250 ms"
+    },
+    "bytes": "534401400000180078563412060000007017000002016e6f20736574706f696e7420666f7220323530206d73be73431a22f6b0bf",
+    "expect": "accept"
+  },
+  {
+    "name": "setpoint_attitude_basic",
+    "description": "The reference SETPOINT: mode 1, roll 100, pitch -200, yaw 0, throttle 500, seq 7",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "SETPOINT",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 7,
+      "t_send_us": 1000,
+      "mode": 1,
+      "roll": 100,
+      "pitch": -200,
+      "yaw_rate": 0,
+      "throttle": 500,
+      "sp_flags": 0
+    },
+    "bytes": "5344016000000a007856341207000000e803000001640038ff0000f40100fb703d824f5b589e",
+    "expect": "accept"
+  },
+  {
+    "name": "state_streaming",
+    "description": "STATE while streaming, every field a different value (negative roll and flow included)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "STATE",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 42,
+      "t_send_us": 42000,
+      "esp_state": 3,
+      "override_active": 1,
+      "last_ctrl_seq": 41,
+      "last_ctrl_t_send_us": 820000,
+      "roll": -15,
+      "pitch": 30,
+      "heading": 359,
+      "vbat": 1110,
+      "flow_x": -300,
+      "flow_y": 300,
+      "flow_quality": 200,
+      "flow_status": 2,
+      "rx_rejected": 7,
+      "msp_errors": 5
+    },
+    "bytes": "5344018000001c00785634122a00000010a4000003012900000020830c00f1ff1e0067015604d4fe2c01c8020700050092d3464325e800bc",
+    "expect": "accept",
+    "note": "esp_state 3 = STREAMING (spec §3.1)."
+  }
+]

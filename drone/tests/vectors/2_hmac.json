@@ -1,0 +1,55 @@
+[
+  {
+    "name": "hello_signed_with_psk",
+    "description": "HELLO tagged with the PSK, as every HELLO is (spec §1)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO",
+      "flags": 0,
+      "session_id": 0,
+      "seq": 1,
+      "t_send_us": 0,
+      "proto": 1,
+      "ground_nonce": "11111111111111111111111111111111"
+    },
+    "bytes": "53440101000011000000000001000000000000000111111111111111111111111111111111d493a7132c0dff31",
+    "expect": "accept"
+  },
+  {
+    "name": "setpoint_signed_with_session_key",
+    "description": "SETPOINT tagged with the session key = HMAC-SHA256(PSK, 'sess' || ground_nonce || esp_nonce)",
+    "key": "fd45ef03ac338c826d14c5912b54a3518fadc776dc26cc05f199583f556ef89a",
+    "fields": {
+      "type": "SETPOINT",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 1,
+      "t_send_us": 0,
+      "mode": 1,
+      "roll": 100,
+      "pitch": 0,
+      "yaw_rate": 0,
+      "throttle": 500,
+      "sp_flags": 0
+    },
+    "bytes": "5344016000000a0078563412010000000000000001640000000000f401006254c1835d2f9951",
+    "expect": "accept",
+    "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "ground_nonce": "11111111111111111111111111111111",
+    "esp_nonce": "22222222222222222222222222222222"
+  },
+  {
+    "name": "setpoint_payload_bit_flipped",
+    "description": "The reference frame with roll 100 -> 101 (one bit), old tag",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344016000000a007856341207000000e803000001650038ff0000f40100fb703d824f5b589e",
+    "expect": "reject:bad_tag"
+  },
+  {
+    "name": "setpoint_tag_bit_flipped",
+    "description": "The reference frame with the top bit of the last tag byte flipped",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344016000000a007856341207000000e803000001640038ff0000f40100fb703d824f5b581e",
+    "expect": "reject:bad_tag"
+  }
+]

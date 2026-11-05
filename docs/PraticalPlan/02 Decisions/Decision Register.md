@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-04
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -43,7 +43,7 @@ tags:
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner. HIL target = spare ESP, FC in SITL; Wi-Fi tests by time-slicing, no dongle (2026-10-26) | ✅ Accepted (updated 2026-10-26, #61, #48) | n/a |
-| [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
+| [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: password required, refused unless the FC is disarmed and the link is not STREAMING | 📝 Proposed (2026-11-04, #62). D1–D3 decided by the team | OD-23 (partly) |
@@ -91,7 +91,7 @@ tags:
   - **OD-04** resolved: UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved (spec §7.1). Completes [[ADR-006 Network|ADR-006]].
   - **OD-06** resolved: `T_fresh` = 150 ms, separate from `T_loss` (spec §7.2). [[ADR-004 ESP Failsafe|ADR-004]] is unchanged: `T_loss` stays 250 ms.
   - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
-  - Items still open after the review: spec §7.5.
+  - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
 
 ## 8. What changed on 2026-11-04
 

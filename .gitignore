@@ -17,3 +17,4 @@ results/
 .vscode/
 .coverage
 temp/
+build*/

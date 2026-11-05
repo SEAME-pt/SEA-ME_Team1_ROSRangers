@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-10-23
+updated: 2026-11-03
 project: SEA autonomous drone
 tags:
   - ci
@@ -30,9 +30,10 @@ SEA-ME_Team1_ROSRangers/
 │   │   └── esp8266/           # PlatformIO, Arduino core, esp (thin glue only)
 │   │       └── backup/        # factory AT firmware backup notes (flash images are kept out of the repo)
 │   ├── lib/
-│   │   └── protocol/          # portable C++17 library (ADR-007): framing, MAC, seq window,
-│   │       ├── include/sd/    #   failsafe timers, MSP encode/decode, ThoneFlow parser
+│   │   └── protocol/          # portable C++17 library (ADR-007): framing, HMAC, seq window, receive rules,
+│   │       ├── include/sd/    #   message codecs (done); failsafe timers, MSP, ThoneFlow parser (planned)
 │   │       ├── src/
+│   │       ├── tests/         # GoogleTest unit tests (run by the protocol-cpp CI job)
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
@@ -51,7 +52,7 @@ SEA-ME_Team1_ROSRangers/
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
 │   └── tests/
-│       ├── vectors/           # golden vectors shared by C++ and Python
+│       ├── vectors/           # golden vectors (generate.py + *.json) shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
 │       ├── hil/               # pytest suites run on the self-hosted runner
 │       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
@@ -90,13 +91,17 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **Betaflight** | Open-source flight-controller firmware on the drone's FC. |
 | **CI** | Continuous Integration: automated validation of proposed changes. |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
+| **GoogleTest** | C++ unit-test framework used for `drone/lib/protocol` on the PC and in CI. |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
+| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
