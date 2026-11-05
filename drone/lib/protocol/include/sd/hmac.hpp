@@ -18,6 +18,11 @@ struct Key {
 class Sha256 {
 public:
   Sha256();
+  // Wipes the state and the buffer: after the HMAC pad block they are enough
+  // to compute tags under the key.
+  ~Sha256();
+  Sha256(const Sha256 &) = delete;
+  Sha256 &operator=(const Sha256 &) = delete;
   void update(const std::uint8_t *data, std::size_t len);
   void finish(std::uint8_t out[kSha256Size]);
 
@@ -47,13 +52,20 @@ Key derive_session_key(const Key &psk,
 // Each side seals with its sending key and checks with its receiving key, so a
 // frame sent back to its own sender (reflection) fails the tag. The ESP's
 // Receivers use ground_to_esp, the ground's use esp_to_ground. HELLO and
-// HELLO_ACK stay tagged with the PSK. Wipe the session key after this call.
+// HELLO_ACK stay tagged with the PSK. Wipe the session key after this call
+// with secure_zero(&session_key, sizeof(session_key)).
 struct DirectionKeys {
   Key ground_to_esp;
   Key esp_to_ground;
 };
 
 DirectionKeys derive_direction_keys(const Key &session_key);
+
+// Sets n bytes to zero through a volatile pointer, so the compiler cannot drop
+// it the way it may drop a memset of a variable that is not used again. Use it
+// to wipe a session key once the direction keys are derived. Best effort:
+// copies the compiler keeps in registers or spills are out of reach.
+void secure_zero(void *p, std::size_t n);
 
 // Compares in time that depends only on len, not on where the bytes differ
 // (spec §4 rule 1).

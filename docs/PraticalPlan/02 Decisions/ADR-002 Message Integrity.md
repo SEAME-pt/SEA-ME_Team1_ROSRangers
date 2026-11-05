@@ -42,7 +42,7 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 - Session key = `HMAC(PSK, "sess" || ground_nonce || esp_nonce)`, derived in the [[ADR-005 TCP Session|session handshake]].
 - The session ID is covered by the tag, so packets from older sessions are rejected.
 - The tag is compared in constant time.
-- Since 2026-11-05 (#150) the tag key of an in-session frame is a direction key, not the session key itself (entry below).
+- 2026-11-05, #150 (see the dated entry below): the tag key of an in-session frame is a direction key, not the session key itself.
 
 ## 4. Consequences
 
@@ -54,9 +54,9 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 
 - [[PC_to_ESP]] §6, §8 · [[Protocol Spec v0]] · [[Decision Register]]
 
-> 2026-11-05: `HELLO` and `HELLO_ACK` are tagged with the PSK. The session key needs `esp_nonce`, which is inside `HELLO_ACK`, and the tag is checked before the payload is read. Every later message uses the session key. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5. The decision is unchanged. (Superseded in part by the next entry: since #150 later messages use a direction key derived from the session key.)
+> 2026-11-05: `HELLO` and `HELLO_ACK` are tagged with the PSK. The session key needs `esp_nonce`, which is inside `HELLO_ACK`, and the tag is checked before the payload is read. Every later message uses the session key. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5. The decision is unchanged.
 
-> 2026-11-05: **The decision is extended: one key per direction** (GitHub #150, decided by the team). After the handshake, ground→ESP frames use `HMAC-SHA256(session key, "g2e")` and ESP→ground frames `"e2g"` (details in [[Protocol Spec v0]] §1); the session key itself tags nothing. Why: with one key for both directions, a node accepted its own frames sent back to it (reflection). One reflected `SETPOINT` could push the ground's window past every real `STATE` for the rest of the session, and could hide a real link loss. Separate keys make a reflected frame fail the tag, for every message type, and an implementation that gets it wrong refuses everything instead of letting reflections through. Cost: two extra HMACs once per session and 32 bytes of RAM; nothing extra per frame (the per-frame HMAC cost of §4 is unchanged). Recorded in [[Protocol Spec v0]] §1 (v1.2).
+> 2026-11-05: **The decision is extended: one key per direction** (GitHub #150, decided by the team). It supersedes "Every later message uses the session key" in the entry above. After the handshake, ground→ESP frames use `HMAC-SHA256(session key, "g2e")` and ESP→ground frames `"e2g"` (details in [[Protocol Spec v0]] §1); the session key itself tags nothing. Why: with one key for both directions, a node accepted its own frames sent back to it (reflection). One reflected `SETPOINT` could push the ground's window past every real `STATE` for the rest of the session, and could hide a real link loss. Separate keys make a reflected frame fail the tag, for every message type, and an implementation that gets it wrong refuses everything instead of letting reflections through. Cost: two extra HMACs once per session and 32 bytes of RAM; nothing extra per frame (the per-frame HMAC cost of §4 is unchanged). Recorded in [[Protocol Spec v0]] §1 (v1.2).
 
 ## 6. Glossary
 

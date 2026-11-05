@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <string>
 #include <vector>
 
+#include "sd/hmac.hpp"
 #include "sd/receiver.hpp"
 #include "sd/setpoint.hpp"
 
@@ -288,6 +290,60 @@ TEST(Receiver, RefusedStartKeepsTheOpenSession) {
   EXPECT_EQ(rx.session_id(), kSession);
   EXPECT_EQ(rx.last_seq(), 1U);
   EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kAccepted);
+}
+
+// #150: the ESP's Receivers use ground_to_esp, the ground's use esp_to_ground.
+// A frame sealed with the other direction's key (a reflection) is refused as a
+// bad tag and changes nothing, on both sides.
+TEST(Receiver, FrameSealedForTheOtherDirectionRejected) {
+  sd::Key psk = test_key();
+  std::uint8_t ground_nonce[sd::kNonceSize];
+  std::uint8_t esp_nonce[sd::kNonceSize];
+  std::memset(ground_nonce, 0x11, sizeof(ground_nonce));
+  std::memset(esp_nonce, 0x22, sizeof(esp_nonce));
+  sd::Key session = sd::derive_session_key(psk, ground_nonce, esp_nonce);
+  const sd::DirectionKeys keys = sd::derive_direction_keys(session);
+  sd::secure_zero(&session, sizeof(session));
+
+  sd::Receiver esp;
+  sd::Receiver ground;
+  ASSERT_TRUE(
+      esp.start_session(kSession, keys.ground_to_esp, sd::Transport::kUdp));
+  ASSERT_TRUE(
+      ground.start_session(kSession, keys.esp_to_ground, sd::Transport::kUdp));
+
+  auto seal = [](std::uint8_t type, std::size_t size, std::uint32_t seq,
+                 const sd::Key &key) {
+    const sd::Header h{type, 0, 0, kSession, seq, 0};
+    const std::vector<std::uint8_t> payload(size, 0);
+    std::vector<std::uint8_t> out(sd::kMaxFrame);
+    out.resize(sd::encode_frame(h, payload.data(), payload.size(), key,
+                                out.data(), out.size()));
+    return out;
+  };
+  const auto setpoint = static_cast<std::uint8_t>(sd::MsgType::kSetpoint);
+  const auto state = static_cast<std::uint8_t>(sd::MsgType::kState);
+  sd::Frame f{};
+
+  // The real traffic goes through.
+  auto sp = seal(setpoint, sd::kSetpointSize, 1, keys.ground_to_esp);
+  ASSERT_EQ(esp.receive(sp.data(), sp.size(), f), sd::RxResult::kAccepted);
+  auto st = seal(state, sd::kStateSize, 1, keys.esp_to_ground);
+  ASSERT_EQ(ground.receive(st.data(), st.size(), f), sd::RxResult::kAccepted);
+
+  // Reflections, with a high seq so only the tag can stop them.
+  auto own_state = seal(state, sd::kStateSize, 1000, keys.esp_to_ground);
+  EXPECT_EQ(esp.receive(own_state.data(), own_state.size(), f),
+            sd::RxResult::kBadTag);
+  auto own_setpoint =
+      seal(setpoint, sd::kSetpointSize, 1000, keys.ground_to_esp);
+  EXPECT_EQ(ground.receive(own_setpoint.data(), own_setpoint.size(), f),
+            sd::RxResult::kBadTag);
+
+  EXPECT_EQ(esp.last_seq(), 1U);
+  EXPECT_EQ(ground.last_seq(), 1U);
+  EXPECT_EQ(esp.counters().bad_tag, 1U);
+  EXPECT_EQ(ground.counters().bad_tag, 1U);
 }
 
 TEST(Receiver, IsAccepted) {

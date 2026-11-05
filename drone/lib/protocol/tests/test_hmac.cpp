@@ -142,3 +142,16 @@ TEST(DirectionKeys, AreHmacOfTheSessionKeyWithG2eAndE2g) {
   EXPECT_NE(hex(keys.esp_to_ground.bytes, sd::kKeySize),
             hex(session.bytes, sd::kKeySize));
 }
+
+TEST(SecureZero, ClearsEveryByteAndNothingElse) {
+  std::uint8_t buf[40];
+  std::memset(buf, 0xAB, sizeof(buf));
+  sd::secure_zero(buf + 4, 32);
+  for (std::size_t i = 0; i < sizeof(buf); ++i) {
+    EXPECT_EQ(buf[i], (i >= 4 && i < 36) ? 0 : 0xAB) << i;
+  }
+  sd::Key key{};
+  std::memset(key.bytes, 0x5A, sd::kKeySize);
+  sd::secure_zero(&key, sizeof(key));
+  EXPECT_EQ(hex(key.bytes, sd::kKeySize), std::string(64, '0'));
+}

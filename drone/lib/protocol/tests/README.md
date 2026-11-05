@@ -74,6 +74,7 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 | Test | What it does | Why it matters |
 |---|---|---|
 | `DirectionKeys.AreHmacOfTheSessionKeyWithG2eAndE2g` | The ground→ESP and ESP→ground keys equal HMAC(session key, "g2e") and HMAC(session key, "e2g") (values from Python), and differ from each other and from the session key | A frame sent back to its own sender fails the seal (#150) |
+| `SecureZero.ClearsEveryByteAndNothingElse` | Zeroes exactly the bytes asked for, including a whole key | The session key can really be wiped: a plain memset can be dropped by the compiler |
 | `SessionKey.IsHmacOfSessAndBothNonces` | The session key equals HMAC(PSK, "sess" + ground nonce + ESP nonce). Swapping the two nonces gives a different key | Both sides must compute the same key, and the order matters |
 
 ## ConstantTime: comparing seals safely
@@ -101,6 +102,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.TcpSessionStartsAfterHello` | A TCP session starts at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap | HELLO already used seq 1, so there is no false gap after the handshake |
 | `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the direction keys: without this check a captured frame could be replayed on the other one |
 | `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
+| `Receiver.FrameSealedForTheOtherDirectionRejected` | ESP and ground Receivers opened with their direction keys accept the real traffic; each side's own frame sent back to it (seq 1000) is a bad tag and moves nothing | A reflection never reaches either side (#150) |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
