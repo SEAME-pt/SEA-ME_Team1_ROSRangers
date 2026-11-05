@@ -31,6 +31,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import statistics
 import subprocess
 import sys
@@ -260,14 +261,26 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
     result = RunResult()
     started_at, detail, current = 0.0, [], ""
     start = time.perf_counter()
+    # Own process group, so the watchdog also stops any child that holds the
+    # output pipe (GoogleTest death tests and ASan's symbolizer fork).
     with subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        start_new_session=True,
     ) as proc:
         fired = threading.Event()
 
         def kill() -> None:
+            if proc.poll() is not None:  # it ended on its own: not a hang
+                return
             fired.set()
-            proc.kill()
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
         watchdog = threading.Timer(TIMEOUT_S, kill)
         watchdog.daemon = True
@@ -389,11 +402,13 @@ def bench_tests(
         print(paint(f"No test matches '{test_filter}'.", YELLOW))
         return 1
     if csv_path:  # find a bad path now, not after the whole benchmark
-        try:
-            with open(csv_path, "a"):
-                pass
-        except OSError as error:
-            print(paint(f"Cannot write {csv_path}: {error.strerror}", RED))
+        target = Path(csv_path)
+        folder = target.resolve().parent
+        if not folder.is_dir() or not os.access(folder, os.W_OK):
+            print(paint(f"Cannot write {csv_path}: no such writable folder", RED))
+            return 1
+        if target.exists() and not os.access(target, os.W_OK):
+            print(paint(f"Cannot write {csv_path}: permission denied", RED))
             return 1
     print(
         paint(

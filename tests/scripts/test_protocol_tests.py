@@ -307,3 +307,47 @@ def test_menu_quits_on_end_of_input(fake_binary, monkeypatch):
     monkeypatch.setattr(protocol_tests, "bench_tests", lambda *a: ran.append(a))
     assert protocol_tests.menu(fake_binary.parent, no_build=True) == 0
     assert ran == []  # no benchmark was started with the default 100 runs
+
+
+# Passes one test, then a child process keeps the output pipe open.
+GRANDCHILD_RUN = r"""#!/bin/sh
+case "$1" in
+--gtest_list_tests)
+  printf 'Suite.\n  Good\n  Hang\n'
+  ;;
+*)
+  echo '[ RUN      ] Suite.Good'
+  echo '[       OK ] Suite.Good (0 ms)'
+  echo '[ RUN      ] Suite.Hang'
+  sleep 60 &
+  wait
+  ;;
+esac
+"""
+
+
+def test_the_watchdog_also_stops_children_holding_the_pipe(tmp_path, monkeypatch):
+    binary = tmp_path / "sd_protocol_tests"
+    binary.write_text(GRANDCHILD_RUN)
+    binary.chmod(0o755)
+    monkeypatch.setattr(protocol_tests, "TIMEOUT_S", 1)
+    start = protocol_tests.time.perf_counter()
+    result = protocol_tests.execute(binary, "*", 1, lambda *a: None)
+    assert protocol_tests.time.perf_counter() - start < 10
+    assert result.timed_out and result.crashed_in == "Suite.Hang"
+
+
+def test_a_run_that_ends_normally_is_never_called_a_hang(fake_binary, monkeypatch):
+    monkeypatch.setattr(protocol_tests, "TIMEOUT_S", 30)
+    result = protocol_tests.execute(fake_binary, "*", 1, lambda *a: None)
+    assert not result.timed_out
+
+
+def test_the_csv_check_leaves_no_file_behind(fake_binary, tmp_path, monkeypatch):
+    target = tmp_path / "bench.csv"
+    monkeypatch.setattr(
+        protocol_tests, "execute", lambda *a: (_ for _ in ()).throw(KeyboardInterrupt)
+    )
+    with pytest.raises(KeyboardInterrupt):
+        protocol_tests.bench_tests(fake_binary, "*", 1, str(target))
+    assert not target.exists()

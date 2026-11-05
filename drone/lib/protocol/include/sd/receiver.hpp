@@ -74,6 +74,9 @@ public:
   // window starts at 1 on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and
   // at 0 on UDP. Returns false for session_id 0 (reserved for HELLO); then
   // nothing changes, and a session that was open stays open.
+  // The window restarts here, so the caller (#102) must never open the same
+  // (session_id, key) twice: every frame of that session would be accepted
+  // again. Fresh nonces give a fresh key for each HELLO (spec §1).
   [[nodiscard]] bool start_session(std::uint32_t session_id,
                                    const Key &session_key, Transport transport);
   void end_session();
