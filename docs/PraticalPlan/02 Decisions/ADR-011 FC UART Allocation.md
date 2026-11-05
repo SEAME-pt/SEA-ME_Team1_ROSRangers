@@ -26,8 +26,10 @@ tags:
 
 > [!info] Update 2026-10-20: ELRS and ESP state (GitHub #55)
 > - The ESP is soldered to **UART4** (T4/R4) since 2026-10-19, with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]).
+> - **Update 2026-10-26:** the ESP was re-soldered directly, wires end to end, no connector ([[ADR-021 Removable ESP Connector|ADR-021]] update, #69).
 > - The ELRS antenna is soldered, and the ELRS 5 V wire is on **DV5V** (GitHub #41).
 > - **The failsafe has not been tested yet.** The ELRS failsafe re-test under the SAF-08 review is still open (GitHub #22 and #41 stay open).
+> - **Update 2026-11-05:** the ELRS failsafe was re-tested on 2026-10-22 and 2026-10-28. GitHub #22 and #41 are closed.
 > - The UART decision does not change.
 
 ## 1. Context (team inspection + Betaflight CLI)

@@ -144,7 +144,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libgtest-dev gcovr clang-tidy cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libgtest-dev nlohmann-json3-dev gcovr clang-tidy cppcheck
 
       - name: Configure
         run: cmake -S drone/lib/protocol -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DSD_COVERAGE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
