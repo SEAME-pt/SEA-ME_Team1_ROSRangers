@@ -1,7 +1,7 @@
-"""Golden vectors in the format of drone/tests/vectors/README.md (Protocol Spec v0 §6).
+"""Golden vectors of drone/tests/vectors/ (Protocol Spec v0 §6).
 
-README_EXAMPLES are the worked examples of that README, copied as they are. Any
-*.json file added to drone/tests/vectors/ (one vector or a list) runs too.
+Every *.json file in that folder (one vector or a list) runs here. The files
+are made by drone/tests/vectors/generate.py; field names follow its README §1a.
 """
 
 import json
@@ -10,80 +10,47 @@ from pathlib import Path
 import pytest
 
 from sd_protocol import (
+    FW_VERSION_SIZE,
+    ConfigKv,
+    Event,
     Header,
+    Hello,
+    HelloAck,
     MsgType,
     Receiver,
     RxError,
     Setpoint,
+    State,
+    decode_config_kv,
+    decode_event,
     decode_frame,
+    decode_hello,
+    decode_hello_ack,
     decode_setpoint,
+    decode_state,
+    decode_u8_payload,
+    derive_session_key,
+    encode_config_kv,
+    encode_event,
     encode_frame,
+    encode_hello,
+    encode_hello_ack,
     encode_setpoint,
+    encode_state,
+    encode_u8_payload,
     is_accepted,
     setpoint_to_rc,
 )
 
 VECTOR_DIR = Path(__file__).resolve().parents[4] / "tests" / "vectors"
-KEY = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-SESSION = 305419896  # 0x12345678
-
-README_EXAMPLES = [
-    {
-        "name": "setpoint_attitude_basic",
-        "key": KEY,
-        "fields": {"type": "SETPOINT", "flags": 0, "session_id": SESSION, "seq": 7, "t_send_us": 1000,
-                   "mode": 1, "roll": 100, "pitch": -200, "yaw_rate": 0, "throttle": 500, "sp_flags": 0},
-        "bytes": "5344016000000a007856341207000000e803000001640038ff0000f40100fb703d824f5b589e",
-        "expect": "accept",
-    },
-    {
-        "name": "setpoint_payload_bit_flipped",
-        "key": KEY,
-        "bytes": "5344016000000a007856341207000000e803000001650038ff0000f40100fb703d824f5b589e",
-        "expect": "reject:bad_tag",
-    },
-    {
-        "name": "wrong_magic",
-        "key": KEY,
-        "bytes": "5345016000000a007856341207000000e803000001640038ff0000f40100de307f06c4dd38a3",
-        "expect": "reject:bad_magic",
-    },
-    {
-        "name": "wrong_session_id",
-        "key": KEY,
-        "state": {"current_session": SESSION},
-        "bytes": "5344016000000a007956341207000000e803000001640038ff0000f40100b6785492183eae61",
-        "expect": "reject:wrong_session",
-    },
-    {
-        "name": "seq_duplicate",
-        "key": KEY,
-        "state": {"current_session": SESSION, "last_ctrl_seq": 0},
-        "steps": [
-            {"bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97", "expect": "accept"},
-            {"bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c", "expect": "accept"},
-            {"bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c", "expect": "reject:duplicate_seq"},
-            {"bytes": "5344016000000a00785634120300000060ea00000100000000000000000074f74adcb71e36f6", "expect": "accept"},
-        ],
-        "final": {"last_ctrl_seq": 3, "rx_rejected": 1},
-    },
-    {
-        "name": "clamp_over",
-        "key": KEY,
-        "fields": {"type": "SETPOINT", "session_id": SESSION, "seq": 1, "t_send_us": 0,
-                   "mode": 1, "roll": 1500, "pitch": 0, "yaw_rate": 0, "throttle": 500, "sp_flags": 0},
-        "bytes": "5344016000000a0078563412010000000000000001dc0500000000f40100aef509cd5dc0dca2",
-        "expect": "accept",
-        "channels": [2000, 1500, 1500, 1500, 1500, 1500, 1500, 1500],
-    },
-]  # fmt: skip
 
 _HEADER_FIELDS = ("flags", "session_id", "seq", "t_send_us")
 _SETPOINT_FIELDS = ("mode", "roll", "pitch", "yaw_rate", "throttle")
+_STATE_FIELDS = tuple(State.__dataclass_fields__)
 
 
 def load_vectors() -> list[dict]:
-    vectors = list(README_EXAMPLES)
+    vectors = []
     for path in sorted(VECTOR_DIR.glob("*.json")):
         data = json.loads(path.read_text())
         vectors.extend(data if isinstance(data, list) else [data])
@@ -93,12 +60,74 @@ def load_vectors() -> list[dict]:
 VECTORS = load_vectors()
 
 
-def payload_from_fields(fields: dict) -> bytes:
-    if fields["type"] != "SETPOINT":
-        pytest.skip(f"no Python codec for {fields['type']} yet (#100 part 4)")
-    return encode_setpoint(
-        Setpoint(*(fields[k] for k in _SETPOINT_FIELDS), fields.get("sp_flags", 0))
+def _fw_version(text: str) -> bytes:
+    return text.encode("ascii").ljust(FW_VERSION_SIZE, b"\0")
+
+
+def _setpoint(f: dict) -> Setpoint:
+    return Setpoint(*(f[k] for k in _SETPOINT_FIELDS), f.get("sp_flags", 0))
+
+
+def _setpoint_fields(sp: Setpoint) -> dict:
+    return {**{k: getattr(sp, k) for k in _SETPOINT_FIELDS}, "sp_flags": sp.flags}
+
+
+def _u8(name: str):
+    return (
+        lambda f: encode_u8_payload(f[name]),
+        lambda p: {name: decode_u8_payload(p)},
     )
+
+
+def _config():
+    return (
+        lambda f: encode_config_kv(ConfigKv(f["config_key"], f["value"])),
+        lambda p: (lambda m: {"config_key": m.key, "value": m.value})(
+            decode_config_kv(p)
+        ),
+    )
+
+
+# Message type -> (fields -> payload, payload -> fields). Names: README §1a.
+CODECS = {
+    "HELLO": (
+        lambda f: encode_hello(Hello(f["proto"], bytes.fromhex(f["ground_nonce"]))),
+        lambda p: (lambda m: {"proto": m.proto, "ground_nonce": m.ground_nonce.hex()})(decode_hello(p)),
+    ),
+    "HELLO_ACK": (
+        lambda f: encode_hello_ack(
+            HelloAck(f["new_session_id"], bytes.fromhex(f["esp_nonce"]), _fw_version(f["fw_version"]))
+        ),
+        lambda p: (
+            lambda m: {
+                "new_session_id": m.session_id,
+                "esp_nonce": m.esp_nonce.hex(),
+                "fw_version": m.fw_version.rstrip(b"\0").decode("ascii"),
+            }
+        )(decode_hello_ack(p)),
+    ),
+    "ARM_CONTROL_REQUEST": _u8("mask"),
+    "ARM_CONTROL_ACK": _u8("result"),
+    "RESUME_ACK": _u8("result"),
+    "BYE": _u8("reason"),
+    "RESUME_REQUEST": (lambda f: b"", lambda p: {} if p == b"" else None),
+    "CONFIG_GET": _config(),
+    "CONFIG_SET": _config(),
+    "EVENT": (
+        lambda f: encode_event(Event(f["code"], f["text"].encode("ascii"))),
+        lambda p: (lambda m: {"code": m.code, "text": m.text.decode("ascii")})(decode_event(p)),
+    ),
+    "SETPOINT": (lambda f: encode_setpoint(_setpoint(f)), lambda p: _setpoint_fields(decode_setpoint(p))),
+    "STATE": (
+        lambda f: encode_state(State(*(f[k] for k in _STATE_FIELDS))),
+        lambda p: (lambda m: {k: getattr(m, k) for k in _STATE_FIELDS})(decode_state(p)),
+    ),
+}  # fmt: skip
+
+
+def payload_fields(fields: dict) -> dict:
+    """The payload part of a vector's fields (no header, no type)."""
+    return {k: v for k, v in fields.items() if k != "type" and k not in _HEADER_FIELDS}
 
 
 def result_name(key: bytes, buf: bytes, rx: Receiver | None) -> str:
@@ -139,6 +168,8 @@ def test_vector(vector):
             assert rx.last_seq == final["last_ctrl_seq"]
         if "rx_rejected" in final:
             assert rx.counters.rejected == final["rx_rejected"]
+        if "gaps" in final:
+            assert rx.seq_counters.gaps == final["gaps"]
         return
 
     buf = bytes.fromhex(vector["bytes"])
@@ -148,11 +179,11 @@ def test_vector(vector):
     if fields is None:
         return
     # Encode: fields -> exactly bytes.
-    payload = payload_from_fields(fields)
+    encode, decode = CODECS[fields["type"]]
     header = Header(
         MsgType[fields["type"]], **{k: fields[k] for k in _HEADER_FIELDS if k in fields}
     )
-    assert encode_frame(header, payload, key) == buf
+    assert encode_frame(header, encode(fields), key) == buf
 
     # Decode: bytes -> exactly fields.
     _, frame = decode_frame(buf, key)
@@ -160,10 +191,28 @@ def test_vector(vector):
     for k in _HEADER_FIELDS:
         if k in fields:
             assert getattr(frame.header, k) == fields[k], k
-    sp = decode_setpoint(frame.payload)
-    for k in _SETPOINT_FIELDS:
-        assert getattr(sp, k) == fields[k], k
-    assert sp.flags == fields.get("sp_flags", 0)
+    expected = payload_fields(fields)
+    if fields["type"] == "SETPOINT":
+        expected.setdefault("sp_flags", 0)
+    assert decode(frame.payload) == expected
 
     if "channels" in vector:
-        assert setpoint_to_rc(sp) == vector["channels"]
+        assert setpoint_to_rc(decode_setpoint(frame.payload)) == vector["channels"]
+
+
+@pytest.mark.parametrize(
+    "vector", [v for v in VECTORS if "psk" in v], ids=lambda v: v["name"]
+)
+def test_session_key_derivation(vector):
+    """Group 2: the vector's key is derive_session_key(psk, nonces)."""
+    key = derive_session_key(
+        bytes.fromhex(vector["psk"]),
+        bytes.fromhex(vector["ground_nonce"]),
+        bytes.fromhex(vector["esp_nonce"]),
+    )
+    assert key.hex() == vector["key"]
+
+
+def test_every_message_type_has_a_codec():
+    # CONFIG_ACK has no vector and no field names in README §1a yet (#142).
+    assert set(CODECS) == {t.name for t in MsgType} - {"CONFIG_ACK"}
