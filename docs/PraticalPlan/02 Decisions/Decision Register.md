@@ -46,7 +46,7 @@ tags:
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
-| [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | 📝 Proposed (2026-11-04, #62). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
+| [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
 
 ## 2. What changed on 2026-10-12
 
@@ -96,7 +96,7 @@ tags:
 
 ## 8. What changed on 2026-11-04 and 2026-11-05
 
-- New [[ADR-024 OTA Firmware Updates|ADR-024]] (proposed, #62). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Whether flight builds keep OTA and the written procedure are proposals, accepted by the approving review (status set to Accepted in the PR's last commit).
+- New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
 
 ## 9. Still open
 
