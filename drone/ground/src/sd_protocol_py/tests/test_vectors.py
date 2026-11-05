@@ -32,6 +32,7 @@ from sd_protocol import (
     decode_setpoint,
     decode_state,
     decode_u8_payload,
+    derive_direction_keys,
     derive_session_key,
     encode_config_ack,
     encode_config_kv,
@@ -231,12 +232,17 @@ def test_vector(vector):
     "vector", [v for v in VECTORS if "psk" in v], ids=lambda v: v["name"]
 )
 def test_session_key_derivation(vector):
-    """Group 2: the vector's key is derive_session_key(psk, nonces)."""
+    """Group 2: the vector's key is the session key from the PSK and the nonces,
+    then the key of `direction` ("g2e" or "e2g") when the vector has one (#150)."""
     key = derive_session_key(
         bytes.fromhex(vector["psk"]),
         bytes.fromhex(vector["ground_nonce"]),
         bytes.fromhex(vector["esp_nonce"]),
     )
+    direction = vector.get("direction")
+    if direction is not None:
+        keys = derive_direction_keys(key)
+        key = {"g2e": keys.ground_to_esp, "e2g": keys.esp_to_ground}[direction]
     assert key.hex() == vector["key"]
 
 

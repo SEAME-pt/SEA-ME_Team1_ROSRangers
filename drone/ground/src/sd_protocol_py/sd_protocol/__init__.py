@@ -1,6 +1,12 @@
 """Python twin of lib/protocol (ADR-007)."""
 
-from sd_protocol.crypto import derive_session_key, equal_constant_time, hmac_sha256
+from sd_protocol.crypto import (
+    DirectionKeys,
+    derive_direction_keys,
+    derive_session_key,
+    equal_constant_time,
+    hmac_sha256,
+)
 from sd_protocol.frame import (
     Frame,
     Header,
@@ -92,6 +98,7 @@ __all__ = [
     "ConfigAck",
     "ConfigKv",
     "ConfigResult",
+    "DirectionKeys",
     "EspState",
     "Event",
     "EventCode",
@@ -119,6 +126,7 @@ __all__ = [
     "decode_setpoint",
     "decode_state",
     "decode_u8_payload",
+    "derive_direction_keys",
     "derive_session_key",
     "encode_config_ack",
     "encode_config_kv",
