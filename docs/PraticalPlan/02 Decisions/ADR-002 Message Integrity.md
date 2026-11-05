@@ -52,6 +52,8 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 
 - [[PC_to_ESP]] §6, §8 · [[Protocol Spec v0]] · [[Decision Register]]
 
+> 2026-11-05: `HELLO` and `HELLO_ACK` are tagged with the PSK. The session key needs `esp_nonce`, which is inside `HELLO_ACK`, and the tag is checked before the payload is read. Every later message uses the session key. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5. The decision is unchanged.
+
 ## 6. Glossary
 
 | Term | Meaning |

@@ -93,7 +93,7 @@ flowchart LR
 
 ### `/fc/attitude` and `/fc/battery`
 
-What the two FC telemetry topics carry. These are BrunoBMFT's proposals for #96: the code follows them and each one is a constant or a parameter, so the team can still change them in review. The attitude rate (20 or 25 Hz) is open in #142.
+What the two FC telemetry topics carry. These are BrunoBMFT's proposals for #96: the code follows them and each one is a constant or a parameter, so the team can still change them in review. The protocol telemetry rate was set to 25 Hz on 2026-11-05 (#142, [[Protocol Spec v0]] §7.3); `attitude_hz` still defaults to 20 Hz until #96 is reviewed.
 
 | Item | `/fc/attitude` | `/fc/battery` |
 |---|---|---|
