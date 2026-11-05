@@ -3,7 +3,7 @@ title: Requirements
 type: plan
 status: active
 date: 2026-10-21
-updated: 2026-10-27
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - plan
@@ -48,28 +48,28 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
 | REQ-COM-001 | Receiver checks every datagram for structural validity (length vs type, version, message type) before interpreting it. | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-002 | Receiver checks field-level validity (allowed range) before any value goes toward the FC. Range limits TBD. | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | draft |
+| REQ-COM-002 | Receiver checks field-level validity (allowed range) before any value goes toward the FC. Range limits (2026-11-05, #142): the [[Protocol Spec v0]] §4 clamps; `mode` other than 0 or 1 rejected (`bad_mode`) before the sequence check, so it changes no state; max tilt stays in Betaflight (`angle_limit`). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-003 | Receiver verifies an integrity check on each datagram. Mechanism: truncated HMAC-SHA256 ([[ADR-002 Message Integrity\|ADR-002]]). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-004 | Datagrams failing any check are discarded without side effects on control state and counted in a diagnostic counter. | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
+| REQ-COM-004 | Datagrams failing any check are discarded without side effects on control state and counted in a diagnostic counter. How the counters reach the ground is open (#149). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-005 | Malformed input never causes a crash, hang, buffer overrun or undefined behaviour on the ESP8266. | [[PC_to_ESP]] §5 (validation) | test + analysis | unit + fuzz; static analysis | accepted |
 | REQ-COM-006 | Each control setpoint carries a sender-assigned sequence number that advances per new setpoint. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-007 | Receiver tracks the sequence number of the most recently accepted control message. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
+| REQ-COM-007 | Receiver tracks, per transport, the sequence number of the most recently accepted message ([[ADR-003 Sequence Acceptance\|ADR-003]] entry of 2026-11-05). | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-008 | Sequence-number width and wrap-around are defined (32-bit; `seq >= 2^31` forces a new session). | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | inspection + test | spec review; unit (wrap-around) | accepted |
 | REQ-COM-009 | Sequence state is tied to a session so a restarted sender is not confused with replayed traffic. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-010 | Receiver accepts a control message only if it is newer than the latest accepted one. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
+| REQ-COM-010 | Receiver accepts a message only if its seq is newer than the latest accepted one on the same transport (ADR-003 entry of 2026-11-05). | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-011 | A duplicate control message is discarded and counted. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-012 | A reordered (older) message after a newer one is discarded and counted; old values are not replayed. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-013 | Gaps in sequence numbers are detected and counted; a gap alone is not an error. | [[PC_to_ESP]] §6 (sequence) · [[ADR-003 Sequence Acceptance\|ADR-003]] | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-014 | A setpoint is usable only while fresh: stale after `T_fresh` (TBD) since accepted, never forwarded indefinitely. | [[PC_to_ESP]] (Freshness) | test | unit + HIL | draft |
-| REQ-COM-015 | Freshness uses a time source the ESP8266 controls (own receive-time clock). Sender timestamps are an open decision. | [[PC_to_ESP]] (Freshness) | test | unit + HIL | draft |
+| REQ-COM-014 | A setpoint is usable only while fresh: stale after `T_fresh` = 150 ms since accepted ([[Protocol Spec v0]] §7.2, 2026-11-03), never forwarded indefinitely. | [[PC_to_ESP]] (Freshness) | test | unit + HIL | accepted |
+| REQ-COM-015 | Freshness uses a time source the ESP8266 controls (own receive-time clock). Sender timestamps (`t_send_us`) are for latency logging only (OD-10). | [[PC_to_ESP]] (Freshness) | test | unit + HIL | accepted |
 | REQ-COM-016 | Timing evaluation does not depend on the TCP connection being alive. | [[PC_to_ESP]] (Freshness) | test | unit + HIL | accepted |
 | REQ-COM-017 | TCP messages use explicit framing and are validated for structure, version and type before use. | [[PC_to_ESP]] (TCP) | test | unit | accepted |
-| REQ-COM-018 | Configuration requests are acknowledged, with success or failure reported to the ground side. | [[PC_to_ESP]] (TCP) | test | unit | accepted |
-| REQ-COM-019 | Malformed TCP input is rejected without corrupting state; handling of repeated malformed input TBD. | [[PC_to_ESP]] (TCP) | test | unit | draft |
+| REQ-COM-018 | Configuration requests are acknowledged, with success or failure reported to the ground side (`CONFIG_ACK` 0x22, [[Protocol Spec v0]] §3.1, 2026-11-05). | [[PC_to_ESP]] (TCP) | test | unit | accepted |
+| REQ-COM-019 | Malformed TCP input is rejected without corrupting state; repeated malformed input (2026-11-05, #142): bad tag dropped and counted; bad magic, version or length closes the TCP connection; never triggers the failsafe on its own ([[Protocol Spec v0]] §4 rule 5). | [[PC_to_ESP]] (TCP) | test | unit | accepted |
 | REQ-COM-020 | After loss, control does not resume just because packets arrive again; a defined, validated handshake is required (exact handshake TBD). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 | REQ-COM-021 | On reconnection the receiver is not fooled by replayed or old traffic. | [[PC_to_ESP]] (Reconnection) | test | unit + HIL | accepted |
 | REQ-COM-022 | Ground side can re-establish the TCP session and re-synchronise state after a Wi-Fi or TCP interruption. | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | accepted |
-| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
+| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. Deferred on #142 (2026-11-05): to be settled with the gateway firmware (#101). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 
 ### Safety (`REQ-SAF`)
 

@@ -27,7 +27,7 @@ tags:
 > This page describes a **proposed** serial link. **No wiring or firmware change has been approved based solely on this proposal.** Nothing here has been physically validated: not UART4, not MSP override, not any pin or pad connection. Pad locations, protocol payloads, baud rate and timeout values are deliberately **not** specified and appear as open decisions in [§12](#12-acceptance-criteria-and-unresolved-decisions).
 
 > [!info] Update 2026-10-20: hardware state
-> The banner above is the 2026-10-12 state. Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]: connector to follow), and S2-01 passed on it (the FC answers MSP). Not validated yet: the §10 evidence on the soldered joints, MSP override, the ESP failsafe and the ELRS failsafe re-test ([[ESP Bench Test Plan]] §4).
+> The banner above is the 2026-10-12 state. Since 2026-10-26 the ESP-12F (ESP8266) is **soldered directly to FC UART4**, wires end to end, no connector ([[ADR-021 Removable ESP Connector|ADR-021]], amended 2026-10-26). The FC answers MSP on it (S2-01, S1-07). Done on these joints: the §10 checklist (no photos, #69) and the ELRS failsafe re-test (#22, #41). Not validated yet: MSP override and the ESP failsafe ([[ESP Bench Test Plan]] §4).
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
 > The team accepted the proposals on this page. Rows marked **Accepted (ADR-0xx)** below are decided. See the linked ADR for the reasoning, and the [[Decision Register]] for the full list. Where an ADR differs from the earlier "Recommended" text, **the ADR wins** (it supersedes it).
@@ -336,7 +336,7 @@ The ground computer produces high-level control commands (see companion page for
 > This is a **verification checklist**, not an approval to wire. Pad identification is not done. No part of this checklist has been performed. Proceed only with explicit team approval, with propellers removed and with **no battery connected until each step permits**.
 
 > [!info] Update 2026-10-12: test before soldering
-> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (ESP alone, then with the FC on temporary wires). A removable connector is proposed in [[ADR-021 Removable ESP Connector|ADR-021]].
+> Before any step in §10.3, run Stages 1–2 of the [[ESP Bench Test Plan]] (ESP alone, then with the FC on temporary wires). The ESP is now soldered directly, no connector ([[ADR-021 Removable ESP Connector|ADR-021]], amended 2026-10-26).
 
 ### 10.1 Identification (documentation first)
 

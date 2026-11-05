@@ -16,8 +16,8 @@ tags:
 
 # ESP Bench Test Plan
 
-> [!warning] Status: PLAN, with results from 2026-10-14 to 2026-10-19 in §4.
-> The original rule was: nothing is soldered to the flight controller until Stage 1 and Stage 2 have passed and the [[ESP_to_FC]] §10 checklist is complete. **On 2026-10-19 the ESP was soldered to FC UART4 (wires that are easy to remove) before that was complete**: S2-02 and S2-06 had only been rehearsed through a PC USB relay, and the §10 evidence on the soldered joints is still to be posted (GitHub #30). Fill in the result tables as you go and commit them.
+> [!warning] Status: PLAN, with results from 2026-10-14 to 2026-11-04 in §4.
+> The original rule was: nothing is soldered to the flight controller until Stage 1 and Stage 2 have passed and the [[ESP_to_FC]] §10 checklist is complete. **On 2026-10-19 the ESP was soldered to FC UART4 (wires that are easy to remove) before that was complete**: S2-02 and S2-06 had only been rehearsed through a PC USB relay (GitHub #30). On 2026-10-26 the ESP was re-soldered directly, no connector ([[ADR-021 Removable ESP Connector|ADR-021]]). The §10 checklist (no photos) and S2-02 were then done on these joints (#69). S2-06 is still open on them. Fill in the result tables as you go and commit them.
 
 > [!info] Why test before soldering
 > Desoldering an ESP from a 2.5" AIO risks lifting the FC pads. Testing first also separates hardware problems from software problems.
@@ -71,7 +71,7 @@ Only after Stages 1 and 2 pass:
 
 1. Run the [[ESP_to_FC]] §10 checklist: T4/R4 continuity to the MCU side, no shorts to neighbouring pads, T4 idle level measured.
 2. Check the FC 5V rail can supply the **peak current from ESP-S1-08**.
-3. Mount per [[ADR-021 Removable ESP Connector|ADR-021]] (accepted 2026-10-20: a 4-pin connector, so the ESP can be unplugged). Not fitted yet: on 2026-10-19 the ESP was soldered with wires that are easy to remove.
+3. Mount per [[ADR-021 Removable ESP Connector|ADR-021]]: soldered directly to the FC pads, wires end to end, no connector (amended 2026-10-26; done on 2026-10-26).
 4. Repeat ESP-S2-01 and ESP-S2-03 on the installed hardware.
 
 ## 4. Results log
@@ -109,11 +109,13 @@ Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and
 | ESP-S1-09 | 2026-10-23 | ptorrao-git (comment on #30) | **Recorded** (criterion met: loss and RTT at the real distance). Custom ESP firmware, soldered link, cage, 3 × 10 min (`s1-09_cage_run1/2/3`): lost 41 / 229 / 46 of 30,000 (0.14 / 0.76 / 0.15 %), RTT median 18.7 / 18.9 / 17.2 ms, p99 118 / 230 / 118 ms, max 269 / 498 / 248 ms, longest silence 272 / 343 / 247 ms. Against [[ADR-004 ESP Failsafe\|ADR-004]] `T_loss` = 250 ms: 1 / 11 / 0 silences at or above it. Signal −62 to −72 dBm. ESP timestamps: the FC answered every request it got; silences come from Wi-Fi in both directions; 35 / 85 / 24 replies were dropped by the ESP while its Wi-Fi send queue was full. | #30, #25. Supersedes 2026-10-19. Run 2 came right after run 1 (drone on > 30 min, more interference); run 3 after a power-cycle. Run 2 is taken as the expected worst case, since the drone will not be that far for that long in flight; no rerun. `T_loss` unchanged at 250 ms |
 | ESP-S1-10 |  |  | Not run. | Needs the custom firmware |
 | ESP-S2-01 | 2026-10-19 | ptorrao-git (comment on #30) | PASS. `test s2-01` on the soldered link: 0 / 100 lost, RTT median 33 ms, p99 127 ms, max 130 ms, longest silence 130 ms, 0 over 250 ms. The FC answers MSP through the soldered UART4: wiring and crossover are right. | #30. The 2026-10-16 relay run is listed as reported done, with no saved files |
-| ESP-S2-02 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay, no wires). `status-watch` 234 polls / 26 s while the ESP was reset: 0 timeouts, I2C errors 0, never armed, `reboot_required` false. Arming-disable flags constant at 0x100004 (RXLOSS + DSHOT_TELEM; radio off, no ESC power), same as the CLI. FC uptime 2,894 s at the end: no FC reboot. `compare-diffs`: no configuration change (16:38 vs 17:27). | #30. Not yet run on the soldered link (needs the FC on USB, ESP reset button ×20) |
+| ESP-S2-02 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay, no wires). `status-watch` 234 polls / 26 s while the ESP was reset: 0 timeouts, I2C errors 0, never armed, `reboot_required` false. Arming-disable flags constant at 0x100004 (RXLOSS + DSHOT_TELEM; radio off, no ESC power), same as the CLI. FC uptime 2,894 s at the end: no FC reboot. `compare-diffs`: no configuration change (16:38 vs 17:27). | #30. Run on the direct solder after 2026-10-26: see the next row |
+| ESP-S2-02 | after 2026-10-26 (date not recorded) | ThiagoTEP (comment on #69, 2026-11-04) | PASS on the direct solder. Numbers not recorded. | #69. The only recorded numbers are the 2026-10-16 relay rehearsal above |
 | ESP-S2-03 | 2026-10-19 | ptorrao-git (comment on #30) | Run and reported done (`msp attitude` while tilting). No numbers or saved files. The 2026-10-16 relay run is also reported done, terminal output only. | #30 |
 | ESP-S2-04 | 2026-10-16 | ptorrao-git (comment on #30) | Read part reported done (relay run), terminal output only, no saved files. | #30. The write part waits for MSP Override to be configured and approved |
 | ESP-S2-05 |  |  | Not run. | Only the current AP channel (6) is possible with the ESP USB unplugged |
 | ESP-S2-06 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay). Relay stopped twice: loss detected after 302 ms both times (limit 500 ms). Outages 8.2 s and 4.7 s. | #30. Not run on the soldered link: a soldered wire cannot be unplugged, so the FC would be rebooted over USB, which is closer to F6 than F2 |
+| ESP-S2-06 | after 2026-10-26 (date not recorded) | ThiagoTEP (comment on #69, 2026-11-04; corrected 2026-11-05) | **Not a valid S2-06 run.** The link to the FC was not cut on purpose. It was lost twice by accident: once when an unstable ESP firmware build was flashed (an ESP fault, not a lost FC), and once when a solder joint broke (re-soldered). What the ESP reported to the ground was not recorded. | #69. **S2-06 stays open** on the direct solder. The only recorded numbers are the 2026-10-16 relay rehearsal above (loss detected after 302 ms) |
 
 ### Decision threshold (proposal, dropped 2026-10-23)
 
@@ -141,8 +143,8 @@ Next runs (near, 10 min each): FC on the laptop USB with no battery and the radi
 
 - S1-08 current in mA (recorded as partial on 2026-10-23, no meter). S1-07 and S1-10 (bridge part) passed on 2026-10-26; repeat S1-10 on the gateway firmware.
 - Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall.
-- [[ESP_to_FC]] §10.1–§10.3 evidence on the soldered joints (continuity, no shorts, crossover, T4 idle about 3.3 V, photos).
-- S2-02, S2-06 and S2-05 on the soldered link.
+- [[ESP_to_FC]] §10 photos of the soldered joints: not taken (the checks themselves were done, #69).
+- S2-05 and S2-06 on the soldered link. S2-02 passed on it (#69), numbers not recorded. S2-06 was not run: the link was only lost by accident (§4).
 
 ## 5. Related pages
 

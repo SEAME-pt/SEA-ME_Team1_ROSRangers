@@ -15,8 +15,8 @@ tags:
 
 > [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
-> [!warning] Status: DRAFT. The ESP is wired (state 2026-10-20).
-> Since 2026-10-19 the ESP-12F (ESP8266) is **soldered to FC UART4** with wires that are easy to remove, so the install is not permanent. It is not on a connector yet ([[ADR-021 Removable ESP Connector|ADR-021]], accepted 2026-10-20). S2-01 passed on this link ([[ESP Bench Test Plan]] §4). Still open: the [[ESP_to_FC]] §10 evidence on the soldered joints, the ESP current (S1-08), and the ELRS failsafe re-test (GitHub #22, #41).
+> [!warning] Status: DRAFT. The ESP is wired (state 2026-11-05).
+> Since 2026-10-26 the ESP-12F (ESP8266) is **soldered directly to FC UART4**, wires end to end, **no connector** ([[ADR-021 Removable ESP Connector|ADR-021]], amended 2026-10-26, #69). The [[ESP_to_FC]] §10 checklist was done on these joints (no photos), and the ELRS failsafe re-test is done (#22, #41). Still open: the ESP current (S1-08).
 
 ---
 
@@ -73,9 +73,9 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
                                      3V3 ──────────────────────► VCC
 ```
 
-### 2.1 Mounting ([[ADR-021 Removable ESP Connector|ADR-021]], accepted 2026-10-20)
+### 2.1 Mounting ([[ADR-021 Removable ESP Connector|ADR-021]], amended 2026-10-26)
 
-**Today:** the ESP is soldered to T4, R4, 5V and GND with wires that are easy to remove. **Decided:** a 4-pin locking connector between the FC pads and the ESP, so we stop soldering and desoldering. It is not fitted yet. Pin order to record here once chosen:
+The ESP is soldered straight to T4, R4, 5V and GND, wires end to end, **no connector** (team decision 2026-10-26; why and what was checked: [[ADR-021 Removable ESP Connector|ADR-021]] update). The wires:
 
 | Pin | Signal | FC pad | ESP pin |
 |---|---|---|---|
