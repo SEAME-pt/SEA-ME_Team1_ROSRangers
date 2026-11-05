@@ -26,7 +26,7 @@ tags:
 > - The decision does not change.
 
 > [!info] Update 2026-11-04: OTA and the written procedure (GitHub #62)
-> - [[ADR-024 OTA Firmware Updates|ADR-024]] keeps OTA as the normal way to update the ESP, with a password, and only while the FC is disarmed and no control session is streaming.
+> - [[ADR-024 OTA Firmware Updates|ADR-024]] keeps OTA as the normal way to update the ESP, with a password, and only while the FC is disarmed and no ground session is open.
 > - First flash and recovery stay on USB with the ESP taken off the FC wires, as this ADR requires. The written procedure is the "Flash" section of `drone/firmware/esp8266/README.md`.
 > - The decision does not change.
 
