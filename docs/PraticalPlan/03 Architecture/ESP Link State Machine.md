@@ -49,7 +49,7 @@ stateDiagram-v2
 
 - All timeouts take an injected `now_ms()`, so the logic is unit-testable on the host ([[PC_to_ESP]] §9.1).
 - Rejected packets never reset the loss timer (REQ-SAF-011 (was REQ-LOSS-03)).
-- The main loop never blocks. UART reads are non-blocking. The ESP8266 hardware watchdog stays enabled.
+- The main loop never blocks. UART reads are non-blocking. The ESP8266 hardware watchdog stays enabled. Exception: an OTA upload blocks the loop while the image is transferred, and only in NO_SESSION with the FC disarmed and locked ([[ADR-024 OTA Firmware Updates|ADR-024]] D2; #102 adds the UPDATING state).
 - Diagnostics traffic is rate-limited so control is never starved (OD-20, limits still to set).
 
 ## 4. Glossary
