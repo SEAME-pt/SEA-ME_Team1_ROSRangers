@@ -42,10 +42,13 @@ from sd_protocol import (
 
 
 def test_code_values_match_the_cpp():
-    # Suggested in #142, not frozen: a change here must change messages.hpp too.
+    # Spec §3.1 (v1.1): a change here must change messages.hpp too.
     assert [int(v) for v in AckResult] == [0, 1, 2, 3]
     assert [int(v) for v in ByeReason] == [0, 1, 2, 3]
-    assert [int(v) for v in ConfigResult] == [0, 1, 2, 3, 4]
+    assert [int(v) for v in ConfigResult] == [0, 1, 2, 3, 4, 5]
+    assert ConfigResult.SAFETY_PARAMETER == 3
+    assert ConfigResult.OUT_OF_RANGE == 4
+    assert ConfigResult.CONTROL_ENABLED == 5
     assert [int(v) for v in EspState] == [0, 1, 2, 3, 4]
     assert [int(v) for v in EventCode] == [0x0101, 0x0102, 0x0103]
 

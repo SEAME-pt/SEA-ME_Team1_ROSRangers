@@ -34,7 +34,7 @@ class MsgType(IntEnum):
     BYE = 0x07
     CONFIG_GET = 0x20
     CONFIG_SET = 0x21
-    CONFIG_ACK = 0x22  # suggested in #142, not frozen yet
+    CONFIG_ACK = 0x22  # reply to CONFIG_GET / CONFIG_SET (spec v1.1, #142)
     EVENT = 0x40
     SETPOINT = 0x60
     STATE = 0x80

@@ -9,8 +9,8 @@ import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
-# --- Code values. Suggested answers of #142 (spec §7.5), NOT frozen yet:
-# change here and in messages.hpp together. Values are part of the wire format:
+# --- Code values: Protocol Spec v0 §3.1 (v1.1, decided on #142, 2026-11-05).
+# Change here and in messages.hpp together. Values are part of the wire format:
 # never renumber or reuse.
 
 
@@ -35,9 +35,10 @@ class ConfigResult(IntEnum):
 
     OK = 0
     UNKNOWN_KEY = 1
-    READ_ONLY = 2
-    OUT_OF_RANGE = 3
-    CONTROL_ENABLED = 4  # refused while control is enabled (OD-16)
+    READ_ONLY = 2  # CONFIG_SET on an Info key (0x01-0x3F)
+    SAFETY_PARAMETER = 3  # CONFIG_SET on a Safety key (0x40-0x7F): firmware only
+    OUT_OF_RANGE = 4  # never clamped (spec §7.3)
+    CONTROL_ENABLED = 5  # any CONFIG_SET while STREAMING (OD-16)
 
 
 class EspState(IntEnum):

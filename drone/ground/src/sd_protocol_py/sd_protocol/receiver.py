@@ -1,8 +1,9 @@
 """Receive rules of spec §4 (1 to 3) for one transport inside one session.
 
 Frame checks, session check, the message type and its payload size
-(REQ-COM-001, spec §3), then the sequence window (ADR-003). Use one Receiver
-per transport (UDP control, TCP session), as suggested in spec §7.5.
+(REQ-COM-001, spec §3), the SETPOINT mode (§4 rule 4), then the sequence window
+(ADR-003). Use one Receiver per transport (UDP control, TCP session): each has
+its own seq (spec §1).
 
 HELLO is not handled here: it arrives before a session exists and is tagged with
 the PSK, so the link state machine checks it with decode_frame() and then calls
@@ -45,6 +46,7 @@ class RxResult(IntEnum):
     SEQ_TOO_HIGH = 11  # seq >= 2^31: the sender must open a new session
     BAD_TYPE = 12  # message type not in spec §3 (REQ-COM-001)
     BAD_PAYLOAD_SIZE = 13  # payload_len does not match the type (spec §3, REQ-COM-001)
+    BAD_MODE = 14  # SETPOINT mode other than 0 or 1 (spec §4 rule 4, REQ-COM-002)
 
 
 def is_accepted(result: RxResult) -> bool:
@@ -67,6 +69,7 @@ class RxCounters:
     seq_too_high: int = 0
     bad_type: int = 0
     bad_payload_size: int = 0
+    bad_mode: int = 0
 
 
 _FRAME_REJECTS = {
@@ -93,6 +96,8 @@ PAYLOAD_SIZES = {
     MsgType.SETPOINT: (SETPOINT_SIZE, SETPOINT_SIZE),
     MsgType.STATE: (STATE_SIZE, STATE_SIZE),
 }
+
+SETPOINT_MODES = (0, 1)  # 0 neutral, 1 attitude (spec §3)
 
 _SEQ_RESULTS = {
     SeqResult.ACCEPTED: RxResult.ACCEPTED,
@@ -168,13 +173,18 @@ class Receiver:
         if frame.header.session_id != self._session_id:
             return self._reject(RxResult.WRONG_SESSION)
 
-        # Type and payload size (REQ-COM-001), before the window: a malformed
-        # frame must not use up its seq.
+        # Type, payload size (REQ-COM-001) and SETPOINT mode (§4 rule 4), before
+        # the window: a malformed frame must not use up its seq (REQ-COM-004).
         sizes = PAYLOAD_SIZES.get(frame.header.type)
         if sizes is None:
             return self._reject(RxResult.BAD_TYPE)
         if not sizes[0] <= len(frame.payload) <= sizes[1]:
             return self._reject(RxResult.BAD_PAYLOAD_SIZE)
+        if (
+            frame.header.type == MsgType.SETPOINT
+            and frame.payload[0] not in SETPOINT_MODES
+        ):
+            return self._reject(RxResult.BAD_MODE)
 
         # Rule 3: newer than the last accepted message (ADR-003).
         result = _SEQ_RESULTS[self._window.accept(frame.header.seq)]

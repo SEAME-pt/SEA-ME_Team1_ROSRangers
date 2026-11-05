@@ -207,3 +207,16 @@ def test_payload_size_bounds(msg_type, size, ok):
 
 def test_every_type_has_a_payload_size():
     assert set(PAYLOAD_SIZES) == set(MsgType)
+
+
+def test_setpoint_mode_other_than_0_or_1_rejected_before_the_seq_check():
+    # Spec §4 rule 4 (v1.1): bad_mode, and the seq stays free (REQ-COM-004).
+    rx = open_receiver()
+    payload = bytearray(SEQ1[20:30])
+    payload[0] = 2
+    bad = encode_frame(
+        Header(MsgType.SETPOINT, 0, SESSION, 1), bytes(payload), TEST_KEY
+    )
+    assert rx.receive(bad) == (RxResult.BAD_MODE, None)
+    assert (rx.counters.bad_mode, rx.counters.rejected, rx.last_seq) == (1, 1, 0)
+    assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED  # same seq, now accepted

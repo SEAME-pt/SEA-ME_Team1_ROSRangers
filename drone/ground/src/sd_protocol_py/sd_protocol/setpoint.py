@@ -20,7 +20,7 @@ class Setpoint:
     pitch: int  # -1000..1000
     yaw_rate: int  # -1000..1000
     throttle: int  # 0..1000
-    flags: int = 0  # reserved in v0 (spec §7.5)
+    flags: int = 0  # reserved in v0: sent as 0, ignored (spec §3)
 
 
 def encode_setpoint(sp: Setpoint) -> bytes:

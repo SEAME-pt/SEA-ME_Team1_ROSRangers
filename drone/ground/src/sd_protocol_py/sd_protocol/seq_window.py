@@ -24,7 +24,7 @@ class SeqCounters:
 
 
 class SeqWindow:
-    """One window per sender, per session (and per transport, spec §7.5 suggestion).
+    """One window per sender, per session and per transport (spec §1, ADR-003).
 
     Reset it when a new session starts.
     """
