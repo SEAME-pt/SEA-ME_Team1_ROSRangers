@@ -50,11 +50,14 @@ sd::RxResult feed(sd::Receiver &rx, const char *hex) {
 }
 
 // The UDP Receiver: the reference frames above are SETPOINTs.
-sd::Receiver open_receiver(sd::Transport t = sd::Transport::kUdp) {
-  sd::Receiver rx;
-  EXPECT_TRUE(rx.start_session(kSession, test_key(), t));
-  return rx;
-}
+// An ESP-side Receiver with kSession open (the reference frames are SETPOINTs).
+struct OpenRx : sd::Receiver {
+  explicit OpenRx(sd::Transport t = sd::Transport::kUdp,
+                  sd::Role role = sd::Role::kEsp)
+      : sd::Receiver(role, t) {
+    EXPECT_TRUE(start_session(kSession, test_key()));
+  }
+};
 
 // A neutral SETPOINT (mode 0, all zero) with any session and seq.
 std::vector<std::uint8_t> encode(std::uint32_t session, std::uint32_t seq) {
@@ -81,7 +84,7 @@ std::vector<std::uint8_t> frame_of(std::uint8_t type,
 } // namespace
 
 TEST(Receiver, NothingIsAcceptedBeforeASession) {
-  sd::Receiver rx;
+  sd::Receiver rx(sd::Role::kEsp, sd::Transport::kUdp);
   EXPECT_FALSE(rx.in_session());
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kNoSession);
   EXPECT_EQ(rx.counters().no_session, 1U);
@@ -89,13 +92,13 @@ TEST(Receiver, NothingIsAcceptedBeforeASession) {
 }
 
 TEST(Receiver, SessionIdZeroIsReservedForHello) {
-  sd::Receiver rx;
-  EXPECT_FALSE(rx.start_session(0, test_key(), sd::Transport::kUdp));
+  sd::Receiver rx(sd::Role::kEsp, sd::Transport::kUdp);
+  EXPECT_FALSE(rx.start_session(0, test_key()));
   EXPECT_FALSE(rx.in_session());
 }
 
 TEST(Receiver, AcceptsAValidFrameAndReturnsItsFields) {
-  auto rx = open_receiver();
+  OpenRx rx;
   const auto bytes = from_hex(kSeq7);
   sd::Frame f{};
   ASSERT_EQ(rx.receive(bytes.data(), bytes.size(), f),
@@ -108,14 +111,14 @@ TEST(Receiver, AcceptsAValidFrameAndReturnsItsFields) {
 
 // Vector group 4 (session).
 TEST(Receiver, WrongSessionRejectedEvenWithAValidTag) {
-  auto rx = open_receiver();
+  OpenRx rx;
   EXPECT_EQ(feed(rx, kOtherSession), sd::RxResult::kWrongSession);
   EXPECT_EQ(rx.counters().wrong_session, 1U);
   EXPECT_EQ(rx.last_seq(), 0U); // a rejected frame never moves the window
 }
 
 TEST(Receiver, SessionIdZeroOutsideHelloRejected) {
-  auto rx = open_receiver();
+  OpenRx rx;
   const auto bytes = encode(0, 1);
   sd::Frame f{};
   EXPECT_EQ(rx.receive(bytes.data(), bytes.size(), f),
@@ -124,7 +127,7 @@ TEST(Receiver, SessionIdZeroOutsideHelloRejected) {
 
 // Vector group 5 (sequence): the seq_duplicate example from the README.
 TEST(Receiver, SeqDuplicateExample) {
-  auto rx = open_receiver();
+  OpenRx rx;
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kAccepted);
   EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kAccepted);
   EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kDuplicateSeq);
@@ -135,7 +138,7 @@ TEST(Receiver, SeqDuplicateExample) {
 }
 
 TEST(Receiver, OlderAndTooHighRejected) {
-  auto rx = open_receiver();
+  OpenRx rx;
   EXPECT_EQ(feed(rx, kSeq7), sd::RxResult::kAcceptedGap);
   EXPECT_EQ(feed(rx, kSeq3), sd::RxResult::kOldSeq);
   const auto high = encode(kSession, 0x80000000U);
@@ -147,7 +150,7 @@ TEST(Receiver, OlderAndTooHighRejected) {
 }
 
 TEST(Receiver, EveryFrameRejectIsCounted) {
-  auto rx = open_receiver();
+  OpenRx rx;
   auto bytes = from_hex(kSeq1);
   sd::Frame f{};
 
@@ -179,17 +182,17 @@ TEST(Receiver, EveryFrameRejectIsCounted) {
 }
 
 TEST(Receiver, WrongKeyRejected) {
-  sd::Receiver rx;
+  sd::Receiver rx(sd::Role::kEsp, sd::Transport::kUdp);
   sd::Key other = test_key();
   other.bytes[31] ^= 0xff;
-  ASSERT_TRUE(rx.start_session(kSession, other, sd::Transport::kUdp));
+  ASSERT_TRUE(rx.start_session(kSession, other));
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kBadTag);
 }
 
 TEST(Receiver, NewSessionResetsTheWindowAndEndSessionClosesIt) {
-  auto rx = open_receiver();
+  OpenRx rx;
   EXPECT_EQ(feed(rx, kSeq3), sd::RxResult::kAcceptedGap);
-  ASSERT_TRUE(rx.start_session(kSession, test_key(), sd::Transport::kUdp));
+  ASSERT_TRUE(rx.start_session(kSession, test_key()));
   EXPECT_EQ(rx.last_seq(), 0U);
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kAccepted);
 
@@ -200,7 +203,7 @@ TEST(Receiver, NewSessionResetsTheWindowAndEndSessionClosesIt) {
 }
 
 TEST(Receiver, RejectedFrameNeverReachesTheOutput) {
-  auto rx = open_receiver();
+  OpenRx rx;
   ASSERT_EQ(feed(rx, kSeq3), sd::RxResult::kAcceptedGap);
   const auto replay = from_hex(kSeq2); // valid tag, older seq
   sd::Frame f{};
@@ -213,7 +216,7 @@ TEST(Receiver, RejectedFrameNeverReachesTheOutput) {
 // wrong payload size or a bad SETPOINT.mode is rejected, counted, and does not
 // use up its seq number.
 TEST(Receiver, MalformedPayloadRejectedWithoutUsingTheSeq) {
-  auto rx = open_receiver();
+  OpenRx rx;
   const auto setpoint = static_cast<std::uint8_t>(sd::MsgType::kSetpoint);
   std::vector<std::uint8_t> sp(sd::kSetpointSize, 0);
   sd::Frame f{};
@@ -245,7 +248,7 @@ TEST(Receiver, MalformedPayloadRejectedWithoutUsingTheSeq) {
 // TCP Receiver: HELLO used seq 1, so the session starts at 1 and seq 2 is in
 // order, with no false gap.
 TEST(Receiver, TcpSessionStartsAfterHello) {
-  auto tcp = open_receiver(sd::Transport::kTcp);
+  OpenRx tcp(sd::Transport::kTcp);
   EXPECT_EQ(tcp.last_seq(), 1U);
   const auto arm = static_cast<std::uint8_t>(sd::MsgType::kArmControlRequest);
   auto f1 = frame_of(arm, {15}, 1);
@@ -260,8 +263,8 @@ TEST(Receiver, TcpSessionStartsAfterHello) {
 // only its own types. A captured TCP frame replayed on UDP, or a SETPOINT sent
 // on TCP, is refused and moves neither window.
 TEST(Receiver, FrameFromTheOtherTransportRejected) {
-  auto udp = open_receiver(sd::Transport::kUdp);
-  auto tcp = open_receiver(sd::Transport::kTcp);
+  OpenRx udp(sd::Transport::kUdp);
+  OpenRx tcp(sd::Transport::kTcp);
   const auto arm = static_cast<std::uint8_t>(sd::MsgType::kArmControlRequest);
   const auto replay = frame_of(arm, {15}, 2);
   const auto setpoint = encode(kSession, 50);
@@ -283,9 +286,9 @@ TEST(Receiver, FrameFromTheOtherTransportRejected) {
 
 // A refused start_session leaves the open session as it was.
 TEST(Receiver, RefusedStartKeepsTheOpenSession) {
-  auto rx = open_receiver();
+  OpenRx rx;
   ASSERT_EQ(feed(rx, kSeq1), sd::RxResult::kAccepted);
-  EXPECT_FALSE(rx.start_session(0, test_key(), sd::Transport::kTcp));
+  EXPECT_FALSE(rx.start_session(0, test_key()));
   EXPECT_TRUE(rx.in_session());
   EXPECT_EQ(rx.session_id(), kSession);
   EXPECT_EQ(rx.last_seq(), 1U);
@@ -296,21 +299,17 @@ TEST(Receiver, RefusedStartKeepsTheOpenSession) {
 // A frame sealed with the other direction's key (a reflection) is refused as a
 // bad tag and changes nothing, on both sides.
 TEST(Receiver, FrameSealedForTheOtherDirectionRejected) {
-  sd::Key psk = test_key();
+  const sd::Key psk = test_key();
   std::uint8_t ground_nonce[sd::kNonceSize];
   std::uint8_t esp_nonce[sd::kNonceSize];
   std::memset(ground_nonce, 0x11, sizeof(ground_nonce));
   std::memset(esp_nonce, 0x22, sizeof(esp_nonce));
-  sd::Key session = sd::derive_session_key(psk, ground_nonce, esp_nonce);
-  const sd::DirectionKeys keys = sd::derive_direction_keys(session);
-  sd::secure_zero(&session, sizeof(session));
+  const sd::DirectionKeys keys = sd::derive_keys(psk, ground_nonce, esp_nonce);
 
-  sd::Receiver esp;
-  sd::Receiver ground;
-  ASSERT_TRUE(
-      esp.start_session(kSession, keys.ground_to_esp, sd::Transport::kUdp));
-  ASSERT_TRUE(
-      ground.start_session(kSession, keys.esp_to_ground, sd::Transport::kUdp));
+  sd::Receiver esp(sd::Role::kEsp, sd::Transport::kUdp);
+  sd::Receiver ground(sd::Role::kGround, sd::Transport::kUdp);
+  ASSERT_TRUE(esp.start_session(kSession, keys.ground_to_esp));
+  ASSERT_TRUE(ground.start_session(kSession, keys.esp_to_ground));
 
   auto seal = [](std::uint8_t type, std::size_t size, std::uint32_t seq,
                  const sd::Key &key) {
@@ -344,6 +343,139 @@ TEST(Receiver, FrameSealedForTheOtherDirectionRejected) {
   EXPECT_EQ(ground.last_seq(), 1U);
   EXPECT_EQ(esp.counters().bad_tag, 1U);
   EXPECT_EQ(ground.counters().bad_tag, 1U);
+}
+
+// #152: even if both ends got the keys wrong (same key everywhere), each side
+// accepts only what the other side sends. A node's own frame sent back to it is
+// wrong_direction and moves nothing. BYE is sent by both, so both accept it.
+TEST(Receiver, OwnFramesRejectedEvenWithTheSameKey) {
+  OpenRx esp(sd::Transport::kUdp, sd::Role::kEsp);
+  OpenRx ground(sd::Transport::kUdp, sd::Role::kGround);
+  OpenRx esp_tcp(sd::Transport::kTcp, sd::Role::kEsp);
+  OpenRx ground_tcp(sd::Transport::kTcp, sd::Role::kGround);
+  const auto type = [](sd::MsgType t) { return static_cast<std::uint8_t>(t); };
+  sd::Frame f{};
+
+  auto state = frame_of(type(sd::MsgType::kState),
+                        std::vector<std::uint8_t>(sd::kStateSize, 0), 100);
+  EXPECT_EQ(esp.receive(state.data(), state.size(), f),
+            sd::RxResult::kWrongDirection);
+  auto setpoint =
+      frame_of(type(sd::MsgType::kSetpoint),
+               std::vector<std::uint8_t>(sd::kSetpointSize, 0), 100);
+  EXPECT_EQ(ground.receive(setpoint.data(), setpoint.size(), f),
+            sd::RxResult::kWrongDirection);
+  auto ack = frame_of(type(sd::MsgType::kArmControlAck), {0}, 100);
+  EXPECT_EQ(esp_tcp.receive(ack.data(), ack.size(), f),
+            sd::RxResult::kWrongDirection);
+  auto request = frame_of(type(sd::MsgType::kArmControlRequest), {15}, 100);
+  EXPECT_EQ(ground_tcp.receive(request.data(), request.size(), f),
+            sd::RxResult::kWrongDirection);
+  EXPECT_EQ(esp.last_seq(), 0U);
+  EXPECT_EQ(ground.last_seq(), 0U);
+  EXPECT_EQ(esp_tcp.last_seq(), 1U);
+  EXPECT_EQ(ground_tcp.last_seq(), 1U);
+  EXPECT_EQ(esp.counters().wrong_direction, 1U);
+  EXPECT_EQ(ground_tcp.counters().wrong_direction, 1U);
+
+  auto bye = frame_of(type(sd::MsgType::kBye), {0}, 2);
+  EXPECT_EQ(esp_tcp.receive(bye.data(), bye.size(), f),
+            sd::RxResult::kAccepted);
+  EXPECT_EQ(ground_tcp.receive(bye.data(), bye.size(), f),
+            sd::RxResult::kAccepted);
+  // The real traffic still goes through.
+  EXPECT_EQ(esp.receive(setpoint.data(), setpoint.size(), f),
+            sd::RxResult::kAcceptedGap);
+  EXPECT_EQ(ground.receive(state.data(), state.size(), f),
+            sd::RxResult::kAcceptedGap);
+}
+
+TEST(Receiver, KeepsItsRoleAndTransport) {
+  const sd::Receiver rx(sd::Role::kGround, sd::Transport::kTcp);
+  EXPECT_EQ(rx.role(), sd::Role::kGround);
+  EXPECT_EQ(rx.transport(), sd::Transport::kTcp);
+}
+
+namespace {
+
+// A handshake frame tagged with the PSK (test_key()), any header values.
+std::vector<std::uint8_t> handshake(sd::MsgType type, std::uint32_t session,
+                                    std::uint32_t seq,
+                                    std::vector<std::uint8_t> payload) {
+  const sd::Header h{static_cast<std::uint8_t>(type), 0, 0, session, seq, 0};
+  std::vector<std::uint8_t> out(sd::kMaxFrame);
+  out.resize(sd::encode_frame(h, payload.data(), payload.size(), test_key(),
+                              out.data(), out.size()));
+  return out;
+}
+
+std::vector<std::uint8_t> hello_ack_payload(std::uint32_t session) {
+  sd::HelloAck m{session, {}, {}};
+  std::vector<std::uint8_t> out(sd::kHelloAckSize);
+  sd::encode_hello_ack(m, out.data(), out.size());
+  return out;
+}
+
+} // namespace
+
+// Spec §1, #152: before a session the ESP accepts only HELLO and the ground
+// only HELLO_ACK, with the session_id and seq rules, and `out` is written only
+// for an accepted frame.
+TEST(Handshake, EachSideAcceptsOnlyItsOwnHandshakeFrame) {
+  using sd::HandshakeResult;
+  using sd::MsgType;
+  using sd::Role;
+  const std::vector<std::uint8_t> hello_payload(sd::kHelloSize, 0x11);
+  const auto hello = handshake(MsgType::kHello, 0, 1, hello_payload);
+  const auto ack =
+      handshake(MsgType::kHelloAck, kSession, 1, hello_ack_payload(kSession));
+  const auto check = [](Role role, const std::vector<std::uint8_t> &buf) {
+    sd::Frame f{};
+    return sd::receive_handshake(role, buf.data(), buf.size(), test_key(), f);
+  };
+
+  EXPECT_EQ(check(Role::kEsp, hello), HandshakeResult::kAccepted);
+  EXPECT_EQ(check(Role::kGround, ack), HandshakeResult::kAccepted);
+  // Reflected or out of place: each side refuses the other's frame.
+  EXPECT_EQ(check(Role::kGround, hello), HandshakeResult::kWrongDirection);
+  EXPECT_EQ(check(Role::kEsp, ack), HandshakeResult::kWrongDirection);
+  // Any other type tagged with the PSK.
+  const auto sp = handshake(MsgType::kSetpoint, 0, 1,
+                            std::vector<std::uint8_t>(sd::kSetpointSize, 0));
+  EXPECT_EQ(check(Role::kEsp, sp), HandshakeResult::kWrongDirection);
+
+  EXPECT_EQ(check(Role::kEsp, handshake(MsgType::kHello, 5, 1, hello_payload)),
+            HandshakeResult::kWrongSession);
+  EXPECT_EQ(check(Role::kGround,
+                  handshake(MsgType::kHelloAck, 0, 1, hello_ack_payload(0))),
+            HandshakeResult::kWrongSession);
+  EXPECT_EQ(check(Role::kGround, handshake(MsgType::kHelloAck, kSession, 1,
+                                           hello_ack_payload(kSession + 1))),
+            HandshakeResult::kWrongSession);
+  EXPECT_EQ(check(Role::kEsp, handshake(MsgType::kHello, 0, 2, hello_payload)),
+            HandshakeResult::kBadSeq);
+  EXPECT_EQ(check(Role::kEsp,
+                  handshake(MsgType::kHello, 0, 1,
+                            std::vector<std::uint8_t>(sd::kHelloSize - 1, 0))),
+            HandshakeResult::kBadPayloadSize);
+
+  // Wrong key, broken frame.
+  auto bad = hello;
+  bad.back() ^= 1;
+  EXPECT_EQ(check(Role::kEsp, bad), HandshakeResult::kBadTag);
+  EXPECT_EQ(check(Role::kEsp, {hello.begin(), hello.begin() + 10}),
+            HandshakeResult::kTruncated);
+
+  // `out` stays untouched on a reject, and holds the frame on accept.
+  sd::Frame f{};
+  ASSERT_EQ(sd::receive_handshake(Role::kGround, hello.data(), hello.size(),
+                                  test_key(), f),
+            HandshakeResult::kWrongDirection);
+  EXPECT_EQ(f.payload, nullptr);
+  ASSERT_EQ(sd::receive_handshake(Role::kGround, ack.data(), ack.size(),
+                                  test_key(), f),
+            HandshakeResult::kAccepted);
+  EXPECT_EQ(f.header.session_id, kSession);
 }
 
 TEST(Receiver, IsAccepted) {

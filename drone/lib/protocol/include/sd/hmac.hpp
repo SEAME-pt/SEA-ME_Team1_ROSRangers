@@ -40,26 +40,34 @@ void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
                  const std::uint8_t *data, std::size_t len,
                  std::uint8_t out[kSha256Size]);
 
-// session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce) (ADR-002,
-// spec §1).
-Key derive_session_key(const Key &psk,
-                       const std::uint8_t ground_nonce[kNonceSize],
-                       const std::uint8_t esp_nonce[kNonceSize]);
-
-// One key per direction (ADR-002 entry of 2026-11-05, #150):
+// One key per direction (spec §1, ADR-002 entries of 2026-11-05, #150):
+//   session key   = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)
 //   ground_to_esp = HMAC-SHA256(session key, "g2e")
 //   esp_to_ground = HMAC-SHA256(session key, "e2g")
 // Each side seals with its sending key and checks with its receiving key, so a
 // frame sent back to its own sender (reflection) fails the tag. The ESP's
 // Receivers use ground_to_esp, the ground's use esp_to_ground. HELLO and
-// HELLO_ACK stay tagged with the PSK. Wipe the session key after this call
-// with secure_zero(&session_key, sizeof(session_key)).
+// HELLO_ACK stay tagged with the PSK.
 struct DirectionKeys {
   Key ground_to_esp;
   Key esp_to_ground;
 };
 
+// The only way to get session keys (#152): the session key never leaves this
+// function and is wiped before it returns.
+DirectionKeys derive_keys(const Key &psk,
+                          const std::uint8_t ground_nonce[kNonceSize],
+                          const std::uint8_t esp_nonce[kNonceSize]);
+
+// The two steps of derive_keys(), for the tests only. Firmware and ground code
+// call derive_keys(): a caller that holds the session key can use it by
+// mistake on both ends, and reflection would be back (#152).
+namespace detail {
+Key derive_session_key(const Key &psk,
+                       const std::uint8_t ground_nonce[kNonceSize],
+                       const std::uint8_t esp_nonce[kNonceSize]);
 DirectionKeys derive_direction_keys(const Key &session_key);
+} // namespace detail
 
 // Sets n bytes to zero through a volatile pointer, so the compiler cannot drop
 // it the way it may drop a memset of a variable that is not used again. Use it

@@ -2,21 +2,24 @@
 
 namespace sd {
 
-bool Receiver::start_session(std::uint32_t session_id, const Key &rx_key,
-                             Transport transport) {
+Receiver::Receiver(Role role, Transport transport)
+    : role_(role), transport_(transport) {}
+
+Receiver::~Receiver() { secure_zero(&key_, sizeof(key_)); }
+
+bool Receiver::start_session(std::uint32_t session_id, const Key &rx_key) {
   if (session_id == 0) {
     return false;
   }
   key_ = rx_key;
   session_id_ = session_id;
-  transport_ = transport;
   in_session_ = true;
-  window_.reset(transport == Transport::kTcp ? 1 : 0);
+  window_.reset(transport_ == Transport::kTcp ? 1 : 0);
   return true;
 }
 
 void Receiver::end_session() {
-  key_ = {};
+  secure_zero(&key_, sizeof(key_));
   session_id_ = 0;
   in_session_ = false;
   window_.reset();
@@ -51,6 +54,9 @@ RxResult Receiver::reject(RxResult r) {
     break;
   case RxResult::kWrongTransport:
     ++counters_.wrong_transport;
+    break;
+  case RxResult::kWrongDirection:
+    ++counters_.wrong_direction;
     break;
   case RxResult::kBadPayloadSize:
     ++counters_.bad_payload_size;
@@ -105,8 +111,9 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
     return reject(RxResult::kWrongSession);
   }
 
-  // Type, transport, size and mode (spec §2, §3, REQ-COM-001/002). Before the
-  // window, so a malformed frame leaves last_seq unchanged (REQ-COM-004).
+  // Type, transport, direction, size and mode (spec §2, §3, REQ-COM-001/002).
+  // Before the window, so a malformed frame leaves last_seq unchanged
+  // (REQ-COM-004).
   const PayloadCheck check =
       check_payload(frame.header.type, frame.payload, frame.header.payload_len);
   if (check == PayloadCheck::kUnknownType) {
@@ -117,6 +124,11 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
   Transport transport = Transport::kUdp;
   if (!transport_of(frame.header.type, transport) || transport != transport_) {
     return reject(RxResult::kWrongTransport);
+  }
+  // Direction (#152): only what the other side sends. A node's own frame sent
+  // back to it is refused here even if both ends got the keys wrong.
+  if (!receives(role_, frame.header.type)) {
+    return reject(RxResult::kWrongDirection);
   }
   switch (check) {
   case PayloadCheck::kOk:
@@ -148,6 +160,51 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
   }
   // Unreachable: every SeqResult value is handled above.
   return reject(RxResult::kOldSeq);
+}
+
+HandshakeResult receive_handshake(Role role, const std::uint8_t *buf,
+                                  std::size_t len, const Key &psk, Frame &out) {
+  Frame frame{};
+  switch (decode_frame(buf, len, psk, frame)) {
+  case RxError::kOk:
+    break;
+  case RxError::kTruncated:
+    return HandshakeResult::kTruncated;
+  case RxError::kBadMagic:
+    return HandshakeResult::kBadMagic;
+  case RxError::kBadVersion:
+    return HandshakeResult::kBadVersion;
+  case RxError::kBadLength:
+    return HandshakeResult::kBadLength;
+  case RxError::kBadTag:
+    return HandshakeResult::kBadTag;
+  }
+  const MsgType expected =
+      role == Role::kEsp ? MsgType::kHello : MsgType::kHelloAck;
+  if (frame.header.type != static_cast<std::uint8_t>(expected)) {
+    return HandshakeResult::kWrongDirection;
+  }
+  const std::size_t size = role == Role::kEsp ? kHelloSize : kHelloAckSize;
+  if (frame.header.payload_len != size) {
+    return HandshakeResult::kBadPayloadSize;
+  }
+  if (role == Role::kEsp) {
+    if (frame.header.session_id != 0) {
+      return HandshakeResult::kWrongSession;
+    }
+  } else {
+    HelloAck ack{};
+    if (!decode_hello_ack(frame.payload, frame.header.payload_len, ack) ||
+        frame.header.session_id == 0 ||
+        ack.session_id != frame.header.session_id) {
+      return HandshakeResult::kWrongSession;
+    }
+  }
+  if (frame.header.seq != 1) {
+    return HandshakeResult::kBadSeq;
+  }
+  out = frame;
+  return HandshakeResult::kAccepted;
 }
 
 } // namespace sd

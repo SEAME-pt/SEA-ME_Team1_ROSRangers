@@ -111,6 +111,8 @@ std::string result_name(sd::RxResult r) {
     return "reject:bad_type";
   case sd::RxResult::kWrongTransport:
     return "reject:wrong_transport";
+  case sd::RxResult::kWrongDirection:
+    return "reject:wrong_direction";
   case sd::RxResult::kBadPayloadSize:
     return "reject:bad_payload_size";
   case sd::RxResult::kBadMode:
@@ -133,6 +135,42 @@ sd::Transport transport_for(const Bytes &buf) {
     return t;
   }
   return sd::Transport::kUdp;
+}
+
+// The side that receives a frame (spec §2): ground for what the ESP sends,
+// ESP otherwise (also for BYE and unknown types).
+sd::Role role_for(const Bytes &buf) {
+  if (buf.size() > 3 && sd::receives(sd::Role::kGround, buf[3]) &&
+      !sd::receives(sd::Role::kEsp, buf[3])) {
+    return sd::Role::kGround;
+  }
+  return sd::Role::kEsp;
+}
+
+std::string result_name(sd::HandshakeResult r) {
+  switch (r) {
+  case sd::HandshakeResult::kAccepted:
+    return "accept";
+  case sd::HandshakeResult::kTruncated:
+    return "reject:truncated";
+  case sd::HandshakeResult::kBadMagic:
+    return "reject:bad_magic";
+  case sd::HandshakeResult::kBadVersion:
+    return "reject:bad_version";
+  case sd::HandshakeResult::kBadLength:
+    return "reject:bad_length";
+  case sd::HandshakeResult::kBadTag:
+    return "reject:bad_tag";
+  case sd::HandshakeResult::kWrongDirection:
+    return "reject:wrong_direction";
+  case sd::HandshakeResult::kBadPayloadSize:
+    return "reject:bad_payload_size";
+  case sd::HandshakeResult::kWrongSession:
+    return "reject:wrong_session";
+  case sd::HandshakeResult::kBadSeq:
+    return "reject:bad_seq";
+  }
+  return "?";
 }
 
 template <typename T> T get(const json &f, const char *name) {
@@ -327,41 +365,48 @@ TEST_P(Vector, Check) {
 
   // Group 2: the key is derived from the PSK and the nonces: the session key,
   // then the key of one direction ("g2e" or "e2g", ADR-002, #150).
-  if (v.contains("direction")) {
-    ASSERT_TRUE(v.contains("psk")) << "direction needs psk and the nonces";
-  }
+  // Group 2: the key is a direction key derived with derive_keys() from the PSK
+  // and the nonces ("g2e" ground to ESP, "e2g" ESP to ground; #150, #152).
+  ASSERT_EQ(v.contains("direction"), v.contains("psk"))
+      << "psk and direction come together";
   if (v.contains("psk")) {
     const Bytes ground = from_hex(v.at("ground_nonce"));
     const Bytes esp = from_hex(v.at("esp_nonce"));
     ASSERT_EQ(ground.size(), sd::kNonceSize) << "ground_nonce is 16 bytes";
     ASSERT_EQ(esp.size(), sd::kNonceSize) << "esp_nonce is 16 bytes";
-    const sd::Key session = sd::derive_session_key(key_from_hex(v.at("psk")),
-                                                   ground.data(), esp.data());
-    sd::Key derived = session;
-    if (v.contains("direction")) {
-      const std::string direction = v.at("direction");
-      ASSERT_TRUE(direction == "g2e" || direction == "e2g") << direction;
-      const sd::DirectionKeys keys = sd::derive_direction_keys(session);
-      derived = direction == "g2e" ? keys.ground_to_esp : keys.esp_to_ground;
-    }
+    const std::string direction = v.at("direction");
+    ASSERT_TRUE(direction == "g2e" || direction == "e2g") << direction;
+    const sd::DirectionKeys keys =
+        sd::derive_keys(key_from_hex(v.at("psk")), ground.data(), esp.data());
+    const sd::Key &derived =
+        direction == "g2e" ? keys.ground_to_esp : keys.esp_to_ground;
     EXPECT_EQ(to_hex(derived.bytes, sd::kKeySize), v.at("key"));
   }
 
-  // One Receiver per transport (spec §2, §4 rule 3): UDP starts at 0, TCP at
-  // 1 (HELLO used seq 1). A step without "transport" is UDP; a single frame
-  // goes to the Receiver of its type.
-  sd::Receiver rx;
-  sd::Receiver tcp;
+  // One Receiver per side and transport (spec §2, §4 rule 3): UDP starts at 0,
+  // TCP at 1 (HELLO used seq 1). A step says its "transport" (default udp)
+  // and "role" (default esp); a single frame goes to the Receiver of the side
+  // and transport of its type.
+  sd::Receiver esp_udp(sd::Role::kEsp, sd::Transport::kUdp);
+  sd::Receiver esp_tcp(sd::Role::kEsp, sd::Transport::kTcp);
+  sd::Receiver ground_udp(sd::Role::kGround, sd::Transport::kUdp);
+  sd::Receiver ground_tcp(sd::Role::kGround, sd::Transport::kTcp);
+  sd::Receiver *all[] = {&esp_udp, &esp_tcp, &ground_udp, &ground_tcp};
+  const auto pick = [&](sd::Role role, sd::Transport t) -> sd::Receiver & {
+    if (role == sd::Role::kEsp) {
+      return t == sd::Transport::kTcp ? esp_tcp : esp_udp;
+    }
+    return t == sd::Transport::kTcp ? ground_tcp : ground_udp;
+  };
   const bool with_session = v.contains("state");
   if (with_session) {
     const json &state = v["state"];
     ASSERT_EQ(state.value("last_ctrl_seq", 0), 0)
         << "vectors start from a fresh session";
     ASSERT_EQ(state.value("last_tcp_seq", 1), 1) << "TCP starts after HELLO";
-    ASSERT_TRUE(rx.start_session(state.at("current_session"), key,
-                                 sd::Transport::kUdp));
-    ASSERT_TRUE(tcp.start_session(state.at("current_session"), key,
-                                  sd::Transport::kTcp));
+    for (sd::Receiver *rx : all) {
+      ASSERT_TRUE(rx->start_session(state.at("current_session"), key));
+    }
   }
 
   // Groups 5, 6 and 8: several frames, the result after each one.
@@ -369,51 +414,75 @@ TEST_P(Vector, Check) {
     int i = 0;
     for (const auto &step : v["steps"]) {
       const std::string transport = step.value("transport", "udp");
+      const std::string role = step.value("role", "esp");
       ASSERT_TRUE(transport == "udp" || transport == "tcp") << transport;
-      sd::Receiver &to = transport == "tcp" ? tcp : rx;
+      ASSERT_TRUE(role == "esp" || role == "ground") << role;
+      sd::Receiver &to =
+          pick(role == "ground" ? sd::Role::kGround : sd::Role::kEsp,
+               transport == "tcp" ? sd::Transport::kTcp : sd::Transport::kUdp);
       const Bytes buf = from_hex(step.at("bytes"));
       sd::Frame f{};
       EXPECT_EQ(result_name(to.receive(buf.data(), buf.size(), f)),
                 step.at("expect"))
-          << "step " << i++ << " (" << transport << ")";
+          << "step " << i++ << " (" << role << ", " << transport << ")";
     }
     const json final = v.value("final", json::object());
     if (final.contains("last_ctrl_seq")) {
-      EXPECT_EQ(rx.last_seq(), final["last_ctrl_seq"]);
+      EXPECT_EQ(esp_udp.last_seq(), final["last_ctrl_seq"]);
     }
     if (final.contains("last_tcp_seq")) {
-      EXPECT_EQ(tcp.last_seq(), final["last_tcp_seq"]);
+      EXPECT_EQ(esp_tcp.last_seq(), final["last_tcp_seq"]);
     }
-    // Totals over both transports.
+    // Totals over every Receiver.
+    std::uint32_t rejected = 0;
+    std::uint32_t gaps = 0;
+    for (const sd::Receiver *rx : all) {
+      rejected += rx->counters().rejected;
+      gaps += rx->seq_counters().gaps;
+    }
     if (final.contains("rx_rejected")) {
-      EXPECT_EQ(rx.counters().rejected + tcp.counters().rejected,
-                final["rx_rejected"]);
+      EXPECT_EQ(rejected, final["rx_rejected"]);
     }
     if (final.contains("gaps")) {
-      EXPECT_EQ(rx.seq_counters().gaps + tcp.seq_counters().gaps,
-                final["gaps"]);
+      EXPECT_EQ(gaps, final["gaps"]);
     }
     return;
   }
 
   const Bytes buf = from_hex(v.at("bytes"));
-  sd::Receiver &own = transport_for(buf) == sd::Transport::kTcp ? tcp : rx;
   sd::Frame frame{};
-  const std::string got =
-      with_session
-          ? result_name(own.receive(buf.data(), buf.size(), frame))
-          : result_name(sd::decode_frame(buf.data(), buf.size(), key, frame));
-  ASSERT_EQ(got, v.at("expect"));
 
-  // A rejected frame is also refused by a Receiver and counted (rx_rejected).
-  if (got != "accept") {
-    if (!with_session) {
-      ASSERT_TRUE(own.start_session(0x12345678, key, transport_for(buf)));
-      sd::Frame ignored{};
-      EXPECT_EQ(result_name(own.receive(buf.data(), buf.size(), ignored)), got);
+  // Group 9: a handshake frame checked by one side before any session.
+  if (v.contains("handshake")) {
+    const std::string side = v.at("handshake");
+    ASSERT_TRUE(side == "esp" || side == "ground") << side;
+    const sd::Role role = side == "ground" ? sd::Role::kGround : sd::Role::kEsp;
+    ASSERT_EQ(result_name(sd::receive_handshake(role, buf.data(), buf.size(),
+                                                key, frame)),
+              v.at("expect"));
+    if (v.at("expect") != "accept") {
+      EXPECT_EQ(frame.payload, nullptr) << "out written on a reject";
+      return;
     }
-    EXPECT_EQ(own.counters().rejected, 1U);
-    EXPECT_EQ(own.counters().accepted, 0U);
+  } else {
+    sd::Receiver &own = pick(role_for(buf), transport_for(buf));
+    const std::string got =
+        with_session
+            ? result_name(own.receive(buf.data(), buf.size(), frame))
+            : result_name(sd::decode_frame(buf.data(), buf.size(), key, frame));
+    ASSERT_EQ(got, v.at("expect"));
+
+    // A rejected frame is also refused by a Receiver and counted.
+    if (got != "accept") {
+      if (!with_session) {
+        ASSERT_TRUE(own.start_session(0x12345678, key));
+        sd::Frame ignored{};
+        EXPECT_EQ(result_name(own.receive(buf.data(), buf.size(), ignored)),
+                  got);
+      }
+      EXPECT_EQ(own.counters().rejected, 1U);
+      EXPECT_EQ(own.counters().accepted, 0U);
+    }
   }
 
   if (!v.contains("fields")) {
@@ -482,7 +551,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 60U);
+  EXPECT_GE(names.size(), 68U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

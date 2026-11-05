@@ -24,6 +24,7 @@ enum class RxResult : std::uint8_t {
   kWrongSession,   // session_id is not the current session (spec §4 rule 2)
   kBadType,        // not a spec §3 message type
   kWrongTransport, // a TCP type on the UDP Receiver or the other way (§2)
+  kWrongDirection, // a type this side never receives: its own, sent back (§2)
   kBadPayloadSize, // payload_len is not the spec §3 size of the type
   kBadMode,        // SETPOINT.mode is not 0 or 1
   kDuplicateSeq,
@@ -47,6 +48,7 @@ struct RxCounters {
   std::uint32_t wrong_session;
   std::uint32_t bad_type;
   std::uint32_t wrong_transport;
+  std::uint32_t wrong_direction;
   std::uint32_t bad_payload_size;
   std::uint32_t bad_mode;
   std::uint32_t duplicate_seq;
@@ -54,38 +56,38 @@ struct RxCounters {
   std::uint32_t seq_too_high;
 };
 
-// Receive rules of spec §4 for one transport inside one session, in this order:
-// frame checks (rule 1), session check (rule 2), message type, transport (§2),
-// payload size and SETPOINT.mode (check_payload(), REQ-COM-001/002), then the
-// sequence window (rule 3, ADR-003). These checks run before the window, so a
-// malformed frame does not use up a seq number. Use one Receiver per transport
-// (UDP control, TCP session): `seq` is counted per transport (spec §4 rule 3).
+// Receive rules of spec §4 for one side (ESP or ground) and one transport
+// inside one session, in this order: frame checks (rule 1), session check
+// (rule 2), message type, transport (§2), direction (§2: only the types the
+// other side sends), payload size and SETPOINT.mode (REQ-COM-001/002), then the
+// sequence window (rule 3, ADR-003). Everything before the window is checked
+// first, so a malformed frame does not use up a seq number. Use one Receiver
+// per transport (UDP control, TCP session): `seq` is counted per transport.
 //
-// HELLO and HELLO_ACK are not handled here: they arrive before a session exists
-// and are tagged with the PSK, so the link state machine (#102) checks them
-// with decode_frame() and then calls start_session(). Rejected frames are
-// dropped and counted (REQ-COM-004); the caller must not reset the link-loss
-// timer for them (REQ-SAF-011).
+// Rejected frames are dropped and counted (REQ-COM-004); the caller must not
+// reset the link-loss timer for them (REQ-SAF-011).
 class Receiver {
 public:
-  // Opens a session on one transport. `rx_key` is the receiving direction key
-  // (spec §1, #150): ground_to_esp on the ESP, esp_to_ground on the ground;
-  // never the session key itself. Every frame must match it and session_id, and
-  // only the types of that transport (spec §2) are accepted, so a frame
-  // captured on one transport cannot be replayed on the other. The window
-  // starts at 1 on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on
-  // UDP. Returns false for session_id 0 (reserved for HELLO); then nothing
+  // The role and the transport are fixed for the Receiver's lifetime (#152).
+  Receiver(Role role, Transport transport);
+  ~Receiver(); // wipes the key
+  Receiver(const Receiver &) = delete;
+  Receiver &operator=(const Receiver &) = delete;
+
+  // Opens a session. `rx_key` is this side's receiving direction key from
+  // derive_keys(): ground_to_esp on the ESP, esp_to_ground on the ground. The
+  // window starts at 1 on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at
+  // 0 on UDP. Returns false for session_id 0 (reserved for HELLO); then nothing
   // changes, and a session that was open stays open. The window restarts here,
-  // so the caller (#102) must never open the same (session_id, key) twice:
-  // every frame of that session would be accepted again. Fresh nonces give a
-  // fresh key for each HELLO (spec §1).
-  [[nodiscard]] bool start_session(std::uint32_t session_id, const Key &rx_key,
-                                   Transport transport);
+  // so the caller (#102) must never open the same (session_id, key) twice.
+  [[nodiscard]] bool start_session(std::uint32_t session_id, const Key &rx_key);
   void end_session();
 
   // `out` is written only when the result is accepted (is_accepted()).
   RxResult receive(const std::uint8_t *buf, std::size_t len, Frame &out);
 
+  Role role() const { return role_; }
+  Transport transport() const { return transport_; }
   bool in_session() const { return in_session_; }
   std::uint32_t session_id() const { return session_id_; }
   std::uint32_t last_seq() const { return window_.last(); }
@@ -97,12 +99,36 @@ public:
 private:
   RxResult reject(RxResult r);
 
+  Role role_;
+  Transport transport_;
   Key key_ = {};
   std::uint32_t session_id_ = 0;
-  Transport transport_ = Transport::kUdp;
   bool in_session_ = false;
   SeqWindow window_;
   RxCounters counters_ = {};
 };
+
+// Before a session (spec §1, #152): the ESP accepts only HELLO and the ground
+// only HELLO_ACK, both tagged with the PSK, so a reflected or out-of-place
+// handshake frame does nothing.
+enum class HandshakeResult : std::uint8_t {
+  kAccepted = 0,
+  kTruncated,
+  kBadMagic,
+  kBadVersion,
+  kBadLength,
+  kBadTag,         // not tagged with the PSK
+  kWrongDirection, // not the one handshake type this side receives
+  kBadPayloadSize, // HELLO is 17 bytes, HELLO_ACK 32
+  kWrongSession,   // HELLO: session_id not 0; HELLO_ACK: 0, or header and
+                   // payload session_id differ
+  kBadSeq,         // seq is not 1
+};
+
+// Checks one handshake frame for `role`: the ESP gets HELLO, the ground gets
+// HELLO_ACK. `out` is written only when the result is kAccepted. Not counted:
+// the caller (#102) counts or rate-limits handshake attempts.
+HandshakeResult receive_handshake(Role role, const std::uint8_t *buf,
+                                  std::size_t len, const Key &psk, Frame &out);
 
 } // namespace sd
