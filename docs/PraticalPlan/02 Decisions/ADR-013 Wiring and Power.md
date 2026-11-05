@@ -19,7 +19,7 @@ tags:
 
 > [!info] Update 2026-10-20: the install (GitHub #55)
 > - The board is an **ESP-12F** module (ESP8266). These notes call it the ESP (team decision, 2026-10-20). The backup notes record its USB-serial chip as an FTDI FT232R (`drone/firmware/esp8266/backup/README.md`).
-> - Since 2026-10-19 the ESP is **soldered to FC UART4** (T4/R4, 5V, GND) with wires that are easy to remove. It is not a permanent install, and the removable connector of [[ADR-021 Removable ESP Connector|ADR-021]] is not fitted yet.
+> - Since 2026-10-19 the ESP is **soldered to FC UART4** (T4/R4, 5V, GND) with wires that are easy to remove. It is not a permanent install, and the removable connector of [[ADR-021 Removable ESP Connector|ADR-021]] is not fitted yet. **Update 2026-10-26:** re-soldered directly, wires end to end, no connector ([[ADR-021 Removable ESP Connector|ADR-021]] update, #69).
 > - S2-01 passed on the soldered link on 2026-10-19: the FC answers MSP through UART4, so the crossover is right ([[ESP Bench Test Plan]] §4).
 > - **Still open:** the ESP current (S1-08, FC-05) is not recorded, and the [[ESP_to_FC]] §10 evidence on the soldered joints is still to be posted (GitHub #30).
 > - The decision does not change.
@@ -41,7 +41,7 @@ The ESP takes the **5V pad next to T4** (the UART4 row, [[Wiring and Pinout]] §
 
 ## 3. Mounting
 
-Test before soldering: the [[ESP Bench Test Plan]] Stages 1–2 must pass first. Mounting with a removable connector is accepted in [[ADR-021 Removable ESP Connector|ADR-021]] (2026-10-20); today the ESP is on soldered, easily removed wires.
+Test before soldering: the [[ESP Bench Test Plan]] Stages 1–2 must pass first. Mounting with a removable connector is accepted in [[ADR-021 Removable ESP Connector|ADR-021]] (2026-10-20); amended 2026-10-26: the ESP is soldered directly, no connector.
 
 ## 4. Related pages
 

@@ -25,7 +25,7 @@ tags:
 > - The ELRS red wire is on **5V**, not on DV5V (the receiver pad in the vendor wiring diagram). The team will move it to **DV5V** to free the 5V pad and to keep radio interference low. This changes the ELRS wiring, so it is an exception to "no change to the existing ELRS wiring" below and is reviewed on its own under REQ-SAF-008 (was SAF-08) (GitHub #41). UART2, R2/T2 and the receiver configuration stay the same.
 
 > [!info] Update 2026-10-20: ELRS and ESP state (GitHub #55)
-> - The ESP is soldered to **UART4** (T4/R4) since 2026-10-19, with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]).
+> - The ESP is soldered to **UART4** (T4/R4) since 2026-10-19, with wires that are easy to remove ([[ADR-021 Removable ESP Connector|ADR-021]]). **Update 2026-10-26:** re-soldered directly, wires end to end, no connector ([[ADR-021 Removable ESP Connector|ADR-021]] update, #69).
 > - The ELRS antenna is soldered, and the ELRS 5 V wire is on **DV5V** (GitHub #41).
 > - **The failsafe has not been tested yet.** The ELRS failsafe re-test under the SAF-08 review is still open (GitHub #22 and #41 stay open).
 > - The UART decision does not change.
