@@ -48,7 +48,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
 | REQ-COM-001 | Receiver checks every datagram for structural validity (length vs type, version, message type) before interpreting it. | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
-| REQ-COM-002 | Receiver checks field-level validity (allowed range) before any value goes toward the FC. Range limits (2026-11-05, #142): the [[Protocol Spec v0]] §4 clamps; `mode` other than 0 or 1 rejected and counted; max tilt stays in Betaflight (`angle_limit`). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
+| REQ-COM-002 | Receiver checks field-level validity (allowed range) before any value goes toward the FC. Range limits (2026-11-05, #142): the [[Protocol Spec v0]] §4 clamps; `mode` other than 0 or 1 rejected (`bad_mode`) before the sequence check, so it changes no state; max tilt stays in Betaflight (`angle_limit`). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-003 | Receiver verifies an integrity check on each datagram. Mechanism: truncated HMAC-SHA256 ([[ADR-002 Message Integrity\|ADR-002]]). | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-004 | Datagrams failing any check are discarded without side effects on control state and counted in a diagnostic counter. | [[PC_to_ESP]] §5 (validation) | test | unit (C++ + Python, golden vectors) | accepted |
 | REQ-COM-005 | Malformed input never causes a crash, hang, buffer overrun or undefined behaviour on the ESP8266. | [[PC_to_ESP]] §5 (validation) | test + analysis | unit + fuzz; static analysis | accepted |
@@ -69,7 +69,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-COM-020 | After loss, control does not resume just because packets arrive again; a defined, validated handshake is required (exact handshake TBD). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 | REQ-COM-021 | On reconnection the receiver is not fooled by replayed or old traffic. | [[PC_to_ESP]] (Reconnection) | test | unit + HIL | accepted |
 | REQ-COM-022 | Ground side can re-establish the TCP session and re-synchronise state after a Wi-Fi or TCP interruption. | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | accepted |
-| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. Still open: settled with the gateway firmware (#101), decided on #142 (2026-11-05). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
+| REQ-COM-023 | Wi-Fi re-association behaviour (retry, backoff) is defined and does not block loss detection. Still open: to be settled with the gateway firmware (#101), decided on #142 (2026-11-05). | [[PC_to_ESP]] (Reconnection) | test | HIL (Wi-Fi / TCP drop on the bench) | draft |
 
 ### Safety (`REQ-SAF`)
 

@@ -78,7 +78,7 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 - [x] Range limits beyond the §4 clamps (REQ-COM-002) → the clamps; unknown `mode` rejected; tilt in Betaflight
 - [x] Handling of repeated malformed TCP input (REQ-COM-019) → bad tag dropped; bad framing closes TCP
 - [x] Default `telemetry_rate_hz` → 25 Hz (was 20)
-- [ ] Wi-Fi re-association: retry and backoff (REQ-COM-023), to settle with the gateway firmware (#101)
+- [ ] Wi-Fi re-association: retry and backoff (REQ-COM-023), to be settled with the gateway firmware (#101)
 
 ### Process
 - [ ] **Second track label per issue:** allow one extra `track:` label when a task really belongs to two tracks (e.g. A+B bench tests, B+E ThoneFlow spike), instead of exactly one. Raised 2026-10-26; the team leans towards allowing it. Sprint 2 issues #104 and #108 already use two. Decide at the next weekly; then update the rule in `CLAUDE.md` (GitHub #110).

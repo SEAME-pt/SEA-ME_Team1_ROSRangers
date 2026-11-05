@@ -115,7 +115,7 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 | Contract | Defined in | Transport | Used by |
 |---|---|---|---|
 | Session: `HELLO` / `HELLO_ACK`, `ARM_CONTROL_REQUEST` / `ARM_CONTROL_ACK`, `RESUME_REQUEST` / `RESUME_ACK`, `BYE` | Protocol Spec v0 §3 | TCP 5759 | `flight_interface` ↔ ESP |
-| Configuration: `CONFIG_GET` / `CONFIG_SET` (0x20 / 0x21), keys in spec §7.3. The reply (`CONFIG_ACK`) is still open (#142) | Protocol Spec v0 §3, §7.3 | TCP 5759 | `flight_interface` ↔ ESP |
+| Configuration: `CONFIG_GET` / `CONFIG_SET` (0x20 / 0x21), keys in spec §7.3. The reply is `CONFIG_ACK` (0x22, spec §3.1, #142) | Protocol Spec v0 §3, §7.3 | TCP 5759 | `flight_interface` ↔ ESP |
 | Control: `SETPOINT` (0x60) | Protocol Spec v0 §3, §5 | UDP 5759, 50 Hz | `flight_interface` → ESP |
 | Telemetry: `STATE` (0x80) | Protocol Spec v0 §3 | UDP 5759, 25 Hz | ESP → `flight_interface` |
 | Events: `EVENT` (0x40) | Protocol Spec v0 §3 | TCP 5759 | ESP → `flight_interface` |
@@ -123,7 +123,7 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 | ESP polls `MSP_ATTITUDE` (25 Hz), `MSP_ANALOG` / `MSP_STATUS` (5 Hz) | [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP | ESP ↔ FC |
 | ROS 2 topics | §2 above | DDS, ground only | ground nodes |
 
-Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.0, accepted at the design review of 2026-11-03 (#97). The items still open are in spec §7.5 and #142. Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
+Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.1: accepted at the design review of 2026-11-03 (#97), with the open items decided on 2026-11-05 (#142, spec §7.5). Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
 
 ## 4. Timing budget (ground → ESP → FC)
 

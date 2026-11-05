@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.0, frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5).
+> [!success] Status: ACCEPTED v1.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -128,7 +128,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
 3. A message is accepted only if `seq` is greater than the last one accepted from that sender **on the same transport** ([[ADR-003 Sequence Acceptance|ADR-003]]). Control uses `last_ctrl_seq`. Otherwise drop and count.
-4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected and counted in `rx_rejected`. The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
+4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. This check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
 5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. Neither triggers the failsafe on its own: only `T_loss` does (§7.2).
 
 ## 5. Command → RC channel mapping (resolves FC-08 in [[ESP_to_FC]])
@@ -154,7 +154,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and P
 | 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame | Garbage is rejected before it is read (§4 rule 1) |
 | 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
 | 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
-| 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500, `mode` 2 rejected | The RC channels sent to the FC (§4–5) |
+| 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500, `mode` 2 rejected (`reject:bad_mode`) and then a valid `SETPOINT` with the same `seq` accepted | The RC channels sent to the FC (§4–5) |
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` per result 0–5; one `SET` where two refusals apply (first in the table wins); `CONFIG_GET` on a Safety key returns 0 | Config replies (§3.1) |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
 
@@ -256,9 +256,9 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 | `SETPOINT.flags` | Reserved in v0: sent as 0, ignored |
 | Key that tags `HELLO_ACK` | The PSK (§1, ADR-002 entry of 2026-11-05) |
 | `seq` | One counter per sender, per session, per transport, from 1. `HELLO` and `HELLO_ACK` use 1. Only `seq > last seen` on that transport is accepted (§4 rule 3, ADR-003 entry of 2026-11-05) |
-| Range limits (REQ-COM-002) | §4 clamps are the v0 range check; `mode` other than 0 or 1 rejected and counted; max tilt stays in Betaflight (`angle_limit`) (§4 rule 4) |
+| Range limits (REQ-COM-002) | §4 clamps are the v0 range check; `mode` other than 0 or 1 rejected (`bad_mode`) before the sequence check, so it changes no state; max tilt stays in Betaflight (`angle_limit`) (§4 rule 4) |
 | Repeated malformed TCP input (REQ-COM-019) | Bad tag: drop and count. Bad magic, version or length: close the TCP connection. Never triggers the failsafe on its own (§4 rule 5) |
-| Wi-Fi re-association (REQ-COM-023) | Settled with the gateway firmware (#101). Still open, tracked in [[Open Questions]] |
+| Wi-Fi re-association (REQ-COM-023) | To be settled with the gateway firmware (#101). Still open, tracked in [[Open Questions]] |
 | `telemetry_rate_hz` default | 25 Hz, not 20 (§7.3) |
 
 ## 8. Changelog
@@ -267,7 +267,7 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 |---|---|---|
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
-| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Test vector groups 7 and 8 added (§6). Wi-Fi re-association left to #101. |
+| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Test vector groups 7 and 8 added (§6). Wi-Fi re-association left to #101. |
 
 ## 9. Glossary
 
