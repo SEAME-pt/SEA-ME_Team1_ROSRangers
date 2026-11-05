@@ -20,7 +20,10 @@ enum class RxResult : std::uint8_t {
   kBadVersion,
   kBadLength,
   kBadTag,
-  kWrongSession, // session_id is not the current session (spec §4 rule 2)
+  kWrongSession,   // session_id is not the current session (spec §4 rule 2)
+  kBadType,        // not a spec §3 message type
+  kBadPayloadSize, // payload_len is not the spec §3 size of the type
+  kBadMode,        // SETPOINT.mode is not 0 or 1
   kDuplicateSeq,
   kOldSeq,
   kSeqTooHigh, // seq >= 2^31: the sender must open a new session
@@ -40,13 +43,19 @@ struct RxCounters {
   std::uint32_t bad_length;
   std::uint32_t bad_tag;
   std::uint32_t wrong_session;
+  std::uint32_t bad_type;
+  std::uint32_t bad_payload_size;
+  std::uint32_t bad_mode;
   std::uint32_t duplicate_seq;
   std::uint32_t old_seq;
   std::uint32_t seq_too_high;
 };
 
-// Receive rules of spec §4 (1 to 3) for one transport inside one session: frame
-// checks, session check, then the sequence window (ADR-003). Use one Receiver
+// Receive rules of spec §4 for one transport inside one session, in this order:
+// frame checks (rule 1), session check (rule 2), message type, payload size and
+// SETPOINT.mode (check_payload(), REQ-COM-001/002), then the sequence window
+// (rule 3, ADR-003). The payload check runs before the window, so a malformed
+// frame does not use up a seq number. Use one Receiver
 // per transport (UDP control, TCP session), as suggested in spec §7.5.
 //
 // HELLO is not handled here: it arrives before a session exists and is tagged

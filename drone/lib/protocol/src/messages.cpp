@@ -3,12 +3,14 @@
 #include <cstring>
 
 #include "le.hpp"
+#include "sd/frame.hpp"
+#include "sd/setpoint.hpp"
 
 namespace sd {
 
 std::size_t encode_hello(const Hello &m, std::uint8_t *out,
                          std::size_t out_cap) {
-  if (out_cap < kHelloSize) {
+  if (out == nullptr || out_cap < kHelloSize) {
     return 0;
   }
   out[0] = m.proto;
@@ -27,7 +29,7 @@ bool decode_hello(const std::uint8_t *payload, std::size_t len, Hello &out) {
 
 std::size_t encode_hello_ack(const HelloAck &m, std::uint8_t *out,
                              std::size_t out_cap) {
-  if (out_cap < kHelloAckSize) {
+  if (out == nullptr || out_cap < kHelloAckSize) {
     return 0;
   }
   put_u32(out, m.session_id);
@@ -49,7 +51,7 @@ bool decode_hello_ack(const std::uint8_t *payload, std::size_t len,
 
 std::size_t encode_u8_payload(std::uint8_t v, std::uint8_t *out,
                               std::size_t out_cap) {
-  if (out_cap < 1) {
+  if (out == nullptr || out_cap < 1) {
     return 0;
   }
   out[0] = v;
@@ -67,7 +69,7 @@ bool decode_u8_payload(const std::uint8_t *payload, std::size_t len,
 
 std::size_t encode_config_kv(const ConfigKv &m, std::uint8_t *out,
                              std::size_t out_cap) {
-  if (out_cap < kConfigKvSize) {
+  if (out == nullptr || out_cap < kConfigKvSize) {
     return 0;
   }
   out[0] = m.key;
@@ -87,7 +89,7 @@ bool decode_config_kv(const std::uint8_t *payload, std::size_t len,
 
 std::size_t encode_config_ack(const ConfigAck &m, std::uint8_t *out,
                               std::size_t out_cap) {
-  if (out_cap < kConfigAckSize) {
+  if (out == nullptr || out_cap < kConfigAckSize) {
     return 0;
   }
   out[0] = m.key;
@@ -110,7 +112,7 @@ bool decode_config_ack(const std::uint8_t *payload, std::size_t len,
 std::size_t encode_event(const Event &m, std::uint8_t *out,
                          std::size_t out_cap) {
   const std::size_t size = kEventMinSize + m.text_len;
-  if (m.text_len > kEventTextMax || out_cap < size) {
+  if (out == nullptr || m.text_len > kEventTextMax || out_cap < size) {
     return 0;
   }
   put_u16(out, m.code);
@@ -130,7 +132,7 @@ bool decode_event(const std::uint8_t *payload, std::size_t len, Event &out) {
 
 std::size_t encode_state(const State &m, std::uint8_t *out,
                          std::size_t out_cap) {
-  if (out_cap < kStateSize) {
+  if (out == nullptr || out_cap < kStateSize) {
     return 0;
   }
   out[0] = m.esp_state;
@@ -169,6 +171,54 @@ bool decode_state(const std::uint8_t *payload, std::size_t len, State &out) {
   out.rx_rejected = get_u16(payload + 24);
   out.msp_errors = get_u16(payload + 26);
   return true;
+}
+
+PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
+                           std::size_t len) {
+  std::size_t min = 0;
+  std::size_t max = 0;
+  switch (static_cast<MsgType>(type)) {
+  case MsgType::kHello:
+    min = max = kHelloSize;
+    break;
+  case MsgType::kHelloAck:
+    min = max = kHelloAckSize;
+    break;
+  case MsgType::kArmControlRequest:
+  case MsgType::kArmControlAck:
+  case MsgType::kResumeAck:
+  case MsgType::kBye:
+    min = max = 1;
+    break;
+  case MsgType::kResumeRequest:
+    break; // empty payload
+  case MsgType::kConfigGet:
+  case MsgType::kConfigSet:
+    min = max = kConfigKvSize;
+    break;
+  case MsgType::kConfigAck:
+    min = max = kConfigAckSize;
+    break;
+  case MsgType::kEvent:
+    min = kEventMinSize;
+    max = kEventMaxSize;
+    break;
+  case MsgType::kSetpoint:
+    min = max = kSetpointSize;
+    break;
+  case MsgType::kState:
+    min = max = kStateSize;
+    break;
+  default:
+    return PayloadCheck::kUnknownType;
+  }
+  if (len < min || len > max || (len > 0 && payload == nullptr)) {
+    return PayloadCheck::kBadSize;
+  }
+  if (static_cast<MsgType>(type) == MsgType::kSetpoint && payload[0] > 1) {
+    return PayloadCheck::kBadMode;
+  }
+  return PayloadCheck::kOk;
 }
 
 } // namespace sd

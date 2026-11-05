@@ -106,6 +106,12 @@ std::string result_name(sd::RxResult r) {
     return "reject:bad_tag";
   case sd::RxResult::kWrongSession:
     return "reject:wrong_session";
+  case sd::RxResult::kBadType:
+    return "reject:bad_type";
+  case sd::RxResult::kBadPayloadSize:
+    return "reject:bad_payload_size";
+  case sd::RxResult::kBadMode:
+    return "reject:bad_mode";
   case sd::RxResult::kDuplicateSeq:
     return "reject:duplicate_seq";
   case sd::RxResult::kOldSeq:

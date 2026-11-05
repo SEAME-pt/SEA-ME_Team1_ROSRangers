@@ -41,7 +41,7 @@ Optional fields:
 | `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
 | `note` | A warning, e.g. a code value that waits for #142 |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. Without `state`, only the frame checks run |
-| `steps`, `final` | Group 5: several frames in order, then `last_ctrl_seq`, `rx_rejected` and `gaps` at the end |
+| `steps`, `final` | Groups 3 and 5: several frames in order, then `last_ctrl_seq`, `rx_rejected` and `gaps` at the end |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
 | `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
 
@@ -51,7 +51,7 @@ Optional fields:
 |---|---|---|
 | `1_valid_frames.json` | 1 Valid frames | 14 |
 | `2_hmac.json` | 2 HMAC | 4 |
-| `3_header.json` | 3 Header | 6 |
+| `3_header.json` | 3 Header | 11 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
 | `6_clamps.json` | 6 Clamps and mapping | 8 |
@@ -159,11 +159,13 @@ Example: the reference frame with **one bit flipped in the roll byte** (`64` →
 }
 ```
 
-### Group 3: Header (6 vectors)
+### Group 3: Header (11 vectors)
 
 `wrong_magic`, `wrong_version`, `payload_len_over_256`, `payload_len_mismatch`, `truncated_frame`, `truncated_header` (shorter than header + tag). All reject.
 
-Proves: garbage is refused before anything is read (spec §4 rule 1).
+Then frames whose header, tag and session are good but whose content is not a valid message (REQ-COM-001): `unknown_type` (0x99), `setpoint_payload_9_bytes`, `event_text_65` (67 bytes, over the 66 limit) and `setpoint_mode_2`. They carry `state`, so they go through the receiver. `malformed_frame_keeps_seq` has steps: seq 1, then seq 5 with mode 2 (refused), then seq 2 is still accepted. The type, size and mode check runs **before** the seq window, so a refused frame changes no state (REQ-COM-004).
+
+Proves: garbage is refused before anything is read (spec §4 rule 1), and a malformed message is refused before its seq is used.
 
 Example: magic `SE` instead of `SD`. The tag is recomputed, so the **only** fault is the magic:
 
@@ -262,6 +264,9 @@ The `reject:<reason>` names, and the C++ values they map to:
 | `bad_length` | `payload_len` > 256, or bytes after the frame | `RxError::kBadLength`, `RxResult::kBadLength` |
 | `bad_tag` | HMAC tag does not match | `RxError::kBadTag`, `RxResult::kBadTag` |
 | `wrong_session` | `session_id` is not the current session (§4 rule 2) | `RxResult::kWrongSession` |
+| `bad_type` | Not a spec §3 message type | `RxResult::kBadType` |
+| `bad_payload_size` | `payload_len` is not the §3 size of the type (EVENT: 2..66) | `RxResult::kBadPayloadSize` |
+| `bad_mode` | `SETPOINT.mode` is not 0 or 1 (§4 rule 4, decided in #142) | `RxResult::kBadMode` |
 | `duplicate_seq` | Same seq as the last accepted one | `RxResult::kDuplicateSeq` |
 | `old_seq` | Older than the last accepted one, or seq 0 | `RxResult::kOldSeq` |
 | `seq_too_high` | `seq ≥ 2^31`: a new session is needed | `RxResult::kSeqTooHigh` |

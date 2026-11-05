@@ -21,8 +21,8 @@ constexpr std::uint16_t kRcMin = 1000;
 constexpr std::uint16_t kRcMid = 1500;
 constexpr std::uint16_t kRcMax = 2000;
 
-// Writes kSetpointSize bytes. Returns kSetpointSize, or 0 if out_cap is too
-// small.
+// Writes kSetpointSize bytes. Returns kSetpointSize, or 0 if `out` is null or
+// out_cap is too small.
 std::size_t encode_setpoint(const Setpoint &sp, std::uint8_t *out,
                             std::size_t out_cap);
 

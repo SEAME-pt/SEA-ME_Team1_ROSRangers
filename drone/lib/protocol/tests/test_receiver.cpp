@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "sd/receiver.hpp"
+#include "sd/setpoint.hpp"
 
 namespace {
 
@@ -62,6 +63,17 @@ std::vector<std::uint8_t> encode(std::uint32_t session, std::uint32_t seq) {
   std::vector<std::uint8_t> out(sd::kMaxFrame);
   out.resize(
       sd::encode_frame(h, nullptr, 0, test_key(), out.data(), out.size()));
+  return out;
+}
+
+// A frame with any type and payload, in kSession, with a valid tag.
+std::vector<std::uint8_t> frame_of(std::uint8_t type,
+                                   const std::vector<std::uint8_t> &payload,
+                                   std::uint32_t seq) {
+  const sd::Header h{type, 0, 0, kSession, seq, 0};
+  std::vector<std::uint8_t> out(sd::kMaxFrame);
+  out.resize(sd::encode_frame(h, payload.data(), payload.size(), test_key(),
+                              out.data(), out.size()));
   return out;
 }
 
@@ -194,6 +206,39 @@ TEST(Receiver, RejectedFrameNeverReachesTheOutput) {
   EXPECT_EQ(rx.receive(replay.data(), replay.size(), f), sd::RxResult::kOldSeq);
   EXPECT_EQ(f.payload, nullptr);
   EXPECT_EQ(f.header.seq, 0U);
+}
+
+// REQ-COM-001 and REQ-COM-004: a frame with a good tag but an unknown type, a
+// wrong payload size or a bad SETPOINT.mode is rejected, counted, and does not
+// use up its seq number.
+TEST(Receiver, MalformedPayloadRejectedWithoutUsingTheSeq) {
+  auto rx = open_receiver();
+  const auto setpoint = static_cast<std::uint8_t>(sd::MsgType::kSetpoint);
+  std::vector<std::uint8_t> sp(sd::kSetpointSize, 0);
+  sd::Frame f{};
+
+  auto bad = frame_of(0x99, sp, 5);
+  EXPECT_EQ(rx.receive(bad.data(), bad.size(), f), sd::RxResult::kBadType);
+  bad = frame_of(setpoint, std::vector<std::uint8_t>(9, 0), 5);
+  EXPECT_EQ(rx.receive(bad.data(), bad.size(), f),
+            sd::RxResult::kBadPayloadSize);
+  sp[0] = 2;
+  bad = frame_of(setpoint, sp, 5);
+  EXPECT_EQ(rx.receive(bad.data(), bad.size(), f), sd::RxResult::kBadMode);
+  EXPECT_EQ(f.payload, nullptr);
+
+  const auto &c = rx.counters();
+  EXPECT_EQ(c.bad_type, 1U);
+  EXPECT_EQ(c.bad_payload_size, 1U);
+  EXPECT_EQ(c.bad_mode, 1U);
+  EXPECT_EQ(c.rejected, 3U);
+  EXPECT_EQ(c.accepted, 0U);
+  EXPECT_EQ(rx.last_seq(), 0U);
+
+  // seq 1 is still free.
+  sp[0] = 1;
+  const auto good = frame_of(setpoint, sp, 1);
+  EXPECT_EQ(rx.receive(good.data(), good.size(), f), sd::RxResult::kAccepted);
 }
 
 TEST(Receiver, IsAccepted) {

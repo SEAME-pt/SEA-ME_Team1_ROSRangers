@@ -18,7 +18,7 @@ std::uint16_t axis_to_us(std::int16_t v) {
 
 std::size_t encode_setpoint(const Setpoint &sp, std::uint8_t *out,
                             std::size_t out_cap) {
-  if (out_cap < kSetpointSize) {
+  if (out == nullptr || out_cap < kSetpointSize) {
     return 0;
   }
   out[0] = sp.mode;

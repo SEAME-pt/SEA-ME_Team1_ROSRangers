@@ -2,8 +2,9 @@
 
 // Payload codecs for the spec §3 messages other than SETPOINT (setpoint.hpp).
 // Same contract as encode_setpoint/decode_setpoint: encode returns the payload
-// size (0 if out_cap is too small), decode checks the size only, values are not
-// range-checked.
+// size (0 if `out` is null or out_cap is too small), decode checks the size
+// only, values are not range-checked. check_payload() is the receive check that
+// Receiver runs on every frame.
 
 #include <cstddef>
 #include <cstdint>
@@ -155,5 +156,19 @@ bool decode_event(const std::uint8_t *payload, std::size_t len, Event &out);
 std::size_t encode_state(const State &m, std::uint8_t *out,
                          std::size_t out_cap);
 bool decode_state(const std::uint8_t *payload, std::size_t len, State &out);
+
+// --- Receive check: spec §3 types and sizes, and SETPOINT.mode (REQ-COM-001,
+// REQ-COM-002). Receiver runs it on a frame whose header, tag and session are
+// good, before the sequence window, so a malformed frame changes no state
+// (REQ-COM-004).
+enum class PayloadCheck : std::uint8_t {
+  kOk = 0,
+  kUnknownType, // not a spec §3 type
+  kBadSize,     // payload_len is not the §3 size of the type (EVENT: 2..66)
+  kBadMode,     // SETPOINT.mode is not 0 (neutral) or 1 (attitude)
+};
+
+PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
+                           std::size_t len);
 
 } // namespace sd

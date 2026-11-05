@@ -3,7 +3,9 @@
 #include <cstring>
 #include <vector>
 
+#include "sd/frame.hpp"
 #include "sd/messages.hpp"
+#include "sd/setpoint.hpp"
 
 namespace {
 
@@ -182,4 +184,86 @@ TEST(Messages, WrongSizesRefused) {
   EXPECT_EQ(sd::encode_config_ack(ca, buf, sd::kConfigAckSize - 1), 0U);
   EXPECT_EQ(sd::encode_event(ev, buf, sd::kEventMinSize - 1), 0U);
   EXPECT_EQ(sd::encode_state(st, buf, sd::kStateSize - 1), 0U);
+}
+
+TEST(Messages, EncodersRefuseANullOutput) {
+  sd::Hello h{};
+  sd::HelloAck ha{};
+  sd::ConfigKv kv{};
+  sd::ConfigAck ca{};
+  sd::Event ev{};
+  sd::State st{};
+  sd::Setpoint sp{};
+  EXPECT_EQ(sd::encode_hello(h, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_hello_ack(ha, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_u8_payload(0, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_config_kv(kv, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_config_ack(ca, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_event(ev, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_state(st, nullptr, 64), 0U);
+  EXPECT_EQ(sd::encode_setpoint(sp, nullptr, 64), 0U);
+}
+
+// Spec §3 sizes: each type is OK at its size and refused one byte off.
+TEST(CheckPayload, EveryTypeHasItsSize) {
+  using sd::MsgType;
+  using sd::PayloadCheck;
+  const std::uint8_t buf[sd::kMaxPayload] = {}; // mode 0 for SETPOINT
+  const struct {
+    MsgType type;
+    std::size_t size;
+  } fixed[] = {
+      {MsgType::kHello, sd::kHelloSize},
+      {MsgType::kHelloAck, sd::kHelloAckSize},
+      {MsgType::kArmControlRequest, 1},
+      {MsgType::kArmControlAck, 1},
+      {MsgType::kResumeAck, 1},
+      {MsgType::kBye, 1},
+      {MsgType::kConfigGet, sd::kConfigKvSize},
+      {MsgType::kConfigSet, sd::kConfigKvSize},
+      {MsgType::kConfigAck, sd::kConfigAckSize},
+      {MsgType::kSetpoint, sd::kSetpointSize},
+      {MsgType::kState, sd::kStateSize},
+  };
+  for (const auto &t : fixed) {
+    const auto type = static_cast<std::uint8_t>(t.type);
+    EXPECT_EQ(sd::check_payload(type, buf, t.size), PayloadCheck::kOk)
+        << int(type);
+    EXPECT_EQ(sd::check_payload(type, buf, t.size - 1), PayloadCheck::kBadSize)
+        << int(type);
+    EXPECT_EQ(sd::check_payload(type, buf, t.size + 1), PayloadCheck::kBadSize)
+        << int(type);
+  }
+  const auto resume = static_cast<std::uint8_t>(MsgType::kResumeRequest);
+  EXPECT_EQ(sd::check_payload(resume, buf, 0), PayloadCheck::kOk);
+  EXPECT_EQ(sd::check_payload(resume, buf, 1), PayloadCheck::kBadSize);
+
+  const auto event = static_cast<std::uint8_t>(MsgType::kEvent);
+  EXPECT_EQ(sd::check_payload(event, buf, 1), PayloadCheck::kBadSize);
+  EXPECT_EQ(sd::check_payload(event, buf, 2), PayloadCheck::kOk);
+  EXPECT_EQ(sd::check_payload(event, buf, 66), PayloadCheck::kOk);
+  EXPECT_EQ(sd::check_payload(event, buf, 67), PayloadCheck::kBadSize);
+
+  // A size is given but there is no payload.
+  EXPECT_EQ(sd::check_payload(event, nullptr, 2), PayloadCheck::kBadSize);
+}
+
+TEST(CheckPayload, UnknownTypesAndModesRefused) {
+  using sd::PayloadCheck;
+  std::uint8_t sp[sd::kSetpointSize] = {};
+  for (const int type : {0x00, 0x08, 0x23, 0x41, 0x61, 0x81, 0x99, 0xff}) {
+    EXPECT_EQ(sd::check_payload(static_cast<std::uint8_t>(type), sp, 1),
+              PayloadCheck::kUnknownType)
+        << type;
+  }
+  const auto setpoint = static_cast<std::uint8_t>(sd::MsgType::kSetpoint);
+  for (const std::uint8_t mode : {0, 1}) {
+    sp[0] = mode;
+    EXPECT_EQ(sd::check_payload(setpoint, sp, sizeof(sp)), PayloadCheck::kOk);
+  }
+  for (const std::uint8_t mode : {2, 0xff}) {
+    sp[0] = mode;
+    EXPECT_EQ(sd::check_payload(setpoint, sp, sizeof(sp)),
+              PayloadCheck::kBadMode);
+  }
 }

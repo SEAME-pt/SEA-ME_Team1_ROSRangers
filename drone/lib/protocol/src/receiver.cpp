@@ -1,5 +1,7 @@
 #include "sd/receiver.hpp"
 
+#include "sd/messages.hpp"
+
 namespace sd {
 
 bool Receiver::start_session(std::uint32_t session_id, const Key &session_key) {
@@ -43,6 +45,15 @@ RxResult Receiver::reject(RxResult r) {
     break;
   case RxResult::kWrongSession:
     ++counters_.wrong_session;
+    break;
+  case RxResult::kBadType:
+    ++counters_.bad_type;
+    break;
+  case RxResult::kBadPayloadSize:
+    ++counters_.bad_payload_size;
+    break;
+  case RxResult::kBadMode:
+    ++counters_.bad_mode;
     break;
   case RxResult::kDuplicateSeq:
     ++counters_.duplicate_seq;
@@ -89,6 +100,20 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
   // Rule 2: the current session only.
   if (frame.header.session_id != session_id_) {
     return reject(RxResult::kWrongSession);
+  }
+
+  // Type, size and mode (spec §3, REQ-COM-001/002). Before the window, so a
+  // malformed frame leaves last_seq unchanged (REQ-COM-004).
+  switch (check_payload(frame.header.type, frame.payload,
+                        frame.header.payload_len)) {
+  case PayloadCheck::kOk:
+    break;
+  case PayloadCheck::kUnknownType:
+    return reject(RxResult::kBadType);
+  case PayloadCheck::kBadSize:
+    return reject(RxResult::kBadPayloadSize);
+  case PayloadCheck::kBadMode:
+    return reject(RxResult::kBadMode);
   }
 
   // Rule 3: newer than the last accepted message (ADR-003).

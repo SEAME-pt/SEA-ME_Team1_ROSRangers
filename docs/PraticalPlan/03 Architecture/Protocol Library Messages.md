@@ -25,7 +25,7 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Layer | Files | Does |
 |---|---|---|
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
-| Receiver | `sd/receiver.hpp` | Frame checks + session check + sequence window (§4 rules 1–3), counts rejects. Does **not** look at `type` or the payload |
+| Receiver | `sd/receiver.hpp` | Frame checks + session check, then `check_payload()` (known `type`, §3 payload size, `SETPOINT.mode` 0 or 1), then the sequence window (§4 rules 1–3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
 Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK ([[Protocol Spec v0]] §7.5 suggests the PSK also tags `HELLO_ACK`), not with the Receiver.
@@ -109,8 +109,9 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | Check | Where |
 |---|---|
 | Frame, session and sequence checks | `Receiver` (spec §4 rules 1–3) |
+| Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001) |
 | `type` allowed on this transport (TCP vs UDP, spec §2) | #102 |
-| Unknown `SETPOINT.mode`, unknown codes, value ranges | #102 (range-limit rule still open in #142) |
+| Unknown codes, value ranges | #102 (range-limit rule still open in #142) |
 | Config key exists, access (RO / RW), write range, no write while control is enabled | #102, answers with `CONFIG_ACK` (spec §7.3) |
 | `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: not decided) |
 | `SETPOINT.flags` and the header `reserved` byte are not checked | #102 / spec §7.5 (reserved, sent as 0, ignored) |

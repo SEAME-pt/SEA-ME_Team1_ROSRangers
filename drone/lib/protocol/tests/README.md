@@ -81,7 +81,7 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 | `ConstantTime.EqualAndDifferent` | Equal arrays → equal; arrays differing in the last byte → different; zero length → equal | The comparison takes the same time wherever the difference is, so an attacker cannot guess a seal one byte at a time by timing replies |
 
 ## Receiver: the ESP's gatekeeper
-The Receiver runs every check on each incoming frame: seal, session, then seq. Only frames that pass every check are used.
+The Receiver runs every check on each incoming frame: seal, session, message type and size, then seq. Only frames that pass every check are used.
 
 | Test | What it does | Why it matters |
 |---|---|---|
@@ -96,6 +96,7 @@ The Receiver runs every check on each incoming frame: seal, session, then seq. O
 | `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | Same key on both sides, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
+| `Receiver.MalformedPayloadRejectedWithoutUsingTheSeq` | Three sealed frames with seq 5: unknown type 0x99, a 9-byte SETPOINT, a SETPOINT with mode 2. Each is refused and counted under its own reason; seq 1 is still accepted afterwards | A malformed frame changes nothing, not even the message number (REQ-COM-001, REQ-COM-004) |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -111,6 +112,9 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
 | `State.BytesAndRoundTrip` | STATE telemetry (link state, last seq, attitude, heading, battery, flow, counters) gives exactly the 28 expected bytes and reads back the same | This is what the ground sees from the drone |
+| `Messages.EncodersRefuseANullOutput` | Every message builder, given no output space (null pointer), writes nothing and returns 0 | Same rule as the frame builder and the readers: a bad pointer never crashes the ESP |
+| `CheckPayload.EveryTypeHasItsSize` | Every message type is OK at its spec §3 size and refused 1 byte off; EVENT is OK from 2 to 66 bytes | The Receiver refuses a message of the wrong size before using it |
+| `CheckPayload.UnknownTypesAndModesRefused` | Types that are not in spec §3 (0x00, 0x08, 0x99, 0xFF…) are refused; SETPOINT mode 0 and 1 pass, 2 and 255 are refused | Only messages we know how to read get through |
 | `Messages.WrongSizesRefused` | Every fixed-size reader refuses 1 byte too few and 1 too many; every reader refuses a null pointer; every builder refuses a space 1 byte too small | A wrong size is never half-read |
 
 ## SeqWindow: the message number rule
@@ -153,7 +157,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 40 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
-| `3_header` | Broken envelopes: magic, version, length, truncated | Garbage is refused before it is read |
+| `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type, a wrong size or a bad mode | Garbage is refused before it is read, and a malformed frame does not use up its seq |
 | `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels | The FC gets the right channels and never a value out of range |
