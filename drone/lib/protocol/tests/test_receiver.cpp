@@ -465,6 +465,15 @@ TEST(Handshake, EachSideAcceptsOnlyItsOwnHandshakeFrame) {
   EXPECT_EQ(check(Role::kEsp, bad), HandshakeResult::kBadTag);
   EXPECT_EQ(check(Role::kEsp, {hello.begin(), hello.begin() + 10}),
             HandshakeResult::kTruncated);
+  auto magic = hello;
+  magic[0] = 'X';
+  EXPECT_EQ(check(Role::kEsp, magic), HandshakeResult::kBadMagic);
+  auto version = hello;
+  version[2] = 9;
+  EXPECT_EQ(check(Role::kEsp, version), HandshakeResult::kBadVersion);
+  auto longer = hello;
+  longer.push_back(0);
+  EXPECT_EQ(check(Role::kEsp, longer), HandshakeResult::kBadLength);
 
   // `out` stays untouched on a reject, and holds the frame on accept.
   sd::Frame f{};

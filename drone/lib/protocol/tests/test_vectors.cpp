@@ -551,7 +551,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 68U);
+  EXPECT_GE(names.size(), 69U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

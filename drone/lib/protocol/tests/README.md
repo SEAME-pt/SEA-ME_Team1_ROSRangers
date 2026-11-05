@@ -168,7 +168,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 68 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 69 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
@@ -176,8 +176,8 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
 | `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
-| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport or from the wrong side refused |
-| `9_handshake` | HELLO accepted only by the ESP, HELLO_ACK only by the ground; reflected ones, other PSK-tagged types, a wrong session ID or seq ≠ 1 refused | Before a session nothing but the right handshake frame gets through (#152) | The 2026-11-05 decisions hold on both sides |
+| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions hold on both sides |
+| `9_handshake` | HELLO accepted only by the ESP, HELLO_ACK only by the ground; reflected ones, other PSK-tagged types, a wrong session ID or seq ≠ 1 refused | Before a session nothing but the right handshake frame gets through (#152) |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |

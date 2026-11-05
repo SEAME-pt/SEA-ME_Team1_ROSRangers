@@ -188,7 +188,7 @@ enum class Role : std::uint8_t { kEsp = 0, kGround = 1 };
 //   ESP:    SETPOINT; ARM_CONTROL_REQUEST, RESUME_REQUEST, BYE, CONFIG_GET,
 //           CONFIG_SET
 //   ground: STATE; ARM_CONTROL_ACK, RESUME_ACK, BYE, CONFIG_ACK, EVENT
-// HELLO and HELLO_ACK come before a session: see receive_handshake().
+// HELLO and HELLO_ACK always go to receive_handshake(), also during a session.
 bool receives(Role role, std::uint8_t type);
 
 } // namespace sd
