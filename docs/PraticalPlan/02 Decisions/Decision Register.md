@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -90,7 +90,7 @@ tags:
   - **OD-04** resolved: UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved (spec §7.1). Completes [[ADR-006 Network|ADR-006]].
   - **OD-06** resolved: `T_fresh` = 150 ms, separate from `T_loss` (spec §7.2). [[ADR-004 ESP Failsafe|ADR-004]] is unchanged: `T_loss` stays 250 ms.
   - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
-  - Items still open after the review: spec §7.5.
+  - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
 
 ## 8. Still open
 
