@@ -128,6 +128,14 @@ Possivelmente arranjar um range finder(Proxima sprint)
 Estudar bem o que está incluido no código de sprint.
 Issues relacionados com o Paulo
 
+05/Nov - 09:55/10:03
+Tiago - Ver o PR #138 e verificar issues associadas a elas e trabalhar nelas
+Paulo - Documentação sobre PR de ontem
+Bruno - PR reviews e ler documentação.
+Guilherme - Acrescentar blockers nas issues, ajudar nas issues associadas ao Paulo.
+**Blockers**
+Bruno - Esperar que alguem livre para telemetria do drone live. Esperar por PR's
+
 ---
 
 ## Glossary
