@@ -14,7 +14,7 @@ tags:
 # ADR-024 — OTA Firmware Updates on the Flight ESP
 
 > [!warning] Status: PROPOSED (2026-11-04, GitHub #62)
-> D1 to D3 were decided by the team on 2026-11-04. D4 and D5 are proposals, accepted when the PR that adds this ADR is merged into `dev`.
+> D1 to D3 were decided by the team on 2026-11-04, and the upload lock in D2 on 2026-11-05. D4 and D5 are proposals. The approving review of the PR that adds this ADR accepts them: its last commit before the merge sets this ADR, the Decision Register and Home to Accepted.
 > Resolves OD-23 in [[PC_to_ESP]] in part. Signed images are still planned for Module 3.
 
 ## 1. Context
@@ -42,19 +42,32 @@ tags:
 - the FC is **disarmed** according to its latest `MSP_STATUS`;
 - that `MSP_STATUS` is recent (proposed: under 500 ms old).
 
-If the arm state is unknown (no FC reply, UART fault), OTA is refused. How it works: the firmware calls `ArduinoOTA.handle()` only while these conditions hold. Otherwise the upload request gets no answer and `espota` times out. If the drone is armed or a session opens while an upload is running, nothing stops that upload. The procedure in D5 prevents this.
+If the arm state is unknown (no FC reply, UART fault), OTA is refused.
+
+How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answers the upload request and checks the password on its own, from a UDP callback; only `ArduinoOTA.handle()` runs the transfer. The firmware calls `handle()` only while the conditions hold. So with the gate closed:
+- a wrong password is still refused;
+- with the right password, `espota` passes the password check and then times out, because the transfer never starts;
+- that request stays pending. When the gate opens again, the ESP tries to connect back, fails (`espota` has given up) and drops it. No image is written.
+
+Once an upload starts (ArduinoOTA's start callback), the ESP locks the drone on the ground until the update ends (team, 2026-11-05):
+1. It asks the FC for a **fresh** `MSP_STATUS` and aborts the upload if the FC is armed or does not answer.
+2. Only then it sends `MSP_SET_ARMING_DISABLED` (MSP 99, value 1), so the FC **cannot be armed** during the upload. **Never send it without step 1:** Betaflight disarms at once if it gets this command while armed (`msp.c`, 4.5.1 and 2026.6.2).
+3. It refuses any `HELLO` until the upload ends, so no ground session can open.
+
+The lock is released with `MSP_SET_ARMING_DISABLED` value 0: by the error callback if the upload fails, and by the new firmware at boot after a successful update. Until then the FC refuses to arm, which is the safe side; an FC power cycle also clears it. The D5 procedure stays as a second layer.
 
 **D3. Credentials are required** (team, 2026-11-04). Two separate secrets protect a flash:
 - the SoftAP Wi-Fi password (WPA2, one client at a time, [[ADR-006 Network|ADR-006]]);
 - the **OTA password**, `ArduinoOTA.setPassword(OTA_PASS)`.
 
-Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environment variables). Both must be at least 8 characters, the build fails otherwise, and they must be different. They are never committed. A build without an OTA password is not allowed.
+Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environment variables). Both must be at least 8 characters and different from each other; `secrets.py` stops the build otherwise. They are never committed. A build without an OTA password is not allowed.
 
 **D4. Flight builds keep OTA** (proposal). `WITH_OTA` stays `1` in every env. The D2 gate already covers the flight case, and compiling OTA out would bring back the USB-on-FC problem from ADR-012. A build that turns it off must say so in its env comment.
 
 **D5. Written procedure** (proposal). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
 - **Every update:** OTA, [[Safety Rules]] apply.
   - Props off, battery out, powered from the FC USB, arm switch off.
+  - No ground session during the upload: the ground node is stopped (the ESP refuses `HELLO` anyway, D2).
   - Note the image SHA-256 when you flash.
 - **First flash or recovery:** USB, only with the ESP taken off the FC wires (ADR-012).
   - Back up the flash first.
@@ -62,8 +75,14 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 
 ## 4. Consequences
 
-- **#102 (link state machine)** implements the D2 gate. It also needs a recent `MSP_STATUS` arm flag from the FC.
-  - **Bench test:** an OTA upload is refused while armed (props off) and while STREAMING, and accepted when disarmed with no session.
+- **#102 (link state machine)** implements the D2 gate and the upload lock.
+  - The ESP polls `MSP_STATUS` itself at 5 Hz ([[ADR-009 ESP to FC Link|ADR-009]]), also with no session open, so 500 ms tolerates two missed replies. These replies are used by the ESP and **not forwarded** to the ground PC.
+  - **Bench test** (props off, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
+    - an upload is refused while armed, while STREAMING, and with no recent `MSP_STATUS`; accepted when disarmed with no session;
+    - a wrong password is refused while armed;
+    - a request left pending while the gate was closed does not flash when the gate reopens;
+    - during an upload the FC refuses to arm (`MSP_STATUS` shows `ARMING_DISABLED_MSP`) and the ESP refuses `HELLO`;
+    - arming works again after a successful update and after a failed one.
 - **ArduinoOTA's password is an MD5 challenge-response.** The password itself is not sent, but the image is neither encrypted nor signed.
   - Anyone who has both passwords and is on the network can flash any image.
   - Signed OTA (RSA-2048 + SHA-256, supported by the ESP8266 core) is planned for Module 3 ([[Roadmap to April 2027]], OD-23).
@@ -84,6 +103,7 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 | **FC** | Flight Controller: the OddityRC F7 AIO running Betaflight. |
 | **MD5 challenge-response** | The device sends a random value; the PC answers with a hash of it and the password. This proves the PC knows the password without sending it. |
 | **MSP_STATUS** | MSP message from the FC that includes the arming flags. |
+| **MSP_SET_ARMING_DISABLED** | MSP 99. Value 1 stops the FC from arming (and disarms it if armed); value 0 allows arming again. |
 | **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `esp_ota`). |
 | **Signed OTA** | The device accepts only images signed with the team's private key. |
 | **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |

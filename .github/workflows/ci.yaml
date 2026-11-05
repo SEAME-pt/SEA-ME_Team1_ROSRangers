@@ -304,8 +304,8 @@ jobs:
         run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
-          SEAME_AP_PASS: ci-dummy-pass
-          SEAME_OTA_PASS: ci-dummy-pass
+          SEAME_AP_PASS: ci-dummy-ap-pass
+          SEAME_OTA_PASS: ci-dummy-ota-pass
       - uses: actions/upload-artifact@v4
         with:
           name: esp-firmware
