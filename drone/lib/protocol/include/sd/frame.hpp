@@ -67,15 +67,17 @@ std::size_t encode_frame(const Header &header, const std::uint8_t *payload,
                          std::uint8_t *out, std::size_t out_cap);
 
 // Checks one complete frame (a UDP datagram, or a TCP frame cut with
-// frame_size()). Order of checks follows spec §4 rule 1: length, magic,
-// version, then the tag. Session and sequence checks are the caller's (§4 rules
-// 2 and 3).
+// frame_size()). Order of checks follows spec §4 rule 1: minimum length,
+// magic, version, then payload_len and the exact length, then the tag. Session
+// and sequence checks are the caller's (§4 rules 2 and 3).
 RxError decode_frame(const std::uint8_t *buf, std::size_t len, const Key &key,
                      Frame &out);
 
 // TCP framing (OD-03): given at least kHeaderSize bytes, the size of the whole
-// frame. Returns 0 if fewer than kHeaderSize bytes are given or payload_len >
-// kMaxPayload.
+// frame. Returns 0 if fewer than kHeaderSize bytes are given (wait for more)
+// or payload_len > kMaxPayload. A 0 with len >= kHeaderSize is a bad length:
+// close the TCP connection (spec §4 rule 5), never wait for more bytes. Magic
+// and version are not checked here; decode_frame() does that.
 std::size_t frame_size(const std::uint8_t *buf, std::size_t len);
 
 } // namespace sd

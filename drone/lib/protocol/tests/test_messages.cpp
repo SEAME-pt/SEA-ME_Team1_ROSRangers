@@ -294,3 +294,18 @@ TEST(Codes, MatchSpecSection31) {
   EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkResumed), 0x0103);
   EXPECT_EQ(static_cast<int>(sd::MsgType::kConfigAck), 0x22);
 }
+
+TEST(Transport, MatchesSpecSection2) {
+  sd::Transport t = sd::Transport::kUdp;
+  for (const int type : {0x01, 0x07, 0x20, 0x22, 0x40, 0x5F}) {
+    ASSERT_TRUE(sd::transport_of(static_cast<std::uint8_t>(type), t)) << type;
+    EXPECT_EQ(t, sd::Transport::kTcp) << type;
+  }
+  for (const int type : {0x60, 0x7F, 0x80, 0x9F}) {
+    ASSERT_TRUE(sd::transport_of(static_cast<std::uint8_t>(type), t)) << type;
+    EXPECT_EQ(t, sd::Transport::kUdp) << type;
+  }
+  for (const int type : {0x00, 0xA0, 0xFF}) {
+    EXPECT_FALSE(sd::transport_of(static_cast<std::uint8_t>(type), t)) << type;
+  }
+}

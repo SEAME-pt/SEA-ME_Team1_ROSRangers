@@ -49,6 +49,8 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 | 0x60–0x7F | Control setpoints | UDP |
 | 0x80–0x9F | Telemetry (periodic state) | UDP |
 
+A type that arrives on the other transport is rejected as `reject:wrong_transport`, with its own counter, counted in `rx_rejected`, after the type check and before rule 3. Both transports use the same session key and count `seq` apart, so without this check a frame captured on one transport could be replayed on the other (added 2026-11-05, #99).
+
 ## 3. Messages v0
 
 | Type | Name | Bytes | Payload |
@@ -127,11 +129,13 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 
 ## 4. Receive rules
 
-1. Check length (shorter than the header + `payload_len` + tag: truncated; `payload_len` > 256 or extra bytes after the tag: bad length), magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
+Order of the checks: rule 1, rule 2, message type, transport (§2), payload size (§3), `mode` (rule 4), then rule 3. A frame refused before rule 3 changes no state.
+
+1. Check, in this order: the minimum length (header + tag, else truncated), magic, version, then `payload_len` ≤ 256 and the exact length (shorter than header + `payload_len` + tag: truncated; `payload_len` > 256 or extra bytes after the tag: bad length), then the **tag** (constant time). `payload_len` is not trusted before magic and version have passed. On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
 3. A message is accepted only if `seq` is greater than the last one accepted from that sender **on the same transport** ([[ADR-003 Sequence Acceptance|ADR-003]]). Control uses `last_ctrl_seq`. Otherwise drop and count. `seq` 0 is never accepted.
 4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs as `1500 + v/2` (integer division, rounding toward 1500), and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. The `mode` check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
-5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. An unknown type or a wrong payload size (§3) is dropped and counted, and the connection stays open: the framing is intact. None of these triggers the failsafe on its own: only `T_loss` does (§7.2).
+5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. On TCP a frame shorter than its `payload_len` says is not yet complete: the receiver waits for more bytes, it is not "truncated". An unknown type or a wrong payload size (§3) is dropped and counted, and the connection stays open: the framing is intact. None of these triggers the failsafe on its own: only `T_loss` does (§7.2).
 
 ## 5. Command → RC channel mapping (resolves FC-08 in [[ESP_to_FC]])
 
@@ -162,7 +166,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
 
-- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
+- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
 - Adding a vector is free. Changing or deleting one changes the protocol and needs a dated entry in §8.
 
@@ -265,7 +269,7 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 | Wi-Fi re-association (REQ-COM-023) | To be settled with the gateway firmware (#101). Still open, tracked in [[Open Questions]] |
 | `telemetry_rate_hz` default | 25 Hz, not 20 (§7.3) |
 
-Still open, found while writing the C++ library (#99), tracked in GitHub #149: whether `STATE.rx_rejected` (u16) saturates or wraps and whether a frame with no session open counts in it, and how the per-reason and ADR-003 counters reach the ground.
+Still open, found while writing the C++ library (#99), tracked in GitHub #149 and [[Open Questions]]: whether `STATE.rx_rejected` (u16) saturates or wraps and whether a frame with no session open counts in it, and how the per-reason and ADR-003 counters reach the ground.
 
 ## 8. Changelog
 
@@ -274,7 +278,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149: w
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
 | 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
-| 2026-11-05 | 1.1.1 | Clarifications from the C++ library (#99), no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
+| 2026-11-05 | 1.1.1 | From the C++ library (#99). New receive check: `reject:wrong_transport` (§2), found by the #99 review, so a frame cannot be replayed on the other transport. Clarifications, no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), check order and TCP partial frames (§4 rules 1 and 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
 
 ## 9. Glossary
 
@@ -298,4 +302,6 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149: w
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
+| **Session key** | Key that tags every frame after `HELLO_ACK`: `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)` (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |

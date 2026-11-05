@@ -26,10 +26,10 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Layer | Files | Does |
 |---|---|---|
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
-| Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then `check_payload()` (known `type`, §3 payload size, `SETPOINT.mode` 0 or 1), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
+| Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
-Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver. Then it opens one Receiver per transport (`seq` is counted per transport, spec §4 rule 3): the UDP one with `start_session(id, key)`, the TCP one with `start_session(id, key, 1)`, because `HELLO` and `HELLO_ACK` already used seq 1.
+Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver. Then it opens one Receiver per transport: `start_session(id, key, Transport::kUdp)` and `start_session(id, key, Transport::kTcp)`. Each accepts only its own types (spec §2), and the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it.
 
 ## 2. API contract (all codecs)
 
@@ -110,8 +110,7 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 |---|---|
 | Frame, session and sequence checks | `Receiver` (spec §4 rules 1–3) |
 | Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001, REQ-COM-002 for `mode`) |
-| `type` allowed on this transport (TCP vs UDP, spec §2) | #102 |
-| One Receiver per transport; the TCP one starts at seq 1 | #102 (`start_session(id, key, 1)`) |
+| `type` allowed on this transport (TCP vs UDP, spec §2) | `Receiver` (`wrong_transport`); #102 opens one per transport |
 | Unknown codes, value ranges | #102 (spec §4 rule 4) |
 | Config key exists, access (Info / Safety / Tunable), write range, no write while control is enabled, in the order of spec §3.1 | #102, answers with `CONFIG_ACK` |
 | `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: open in #149) |
@@ -121,7 +120,6 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 
 - No named constants for the config keys of spec §7.3 (`0x01 config_table_version` … `0x81 event_level`). Use the numbers from the spec for now.
 - No numbers for `flow_status` (the [[ThoneFlow]] §8.1 names have no wire values yet).
-- The `CONFIG_SET` check order (spec §3.1) is tested with the link state machine (#102), not in the shared vectors: it needs the ESP state and the key table.
 
 ## 7. How to test
 
@@ -151,6 +149,8 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Payload** | The bytes between the 20-byte header and the 8-byte tag of a frame ([[Protocol Spec v0]] §1). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **Receiver** | The library class that checks each frame (tag, session, type, payload size, `SETPOINT.mode`, seq) before any payload is used. |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (#149). |
+| **Info / Safety / Tunable key** | The three configuration key groups: read-only, firmware-only, ground-writable (spec §7.3). |
 | **Session** | One run of the protocol between the ground and the ESP, named by `session_id`; opened by `HELLO` / `HELLO_ACK` ([[ADR-005 TCP Session\|ADR-005]]). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (spec §6). Also called a "golden vector". |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |

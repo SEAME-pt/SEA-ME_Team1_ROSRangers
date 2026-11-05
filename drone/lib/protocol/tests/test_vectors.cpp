@@ -109,6 +109,8 @@ std::string result_name(sd::RxResult r) {
     return "reject:wrong_session";
   case sd::RxResult::kBadType:
     return "reject:bad_type";
+  case sd::RxResult::kWrongTransport:
+    return "reject:wrong_transport";
   case sd::RxResult::kBadPayloadSize:
     return "reject:bad_payload_size";
   case sd::RxResult::kBadMode:
@@ -121,6 +123,16 @@ std::string result_name(sd::RxResult r) {
     return "reject:seq_too_high";
   }
   return "?";
+}
+
+// The Receiver a frame goes to: by its type byte (spec §2), UDP if the type is
+// in neither range.
+sd::Transport transport_for(const Bytes &buf) {
+  sd::Transport t = sd::Transport::kUdp;
+  if (buf.size() > 3 && sd::transport_of(buf[3], t)) {
+    return t;
+  }
+  return sd::Transport::kUdp;
 }
 
 template <typename T> T get(const json &f, const char *name) {
@@ -322,9 +334,9 @@ TEST_P(Vector, Check) {
     EXPECT_EQ(to_hex(derived.bytes, sd::kKeySize), v.at("key"));
   }
 
-  // One Receiver per transport (spec §4 rule 3). UDP starts from
-  // last_ctrl_seq, TCP from last_tcp_seq (1: HELLO used seq 1). A step
-  // without "transport" is UDP.
+  // One Receiver per transport (spec §2, §4 rule 3): UDP starts at 0, TCP at
+  // 1 (HELLO used seq 1). A step without "transport" is UDP; a single frame
+  // goes to the Receiver of its type.
   sd::Receiver rx;
   sd::Receiver tcp;
   const bool with_session = v.contains("state");
@@ -332,9 +344,11 @@ TEST_P(Vector, Check) {
     const json &state = v["state"];
     ASSERT_EQ(state.value("last_ctrl_seq", 0), 0)
         << "vectors start from a fresh session";
-    ASSERT_TRUE(rx.start_session(state.at("current_session"), key));
+    ASSERT_EQ(state.value("last_tcp_seq", 1), 1) << "TCP starts after HELLO";
+    ASSERT_TRUE(rx.start_session(state.at("current_session"), key,
+                                 sd::Transport::kUdp));
     ASSERT_TRUE(tcp.start_session(state.at("current_session"), key,
-                                  state.value("last_tcp_seq", 1U)));
+                                  sd::Transport::kTcp));
   }
 
   // Groups 5, 6 and 8: several frames, the result after each one.
@@ -370,22 +384,23 @@ TEST_P(Vector, Check) {
   }
 
   const Bytes buf = from_hex(v.at("bytes"));
+  sd::Receiver &own = transport_for(buf) == sd::Transport::kTcp ? tcp : rx;
   sd::Frame frame{};
   const std::string got =
       with_session
-          ? result_name(rx.receive(buf.data(), buf.size(), frame))
+          ? result_name(own.receive(buf.data(), buf.size(), frame))
           : result_name(sd::decode_frame(buf.data(), buf.size(), key, frame));
   ASSERT_EQ(got, v.at("expect"));
 
   // A rejected frame is also refused by a Receiver and counted (rx_rejected).
   if (got != "accept") {
     if (!with_session) {
-      ASSERT_TRUE(rx.start_session(0x12345678, key));
+      ASSERT_TRUE(own.start_session(0x12345678, key, transport_for(buf)));
       sd::Frame ignored{};
-      EXPECT_EQ(result_name(rx.receive(buf.data(), buf.size(), ignored)), got);
+      EXPECT_EQ(result_name(own.receive(buf.data(), buf.size(), ignored)), got);
     }
-    EXPECT_EQ(rx.counters().rejected, 1U);
-    EXPECT_EQ(rx.counters().accepted, 0U);
+    EXPECT_EQ(own.counters().rejected, 1U);
+    EXPECT_EQ(own.counters().accepted, 0U);
   }
 
   if (!v.contains("fields")) {
@@ -454,7 +469,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 56U);
+  EXPECT_GE(names.size(), 57U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

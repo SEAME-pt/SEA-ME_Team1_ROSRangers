@@ -32,7 +32,7 @@ What the tests do with one vector:
 | Decode | `bytes` → exactly `fields` |
 | Reject | broken `bytes` → dropped for the reason in `expect`, and counted (`rx_rejected`) |
 
-Behaviour vectors (sequence, clamps) use `steps` or `channels` instead of a single `expect` (see groups 5 and 6).
+Behaviour vectors (sequence, clamps) use `steps` or `channels` instead of a single `expect` (see groups 5, 6 and 8).
 
 Optional fields:
 
@@ -41,7 +41,7 @@ Optional fields:
 | `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
 | `note` | Extra context, e.g. which decision a vector comes from |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
-| `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3) |
+| `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3). A single frame goes to the Receiver of its type |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
 | `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
 
@@ -56,7 +56,7 @@ Optional fields:
 | `5_sequence.json` | 5 Sequence | 6 |
 | `6_clamps.json` | 6 Clamps and mapping | 9 |
 | `7_config.json` | 7 Configuration | 6 |
-| `8_reserved_and_transports.json` | 8 Reserved bits and transports | 5 |
+| `8_reserved_and_transports.json` | 8 Reserved bits and transports | 6 |
 
 - **Made by `generate.py`** in this folder. It uses only the Python standard library and is written from the spec, so it is independent of both implementations (rule 4 below).
 - **To add a vector:** add it to `generate.py`, run `python3 drone/tests/vectors/generate.py`, and commit both.
@@ -269,6 +269,7 @@ The `reject:<reason>` names, and the C++ values they map to:
 | `bad_tag` | HMAC tag does not match | `RxError::kBadTag`, `RxResult::kBadTag` |
 | `wrong_session` | `session_id` is not the current session (§4 rule 2) | `RxResult::kWrongSession` |
 | `bad_type` | Not a spec §3 message type | `RxResult::kBadType` |
+| `wrong_transport` | A TCP type (0x01–0x5F) on UDP, or a UDP type (0x60–0x9F) on TCP (spec §2) | `RxResult::kWrongTransport` |
 | `bad_payload_size` | `payload_len` is not the §3 size of the type (EVENT: 2..66) | `RxResult::kBadPayloadSize` |
 | `bad_mode` | `SETPOINT.mode` is not 0 or 1 (§4 rule 4, decided in #142) | `RxResult::kBadMode` |
 | `duplicate_seq` | Same seq as the last accepted one | `RxResult::kDuplicateSeq` |
@@ -284,11 +285,12 @@ One `CONFIG_ACK` encoding per result of spec §3.1: `config_ack_result_0_ok` (`G
 
 Proves: both sides put the same number in `result` and the same `value` (current or unchanged; 0 when there is none). The check order (state first) is not here: it needs the ESP state and key table, so the link state machine (#102) tests it.
 
-### Group 8: Reserved bits and transports (5 vectors)
+### Group 8: Reserved bits and transports (6 vectors)
 
 - `header_flags_bit0_ignored`, `setpoint_flags_nonzero_ignored`: the reserved bits are accepted and ignored.
 - `hello_ack_signed_with_psk` (accept with the PSK) and `hello_ack_signed_with_session_key` (`reject:bad_tag` when checked with the PSK).
 - `tcp_and_udp_seq_apart` (steps): UDP 1, TCP 2, UDP 2, TCP 3 accepted, then TCP 2 again `reject:old_seq`. The TCP Receiver starts at 1 because `HELLO` used seq 1.
+- `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the session key, so each Receiver accepts only its own types (spec §2).
 
 Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq` per transport.
 

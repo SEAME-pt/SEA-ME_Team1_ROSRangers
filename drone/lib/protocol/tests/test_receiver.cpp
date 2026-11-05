@@ -47,22 +47,21 @@ sd::RxResult feed(sd::Receiver &rx, const char *hex) {
   return rx.receive(bytes.data(), bytes.size(), f);
 }
 
-sd::Receiver open_receiver() {
+// The UDP Receiver: the reference frames above are SETPOINTs.
+sd::Receiver open_receiver(sd::Transport t = sd::Transport::kUdp) {
   sd::Receiver rx;
-  EXPECT_TRUE(rx.start_session(kSession, test_key()));
+  EXPECT_TRUE(rx.start_session(kSession, test_key(), t));
   return rx;
 }
 
+// A neutral SETPOINT (mode 0, all zero) with any session and seq.
 std::vector<std::uint8_t> encode(std::uint32_t session, std::uint32_t seq) {
-  const sd::Header h{static_cast<std::uint8_t>(sd::MsgType::kResumeRequest),
-                     0,
-                     0,
-                     session,
-                     seq,
-                     0};
+  const sd::Header h{
+      static_cast<std::uint8_t>(sd::MsgType::kSetpoint), 0, 0, session, seq, 0};
+  const std::uint8_t payload[sd::kSetpointSize] = {};
   std::vector<std::uint8_t> out(sd::kMaxFrame);
-  out.resize(
-      sd::encode_frame(h, nullptr, 0, test_key(), out.data(), out.size()));
+  out.resize(sd::encode_frame(h, payload, sizeof(payload), test_key(),
+                              out.data(), out.size()));
   return out;
 }
 
@@ -89,7 +88,7 @@ TEST(Receiver, NothingIsAcceptedBeforeASession) {
 
 TEST(Receiver, SessionIdZeroIsReservedForHello) {
   sd::Receiver rx;
-  EXPECT_FALSE(rx.start_session(0, test_key()));
+  EXPECT_FALSE(rx.start_session(0, test_key(), sd::Transport::kUdp));
   EXPECT_FALSE(rx.in_session());
 }
 
@@ -181,14 +180,14 @@ TEST(Receiver, WrongKeyRejected) {
   sd::Receiver rx;
   sd::Key other = test_key();
   other.bytes[31] ^= 0xff;
-  ASSERT_TRUE(rx.start_session(kSession, other));
+  ASSERT_TRUE(rx.start_session(kSession, other, sd::Transport::kUdp));
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kBadTag);
 }
 
 TEST(Receiver, NewSessionResetsTheWindowAndEndSessionClosesIt) {
   auto rx = open_receiver();
   EXPECT_EQ(feed(rx, kSeq3), sd::RxResult::kAcceptedGap);
-  ASSERT_TRUE(rx.start_session(kSession, test_key()));
+  ASSERT_TRUE(rx.start_session(kSession, test_key(), sd::Transport::kUdp));
   EXPECT_EQ(rx.last_seq(), 0U);
   EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kAccepted);
 
@@ -242,18 +241,53 @@ TEST(Receiver, MalformedPayloadRejectedWithoutUsingTheSeq) {
 }
 
 // TCP Receiver: HELLO used seq 1, so the session starts at 1 and seq 2 is in
-// order. A start at or above 2^31 is refused and leaves the Receiver closed.
+// order, with no false gap.
 TEST(Receiver, TcpSessionStartsAfterHello) {
-  sd::Receiver rx;
-  ASSERT_TRUE(rx.start_session(kSession, test_key(), 1));
-  EXPECT_EQ(rx.last_seq(), 1U);
-  EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kDuplicateSeq);
-  EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kAccepted);
-  EXPECT_EQ(rx.seq_counters().gaps, 0U);
+  auto tcp = open_receiver(sd::Transport::kTcp);
+  EXPECT_EQ(tcp.last_seq(), 1U);
+  const auto arm = static_cast<std::uint8_t>(sd::MsgType::kArmControlRequest);
+  auto f1 = frame_of(arm, {15}, 1);
+  auto f2 = frame_of(arm, {15}, 2);
+  sd::Frame f{};
+  EXPECT_EQ(tcp.receive(f1.data(), f1.size(), f), sd::RxResult::kDuplicateSeq);
+  EXPECT_EQ(tcp.receive(f2.data(), f2.size(), f), sd::RxResult::kAccepted);
+  EXPECT_EQ(tcp.seq_counters().gaps, 0U);
+}
 
-  sd::Receiver closed;
-  EXPECT_FALSE(closed.start_session(kSession, test_key(), 0x80000000U));
-  EXPECT_FALSE(closed.in_session());
+// Spec §2: both transports share the session key, so each Receiver accepts
+// only its own types. A captured TCP frame replayed on UDP, or a SETPOINT sent
+// on TCP, is refused and moves neither window.
+TEST(Receiver, FrameFromTheOtherTransportRejected) {
+  auto udp = open_receiver(sd::Transport::kUdp);
+  auto tcp = open_receiver(sd::Transport::kTcp);
+  const auto arm = static_cast<std::uint8_t>(sd::MsgType::kArmControlRequest);
+  const auto replay = frame_of(arm, {15}, 2);
+  const auto setpoint = encode(kSession, 50);
+  sd::Frame f{};
+  ASSERT_EQ(tcp.receive(replay.data(), replay.size(), f),
+            sd::RxResult::kAccepted);
+  EXPECT_EQ(udp.receive(replay.data(), replay.size(), f),
+            sd::RxResult::kWrongTransport);
+  EXPECT_EQ(tcp.receive(setpoint.data(), setpoint.size(), f),
+            sd::RxResult::kWrongTransport);
+  EXPECT_EQ(udp.last_seq(), 0U);
+  EXPECT_EQ(tcp.last_seq(), 2U);
+  EXPECT_EQ(udp.counters().wrong_transport, 1U);
+  EXPECT_EQ(tcp.counters().wrong_transport, 1U);
+  // The real SETPOINT still goes through on UDP.
+  EXPECT_EQ(udp.receive(setpoint.data(), setpoint.size(), f),
+            sd::RxResult::kAcceptedGap);
+}
+
+// A refused start_session leaves the open session as it was.
+TEST(Receiver, RefusedStartKeepsTheOpenSession) {
+  auto rx = open_receiver();
+  ASSERT_EQ(feed(rx, kSeq1), sd::RxResult::kAccepted);
+  EXPECT_FALSE(rx.start_session(0, test_key(), sd::Transport::kTcp));
+  EXPECT_TRUE(rx.in_session());
+  EXPECT_EQ(rx.session_id(), kSession);
+  EXPECT_EQ(rx.last_seq(), 1U);
+  EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kAccepted);
 }
 
 TEST(Receiver, IsAccepted) {

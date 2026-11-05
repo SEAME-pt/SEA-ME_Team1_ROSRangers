@@ -81,7 +81,7 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 | `ConstantTime.EqualAndDifferent` | Equal arrays → equal; arrays differing in the last byte → different; zero length → equal | The comparison takes the same time wherever the difference is, so an attacker cannot guess a seal one byte at a time by timing replies |
 
 ## Receiver: the ESP's gatekeeper
-The Receiver runs every check on each incoming frame: seal, session, message type and size, then seq. Only frames that pass every check are used.
+The Receiver runs every check on each incoming frame: seal, session, message type, transport, size and SETPOINT mode, then seq. Only frames that pass every check are used.
 
 | Test | What it does | Why it matters |
 |---|---|---|
@@ -92,12 +92,14 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.SessionIdZeroOutsideHelloRejected` | A normal frame with session 0 is refused | Same reason as above |
 | `Receiver.SeqDuplicateExample` | Sends seq 1, 2, 2, 3: the second 2 is refused (duplicate), the others are accepted | A copied message can never act twice |
 | `Receiver.OlderAndTooHighRejected` | After seq 7, seq 3 is refused (old) and seq 2³¹ is refused (too high, new session needed) | A late message never moves the drone back to an old stick position |
-| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | The counters go to the ground in STATE for diagnosis, and a refused frame leaves no trace |
+| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`; the rest is open in #149), and a refused frame leaves no trace |
 | `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | Same key on both sides, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
 | `Receiver.MalformedPayloadRejectedWithoutUsingTheSeq` | Three sealed frames with seq 5: unknown type 0x99, a 9-byte SETPOINT, a SETPOINT with mode 2. Each is refused and counted under its own reason; seq 1 is still accepted afterwards | A malformed frame changes nothing, not even the message number (REQ-COM-001, REQ-COM-004) |
-| `Receiver.TcpSessionStartsAfterHello` | A session opened at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap; a start at 2³¹ is refused | The TCP Receiver does not count a false gap after the handshake |
+| `Receiver.TcpSessionStartsAfterHello` | A TCP session starts at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap | HELLO already used seq 1, so there is no false gap after the handshake |
+| `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the session key: without this check a captured frame could be replayed on the other one |
+| `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -110,6 +112,7 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `U8Payload.RoundTrip` | A one-byte content (BYE reason "replaced" = 3) goes to bytes and back | Used by several short commands |
 | `ConfigKv.BytesAndRoundTrip` | Config key 0x80 with value −2 → `80 FE FF FF FF` and back | Negative numbers are stored correctly |
 | `ConfigAck.BytesAndRoundTrip` | Reply for Safety key 0x40, result "safety parameter, firmware only" (3), value 250 → `40 03 FA 00 00 00` | The ESP's answer to a config change |
+| `Transport.MatchesSpecSection2` | Types 0x01–0x5F are TCP, 0x60–0x9F UDP, anything else neither | Each Receiver knows which types it may accept |
 | `Codes.MatchSpecSection31` | Every result, reason, state and event number, and `CONFIG_ACK` = 0x22, equals spec §3.1 | A renumbered code would silently break the ground |
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
@@ -157,7 +160,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 56 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 57 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
@@ -165,7 +168,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
 | `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
-| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart | The 2026-11-05 decisions hold on both sides |
+| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport refused | The 2026-11-05 decisions hold on both sides |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |

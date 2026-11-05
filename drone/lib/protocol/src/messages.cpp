@@ -221,4 +221,16 @@ PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
   return PayloadCheck::kOk;
 }
 
+bool transport_of(std::uint8_t type, Transport &out) {
+  if (type >= 0x01 && type <= 0x5F) {
+    out = Transport::kTcp;
+    return true;
+  }
+  if (type >= 0x60 && type <= 0x9F) {
+    out = Transport::kUdp;
+    return true;
+  }
+  return false;
+}
+
 } // namespace sd

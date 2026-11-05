@@ -173,4 +173,10 @@ enum class PayloadCheck : std::uint8_t {
 PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
                            std::size_t len);
 
+// Spec §2: 0x01-0x5F travel on TCP, 0x60-0x9F on UDP.
+enum class Transport : std::uint8_t { kUdp = 0, kTcp = 1 };
+
+// The transport a type belongs to. False for a type outside both ranges.
+bool transport_of(std::uint8_t type, Transport &out);
+
 } // namespace sd

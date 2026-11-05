@@ -1,18 +1,17 @@
 #include "sd/receiver.hpp"
 
-#include "sd/messages.hpp"
-
 namespace sd {
 
 bool Receiver::start_session(std::uint32_t session_id, const Key &session_key,
-                             std::uint32_t last_seq) {
-  if (session_id == 0 || last_seq >= SeqWindow::kMaxSeq) {
+                             Transport transport) {
+  if (session_id == 0) {
     return false;
   }
   key_ = session_key;
   session_id_ = session_id;
+  transport_ = transport;
   in_session_ = true;
-  window_.reset(last_seq);
+  window_.reset(transport == Transport::kTcp ? 1 : 0);
   return true;
 }
 
@@ -49,6 +48,9 @@ RxResult Receiver::reject(RxResult r) {
     break;
   case RxResult::kBadType:
     ++counters_.bad_type;
+    break;
+  case RxResult::kWrongTransport:
+    ++counters_.wrong_transport;
     break;
   case RxResult::kBadPayloadSize:
     ++counters_.bad_payload_size;
@@ -103,10 +105,20 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
     return reject(RxResult::kWrongSession);
   }
 
-  // Type, size and mode (spec §3, REQ-COM-001/002). Before the window, so a
-  // malformed frame leaves last_seq unchanged (REQ-COM-004).
-  switch (check_payload(frame.header.type, frame.payload,
-                        frame.header.payload_len)) {
+  // Type, transport, size and mode (spec §2, §3, REQ-COM-001/002). Before the
+  // window, so a malformed frame leaves last_seq unchanged (REQ-COM-004).
+  const PayloadCheck check =
+      check_payload(frame.header.type, frame.payload, frame.header.payload_len);
+  if (check == PayloadCheck::kUnknownType) {
+    return reject(RxResult::kBadType);
+  }
+  // Both transports use the same session key: without this, a frame captured
+  // on TCP could be replayed on UDP, or the other way.
+  Transport transport = Transport::kUdp;
+  if (!transport_of(frame.header.type, transport) || transport != transport_) {
+    return reject(RxResult::kWrongTransport);
+  }
+  switch (check) {
   case PayloadCheck::kOk:
     break;
   case PayloadCheck::kUnknownType:

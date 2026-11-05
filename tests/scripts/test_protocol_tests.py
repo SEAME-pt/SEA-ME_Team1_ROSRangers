@@ -249,3 +249,61 @@ def test_menu_asks_again_for_a_bad_number_of_runs(monkeypatch):
 def test_no_build_without_a_binary_says_what_to_do(tmp_path):
     with pytest.raises(SystemExit, match="Run without --no-build"):
         protocol_tests.main(["--no-build", "--build-dir", str(tmp_path), "list"])
+
+
+# Passes one test, then hangs inside the second one.
+HANGING_RUN = r"""#!/bin/sh
+case "$1" in
+--gtest_list_tests)
+  printf 'Suite.\n  Good\n  Hang\n'
+  ;;
+*)
+  echo '[ RUN      ] Suite.Good'
+  echo '[       OK ] Suite.Good (0 ms)'
+  echo '[ RUN      ] Suite.Hang'
+  exec sleep 60
+  ;;
+esac
+"""
+
+
+def test_a_hanging_binary_is_stopped_and_reported(tmp_path, monkeypatch, capsys):
+    binary = tmp_path / "sd_protocol_tests"
+    binary.write_text(HANGING_RUN)
+    binary.chmod(0o755)
+    monkeypatch.setattr(protocol_tests, "TIMEOUT_S", 1)
+    assert protocol_tests.run_tests(binary, "*", explain=False) == 1
+    out = capsys.readouterr().out
+    assert "stopped after 1 s during Suite.Hang: it hung" in out
+
+
+def test_bench_refuses_a_csv_path_it_cannot_write(fake_binary, tmp_path, capsys):
+    bad = tmp_path / "no_such_dir" / "bench.csv"
+    assert protocol_tests.bench_tests(fake_binary, "*", 1, str(bad)) == 1
+    out = capsys.readouterr().out
+    assert "Cannot write" in out and "Benchmark:" not in out
+
+
+def test_end_of_input_goes_back_instead_of_taking_the_default(monkeypatch):
+    def eof(_=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    assert protocol_tests.ask("Runs per test", "100") is None
+    assert protocol_tests.ask_runs() is None
+
+
+def test_menu_quits_on_end_of_input(fake_binary, monkeypatch):
+    answers = iter(["2", "1"])  # Benchmark, All tests, then the input ends
+
+    def feed(_=""):
+        try:
+            return next(answers)
+        except StopIteration:
+            raise EOFError from None
+
+    monkeypatch.setattr("builtins.input", feed)
+    ran = []
+    monkeypatch.setattr(protocol_tests, "bench_tests", lambda *a: ran.append(a))
+    assert protocol_tests.menu(fake_binary.parent, no_build=True) == 0
+    assert ran == []  # no benchmark was started with the default 100 runs

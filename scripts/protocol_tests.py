@@ -36,6 +36,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -221,19 +222,31 @@ class RunResult:
     wall_s: float = 0.0
     returncode: int = 0
     crashed_in: str = ""  # test that was running when the binary died
+    timed_out: bool = False  # killed after TIMEOUT_S
 
     @property
     def ok(self) -> bool:
-        return bool(self.passed) and not self.failed and self.returncode == 0
+        return (
+            bool(self.passed)
+            and not self.failed
+            and self.returncode == 0
+            and not self.timed_out
+        )
 
     def crash_message(self) -> str:
+        where = f" during {self.crashed_in}" if self.crashed_in else ""
+        if self.timed_out:
+            return f"The test binary was stopped after {TIMEOUT_S} s{where}: it hung."
         how = (
             f"signal {-self.returncode}"
             if self.returncode < 0
             else f"exit code {self.returncode}"
         )
-        where = f" during {self.crashed_in}" if self.crashed_in else ""
         return f"The test binary stopped with {how}{where}."
+
+
+# A whole run of the binary longer than this is a hang: the binary is killed.
+TIMEOUT_S = 600
 
 
 def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
@@ -250,6 +263,15 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
     with subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
     ) as proc:
+        fired = threading.Event()
+
+        def kill() -> None:
+            fired.set()
+            proc.kill()
+
+        watchdog = threading.Timer(TIMEOUT_S, kill)
+        watchdog.daemon = True
+        watchdog.start()
         for line in proc.stdout:
             now = time.perf_counter()
             event = parse_line(line.rstrip("\n"))
@@ -269,6 +291,9 @@ def execute(binary: Path, test_filter: str, repeat: int, on_event) -> RunResult:
                 getattr(result, "passed" if kind == "ok" else kind).append(value)
                 on_event(kind, value, ms, detail if kind == "failed" else [])
                 started_at, current = 0.0, ""
+        proc.wait()
+        watchdog.cancel()
+        result.timed_out = fired.is_set()
     result.wall_s = time.perf_counter() - start
     result.returncode = proc.returncode
     if current:  # the binary died inside a test: count that test as failed
@@ -363,6 +388,13 @@ def bench_tests(
     if not tests:
         print(paint(f"No test matches '{test_filter}'.", YELLOW))
         return 1
+    if csv_path:  # find a bad path now, not after the whole benchmark
+        try:
+            with open(csv_path, "a"):
+                pass
+        except OSError as error:
+            print(paint(f"Cannot write {csv_path}: {error.strerror}", RED))
+            return 1
     print(
         paint(
             f"Benchmark: {len(tests)} test(s) x {repeat} runs, filter '{test_filter}'",
@@ -472,12 +504,14 @@ def choose(title: str, options: list[str]) -> int | None:
         print("Enter one of the numbers.")
 
 
-def ask(prompt: str, default: str) -> str:
+def ask(prompt: str, default: str) -> str | None:
+    """Returns the answer, the default for an empty line, or None (go back)
+    when the input ends or Ctrl+C is pressed."""
     try:
         return input(f"{prompt} [{default}]: ").strip() or default
     except (EOFError, KeyboardInterrupt):
         print()
-        return default
+        return None
 
 
 def pick_filter(binary: Path) -> str | None:
@@ -502,9 +536,11 @@ def pick_filter(binary: Path) -> str | None:
     return ask("GoogleTest filter", "*")
 
 
-def ask_runs() -> int:
+def ask_runs() -> int | None:
     while True:
         answer = ask("Runs per test", "100")
+        if answer is None:
+            return None
         if answer.isdigit() and int(answer) > 0:
             return int(answer)
         print("Enter a whole number above 0.")
@@ -533,8 +569,12 @@ def menu(build_dir: Path, no_build: bool = False) -> int:
                 run_tests(binary, test_filter)
             else:
                 repeat = ask_runs()
-                csv_path = ask("Save CSV to (empty = no)", "") or None
-                bench_tests(binary, test_filter, repeat, csv_path)
+                if repeat is None:
+                    continue
+                csv_path = ask("Save CSV to (empty = no)", "")
+                if csv_path is None:
+                    continue
+                bench_tests(binary, test_filter, repeat, csv_path or None)
         except KeyboardInterrupt:
             print(paint("\nInterrupted.", YELLOW))
 

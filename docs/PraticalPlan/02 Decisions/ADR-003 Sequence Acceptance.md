@@ -3,6 +3,7 @@ title: ADR-003 — Sequence Acceptance
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - D03
@@ -40,6 +41,8 @@ REQ-COM-006 to 013 (old IDs REQ-SEQ-01 to 04 and REQ-ORD-01 to 04) in [[PC_to_ES
 > 2026-10-20: requirement IDs renumbered to the `REQ-<cat>-NNN` scheme (see [[Requirements]], issue #57). Old IDs are kept in brackets. The decision is unchanged.
 
 > 2026-11-05: "per sender, per session" is now also **per transport**: TCP and UDP each have their own counter, each starting at 1 (`HELLO` and `HELLO_ACK` use seq 1). The rule `seq > last seen` applies to every message on that transport, not only control. **The decision is extended** from control messages to all messages, per transport; the C++ (#99) and Python (#100) libraries must implement it. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5.
+
+> 2026-11-05: `STATE` ([[Protocol Spec v0]] §3) carries only the total `rx_rejected`, not the duplicate, old and gap counters named in §3. How they reach the ground is open in GitHub #149 ([[Open Questions]]). The C++ library (#99) starts the TCP window at seq 1, because `HELLO` and `HELLO_ACK` already used it. The decision is unchanged.
 
 ## 5. Glossary
 

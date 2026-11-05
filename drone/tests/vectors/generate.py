@@ -490,6 +490,20 @@ def group8() -> list[dict]:
             ],
             "final": {"last_ctrl_seq": 2, "last_tcp_seq": 3, "rx_rejected": 1, "gaps": 0},
         },
+        {
+            "name": "frame_on_the_wrong_transport",
+            "description": "Both transports share the session key, so each accepts only its own types (spec §2): "
+                           "a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
+            "key": TEST_KEY.hex(),
+            "state": {"current_session": SESSION, "last_ctrl_seq": 0, "last_tcp_seq": 1},
+            "steps": [
+                {"transport": "tcp", "bytes": tcp("ARM_CONTROL_REQUEST", 2), "expect": "accept"},
+                {"transport": "udp", "bytes": tcp("ARM_CONTROL_REQUEST", 2), "expect": "reject:wrong_transport"},
+                {"transport": "tcp", "bytes": neutral(50), "expect": "reject:wrong_transport"},
+                {"transport": "udp", "bytes": neutral(1), "expect": "accept"},
+            ],
+            "final": {"last_ctrl_seq": 1, "last_tcp_seq": 2, "rx_rejected": 2, "gaps": 0},
+        },
     ]  # fmt: skip
 
 
