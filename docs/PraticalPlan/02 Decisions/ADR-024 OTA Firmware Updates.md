@@ -15,7 +15,7 @@ tags:
 # ADR-024 — OTA Firmware Updates on the Flight ESP
 
 > [!success] Status: ACCEPTED (2026-11-05, GitHub #62)
-> D1 to D3 were decided by the team on 2026-11-04, and the upload lock in D2 on 2026-11-05. D4 and D5 were accepted by BrunoBMFT's approving review of PR #145 (2026-11-05). The status change was meant to be the last commit of #145; that PR merged first, so it is recorded here.
+> D1 to D3 were decided by the team on 2026-11-04, and the upload lock in D2 on 2026-11-05. D4 and D5 were accepted by BrunoBMFT's approving review of PR #145 (2026-11-05). The status change and the follow-ups from that review (release at every boot, the socket check, the bench cases) were meant to be the last commit of #145; that PR merged first, so they are applied here (PR #153).
 > Resolves OD-23 in [[PC_to_ESP]] in part. Signed images are still planned for Module 3.
 
 ## 1. Context
@@ -55,7 +55,11 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
 2. Only then it sends `MSP_SET_ARMING_DISABLED` (MSP 99, value 1), reads `MSP_STATUS` back, and aborts the same way unless `ARMING_DISABLED_MSP` is set. **Never send value 1 without step 1:** Betaflight disarms at once if it gets it while armed (`msp.c`, 4.5.1 and 2026.6.2).
 3. It sets a `locked` flag. While the image is transferred, ArduinoOTA blocks the main loop, so a `HELLO` is not processed: it gets no reply and the ground times out. No session can open, and the wire format does not change.
 
-**Release:** `MSP_SET_ARMING_DISABLED` value 0, sent once and only if `locked` is set, by the main loop. Never from ArduinoOTA's callbacks: the error callback also runs for a wrong password (from the UDP callback, before any lock) and can run twice for one failed upload. After a failed upload the error callback only marks the release as due. After a successful one, the new firmware sends value 0 once at boot. Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle also clears it.
+**Release:** `MSP_SET_ARMING_DISABLED` value 0, in two places:
+- **At every boot**, once, whatever the reason for the boot: after a successful update, after an abort in step 1 or 2 (`ESP.restart()`), and after a watchdog reset or power glitch during the transfer (the old image boots and does not know a lock was taken). This is harmless at any time: value 0 never arms or disarms.
+- **In the running firmware** after a failed upload: sent once and only if `locked` is set, by the main loop. Never from ArduinoOTA's callbacks: the error callback also runs for a wrong password (from the UDP callback, before any lock) and can run twice for one failed upload; it only marks the release as due.
+
+ Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle also clears it.
 
 **Today:** the firmware is still the transparent bridge. It calls `handle()` without any gate and has neither the lock nor sessions. #102 implements D2; until then the D5 procedure is the only protection.
 
@@ -78,16 +82,17 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 
 ## 4. Consequences
 
-- **#102 (link state machine)** implements the D2 gate and the upload lock, and adds them to [[ESP Link State Machine]] (an UPDATING state: the loop blocks and no neutral frames are sent while the image is transferred; value 0 sent at boot).
+- **#102 (link state machine)** implements the D2 gate and the upload lock, and adds them to [[ESP Link State Machine]] (an UPDATING state: the loop blocks and no neutral frames are sent while the image is transferred; value 0 sent at every boot).
   - The MSP allow-list ([[MSP Cheat Sheet]]) gets `MSP_SET_ARMING_DISABLED` (99) as **ESP-originated only**: never forwarded from the network.
   - The ESP polls `MSP_STATUS` itself at 5 Hz ([[ADR-009 ESP to FC Link|ADR-009]]), also with no session open, so 500 ms tolerates two missed replies. These replies are used by the ESP and **not forwarded** to the ground PC.
+  - ArduinoOTA in core 3.1.2 does not close other sockets: `_runUpdate()` never calls `WiFiUDP::stopAll()` or `WiFiClient::stopAll()` (older 2.x cores did). So the bridge's UDP socket stays open after a failed or stale upload. If the core is updated, check this again; if it does close them, #102 reopens the sockets or restarts after any OTA error.
   - **Bench test** (props off, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
-    - an upload is refused while armed, with a session open (SESSION_IDLE, STREAMING) and with no recent `MSP_STATUS`; accepted when disarmed with no session;
+    - an upload is refused while armed, with a session open (SESSION_IDLE, STREAMING, LINK_FAILSAFE) and with no recent `MSP_STATUS`; accepted when disarmed with no session;
     - the upload is aborted if the fresh `MSP_STATUS` in the start callback says armed or does not come;
     - a wrong password is refused while armed, no lock is taken and arming is unaffected;
-    - a request left pending while the gate was closed does not flash when the gate reopens, and arming works afterwards;
+    - a request left pending while the gate was closed does not flash when the gate reopens, arming works afterwards, and the ground can open a session afterwards;
     - during an upload the FC refuses to arm (`MSP_STATUS` shows `ARMING_DISABLED_MSP`) and the ESP refuses `HELLO`;
-    - arming works again after a successful update and after a failed one.
+    - arming works again after a successful update, after a failed one, after an abort in step 2 (readback fails, `ESP.restart()`), and after a reset during the transfer (value 0 at every boot).
 - **ArduinoOTA's password is an MD5 challenge-response.** The password itself is not sent, but the image is neither encrypted nor signed.
   - Anyone who has both passwords and is on the network can flash any image.
   - Signed OTA (RSA-2048 + SHA-256, supported by the ESP8266 core) is planned for Module 3 ([[Roadmap to April 2027]], OD-23).
