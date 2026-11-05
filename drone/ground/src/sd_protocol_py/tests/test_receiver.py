@@ -1,6 +1,14 @@
 import pytest
 
-from sd_protocol import Header, MsgType, Receiver, RxResult, encode_frame, is_accepted
+from sd_protocol import (
+    PAYLOAD_SIZES,
+    Header,
+    MsgType,
+    Receiver,
+    RxResult,
+    encode_frame,
+    is_accepted,
+)
 
 # Same cases as drone/lib/protocol/tests/test_receiver.cpp.
 
@@ -156,3 +164,46 @@ def test_is_accepted():
     assert is_accepted(RxResult.ACCEPTED_GAP)
     assert not is_accepted(RxResult.BAD_TAG)
     assert not is_accepted(RxResult.DUPLICATE_SEQ)
+
+
+def test_unknown_type_rejected_and_seq_not_used():
+    rx = open_receiver()
+    unknown = encode_frame(Header(0x99, 0, SESSION, 1), b"", TEST_KEY)
+    assert rx.receive(unknown) == (RxResult.BAD_TYPE, None)
+    assert (rx.counters.bad_type, rx.counters.rejected, rx.last_seq) == (1, 1, 0)
+    assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED  # seq 1 still free
+
+
+def test_payload_size_must_match_the_type():
+    rx = open_receiver()
+    short = encode_frame(Header(MsgType.SETPOINT, 0, SESSION, 1), bytes(9), TEST_KEY)
+    assert rx.receive(short) == (RxResult.BAD_PAYLOAD_SIZE, None)
+    assert (rx.counters.bad_payload_size, rx.counters.rejected, rx.last_seq) == (
+        1,
+        1,
+        0,
+    )
+    assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED  # seq 1 still free
+
+
+@pytest.mark.parametrize(
+    "msg_type, size, ok",
+    [
+        (MsgType.RESUME_REQUEST, 0, True),
+        (MsgType.RESUME_REQUEST, 1, False),
+        (MsgType.EVENT, 1, False),
+        (MsgType.EVENT, 2, True),
+        (MsgType.EVENT, 66, True),
+        (MsgType.EVENT, 67, False),
+        (MsgType.STATE, 28, True),
+        (MsgType.STATE, 27, False),
+    ],
+)
+def test_payload_size_bounds(msg_type, size, ok):
+    rx = open_receiver()
+    buf = encode_frame(Header(msg_type, 0, SESSION, 1), bytes(size), TEST_KEY)
+    assert is_accepted(rx.receive(buf)[0]) is ok
+
+
+def test_every_type_has_a_payload_size():
+    assert set(PAYLOAD_SIZES) == set(MsgType)

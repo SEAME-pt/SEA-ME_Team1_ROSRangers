@@ -1,6 +1,7 @@
 """Receive rules of spec §4 (1 to 3) for one transport inside one session.
 
-Frame checks, session check, then the sequence window (ADR-003). Use one Receiver
+Frame checks, session check, the message type and its payload size
+(REQ-COM-001, spec §3), then the sequence window (ADR-003). Use one Receiver
 per transport (UDP control, TCP session), as suggested in spec §7.5.
 
 HELLO is not handled here: it arrives before a session exists and is tagged with
@@ -13,8 +14,18 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from sd_protocol.crypto import KEY_SIZE
-from sd_protocol.frame import Frame, RxError, decode_frame
+from sd_protocol.frame import Frame, MsgType, RxError, decode_frame
+from sd_protocol.messages import (
+    CONFIG_ACK_SIZE,
+    CONFIG_KV_SIZE,
+    EVENT_MAX_SIZE,
+    EVENT_MIN_SIZE,
+    HELLO_ACK_SIZE,
+    HELLO_SIZE,
+    STATE_SIZE,
+)
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
+from sd_protocol.setpoint import SETPOINT_SIZE
 
 
 class RxResult(IntEnum):
@@ -32,6 +43,8 @@ class RxResult(IntEnum):
     DUPLICATE_SEQ = 9
     OLD_SEQ = 10
     SEQ_TOO_HIGH = 11  # seq >= 2^31: the sender must open a new session
+    BAD_TYPE = 12  # message type not in spec §3 (REQ-COM-001)
+    BAD_PAYLOAD_SIZE = 13  # payload_len does not match the type (spec §3, REQ-COM-001)
 
 
 def is_accepted(result: RxResult) -> bool:
@@ -52,6 +65,8 @@ class RxCounters:
     duplicate_seq: int = 0
     old_seq: int = 0
     seq_too_high: int = 0
+    bad_type: int = 0
+    bad_payload_size: int = 0
 
 
 _FRAME_REJECTS = {
@@ -60,6 +75,23 @@ _FRAME_REJECTS = {
     RxError.BAD_VERSION: RxResult.BAD_VERSION,
     RxError.BAD_LENGTH: RxResult.BAD_LENGTH,
     RxError.BAD_TAG: RxResult.BAD_TAG,
+}
+
+# Spec §3: payload size per type, as (min, max). Any other size is rejected.
+PAYLOAD_SIZES = {
+    MsgType.HELLO: (HELLO_SIZE, HELLO_SIZE),
+    MsgType.HELLO_ACK: (HELLO_ACK_SIZE, HELLO_ACK_SIZE),
+    MsgType.ARM_CONTROL_REQUEST: (1, 1),
+    MsgType.ARM_CONTROL_ACK: (1, 1),
+    MsgType.RESUME_REQUEST: (0, 0),
+    MsgType.RESUME_ACK: (1, 1),
+    MsgType.BYE: (1, 1),
+    MsgType.CONFIG_GET: (CONFIG_KV_SIZE, CONFIG_KV_SIZE),
+    MsgType.CONFIG_SET: (CONFIG_KV_SIZE, CONFIG_KV_SIZE),
+    MsgType.CONFIG_ACK: (CONFIG_ACK_SIZE, CONFIG_ACK_SIZE),
+    MsgType.EVENT: (EVENT_MIN_SIZE, EVENT_MAX_SIZE),
+    MsgType.SETPOINT: (SETPOINT_SIZE, SETPOINT_SIZE),
+    MsgType.STATE: (STATE_SIZE, STATE_SIZE),
 }
 
 _SEQ_RESULTS = {
@@ -135,6 +167,14 @@ class Receiver:
         # Rule 2: the current session only.
         if frame.header.session_id != self._session_id:
             return self._reject(RxResult.WRONG_SESSION)
+
+        # Type and payload size (REQ-COM-001), before the window: a malformed
+        # frame must not use up its seq.
+        sizes = PAYLOAD_SIZES.get(frame.header.type)
+        if sizes is None:
+            return self._reject(RxResult.BAD_TYPE)
+        if not sizes[0] <= len(frame.payload) <= sizes[1]:
+            return self._reject(RxResult.BAD_PAYLOAD_SIZE)
 
         # Rule 3: newer than the last accepted message (ADR-003).
         result = _SEQ_RESULTS[self._window.accept(frame.header.seq)]

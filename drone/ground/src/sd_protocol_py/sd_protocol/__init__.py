@@ -47,7 +47,13 @@ from sd_protocol.messages import (
     encode_state,
     encode_u8_payload,
 )
-from sd_protocol.receiver import Receiver, RxCounters, RxResult, is_accepted
+from sd_protocol.receiver import (
+    PAYLOAD_SIZES,
+    Receiver,
+    RxCounters,
+    RxResult,
+    is_accepted,
+)
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
 from sd_protocol.setpoint import (
     RC_CHANNELS,
@@ -72,6 +78,7 @@ __all__ = [
     "HELLO_ACK_SIZE",
     "HELLO_SIZE",
     "NONCE_SIZE",
+    "PAYLOAD_SIZES",
     "RC_CHANNELS",
     "RC_MAX",
     "RC_MID",
