@@ -66,7 +66,7 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 | 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 (reserved in v0: sent as 0, ignored) |
 | 0x80 | STATE | 28 | esp_state u8 (§3.1), override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
 
-Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, so they change no state (REQ-COM-001, REQ-COM-004).
+Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order type → size → `mode` (§4 rule 4) → `seq`, so they change no state (REQ-COM-001, REQ-COM-004).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
 
@@ -160,7 +160,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and P
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
 
-- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 7 list several steps or the expected channels.
+- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
 - Adding a vector is free. Changing or deleting one changes the protocol and needs a dated entry in §8.
 
