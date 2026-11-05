@@ -144,10 +144,12 @@ class Receiver:
         return self._window.counters
 
     def start_session(
-        self, session_id: int, session_key: bytes, transport: Transport
+        self, session_id: int, rx_key: bytes, transport: Transport
     ) -> bool:
         """Opens a session on one transport: the key and session_id every frame must match.
 
+        `rx_key` is the receiving direction key (spec §1, #150): esp_to_ground on
+        the ground, ground_to_esp on the ESP; never the session key itself.
         Only the types of `transport` (spec §2) are accepted. The window starts at 1
         on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on UDP.
         session_id 0 is reserved for HELLO and is refused (returns False); then
@@ -155,12 +157,12 @@ class Receiver:
         same (session_id, key) twice: the window restarts, so every frame of that
         session would be accepted again.
         """
-        if len(session_key) != KEY_SIZE:
-            raise ValueError(f"session key must be {KEY_SIZE} bytes")
+        if len(rx_key) != KEY_SIZE:
+            raise ValueError(f"key must be {KEY_SIZE} bytes")
         transport = Transport(transport)  # ValueError before anything changes
         if session_id == 0:
             return False
-        self._key = bytes(session_key)
+        self._key = bytes(rx_key)
         self._session_id = session_id
         self._transport = transport
         self._in_session = True

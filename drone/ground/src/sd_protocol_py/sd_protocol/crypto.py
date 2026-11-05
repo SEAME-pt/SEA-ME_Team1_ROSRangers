@@ -36,6 +36,8 @@ def derive_direction_keys(session_key: bytes) -> DirectionKeys:
     Each side seals with its sending key and checks with its receiving key, so a
     frame sent back to its own sender (reflection) fails the tag. HELLO and
     HELLO_ACK stay tagged with the PSK; the session key itself tags nothing.
+    Python cannot wipe a key from memory: the caller only drops its reference
+    to the session key (the C++ library wipes it).
     """
     if len(session_key) != KEY_SIZE:
         raise ValueError(f"session key must be {KEY_SIZE} bytes")

@@ -9,6 +9,8 @@ import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
+from sd_protocol.crypto import NONCE_SIZE
+
 # --- Code values: Protocol Spec v0 §3.1 (v1.1, decided on #142, 2026-11-05).
 # Change here and in messages.hpp together. Values are part of the wire format:
 # never renumber or reuse.
@@ -77,7 +79,6 @@ def transport_of(msg_type: int) -> Transport | None:
 
 # --- Payloads.
 
-NONCE_SIZE = 16
 FW_VERSION_SIZE = 12
 EVENT_TEXT_MAX = 64
 
