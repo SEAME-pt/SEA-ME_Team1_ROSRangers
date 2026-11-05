@@ -67,7 +67,7 @@ tags:
 - [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
 
 ### Protocol (after the 2026-11-03 review)
-Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in writing on GitHub #142 on 2026-11-05 and recorded in [[Protocol Spec v0]] §7.5.
+Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in writing on GitHub #142 on 2026-11-05 ([[Protocol Spec v0]] §7.5), except the three items still open below.
 - [x] `CONFIG_ACK` message (REQ-COM-018) → `0x22 CONFIG_ACK`, results 0–5 (Info and Safety refusals apart)
 - [x] Header `flags` bit 0 "ack requested" → removed, reserved in v0
 - [x] Values of `ARM_CONTROL_ACK.result`, `RESUME_ACK.result`, `BYE.reason`, `EVENT.code` → Protocol Spec v0 §3.1
@@ -79,6 +79,8 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 - [x] Handling of repeated malformed TCP input (REQ-COM-019) → bad tag dropped; bad framing closes TCP
 - [x] Default `telemetry_rate_hz` → 25 Hz (was 20)
 - [ ] Wi-Fi re-association: retry and backoff (REQ-COM-023), to be settled with the gateway firmware (#101)
+- [ ] `STATE.rx_rejected` (u16) from a 32-bit counter: saturate or wrap; does a frame with no session open count? (#149)
+- [ ] How the per-reason and ADR-003 counters (duplicates, old, gaps) reach the ground (#149)
 
 ### Process
 - [ ] **Second track label per issue:** allow one extra `track:` label when a task really belongs to two tracks (e.g. A+B bench tests, B+E ThoneFlow spike), instead of exactly one. Raised 2026-10-26; the team leans towards allowing it. Sprint 2 issues #104 and #108 already use two. Decide at the next weekly; then update the rule in `CLAUDE.md` (GitHub #110).

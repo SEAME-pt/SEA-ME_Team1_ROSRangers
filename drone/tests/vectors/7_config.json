@@ -1,0 +1,104 @@
+[
+  {
+    "name": "config_ack_result_0_ok",
+    "description": "Reply to CONFIG_GET of 0x80 telemetry_rate_hz: OK, value 25",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 2,
+      "t_send_us": 2000,
+      "config_key": 128,
+      "result": 0,
+      "value": 25
+    },
+    "bytes": "53440122000006007856341202000000d0070000800019000000d2a3493bfe30fe1d",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_result_1_unknown_key",
+    "description": "CONFIG_SET of key 0xC0 (reserved range): unknown key, value 0 (no value)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 3,
+      "t_send_us": 3000,
+      "config_key": 192,
+      "result": 1,
+      "value": 0
+    },
+    "bytes": "53440122000006007856341203000000b80b0000c001000000004639c198188a6f14",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_result_2_read_only",
+    "description": "CONFIG_SET of Info key 0x01 config_table_version: read-only, value 1 unchanged",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 4,
+      "t_send_us": 4000,
+      "config_key": 1,
+      "result": 2,
+      "value": 1
+    },
+    "bytes": "53440122000006007856341204000000a00f0000010201000000da4261c5d043180c",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_result_3_safety_parameter",
+    "description": "CONFIG_SET of Safety key 0x40 t_loss_ms: firmware only, value 250 unchanged",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 5,
+      "t_send_us": 5000,
+      "config_key": 64,
+      "result": 3,
+      "value": 250
+    },
+    "bytes": "53440122000006007856341205000000881300004003fa000000d8bdf4af1e46fb27",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_result_4_out_of_range",
+    "description": "CONFIG_SET of 0x80 telemetry_rate_hz to 60 (range 1-50): out of range, value 25 unchanged",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 6,
+      "t_send_us": 6000,
+      "config_key": 128,
+      "result": 4,
+      "value": 25
+    },
+    "bytes": "5344012200000600785634120600000070170000800419000000c7afc0c116dabc96",
+    "expect": "accept"
+  },
+  {
+    "name": "config_ack_result_5_control_enabled",
+    "description": "CONFIG_SET of 0x81 event_level while STREAMING: refused, value 1 unchanged",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "CONFIG_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 7,
+      "t_send_us": 7000,
+      "config_key": 129,
+      "result": 5,
+      "value": 1
+    },
+    "bytes": "53440122000006007856341207000000581b0000810501000000f23ba4ac01f93999",
+    "expect": "accept"
+  }
+]
