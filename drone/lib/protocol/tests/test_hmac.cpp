@@ -139,4 +139,6 @@ TEST(DirectionKeys, AreHmacOfTheSessionKeyWithG2eAndE2g) {
             hex(keys.esp_to_ground.bytes, sd::kKeySize));
   EXPECT_NE(hex(keys.ground_to_esp.bytes, sd::kKeySize),
             hex(session.bytes, sd::kKeySize));
+  EXPECT_NE(hex(keys.esp_to_ground.bytes, sd::kKeySize),
+            hex(session.bytes, sd::kKeySize));
 }

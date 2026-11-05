@@ -50,7 +50,7 @@ Optional fields:
 | File | Group | Vectors |
 |---|---|---|
 | `1_valid_frames.json` | 1 Valid frames | 15 |
-| `2_hmac.json` | 2 HMAC | 6 |
+| `2_hmac.json` | 2 HMAC | 7 |
 | `3_header.json` | 3 Header | 9 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
@@ -146,9 +146,9 @@ Proves: the byte layout is the same on both sides.
 }
 ```
 
-### Group 2: HMAC (6 vectors)
+### Group 2: HMAC (7 vectors)
 
-`hello_signed_with_psk` (accept), `setpoint_signed_with_ground_to_esp_key` (accept), `state_signed_with_esp_to_ground_key` (accept), `reflected_setpoint_rejected` (the ground's own SETPOINT checked with the ESP→ground key: `reject:bad_tag`), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
+`hello_signed_with_psk` (accept), `setpoint_signed_with_ground_to_esp_key` (accept), `state_signed_with_esp_to_ground_key` (accept), `reflected_setpoint_rejected` (the ground's own SETPOINT checked with the ESP→ground key: `reject:bad_tag`), `reflected_state_rejected` (the ESP's own STATE checked with the ground→ESP key: `reject:bad_tag`), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
 
 Proves: the tag is computed over the right bytes with the key of the right direction, any changed bit is refused, and a frame sent back to its sender is refused (#150).
 
@@ -290,7 +290,7 @@ Proves: both sides put the same number in `result` and the same `value` (current
 - `header_flags_bit0_ignored`, `setpoint_flags_nonzero_ignored`: the reserved bits are accepted and ignored.
 - `hello_ack_signed_with_psk` (accept with the PSK) and `hello_ack_signed_with_session_key` (`reject:bad_tag` when checked with the PSK).
 - `tcp_and_udp_seq_apart` (steps): UDP 1, TCP 2, UDP 2, TCP 3 accepted, then TCP 2 again `reject:old_seq`. The TCP Receiver starts at 1 because `HELLO` used seq 1.
-- `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the session key, so each Receiver accepts only its own types (spec §2).
+- `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the direction keys, so each Receiver accepts only its own types (spec §2).
 
 Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq` per transport.
 
@@ -303,6 +303,8 @@ Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq`
 | **Test vector** | One fixed example (input + expected result) shared by both implementations |
 | **Golden vector** | Same thing; "golden" means it is the reference everyone must match |
 | **HMAC tag** | 8-byte signature at the end of each frame (truncated HMAC-SHA256, ADR-002) |
+| **Direction key** | Key that tags frames going one way: `g2e` (ground→ESP) or `e2g` (ESP→ground), derived from the session key (spec §1) |
+| **Reflection** | A frame sent back to its own sender. Refused because each direction has its own key |
 | **PSK** | Pre-shared key, the real secret. Never in the vectors |
 | **Regression vector** | A vector added after a bug, so the bug cannot come back |
 | **AETR** | RC channel order: roll, pitch, throttle, yaw, then aux |

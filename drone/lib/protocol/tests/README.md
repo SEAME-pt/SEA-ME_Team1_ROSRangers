@@ -94,12 +94,12 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.SeqDuplicateExample` | Sends seq 1, 2, 2, 3: the second 2 is refused (duplicate), the others are accepted | A copied message can never act twice |
 | `Receiver.OlderAndTooHighRejected` | After seq 7, seq 3 is refused (old) and seq 2³¹ is refused (too high, new session needed) | A late message never moves the drone back to an old stick position |
 | `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`; the rest is open in #149), and a refused frame leaves no trace |
-| `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | Same key on both sides, or nothing works |
+| `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | The sender's and the receiver's key for that direction must match, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
 | `Receiver.MalformedPayloadRejectedWithoutUsingTheSeq` | Three sealed frames with seq 5: unknown type 0x99, a 9-byte SETPOINT, a SETPOINT with mode 2. Each is refused and counted under its own reason; seq 1 is still accepted afterwards | A malformed frame changes nothing, not even the message number (REQ-COM-001, REQ-COM-004) |
 | `Receiver.TcpSessionStartsAfterHello` | A TCP session starts at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap | HELLO already used seq 1, so there is no false gap after the handshake |
-| `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the session key: without this check a captured frame could be replayed on the other one |
+| `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the direction keys: without this check a captured frame could be replayed on the other one |
 | `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
@@ -161,7 +161,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 59 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 60 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |

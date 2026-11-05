@@ -254,7 +254,7 @@ TEST(Receiver, TcpSessionStartsAfterHello) {
   EXPECT_EQ(tcp.seq_counters().gaps, 0U);
 }
 
-// Spec §2: both transports share the session key, so each Receiver accepts
+// Spec §2: both transports share the direction key, so each Receiver accepts
 // only its own types. A captured TCP frame replayed on UDP, or a SETPOINT sent
 // on TCP, is refused and moves neither window.
 TEST(Receiver, FrameFromTheOtherTransportRejected) {

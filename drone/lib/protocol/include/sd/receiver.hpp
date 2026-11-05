@@ -68,17 +68,19 @@ struct RxCounters {
 // timer for them (REQ-SAF-011).
 class Receiver {
 public:
-  // Opens a session on one transport: the key and session_id every frame must
-  // match, and only the types of that transport (spec §2) are accepted, so a
-  // frame captured on one transport cannot be replayed on the other. The
-  // window starts at 1 on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and
-  // at 0 on UDP. Returns false for session_id 0 (reserved for HELLO); then
-  // nothing changes, and a session that was open stays open.
-  // The window restarts here, so the caller (#102) must never open the same
-  // (session_id, key) twice: every frame of that session would be accepted
-  // again. Fresh nonces give a fresh key for each HELLO (spec §1).
-  [[nodiscard]] bool start_session(std::uint32_t session_id,
-                                   const Key &session_key, Transport transport);
+  // Opens a session on one transport. `rx_key` is the receiving direction key
+  // (spec §1, #150): ground_to_esp on the ESP, esp_to_ground on the ground;
+  // never the session key itself. Every frame must match it and session_id, and
+  // only the types of that transport (spec §2) are accepted, so a frame
+  // captured on one transport cannot be replayed on the other. The window
+  // starts at 1 on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on
+  // UDP. Returns false for session_id 0 (reserved for HELLO); then nothing
+  // changes, and a session that was open stays open. The window restarts here,
+  // so the caller (#102) must never open the same (session_id, key) twice:
+  // every frame of that session would be accepted again. Fresh nonces give a
+  // fresh key for each HELLO (spec §1).
+  [[nodiscard]] bool start_session(std::uint32_t session_id, const Key &rx_key,
+                                   Transport transport);
   void end_session();
 
   // `out` is written only when the result is accepted (is_accepted()).

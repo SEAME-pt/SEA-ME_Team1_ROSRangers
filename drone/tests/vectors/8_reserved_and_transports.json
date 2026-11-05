@@ -114,7 +114,7 @@
   },
   {
     "name": "frame_on_the_wrong_transport",
-    "description": "Both transports share the session key, so each accepts only its own types (spec §2): a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
+    "description": "Both transports share the direction key, so each accepts only its own types (spec §2): a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
     "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "state": {
       "current_session": 305419896,

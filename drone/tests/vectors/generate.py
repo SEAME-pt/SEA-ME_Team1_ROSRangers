@@ -342,6 +342,16 @@ def group2() -> list[dict]:
               "STATE tagged with the ESP-to-ground key = HMAC-SHA256(session key, 'e2g')",
               state, e2g, direction="e2g", **nonces),
         {
+            "name": "reflected_state_rejected",
+            "description": "The ESP's own STATE (ESP-to-ground key) sent back to the ESP, which checks "
+                           "with the ground-to-ESP key: refused (#150)",
+            "key": g2e.hex(),
+            "direction": "g2e",
+            **nonces,
+            "bytes": encode(state, e2g).hex(),
+            "expect": "reject:bad_tag",
+        },
+        {
             "name": "reflected_setpoint_rejected",
             "description": "The ground's own SETPOINT (ground-to-ESP key) sent back to the ground, which checks "
                            "with the ESP-to-ground key: refused, so a reflection never reaches the ground (#150)",
@@ -535,7 +545,7 @@ def group8() -> list[dict]:
         },
         {
             "name": "frame_on_the_wrong_transport",
-            "description": "Both transports share the session key, so each accepts only its own types (spec §2): "
+            "description": "Both transports share the direction key, so each accepts only its own types (spec §2): "
                            "a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
             "key": TEST_KEY.hex(),
             "state": {"current_session": SESSION, "last_ctrl_seq": 0, "last_tcp_seq": 1},

@@ -9,7 +9,7 @@ constexpr std::size_t kSha256Size = 32;
 constexpr std::size_t kKeySize = 32;
 constexpr std::size_t kNonceSize = 16;
 
-// A 32-byte HMAC key: the PSK or a session key (ADR-002).
+// A 32-byte HMAC key: the PSK, the session key or a direction key (ADR-002).
 struct Key {
   std::uint8_t bytes[kKeySize];
 };

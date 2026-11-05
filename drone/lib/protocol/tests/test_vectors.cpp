@@ -327,9 +327,14 @@ TEST_P(Vector, Check) {
 
   // Group 2: the key is derived from the PSK and the nonces: the session key,
   // then the key of one direction ("g2e" or "e2g", ADR-002, #150).
+  if (v.contains("direction")) {
+    ASSERT_TRUE(v.contains("psk")) << "direction needs psk and the nonces";
+  }
   if (v.contains("psk")) {
     const Bytes ground = from_hex(v.at("ground_nonce"));
     const Bytes esp = from_hex(v.at("esp_nonce"));
+    ASSERT_EQ(ground.size(), sd::kNonceSize) << "ground_nonce is 16 bytes";
+    ASSERT_EQ(esp.size(), sd::kNonceSize) << "esp_nonce is 16 bytes";
     const sd::Key session = sd::derive_session_key(key_from_hex(v.at("psk")),
                                                    ground.data(), esp.data());
     sd::Key derived = session;
@@ -477,7 +482,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 59U);
+  EXPECT_GE(names.size(), 60U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";
