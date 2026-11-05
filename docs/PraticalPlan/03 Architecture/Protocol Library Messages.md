@@ -3,6 +3,7 @@ title: Protocol Library Messages
 type: architecture
 status: draft
 date: 2026-11-03
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - architecture
@@ -13,8 +14,8 @@ tags:
 
 # Protocol Library Messages
 
-> [!warning] Status: DRAFT, code values pending #142
-> Payload codecs of the C++ protocol library (`drone/lib/protocol`, #99, PR #143) for the messages in [[Protocol Spec v0]] §3. The code values in §5 are the **suggested** answers of #142 (spec §7.5), not frozen. For firmware (#101, #102) and for keeping the Python twin (#100) in sync.
+> [!info] Status: DRAFT, follows Protocol Spec v0 v1.1.1
+> Payload codecs of the C++ protocol library (`drone/lib/protocol`, #99, PR #143) for the messages in [[Protocol Spec v0]] §3. The code values in §5 are the ones decided on #142 (spec §3.1, 2026-11-05). For firmware (#101, #102) and for keeping the Python twin (#100) in sync.
 
 ---
 
@@ -28,7 +29,7 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then `check_payload()` (known `type`, §3 payload size, `SETPOINT.mode` 0 or 1), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
-Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK ([[Protocol Spec v0]] §7.5 suggests the PSK also tags `HELLO_ACK`), not with the Receiver.
+Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver. Then it opens one Receiver per transport (`seq` is counted per transport, spec §4 rule 3): the UDP one with `start_session(id, key)`, the TCP one with `start_session(id, key, 1)`, because `HELLO` and `HELLO_ACK` already used seq 1.
 
 ## 2. API contract (all codecs)
 
@@ -36,7 +37,7 @@ Same contract as `encode_setpoint` / `decode_setpoint`.
 
 | Rule | Detail |
 |---|---|
-| `encode_*(msg, out, out_cap)` | Writes the payload, returns its size. Returns **0** if `out_cap` is too small (and, for `EVENT`, if `text_len > 64`) |
+| `encode_*(msg, out, out_cap)` | Writes the payload, returns its size. Returns **0** if `out` is null or `out_cap` is too small (and, for `EVENT`, if `text_len > 64`) |
 | `decode_*(payload, len, out)` | Returns `false` if `payload` is `nullptr` or `len` is not the payload size. Fixed-size messages need the exact size; `EVENT` accepts 2 to 66 bytes |
 | No value checks | Decode never checks values (unknown `mode`, unknown key, out-of-range code). That is the caller's job (§6) |
 | Byte order | Little-endian for every integer (spec §1), via `src/le.hpp` |
@@ -50,12 +51,12 @@ Same contract as `encode_setpoint` / `decode_setpoint`.
 | 0x01 | HELLO | `encode_hello` / `decode_hello` | 17 (`kHelloSize`) | `proto`, `ground_nonce[16]` |
 | 0x02 | HELLO_ACK | `encode_hello_ack` / `decode_hello_ack` | 32 (`kHelloAckSize`) | `session_id`, `esp_nonce[16]`, `fw_version[12]` (raw bytes, not NUL-terminated) |
 | 0x03 | ARM_CONTROL_REQUEST | `encode_u8_payload` / `decode_u8_payload` | 1 | `mask` |
-| 0x04 | ARM_CONTROL_ACK | `encode_u8_payload` / `decode_u8_payload` | 1 | `result` (`AckResult`, §5, suggested) |
+| 0x04 | ARM_CONTROL_ACK | `encode_u8_payload` / `decode_u8_payload` | 1 | `result` (`AckResult`, §5) |
 | 0x05 | RESUME_REQUEST | none | 0 | Empty payload: send `payload_len` 0, nothing to decode |
-| 0x06 | RESUME_ACK | `encode_u8_payload` / `decode_u8_payload` | 1 | `result` (`AckResult`, §5, suggested) |
-| 0x07 | BYE | `encode_u8_payload` / `decode_u8_payload` | 1 | `reason` (`ByeReason`, §5, suggested) |
-| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | `encode_config_kv` / `decode_config_kv` | 5 (`kConfigKvSize`) | Same payload (`ConfigKv`: key u8, value i32). Keys in spec §7.3. What `value` means in a `CONFIG_GET` is not decided (the codec just carries it) |
-| 0x22 | CONFIG_ACK | `encode_config_ack` / `decode_config_ack` | 6 (`kConfigAckSize`) | key u8, result u8 (`ConfigResult`), value i32. **Suggested in #142, not in spec §3 yet** |
+| 0x06 | RESUME_ACK | `encode_u8_payload` / `decode_u8_payload` | 1 | `result` (`AckResult`, §5) |
+| 0x07 | BYE | `encode_u8_payload` / `decode_u8_payload` | 1 | `reason` (`ByeReason`, §5) |
+| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | `encode_config_kv` / `decode_config_kv` | 5 (`kConfigKvSize`) | Same payload (`ConfigKv`: key u8, value i32). Keys in spec §7.3. `value` is ignored in a `CONFIG_GET` and sent as 0 (spec §3) |
+| 0x22 | CONFIG_ACK | `encode_config_ack` / `decode_config_ack` | 6 (`kConfigAckSize`) | key u8, result u8 (`ConfigResult`), value i32: the current value, or 0 when there is none (spec §3) |
 | 0x40 | EVENT | `encode_event` / `decode_event` | 2–66 | Variable length, see below |
 | 0x60 | SETPOINT | `encode_setpoint` / `decode_setpoint` (`setpoint.hpp`) | 10 (`kSetpointSize`) | Plus `setpoint_to_rc` (spec §4–5) |
 | 0x80 | STATE | `encode_state` / `decode_state` | 28 (`kStateSize`) | Layout in §4 |
@@ -88,14 +89,13 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 
 "Codes" are the numbers carried in `result`, `reason`, `esp_state` and `code` fields. They are defined once, in the block at the top of `include/sd/messages.hpp`.
 
-> [!warning] Not frozen
-> These values and the type `0x22 CONFIG_ACK` are the **suggested answers of #142** (spec §7.5). Do not treat them as final until a dated entry in [[Protocol Spec v0]] §8 records the decision. The numbers are wire format: once frozen, never renumber or reuse one. When #142 is decided, change `messages.hpp`, the Python twin (#100) and the vectors in `drone/tests/vectors/` **together**. After the decision, the table lives in the spec and this section links to it.
+The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-05); the spec wins if the two ever disagree. They are wire format: never renumber or reuse one. The test `Codes.MatchSpecSection31` pins every value.
 
 | Enum | Used in | Values |
 |---|---|---|
 | `AckResult` (u8) | `ARM_CONTROL_ACK.result`, `RESUME_ACK.result` | 0 `kOk`, 1 `kWrongState`, 2 `kMaskMismatch`, 3 `kResumeConditionNotMet` |
 | `ByeReason` (u8) | `BYE.reason` | 0 `kNormal`, 1 `kTimeout`, 2 `kProtocolError`, 3 `kReplaced` (by a new session) |
-| `ConfigResult` (u8) | `CONFIG_ACK.result` | 0 `kOk`, 1 `kUnknownKey`, 2 `kReadOnly`, 3 `kOutOfRange`, 4 `kControlEnabled` (OD-16) |
+| `ConfigResult` (u8) | `CONFIG_ACK.result` | 0 `kOk`, 1 `kUnknownKey`, 2 `kReadOnly` (Info key), 3 `kSafetyParameter` (Safety key, firmware only), 4 `kOutOfRange`, 5 `kControlEnabled` (OD-16). A `CONFIG_SET` is checked 5 first, then 1–4 |
 | `EspState` (u8) | `STATE.esp_state` | 0 `kBoot`, 1 `kNoSession`, 2 `kSessionIdle`, 3 `kStreaming`, 4 `kLinkFailsafe` ([[ESP Link State Machine]]) |
 | `EventCode` (u16) | `EVENT.code` | `0x0101` `kSetpointStale`, `0x0102` `kLinkFailsafeEntered`, `0x0103` `kLinkResumed` |
 
@@ -111,16 +111,17 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | Frame, session and sequence checks | `Receiver` (spec §4 rules 1–3) |
 | Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001, REQ-COM-002 for `mode`) |
 | `type` allowed on this transport (TCP vs UDP, spec §2) | #102 |
-| Unknown codes, value ranges | #102 (range-limit rule still open in #142) |
-| Config key exists, access (RO / RW), write range, no write while control is enabled | #102, answers with `CONFIG_ACK` (spec §7.3) |
-| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: not decided) |
-| `SETPOINT.flags` and the header `reserved` byte are not checked | #102 / spec §7.5 (reserved, sent as 0, ignored) |
+| One Receiver per transport; the TCP one starts at seq 1 | #102 (`start_session(id, key, 1)`) |
+| Unknown codes, value ranges | #102 (spec §4 rule 4) |
+| Config key exists, access (Info / Safety / Tunable), write range, no write while control is enabled, in the order of spec §3.1 | #102, answers with `CONFIG_ACK` |
+| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: open in #149) |
+| `SETPOINT.flags` and the header `reserved` byte are not checked | Nobody: reserved, sent as 0, ignored (spec §3; vectors in group 8) |
 
 **Not done yet:**
 
 - No named constants for the config keys of spec §7.3 (`0x01 config_table_version` … `0x81 event_level`). Use the numbers from the spec for now.
 - No numbers for `flow_status` (the [[ThoneFlow]] §8.1 names have no wire values yet).
-- Group 7 vectors (CONFIG_ACK results) wait for the #142 decision. The 12 message types have vectors in `drone/tests/vectors/1_valid_frames.json`.
+- The `CONFIG_SET` check order (spec §3.1) is tested with the link state machine (#102), not in the shared vectors: it needs the ESP state and the key table.
 
 ## 7. How to test
 
@@ -146,7 +147,7 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Little-endian** | Byte order with the least significant byte first. Used for every integer in the protocol. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
 | **NUL-terminated** | A C string that ends with a `0` byte. `fw_version` and `EVENT.text` are not; their length is fixed or comes from `payload_len`. |
-| **OD-16** | Decision ID in [[PC_to_ESP]] (accepted): configuration is rejected while control is enabled. |
+| **OD-16** | Decision ID in [[PC_to_ESP]] (accepted): configuration is rejected while control is enabled, with no exception. |
 | **Payload** | The bytes between the 20-byte header and the 8-byte tag of a frame ([[Protocol Spec v0]] §1). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **Receiver** | The library class that checks each frame (tag, session, type, payload size, `SETPOINT.mode`, seq) before any payload is used. |

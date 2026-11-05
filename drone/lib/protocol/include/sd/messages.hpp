@@ -13,9 +13,8 @@
 
 namespace sd {
 
-// --- Code values. Suggested answers of #142 (spec §7.5), NOT frozen yet:
-// change here only. Values are part of the wire format: never renumber or
-// reuse.
+// --- Code values, spec §3.1 (decided on #142, 2026-11-05). Values are part of
+// the wire format: never renumber or reuse. A code no longer used is retired.
 
 // ARM_CONTROL_ACK.result and RESUME_ACK.result.
 enum class AckResult : std::uint8_t {
@@ -32,13 +31,16 @@ enum class ByeReason : std::uint8_t {
   kReplaced = 3, // replaced by a new session
 };
 
-// CONFIG_ACK.result.
+// CONFIG_ACK.result. A CONFIG_SET is checked in the order kControlEnabled, then
+// 1, 2, 3, 4; the first refusal that applies is returned (spec §3.1). The
+// check itself is the link state machine's job (#102).
 enum class ConfigResult : std::uint8_t {
   kOk = 0,
   kUnknownKey = 1,
-  kReadOnly = 2,
-  kOutOfRange = 3,
-  kControlEnabled = 4, // refused while control is enabled (OD-16)
+  kReadOnly = 2,        // Info key (0x01-0x3F)
+  kSafetyParameter = 3, // Safety key (0x40-0x7F): firmware only
+  kOutOfRange = 4,      // never clamped (spec §7.3 rule 4)
+  kControlEnabled = 5,  // refused while STREAMING (OD-16)
 };
 
 // STATE.esp_state. A stale setpoint is an event, not a state.

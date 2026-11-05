@@ -97,6 +97,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
 | `Receiver.MalformedPayloadRejectedWithoutUsingTheSeq` | Three sealed frames with seq 5: unknown type 0x99, a 9-byte SETPOINT, a SETPOINT with mode 2. Each is refused and counted under its own reason; seq 1 is still accepted afterwards | A malformed frame changes nothing, not even the message number (REQ-COM-001, REQ-COM-004) |
+| `Receiver.TcpSessionStartsAfterHello` | A session opened at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap; a start at 2³¹ is refused | The TCP Receiver does not count a false gap after the handshake |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -108,7 +109,8 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `HelloAck.BytesAndRoundTrip` | HELLO_ACK (session ID, ESP nonce, firmware "v0.1"): the session ID is stored lowest byte first (44 33 22 11) and reads back the same | Little-endian order, as the spec says |
 | `U8Payload.RoundTrip` | A one-byte content (BYE reason "replaced" = 3) goes to bytes and back | Used by several short commands |
 | `ConfigKv.BytesAndRoundTrip` | Config key 0x80 with value −2 → `80 FE FF FF FF` and back | Negative numbers are stored correctly |
-| `ConfigAck.BytesAndRoundTrip` | Reply for key 0x40, result "read only" (2), value 250 → `40 02 FA 00 00 00` | The ESP's answer to a config change |
+| `ConfigAck.BytesAndRoundTrip` | Reply for Safety key 0x40, result "safety parameter, firmware only" (3), value 250 → `40 03 FA 00 00 00` | The ESP's answer to a config change |
+| `Codes.MatchSpecSection31` | Every result, reason, state and event number, and `CONFIG_ACK` = 0x22, equals spec §3.1 | A renumbered code would silently break the ground |
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
 | `State.BytesAndRoundTrip` | STATE telemetry (link state, last seq, attitude, heading, battery, flow, counters) gives exactly the 28 expected bytes and reads back the same | This is what the ground sees from the drone |
@@ -129,6 +131,7 @@ Accept only numbers higher than the last one accepted. Gaps are fine (they are c
 | `SeqWindow.SeqZeroIsNeverAccepted` | seq 0 is refused | Numbering starts at 1 |
 | `SeqWindow.TooHighNeedsNewSession` | 2³¹−1 is accepted; 2³¹ and above are refused | Prevents the number from wrapping around to 0 |
 | `SeqWindow.ResetStartsANewSession` | After a reset, the last number is 0 and seq 1 is accepted again | Each session counts from 1 |
+| `SeqWindow.ResetToAStartingSeq` | Reset to 1: seq 1 is a duplicate, seq 2 is accepted with no gap | On TCP, HELLO and HELLO_ACK already used seq 1 |
 
 ## Setpoint: the stick command
 | Test | What it does | Why it matters |
@@ -154,13 +157,15 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 44 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 56 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
 | `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
+| `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
+| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart | The 2026-11-05 decisions hold on both sides |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |

@@ -73,15 +73,15 @@ TEST(ConfigKv, BytesAndRoundTrip) {
 
 TEST(ConfigAck, BytesAndRoundTrip) {
   const sd::ConfigAck in{
-      0x40, static_cast<std::uint8_t>(sd::ConfigResult::kReadOnly), 250};
+      0x40, static_cast<std::uint8_t>(sd::ConfigResult::kSafetyParameter), 250};
   std::uint8_t buf[sd::kConfigAckSize];
   ASSERT_EQ(sd::encode_config_ack(in, buf, sizeof(buf)), sd::kConfigAckSize);
   EXPECT_EQ(bytes(buf, sizeof(buf)),
-            (std::vector<std::uint8_t>{0x40, 2, 0xFA, 0, 0, 0}));
+            (std::vector<std::uint8_t>{0x40, 3, 0xFA, 0, 0, 0}));
   sd::ConfigAck out{};
   ASSERT_TRUE(sd::decode_config_ack(buf, sizeof(buf), out));
   EXPECT_EQ(out.key, 0x40);
-  EXPECT_EQ(out.result, 2);
+  EXPECT_EQ(out.result, 3);
   EXPECT_EQ(out.value, 250);
 }
 
@@ -266,4 +266,31 @@ TEST(CheckPayload, UnknownTypesAndModesRefused) {
     EXPECT_EQ(sd::check_payload(setpoint, sp, sizeof(sp)),
               PayloadCheck::kBadMode);
   }
+}
+
+// Spec §3.1 (2026-11-05): the numbers are the wire format.
+TEST(Codes, MatchSpecSection31) {
+  EXPECT_EQ(static_cast<int>(sd::EspState::kBoot), 0);
+  EXPECT_EQ(static_cast<int>(sd::EspState::kNoSession), 1);
+  EXPECT_EQ(static_cast<int>(sd::EspState::kSessionIdle), 2);
+  EXPECT_EQ(static_cast<int>(sd::EspState::kStreaming), 3);
+  EXPECT_EQ(static_cast<int>(sd::EspState::kLinkFailsafe), 4);
+  EXPECT_EQ(static_cast<int>(sd::AckResult::kOk), 0);
+  EXPECT_EQ(static_cast<int>(sd::AckResult::kWrongState), 1);
+  EXPECT_EQ(static_cast<int>(sd::AckResult::kMaskMismatch), 2);
+  EXPECT_EQ(static_cast<int>(sd::AckResult::kResumeConditionNotMet), 3);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kOk), 0);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kUnknownKey), 1);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kReadOnly), 2);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kSafetyParameter), 3);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kOutOfRange), 4);
+  EXPECT_EQ(static_cast<int>(sd::ConfigResult::kControlEnabled), 5);
+  EXPECT_EQ(static_cast<int>(sd::ByeReason::kNormal), 0);
+  EXPECT_EQ(static_cast<int>(sd::ByeReason::kTimeout), 1);
+  EXPECT_EQ(static_cast<int>(sd::ByeReason::kProtocolError), 2);
+  EXPECT_EQ(static_cast<int>(sd::ByeReason::kReplaced), 3);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kSetpointStale), 0x0101);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkFailsafeEntered), 0x0102);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkResumed), 0x0103);
+  EXPECT_EQ(static_cast<int>(sd::MsgType::kConfigAck), 0x22);
 }

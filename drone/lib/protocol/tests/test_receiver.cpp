@@ -241,6 +241,21 @@ TEST(Receiver, MalformedPayloadRejectedWithoutUsingTheSeq) {
   EXPECT_EQ(rx.receive(good.data(), good.size(), f), sd::RxResult::kAccepted);
 }
 
+// TCP Receiver: HELLO used seq 1, so the session starts at 1 and seq 2 is in
+// order. A start at or above 2^31 is refused and leaves the Receiver closed.
+TEST(Receiver, TcpSessionStartsAfterHello) {
+  sd::Receiver rx;
+  ASSERT_TRUE(rx.start_session(kSession, test_key(), 1));
+  EXPECT_EQ(rx.last_seq(), 1U);
+  EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kDuplicateSeq);
+  EXPECT_EQ(feed(rx, kSeq2), sd::RxResult::kAccepted);
+  EXPECT_EQ(rx.seq_counters().gaps, 0U);
+
+  sd::Receiver closed;
+  EXPECT_FALSE(closed.start_session(kSession, test_key(), 0x80000000U));
+  EXPECT_FALSE(closed.in_session());
+}
+
 TEST(Receiver, IsAccepted) {
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAccepted));
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAcceptedGap));

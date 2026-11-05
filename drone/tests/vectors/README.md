@@ -39,9 +39,9 @@ Optional fields:
 | Field | Meaning |
 |---|---|
 | `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
-| `note` | A warning, e.g. a code value that waits for #142 |
-| `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. Without `state`, only the frame checks run |
-| `steps`, `final` | Groups 5 and 6: several frames in order, then `last_ctrl_seq`, `rx_rejected` and `gaps` at the end |
+| `note` | Extra context, e.g. which decision a vector comes from |
+| `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
+| `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3) |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
 | `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
 
@@ -49,12 +49,14 @@ Optional fields:
 
 | File | Group | Vectors |
 |---|---|---|
-| `1_valid_frames.json` | 1 Valid frames | 14 |
+| `1_valid_frames.json` | 1 Valid frames | 15 |
 | `2_hmac.json` | 2 HMAC | 4 |
 | `3_header.json` | 3 Header | 9 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
 | `6_clamps.json` | 6 Clamps and mapping | 9 |
+| `7_config.json` | 7 Configuration | 6 |
+| `8_reserved_and_transports.json` | 8 Reserved bits and transports | 5 |
 
 - **Made by `generate.py`** in this folder. It uses only the Python standard library and is written from the spec, so it is independent of both implementations (rule 4 below).
 - **To add a vector:** add it to `generate.py`, run `python3 drone/tests/vectors/generate.py`, and commit both.
@@ -76,11 +78,12 @@ Header fields are always `type`, `flags`, `session_id`, `seq`, `t_send_us`. Payl
 | RESUME_REQUEST | none |
 | BYE | `reason` |
 | CONFIG_GET, CONFIG_SET | `config_key`, `value` |
+| CONFIG_ACK | `config_key`, `result`, `value` |
 | EVENT | `code`, `text` (ASCII) |
 | SETPOINT | `mode`, `roll`, `pitch`, `yaw_rate`, `throttle`, `sp_flags` |
 | STATE | `esp_state`, `override_active`, `last_ctrl_seq`, `last_ctrl_t_send_us`, `roll`, `pitch`, `heading`, `vbat`, `flow_x`, `flow_y`, `flow_quality`, `flow_status`, `rx_rejected`, `msp_errors` |
 
-Code values for results, BYE reasons, EVENT codes and `esp_state` are the suggested answers in #142, not frozen yet. Those vectors carry a `note`.
+Code values for results, BYE reasons, EVENT codes and `esp_state` are the ones in spec §3.1 (decided on #142, 2026-11-05).
 
 ### Common values in all examples
 
@@ -110,7 +113,7 @@ tag      fb 70 3d 82 4f 5b 58 9e
 
 ## 3. The groups, with one example each
 
-### Group 1: Valid frames (14 vectors)
+### Group 1: Valid frames (15 vectors)
 
 One per message type, plus `bye_replaced` and `resume_ack_wrong_state` with non-zero codes. All `accept`. Vector names are `<message type>_<what is special>`:
 
@@ -125,6 +128,7 @@ One per message type, plus `bye_replaced` and `resume_ack_wrong_state` with non-
 | BYE | `bye_normal` |
 | CONFIG_GET | `config_get_t_loss` |
 | CONFIG_SET | `config_set_telemetry_rate` |
+| CONFIG_ACK | `config_ack_ok` |
 | EVENT | `event_failsafe_entered` |
 | SETPOINT | `setpoint_attitude_basic` (the example below) |
 | STATE | `state_streaming` |
@@ -272,9 +276,21 @@ The `reject:<reason>` names, and the C++ values they map to:
 | `seq_too_high` | `seq ≥ 2^31`: a new session is needed | `RxResult::kSeqTooHigh` |
 | `no_session` | No session is open (no vector yet) | `RxResult::kNoSession` |
 
-## 6. Still to come
+## 6. Groups 7 and 8 (added 2026-11-05, spec v1.1)
 
-- **Group 7, configuration** (`CONFIG_GET` / `CONFIG_SET` / `CONFIG_ACK` results: OK, unknown key, read-only, out of range, refused while streaming). Waits for the `CONFIG_ACK` decision in #142.
+### Group 7: Configuration (6 vectors)
+
+One `CONFIG_ACK` encoding per result of spec §3.1: `config_ack_result_0_ok` (`GET` of 0x80 → 25), `_1_unknown_key` (0xC0, value 0), `_2_read_only` (Info key 0x01), `_3_safety_parameter` (Safety key 0x40 `t_loss_ms`), `_4_out_of_range` (0x80 set to 60), `_5_control_enabled` (while `STREAMING`). All `accept`.
+
+Proves: both sides put the same number in `result` and the same `value` (current or unchanged; 0 when there is none). The check order (state first) is not here: it needs the ESP state and key table, so the link state machine (#102) tests it.
+
+### Group 8: Reserved bits and transports (5 vectors)
+
+- `header_flags_bit0_ignored`, `setpoint_flags_nonzero_ignored`: the reserved bits are accepted and ignored.
+- `hello_ack_signed_with_psk` (accept with the PSK) and `hello_ack_signed_with_session_key` (`reject:bad_tag` when checked with the PSK).
+- `tcp_and_udp_seq_apart` (steps): UDP 1, TCP 2, UDP 2, TCP 3 accepted, then TCP 2 again `reject:old_seq`. The TCP Receiver starts at 1 because `HELLO` used seq 1.
+
+Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq` per transport.
 
 ---
 

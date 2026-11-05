@@ -4,14 +4,15 @@
 
 namespace sd {
 
-bool Receiver::start_session(std::uint32_t session_id, const Key &session_key) {
-  if (session_id == 0) {
+bool Receiver::start_session(std::uint32_t session_id, const Key &session_key,
+                             std::uint32_t last_seq) {
+  if (session_id == 0 || last_seq >= SeqWindow::kMaxSeq) {
     return false;
   }
   key_ = session_key;
   session_id_ = session_id;
   in_session_ = true;
-  window_.reset();
+  window_.reset(last_seq);
   return true;
 }
 

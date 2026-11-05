@@ -12,7 +12,7 @@ struct Setpoint {
   std::int16_t pitch;    // -1000..1000
   std::int16_t yaw_rate; // -1000..1000
   std::int16_t throttle; // 0..1000
-  std::uint8_t flags;    // reserved in v0 (spec §7.5)
+  std::uint8_t flags;    // reserved in v0: sent as 0, ignored (spec §3)
 };
 
 constexpr std::size_t kSetpointSize = 10;

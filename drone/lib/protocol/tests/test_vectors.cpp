@@ -63,6 +63,7 @@ const std::map<std::string, sd::MsgType> kTypes = {
     {"BYE", sd::MsgType::kBye},
     {"CONFIG_GET", sd::MsgType::kConfigGet},
     {"CONFIG_SET", sd::MsgType::kConfigSet},
+    {"CONFIG_ACK", sd::MsgType::kConfigAck},
     {"EVENT", sd::MsgType::kEvent},
     {"SETPOINT", sd::MsgType::kSetpoint},
     {"STATE", sd::MsgType::kState},
@@ -154,6 +155,11 @@ Bytes encode_payload(const json &f) {
     const sd::ConfigKv m{get<std::uint8_t>(f, "config_key"),
                          get<std::int32_t>(f, "value")};
     n = sd::encode_config_kv(m, buf, sizeof(buf));
+  } else if (type == "CONFIG_ACK") {
+    const sd::ConfigAck m{get<std::uint8_t>(f, "config_key"),
+                          get<std::uint8_t>(f, "result"),
+                          get<std::int32_t>(f, "value")};
+    n = sd::encode_config_ack(m, buf, sizeof(buf));
   } else if (type == "EVENT") {
     const std::string text = f.at("text");
     sd::Event m{get<std::uint16_t>(f, "code"),
@@ -219,6 +225,12 @@ json decode_payload(const std::string &type, const std::uint8_t *p,
     sd::ConfigKv m{};
     ok = sd::decode_config_kv(p, len, m);
     f["config_key"] = m.key;
+    f["value"] = m.value;
+  } else if (type == "CONFIG_ACK") {
+    sd::ConfigAck m{};
+    ok = sd::decode_config_ack(p, len, m);
+    f["config_key"] = m.key;
+    f["result"] = m.result;
     f["value"] = m.value;
   } else if (type == "EVENT") {
     sd::Event m{};
@@ -310,33 +322,49 @@ TEST_P(Vector, Check) {
     EXPECT_EQ(to_hex(derived.bytes, sd::kKeySize), v.at("key"));
   }
 
+  // One Receiver per transport (spec §4 rule 3). UDP starts from
+  // last_ctrl_seq, TCP from last_tcp_seq (1: HELLO used seq 1). A step
+  // without "transport" is UDP.
   sd::Receiver rx;
+  sd::Receiver tcp;
   const bool with_session = v.contains("state");
   if (with_session) {
-    ASSERT_EQ(v["state"].value("last_ctrl_seq", 0), 0)
+    const json &state = v["state"];
+    ASSERT_EQ(state.value("last_ctrl_seq", 0), 0)
         << "vectors start from a fresh session";
-    ASSERT_TRUE(rx.start_session(v["state"].at("current_session"), key));
+    ASSERT_TRUE(rx.start_session(state.at("current_session"), key));
+    ASSERT_TRUE(tcp.start_session(state.at("current_session"), key,
+                                  state.value("last_tcp_seq", 1U)));
   }
 
-  // Groups 5 and 6: several frames, the result after each one.
+  // Groups 5, 6 and 8: several frames, the result after each one.
   if (v.contains("steps")) {
     int i = 0;
     for (const auto &step : v["steps"]) {
+      const std::string transport = step.value("transport", "udp");
+      ASSERT_TRUE(transport == "udp" || transport == "tcp") << transport;
+      sd::Receiver &to = transport == "tcp" ? tcp : rx;
       const Bytes buf = from_hex(step.at("bytes"));
       sd::Frame f{};
-      EXPECT_EQ(result_name(rx.receive(buf.data(), buf.size(), f)),
+      EXPECT_EQ(result_name(to.receive(buf.data(), buf.size(), f)),
                 step.at("expect"))
-          << "step " << i++;
+          << "step " << i++ << " (" << transport << ")";
     }
     const json final = v.value("final", json::object());
     if (final.contains("last_ctrl_seq")) {
       EXPECT_EQ(rx.last_seq(), final["last_ctrl_seq"]);
     }
+    if (final.contains("last_tcp_seq")) {
+      EXPECT_EQ(tcp.last_seq(), final["last_tcp_seq"]);
+    }
+    // Totals over both transports.
     if (final.contains("rx_rejected")) {
-      EXPECT_EQ(rx.counters().rejected, final["rx_rejected"]);
+      EXPECT_EQ(rx.counters().rejected + tcp.counters().rejected,
+                final["rx_rejected"]);
     }
     if (final.contains("gaps")) {
-      EXPECT_EQ(rx.seq_counters().gaps, final["gaps"]);
+      EXPECT_EQ(rx.seq_counters().gaps + tcp.seq_counters().gaps,
+                final["gaps"]);
     }
     return;
   }
@@ -426,7 +454,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 44U);
+  EXPECT_GE(names.size(), 56U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

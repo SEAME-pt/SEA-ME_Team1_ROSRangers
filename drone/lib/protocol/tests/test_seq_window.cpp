@@ -67,3 +67,17 @@ TEST(SeqWindow, ResetStartsANewSession) {
   EXPECT_EQ(w.counters().duplicates, 0U);
   EXPECT_EQ(w.accept(1), SeqResult::kAccepted);
 }
+
+// TCP: HELLO and HELLO_ACK use seq 1 (spec §1), so the window starts at 1 and
+// the next message, seq 2, is in order (no false gap).
+TEST(SeqWindow, ResetToAStartingSeq) {
+  sd::SeqWindow w;
+  w.reset(1);
+  EXPECT_EQ(w.last(), 1U);
+  EXPECT_EQ(w.accept(1), sd::SeqResult::kDuplicate);
+  EXPECT_EQ(w.accept(2), sd::SeqResult::kAccepted);
+  EXPECT_EQ(w.counters().gaps, 0U);
+  w.reset();
+  EXPECT_EQ(w.last(), 0U);
+  EXPECT_EQ(w.counters().duplicates, 0U);
+}

@@ -23,14 +23,16 @@ struct SeqCounters {
   std::uint32_t too_high;
 };
 
-// One window per sender, per session (and per transport, spec §7.5 suggestion).
+// One window per sender, per session, per transport (spec §4 rule 3, ADR-003).
 // Reset it when a new session starts.
 class SeqWindow {
 public:
   static constexpr std::uint32_t kMaxSeq = 0x80000000U; // 2^31
 
   SeqResult accept(std::uint32_t seq);
-  void reset();
+  // `last` is the seq already used on this transport: 1 on TCP, where HELLO
+  // and HELLO_ACK use seq 1 (spec §1); 0 on UDP. Counters restart.
+  void reset(std::uint32_t last = 0);
 
   std::uint32_t last() const { return last_; }
   const SeqCounters &counters() const { return counters_; }

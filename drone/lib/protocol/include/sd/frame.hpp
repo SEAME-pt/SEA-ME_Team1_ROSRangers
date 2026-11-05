@@ -27,7 +27,7 @@ enum class MsgType : std::uint8_t {
   kBye = 0x07,
   kConfigGet = 0x20,
   kConfigSet = 0x21,
-  kConfigAck = 0x22, // suggested in #142, not frozen yet
+  kConfigAck = 0x22,
   kEvent = 0x40,
   kSetpoint = 0x60,
   kState = 0x80,

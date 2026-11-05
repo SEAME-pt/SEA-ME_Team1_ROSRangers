@@ -25,8 +25,8 @@ SeqResult SeqWindow::accept(std::uint32_t seq) {
   return SeqResult::kAccepted;
 }
 
-void SeqWindow::reset() {
-  last_ = 0;
+void SeqWindow::reset(std::uint32_t last) {
+  last_ = last;
   counters_ = {};
 }
 

@@ -37,13 +37,11 @@ TYPES = {
     "BYE": 0x07,
     "CONFIG_GET": 0x20,
     "CONFIG_SET": 0x21,
+    "CONFIG_ACK": 0x22,
     "EVENT": 0x40,
     "SETPOINT": 0x60,
     "STATE": 0x80,
 }
-
-# Values that are suggested answers in GitHub #142 (spec §7.5), not frozen.
-PENDING_142 = "Code value is a suggested answer in #142 (spec §7.5), not frozen yet."
 
 
 # ---------------------------------------------------------------- wire format
@@ -108,6 +106,10 @@ def payload(fields: dict) -> bytes:
         return struct.pack("<B", fields["reason"])
     if t in ("CONFIG_GET", "CONFIG_SET"):
         return struct.pack("<Bi", fields["config_key"], fields["value"])
+    if t == "CONFIG_ACK":
+        return struct.pack(
+            "<BBi", fields["config_key"], fields["result"], fields["value"]
+        )
     if t == "EVENT":
         return struct.pack("<H", fields["code"]) + fields["text"].encode("ascii")
     if t == "SETPOINT":
@@ -258,31 +260,31 @@ def group1() -> list[dict]:
     return [
         valid("hello_basic", "HELLO: protocol 1 and the ground nonce. Session 0, tagged with the PSK (here the test key)",
               msg("HELLO", 1, 0, proto=1, ground_nonce=ground_nonce)),
-        valid("hello_ack_basic", "HELLO_ACK: the new session ID, the ESP nonce and the firmware version 'v0.1.0' padded with zero bytes to 12",
-              msg("HELLO_ACK", 1, 0, new_session_id=SESSION, esp_nonce=esp_nonce, fw_version="v0.1.0"),
-              note="Header session_id 0 and the PSK tag are suggested answers in #142 (spec §7.5)."),
+        valid("hello_ack_basic", "HELLO_ACK: the new session ID (in the header and the payload), the ESP nonce and the firmware version 'v0.1.0' padded with zero bytes to 12. Tagged with the PSK",
+              msg("HELLO_ACK", 1, new_session_id=SESSION, esp_nonce=esp_nonce, fw_version="v0.1.0")),
         valid("arm_control_request_mask_15", "ARM_CONTROL_REQUEST with mask 15 (roll, pitch, yaw and throttle)",
               msg("ARM_CONTROL_REQUEST", 2, mask=15)),
-        valid("arm_control_ack_ok", "ARM_CONTROL_ACK with result 0 (OK)", msg("ARM_CONTROL_ACK", 2, result=0), note=PENDING_142),
+        valid("arm_control_ack_ok", "ARM_CONTROL_ACK with result 0 (OK)", msg("ARM_CONTROL_ACK", 2, result=0)),
         valid("resume_request_basic", "RESUME_REQUEST: no payload, 28-byte frame", msg("RESUME_REQUEST", 3)),
-        valid("resume_ack_ok", "RESUME_ACK with result 0 (OK)", msg("RESUME_ACK", 3, result=0), note=PENDING_142),
-        valid("bye_normal", "BYE with reason 0 (normal)", msg("BYE", 9, reason=0), note=PENDING_142),
-        valid("bye_replaced", "BYE with reason 3 (replaced by a new session): a non-zero code", msg("BYE", 10, reason=3),
-              note=PENDING_142),
+        valid("resume_ack_ok", "RESUME_ACK with result 0 (OK)", msg("RESUME_ACK", 3, result=0)),
+        valid("bye_normal", "BYE with reason 0 (normal)", msg("BYE", 9, reason=0)),
+        valid("bye_replaced", "BYE with reason 3 (replaced by a new session): a non-zero code", msg("BYE", 10, reason=3)),
         valid("resume_ack_wrong_state", "RESUME_ACK with result 1 (wrong state): a non-zero code",
-              msg("RESUME_ACK", 4, result=1), note=PENDING_142),
+              msg("RESUME_ACK", 4, result=1)),
         valid("config_get_t_loss", "CONFIG_GET of key 0x40 t_loss_ms (value field 0)", msg("CONFIG_GET", 4, config_key=0x40, value=0)),
+        valid("config_ack_ok", "CONFIG_ACK for key 0x80 telemetry_rate_hz: result 0 (OK), value 25 (the default)",
+              msg("CONFIG_ACK", 5, config_key=0x80, result=0, value=25)),
         valid("config_set_telemetry_rate", "CONFIG_SET of key 0x80 telemetry_rate_hz to 30",
               msg("CONFIG_SET", 5, config_key=0x80, value=30)),
         valid("event_failsafe_entered", "EVENT code 0x0102 (link failsafe entered) with a short text",
-              msg("EVENT", 6, code=0x0102, text="no setpoint for 250 ms"), note=PENDING_142),
+              msg("EVENT", 6, code=0x0102, text="no setpoint for 250 ms")),
         valid("setpoint_attitude_basic", "The reference SETPOINT: mode 1, roll 100, pitch -200, yaw 0, throttle 500, seq 7",
               REFERENCE),
         valid("state_streaming", "STATE while streaming, every field a different value (negative roll and flow included)",
               msg("STATE", 42, esp_state=3, override_active=1, last_ctrl_seq=41, last_ctrl_t_send_us=820000,
                   roll=-15, pitch=30, heading=359, vbat=1110, flow_x=-300, flow_y=300, flow_quality=200,
                   flow_status=2, rx_rejected=7, msp_errors=5),
-              note="esp_state 3 = STREAMING. " + PENDING_142),
+              note="esp_state 3 = STREAMING (spec §3.1)."),
     ]  # fmt: skip
 
 
@@ -400,6 +402,97 @@ def group6() -> list[dict]:
     ]  # fmt: skip
 
 
+def group7() -> list[dict]:
+    def ack(
+        name: str, description: str, seq: int, key: int, result: int, value: int
+    ) -> dict:
+        return valid(
+            name,
+            description,
+            {
+                "type": "CONFIG_ACK",
+                "flags": 0,
+                "session_id": SESSION,
+                "seq": seq,
+                "t_send_us": seq * 1000,
+                "config_key": key,
+                "result": result,
+                "value": value,
+            },
+        )
+
+    return [
+        ack("config_ack_result_0_ok", "Reply to CONFIG_GET of 0x80 telemetry_rate_hz: OK, value 25", 2, 0x80, 0, 25),
+        ack("config_ack_result_1_unknown_key", "CONFIG_SET of key 0xC0 (reserved range): unknown key, value 0 (no value)",
+            3, 0xC0, 1, 0),
+        ack("config_ack_result_2_read_only", "CONFIG_SET of Info key 0x01 config_table_version: read-only, value 1 unchanged",
+            4, 0x01, 2, 1),
+        ack("config_ack_result_3_safety_parameter", "CONFIG_SET of Safety key 0x40 t_loss_ms: firmware only, value 250 unchanged",
+            5, 0x40, 3, 250),
+        ack("config_ack_result_4_out_of_range", "CONFIG_SET of 0x80 telemetry_rate_hz to 60 (range 1-50): out of range, value 25 unchanged",
+            6, 0x80, 4, 25),
+        ack("config_ack_result_5_control_enabled", "CONFIG_SET of 0x81 event_level while STREAMING: refused, value 1 unchanged",
+            7, 0x81, 5, 1),
+    ]  # fmt: skip
+
+
+def group8() -> list[dict]:
+    ground_nonce = bytes([0x11] * 16)
+    esp_nonce = bytes([0x22] * 16)
+    session_key = hmac.new(
+        TEST_KEY, b"sess" + ground_nonce + esp_nonce, hashlib.sha256
+    ).digest()
+    hello_ack = {
+        "type": "HELLO_ACK",
+        "flags": 0,
+        "session_id": SESSION,
+        "seq": 1,
+        "t_send_us": 0,
+        "new_session_id": SESSION,
+        "esp_nonce": esp_nonce.hex(),
+        "fw_version": "v0.1.0",
+    }
+    state = {"current_session": SESSION}
+
+    def tcp(msg_type: str, seq: int) -> str:
+        fields = {
+            "type": msg_type,
+            "flags": 0,
+            "session_id": SESSION,
+            "seq": seq,
+            "t_send_us": 0,
+        }
+        if msg_type == "ARM_CONTROL_REQUEST":
+            fields["mask"] = 15
+        return encode(fields).hex()
+
+    return [
+        valid("header_flags_bit0_ignored", "SETPOINT with header flags bit 0 set (was 'ack requested'): accepted, the bit is ignored",
+              dict(REFERENCE, flags=1), state=state),
+        valid("setpoint_flags_nonzero_ignored", "SETPOINT with SETPOINT.flags 0xFF: accepted, the flags are ignored",
+              dict(REFERENCE, sp_flags=0xFF), state=state),
+        valid("hello_ack_signed_with_psk", "HELLO_ACK is tagged with the PSK (here the test key), not the session key",
+              hello_ack),
+        rejected("hello_ack_signed_with_session_key", "The same HELLO_ACK tagged with the session key: refused when checked with the PSK",
+                 frame(session_key, 0x02, payload(hello_ack), session_id=SESSION, seq=1, t_send_us=0), "bad_tag"),
+        {
+            "name": "tcp_and_udp_seq_apart",
+            "description": "UDP and TCP count seq on their own. TCP starts at 1 (HELLO used seq 1). "
+                           "UDP 1, TCP 2, UDP 2, TCP 3 are all accepted; then TCP 2 again is old",
+            "key": TEST_KEY.hex(),
+            "state": {"current_session": SESSION, "last_ctrl_seq": 0, "last_tcp_seq": 1},
+            "steps": [
+                {"transport": "udp", "bytes": neutral(1), "expect": "accept"},
+                {"transport": "tcp", "bytes": tcp("ARM_CONTROL_REQUEST", 2), "expect": "accept"},
+                {"transport": "udp", "bytes": neutral(2), "expect": "accept"},
+                {"transport": "tcp", "bytes": tcp("RESUME_REQUEST", 3), "expect": "accept"},
+                {"transport": "tcp", "bytes": tcp("ARM_CONTROL_REQUEST", 2), "expect": "reject:old_seq"},
+            ],
+            "final": {"last_ctrl_seq": 2, "last_tcp_seq": 3, "rx_rejected": 1, "gaps": 0},
+        },
+    ]  # fmt: skip
+
+
 FILES = {
     "1_valid_frames.json": group1,
     "2_hmac.json": group2,
@@ -407,6 +500,8 @@ FILES = {
     "4_session.json": group4,
     "5_sequence.json": group5,
     "6_clamps.json": group6,
+    "7_config.json": group7,
+    "8_reserved_and_transports.json": group8,
 }
 
 

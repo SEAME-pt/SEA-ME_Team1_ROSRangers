@@ -56,7 +56,8 @@ struct RxCounters {
 // SETPOINT.mode (check_payload(), REQ-COM-001/002), then the sequence window
 // (rule 3, ADR-003). The payload check runs before the window, so a malformed
 // frame does not use up a seq number. Use one Receiver
-// per transport (UDP control, TCP session), as suggested in spec §7.5.
+// per transport (UDP control, TCP session): `seq` is counted per transport
+// (spec §4 rule 3).
 //
 // HELLO is not handled here: it arrives before a session exists and is tagged
 // with the PSK, so the link state machine (#102) checks it with decode_frame()
@@ -66,8 +67,12 @@ struct RxCounters {
 class Receiver {
 public:
   // Opens a session: the key and session_id every frame must match. Resets the
-  // window. session_id 0 is reserved for HELLO and is refused (returns false).
-  bool start_session(std::uint32_t session_id, const Key &session_key);
+  // window to `last_seq`, the seq already used on this transport: pass 1 for
+  // the TCP Receiver (HELLO and HELLO_ACK use seq 1, spec §1), 0 for UDP.
+  // Returns false (and changes nothing) for session_id 0, which is reserved
+  // for HELLO, or for last_seq >= 2^31.
+  bool start_session(std::uint32_t session_id, const Key &session_key,
+                     std::uint32_t last_seq = 0);
   void end_session();
 
   // `out` is written only when the result is accepted (is_accepted()).
@@ -77,7 +82,7 @@ public:
   std::uint32_t session_id() const { return session_id_; }
   std::uint32_t last_seq() const { return window_.last(); }
   // counters() last for the Receiver's lifetime; seq_counters() restart with
-  // each session. How they are reported to the ground is open (spec §7.5).
+  // each session. How they are reported to the ground is open (#149).
   const RxCounters &counters() const { return counters_; }
   const SeqCounters &seq_counters() const { return window_.counters(); }
 
