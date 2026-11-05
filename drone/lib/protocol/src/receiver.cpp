@@ -2,12 +2,12 @@
 
 namespace sd {
 
-bool Receiver::start_session(std::uint32_t session_id, const Key &session_key,
+bool Receiver::start_session(std::uint32_t session_id, const Key &rx_key,
                              Transport transport) {
   if (session_id == 0) {
     return false;
   }
-  key_ = session_key;
+  key_ = rx_key;
   session_id_ = session_id;
   transport_ = transport;
   in_session_ = true;
@@ -112,7 +112,7 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
   if (check == PayloadCheck::kUnknownType) {
     return reject(RxResult::kBadType);
   }
-  // Both transports use the same session key: without this, a frame captured
+  // Both transports use the same direction key: without this, a frame captured
   // on TCP could be replayed on UDP, or the other way.
   Transport transport = Transport::kUdp;
   if (!transport_of(frame.header.type, transport) || transport != transport_) {

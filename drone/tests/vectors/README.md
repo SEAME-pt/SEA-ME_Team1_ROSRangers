@@ -43,14 +43,14 @@ Optional fields:
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
 | `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3). A single frame goes to the Receiver of its type |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
-| `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
+| `psk`, `ground_nonce`, `esp_nonce`, `direction` | Group 2: `key` is derived from these: the session key, then the key of `direction` (`g2e` ground→ESP or `e2g` ESP→ground, spec §1) |
 
 ## 1a. The files and how they are made
 
 | File | Group | Vectors |
 |---|---|---|
 | `1_valid_frames.json` | 1 Valid frames | 15 |
-| `2_hmac.json` | 2 HMAC | 4 |
+| `2_hmac.json` | 2 HMAC | 7 |
 | `3_header.json` | 3 Header | 9 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
@@ -146,11 +146,11 @@ Proves: the byte layout is the same on both sides.
 }
 ```
 
-### Group 2: HMAC (4 vectors)
+### Group 2: HMAC (7 vectors)
 
-`hello_signed_with_psk` (accept), `setpoint_signed_with_session_key` (accept), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
+`hello_signed_with_psk` (accept), `setpoint_signed_with_ground_to_esp_key` (accept), `state_signed_with_esp_to_ground_key` (accept), `reflected_setpoint_rejected` (the ground's own SETPOINT checked with the ESP→ground key: `reject:bad_tag`), `reflected_state_rejected` (the ESP's own STATE checked with the ground→ESP key: `reject:bad_tag`), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
 
-Proves: the tag is computed over the right bytes, and any changed bit is refused.
+Proves: the tag is computed over the right bytes with the key of the right direction, any changed bit is refused, and a frame sent back to its sender is refused (#150).
 
 Example: the reference frame with **one bit flipped in the roll byte** (`64` → `65`), tag unchanged:
 
@@ -290,7 +290,7 @@ Proves: both sides put the same number in `result` and the same `value` (current
 - `header_flags_bit0_ignored`, `setpoint_flags_nonzero_ignored`: the reserved bits are accepted and ignored.
 - `hello_ack_signed_with_psk` (accept with the PSK) and `hello_ack_signed_with_session_key` (`reject:bad_tag` when checked with the PSK).
 - `tcp_and_udp_seq_apart` (steps): UDP 1, TCP 2, UDP 2, TCP 3 accepted, then TCP 2 again `reject:old_seq`. The TCP Receiver starts at 1 because `HELLO` used seq 1.
-- `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the session key, so each Receiver accepts only its own types (spec §2).
+- `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the direction keys, so each Receiver accepts only its own types (spec §2).
 
 Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq` per transport.
 
@@ -303,6 +303,8 @@ Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq`
 | **Test vector** | One fixed example (input + expected result) shared by both implementations |
 | **Golden vector** | Same thing; "golden" means it is the reference everyone must match |
 | **HMAC tag** | 8-byte signature at the end of each frame (truncated HMAC-SHA256, ADR-002) |
+| **Direction key** | Key that tags frames going one way: `g2e` (ground→ESP) or `e2g` (ESP→ground), derived from the session key (spec §1) |
+| **Reflection** | A frame sent back to its own sender. Refused because each direction has its own key |
 | **PSK** | Pre-shared key, the real secret. Never in the vectors |
 | **Regression vector** | A vector added after a bug, so the bug cannot come back |
 | **AETR** | RC channel order: roll, pitch, throttle, yaw, then aux |

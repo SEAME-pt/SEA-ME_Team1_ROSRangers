@@ -9,7 +9,7 @@ constexpr std::size_t kSha256Size = 32;
 constexpr std::size_t kKeySize = 32;
 constexpr std::size_t kNonceSize = 16;
 
-// A 32-byte HMAC key: the PSK or a session key (ADR-002).
+// A 32-byte HMAC key: the PSK, the session key or a direction key (ADR-002).
 struct Key {
   std::uint8_t bytes[kKeySize];
 };
@@ -18,6 +18,11 @@ struct Key {
 class Sha256 {
 public:
   Sha256();
+  // Wipes the state and the buffer: after the HMAC pad block they are enough
+  // to compute tags under the key.
+  ~Sha256();
+  Sha256(const Sha256 &) = delete;
+  Sha256 &operator=(const Sha256 &) = delete;
   void update(const std::uint8_t *data, std::size_t len);
   void finish(std::uint8_t out[kSha256Size]);
 
@@ -40,6 +45,27 @@ void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
 Key derive_session_key(const Key &psk,
                        const std::uint8_t ground_nonce[kNonceSize],
                        const std::uint8_t esp_nonce[kNonceSize]);
+
+// One key per direction (ADR-002 entry of 2026-11-05, #150):
+//   ground_to_esp = HMAC-SHA256(session key, "g2e")
+//   esp_to_ground = HMAC-SHA256(session key, "e2g")
+// Each side seals with its sending key and checks with its receiving key, so a
+// frame sent back to its own sender (reflection) fails the tag. The ESP's
+// Receivers use ground_to_esp, the ground's use esp_to_ground. HELLO and
+// HELLO_ACK stay tagged with the PSK. Wipe the session key after this call
+// with secure_zero(&session_key, sizeof(session_key)).
+struct DirectionKeys {
+  Key ground_to_esp;
+  Key esp_to_ground;
+};
+
+DirectionKeys derive_direction_keys(const Key &session_key);
+
+// Sets n bytes to zero through a volatile pointer, so the compiler cannot drop
+// it the way it may drop a memset of a variable that is not used again. Use it
+// to wipe a session key once the direction keys are derived. Best effort:
+// copies the compiler keeps in registers or spills are out of reach.
+void secure_zero(void *p, std::size_t n);
 
 // Compares in time that depends only on len, not on where the bytes differ
 // (spec §4 rule 1).

@@ -16,9 +16,9 @@
     "expect": "accept"
   },
   {
-    "name": "setpoint_signed_with_session_key",
-    "description": "SETPOINT tagged with the session key = HMAC-SHA256(PSK, 'sess' || ground_nonce || esp_nonce)",
-    "key": "fd45ef03ac338c826d14c5912b54a3518fadc776dc26cc05f199583f556ef89a",
+    "name": "setpoint_signed_with_ground_to_esp_key",
+    "description": "SETPOINT tagged with the ground-to-ESP key = HMAC-SHA256(session key, 'g2e'), session key = HMAC-SHA256(PSK, 'sess' || ground_nonce || esp_nonce)",
+    "key": "bb0b20baf093c79ac77f89eb087d0e68a35bb31cf90f34a09bb2d41837b9e117",
     "fields": {
       "type": "SETPOINT",
       "flags": 0,
@@ -32,11 +32,66 @@
       "throttle": 500,
       "sp_flags": 0
     },
-    "bytes": "5344016000000a0078563412010000000000000001640000000000f401006254c1835d2f9951",
+    "bytes": "5344016000000a0078563412010000000000000001640000000000f4010019e2efbd81fbf12f",
     "expect": "accept",
+    "direction": "g2e",
     "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
     "ground_nonce": "11111111111111111111111111111111",
     "esp_nonce": "22222222222222222222222222222222"
+  },
+  {
+    "name": "state_signed_with_esp_to_ground_key",
+    "description": "STATE tagged with the ESP-to-ground key = HMAC-SHA256(session key, 'e2g')",
+    "key": "7353101a8458bfe9911c7269d2ec7aa4f94d13c0b2cfad27bd454e078f96b33d",
+    "fields": {
+      "type": "STATE",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 1,
+      "t_send_us": 0,
+      "esp_state": 3,
+      "override_active": 1,
+      "last_ctrl_seq": 1,
+      "last_ctrl_t_send_us": 0,
+      "roll": 0,
+      "pitch": 0,
+      "heading": 90,
+      "vbat": 1110,
+      "flow_x": 0,
+      "flow_y": 0,
+      "flow_quality": 200,
+      "flow_status": 0,
+      "rx_rejected": 0,
+      "msp_errors": 0
+    },
+    "bytes": "5344018000001c0078563412010000000000000003010100000000000000000000005a00560400000000c80000000000c2fb6b8a660486ff",
+    "expect": "accept",
+    "direction": "e2g",
+    "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "ground_nonce": "11111111111111111111111111111111",
+    "esp_nonce": "22222222222222222222222222222222"
+  },
+  {
+    "name": "reflected_state_rejected",
+    "description": "The ESP's own STATE (ESP-to-ground key) sent back to the ESP, which checks with the ground-to-ESP key: refused (#150)",
+    "key": "bb0b20baf093c79ac77f89eb087d0e68a35bb31cf90f34a09bb2d41837b9e117",
+    "direction": "g2e",
+    "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "ground_nonce": "11111111111111111111111111111111",
+    "esp_nonce": "22222222222222222222222222222222",
+    "bytes": "5344018000001c0078563412010000000000000003010100000000000000000000005a00560400000000c80000000000c2fb6b8a660486ff",
+    "expect": "reject:bad_tag"
+  },
+  {
+    "name": "reflected_setpoint_rejected",
+    "description": "The ground's own SETPOINT (ground-to-ESP key) sent back to the ground, which checks with the ESP-to-ground key: refused, so a reflection never reaches the ground (#150)",
+    "key": "7353101a8458bfe9911c7269d2ec7aa4f94d13c0b2cfad27bd454e078f96b33d",
+    "direction": "e2g",
+    "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "ground_nonce": "11111111111111111111111111111111",
+    "esp_nonce": "22222222222222222222222222222222",
+    "bytes": "5344016000000a0078563412010000000000000001640000000000f4010019e2efbd81fbf12f",
+    "expect": "reject:bad_tag"
   },
   {
     "name": "setpoint_payload_bit_flipped",

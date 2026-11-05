@@ -3,6 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: draft
 date: 2026-11-02
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - architecture
@@ -123,7 +124,7 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 | ESP polls `MSP_ATTITUDE` (25 Hz), `MSP_ANALOG` / `MSP_STATUS` (5 Hz) | [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP | ESP ↔ FC |
 | ROS 2 topics | §2 above | DDS, ground only | ground nodes |
 
-Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.1: accepted at the design review of 2026-11-03 (#97), with the open items decided on 2026-11-05 (#142, spec §7.5). Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
+Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.2: accepted at the design review of 2026-11-03 (#97), with the open items decided on 2026-11-05 (#142, spec §7.5) and one key per direction (#150, spec §1). Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
 
 ## 4. Timing budget (ground → ESP → FC)
 

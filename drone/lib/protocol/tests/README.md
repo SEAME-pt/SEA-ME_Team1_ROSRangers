@@ -70,9 +70,11 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 | `HmacSha256.Rfc4231Case2` | Key "Jefe", message "what do ya want for nothing?" → official result | Same, with a short key |
 | `HmacSha256.Rfc4231Case6KeyLongerThanBlock` | A 131-byte key (longer than 64) → official result | Long keys are handled (hashed first) |
 
-## SessionKey: the key of each connection
+## SessionKey and DirectionKeys: the keys of each connection
 | Test | What it does | Why it matters |
 |---|---|---|
+| `DirectionKeys.AreHmacOfTheSessionKeyWithG2eAndE2g` | The ground→ESP and ESP→ground keys equal HMAC(session key, "g2e") and HMAC(session key, "e2g") (values from Python), and differ from each other and from the session key | A frame sent back to its own sender fails the seal (#150) |
+| `SecureZero.ClearsEveryByteAndNothingElse` | Zeroes exactly the bytes asked for, including a whole key | The session key can really be wiped: a plain memset can be dropped by the compiler |
 | `SessionKey.IsHmacOfSessAndBothNonces` | The session key equals HMAC(PSK, "sess" + ground nonce + ESP nonce). Swapping the two nonces gives a different key | Both sides must compute the same key, and the order matters |
 
 ## ConstantTime: comparing seals safely
@@ -93,13 +95,14 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.SeqDuplicateExample` | Sends seq 1, 2, 2, 3: the second 2 is refused (duplicate), the others are accepted | A copied message can never act twice |
 | `Receiver.OlderAndTooHighRejected` | After seq 7, seq 3 is refused (old) and seq 2³¹ is refused (too high, new session needed) | A late message never moves the drone back to an old stick position |
 | `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`; the rest is open in #149), and a refused frame leaves no trace |
-| `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | Same key on both sides, or nothing works |
+| `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | The sender's and the receiver's key for that direction must match, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
 | `Receiver.MalformedPayloadRejectedWithoutUsingTheSeq` | Three sealed frames with seq 5: unknown type 0x99, a 9-byte SETPOINT, a SETPOINT with mode 2. Each is refused and counted under its own reason; seq 1 is still accepted afterwards | A malformed frame changes nothing, not even the message number (REQ-COM-001, REQ-COM-004) |
 | `Receiver.TcpSessionStartsAfterHello` | A TCP session starts at seq 1: seq 1 is refused (duplicate), seq 2 accepted with no gap | HELLO already used seq 1, so there is no false gap after the handshake |
-| `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the session key: without this check a captured frame could be replayed on the other one |
+| `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the direction keys: without this check a captured frame could be replayed on the other one |
 | `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
+| `Receiver.FrameSealedForTheOtherDirectionRejected` | ESP and ground Receivers opened with their direction keys accept the real traffic; each side's own frame sent back to it (seq 1000) is a bad tag and moves nothing | A reflection never reaches either side (#150) |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -160,9 +163,9 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 57 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 60 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
-| `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
+| `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
 | `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |

@@ -77,6 +77,17 @@ def header(
     )
 
 
+def derive_keys(
+    psk: bytes, ground_nonce: bytes, esp_nonce: bytes
+) -> tuple[bytes, bytes, bytes]:
+    """Spec §1 key schedule: (session key, ground-to-ESP key, ESP-to-ground key).
+    One key per direction since 2026-11-05 (ADR-002 entry, #150)."""
+    session = hmac.new(psk, b"sess" + ground_nonce + esp_nonce, hashlib.sha256).digest()
+    g2e = hmac.new(session, b"g2e", hashlib.sha256).digest()
+    e2g = hmac.new(session, b"e2g", hashlib.sha256).digest()
+    return session, g2e, e2g
+
+
 def frame(key: bytes, msg_type: int, payload: bytes, **h) -> bytes:
     head = header(msg_type, len(payload), **h)
     return head + payload + tag(key, head + payload)
@@ -212,11 +223,18 @@ def valid(
     }
 
 
-def rejected(name: str, description: str, data: bytes, reason: str, **extra) -> dict:
+def rejected(
+    name: str,
+    description: str,
+    data: bytes,
+    reason: str,
+    key: bytes = TEST_KEY,
+    **extra,
+) -> dict:
     return {
         "name": name,
         "description": description,
-        "key": TEST_KEY.hex(),
+        "key": key.hex(),
         **extra,
         "bytes": data.hex(),
         "expect": f"reject:{reason}",
@@ -244,17 +262,21 @@ def channels(name: str, description: str, **values) -> dict:
 # ---------------------------------------------------------------- groups
 
 
-def group1() -> list[dict]:
-    def msg(t: str, seq: int, session_id: int = SESSION, **values) -> dict:
-        return {
-            "type": t,
-            "flags": 0,
-            "session_id": session_id,
-            "seq": seq,
-            "t_send_us": seq * 1000,
-            **values,
-        }
+def msg(
+    t: str, seq: int, session_id: int = SESSION, t_send_us: int | None = None, **values
+) -> dict:
+    """Fields of one message: the header, then the payload fields of spec §3."""
+    return {
+        "type": t,
+        "flags": 0,
+        "session_id": session_id,
+        "seq": seq,
+        "t_send_us": seq * 1000 if t_send_us is None else t_send_us,
+        **values,
+    }
 
+
+def group1() -> list[dict]:
     ground_nonce = bytes(range(0xA0, 0xB0)).hex()
     esp_nonce = bytes(range(0xB0, 0xC0)).hex()
     return [
@@ -292,9 +314,16 @@ def group2() -> list[dict]:
     psk = TEST_KEY
     ground_nonce = bytes([0x11] * 16)
     esp_nonce = bytes([0x22] * 16)
-    session_key = hmac.new(
-        psk, b"sess" + ground_nonce + esp_nonce, hashlib.sha256
-    ).digest()
+    _, g2e, e2g = derive_keys(psk, ground_nonce, esp_nonce)
+    nonces = {
+        "psk": psk.hex(),
+        "ground_nonce": ground_nonce.hex(),
+        "esp_nonce": esp_nonce.hex(),
+    }
+    state = msg("STATE", 1, t_send_us=0, esp_state=3, override_active=1, last_ctrl_seq=1,
+                last_ctrl_t_send_us=0, roll=0, pitch=0, heading=90, vbat=1110, flow_x=0, flow_y=0,
+                flow_quality=200, flow_status=0, rx_rejected=0, msp_errors=0)  # fmt: skip
+    sp = setpoint(1, roll=100, throttle=500)
     good = encode(REFERENCE)
     payload_flip = bytearray(good)
     payload_flip[21] ^= 0x01  # roll 100 -> 101
@@ -304,10 +333,21 @@ def group2() -> list[dict]:
         valid("hello_signed_with_psk", "HELLO tagged with the PSK, as every HELLO is (spec §1)",
               {"type": "HELLO", "flags": 0, "session_id": 0, "seq": 1, "t_send_us": 0,
                "proto": 1, "ground_nonce": ground_nonce.hex()}, psk),
-        valid("setpoint_signed_with_session_key",
-              "SETPOINT tagged with the session key = HMAC-SHA256(PSK, 'sess' || ground_nonce || esp_nonce)",
-              setpoint(1, roll=100, throttle=500), session_key,
-              psk=psk.hex(), ground_nonce=ground_nonce.hex(), esp_nonce=esp_nonce.hex()),
+        valid("setpoint_signed_with_ground_to_esp_key",
+              "SETPOINT tagged with the ground-to-ESP key = HMAC-SHA256(session key, 'g2e'), "
+              "session key = HMAC-SHA256(PSK, 'sess' || ground_nonce || esp_nonce)",
+              sp, g2e, direction="g2e", **nonces),
+        valid("state_signed_with_esp_to_ground_key",
+              "STATE tagged with the ESP-to-ground key = HMAC-SHA256(session key, 'e2g')",
+              state, e2g, direction="e2g", **nonces),
+        rejected("reflected_state_rejected",
+                 "The ESP's own STATE (ESP-to-ground key) sent back to the ESP, which checks "
+                 "with the ground-to-ESP key: refused (#150)",
+                 encode(state, e2g), "bad_tag", key=g2e, direction="g2e", **nonces),
+        rejected("reflected_setpoint_rejected",
+                 "The ground's own SETPOINT (ground-to-ESP key) sent back to the ground, which checks "
+                 "with the ESP-to-ground key: refused, so a reflection never reaches the ground (#150)",
+                 encode(sp, g2e), "bad_tag", key=e2g, direction="e2g", **nonces),
         rejected("setpoint_payload_bit_flipped", "The reference frame with roll 100 -> 101 (one bit), old tag",
                  bytes(payload_flip), "bad_tag"),
         rejected("setpoint_tag_bit_flipped", "The reference frame with the top bit of the last tag byte flipped",
@@ -439,9 +479,7 @@ def group7() -> list[dict]:
 def group8() -> list[dict]:
     ground_nonce = bytes([0x11] * 16)
     esp_nonce = bytes([0x22] * 16)
-    session_key = hmac.new(
-        TEST_KEY, b"sess" + ground_nonce + esp_nonce, hashlib.sha256
-    ).digest()
+    session_key, _, _ = derive_keys(TEST_KEY, ground_nonce, esp_nonce)
     hello_ack = {
         "type": "HELLO_ACK",
         "flags": 0,
@@ -492,7 +530,7 @@ def group8() -> list[dict]:
         },
         {
             "name": "frame_on_the_wrong_transport",
-            "description": "Both transports share the session key, so each accepts only its own types (spec §2): "
+            "description": "Both transports share the direction key, so each accepts only its own types (spec §2): "
                            "a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
             "key": TEST_KEY.hex(),
             "state": {"current_session": SESSION, "last_ctrl_seq": 0, "last_tcp_seq": 1},

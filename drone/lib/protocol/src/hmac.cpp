@@ -24,17 +24,21 @@ std::uint32_t rotr(std::uint32_t x, unsigned n) {
   return (x >> n) | (x << (32U - n));
 }
 
-// Clears the local key copies (block_key, pad, inner) from the stack. volatile
-// so the compiler cannot drop it. Not a full scrub: the key also stays in the
-// Receiver for the whole session.
-void wipe(void *p, std::size_t n) {
+} // namespace
+
+// The key also stays in the Receiver for the whole session; this clears the
+// temporary copies.
+void secure_zero(void *p, std::size_t n) {
   volatile std::uint8_t *v = static_cast<volatile std::uint8_t *>(p);
   for (std::size_t i = 0; i < n; ++i) {
     v[i] = 0;
   }
 }
 
-} // namespace
+Sha256::~Sha256() {
+  secure_zero(state_, sizeof(state_));
+  secure_zero(buffer_, sizeof(buffer_));
+}
 
 Sha256::Sha256()
     : state_{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
@@ -83,6 +87,8 @@ void Sha256::compress(const std::uint8_t block[64]) {
   state_[5] += f;
   state_[6] += g;
   state_[7] += h;
+  // w[0..15] is the block itself: for the HMAC pad block, the key XOR pad.
+  secure_zero(w, sizeof(w));
 }
 
 void Sha256::update(const std::uint8_t *data, std::size_t len) {
@@ -151,9 +157,9 @@ void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
   ho.update(pad, kBlockSize);
   ho.update(inner, kSha256Size);
   ho.finish(out);
-  wipe(block_key, sizeof(block_key));
-  wipe(pad, sizeof(pad));
-  wipe(inner, sizeof(inner));
+  secure_zero(block_key, sizeof(block_key));
+  secure_zero(pad, sizeof(pad));
+  secure_zero(inner, sizeof(inner));
 }
 
 Key derive_session_key(const Key &psk,
@@ -165,6 +171,17 @@ Key derive_session_key(const Key &psk,
   std::memcpy(msg + 4 + kNonceSize, esp_nonce, kNonceSize);
   Key out{};
   hmac_sha256(psk.bytes, kKeySize, msg, sizeof(msg), out.bytes);
+  return out;
+}
+
+DirectionKeys derive_direction_keys(const Key &session_key) {
+  static constexpr std::uint8_t kGroundToEsp[] = {'g', '2', 'e'};
+  static constexpr std::uint8_t kEspToGround[] = {'e', '2', 'g'};
+  DirectionKeys out{};
+  hmac_sha256(session_key.bytes, kKeySize, kGroundToEsp, sizeof(kGroundToEsp),
+              out.ground_to_esp.bytes);
+  hmac_sha256(session_key.bytes, kKeySize, kEspToGround, sizeof(kEspToGround),
+              out.esp_to_ground.bytes);
   return out;
 }
 

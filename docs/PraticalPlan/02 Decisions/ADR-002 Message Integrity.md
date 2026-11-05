@@ -3,6 +3,7 @@ title: ADR-002 — Message Integrity
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - D02
@@ -41,6 +42,7 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 - Session key = `HMAC(PSK, "sess" || ground_nonce || esp_nonce)`, derived in the [[ADR-005 TCP Session|session handshake]].
 - The session ID is covered by the tag, so packets from older sessions are rejected.
 - The tag is compared in constant time.
+- 2026-11-05, #150 (see the dated entry below): the tag key of an in-session frame is a direction key, not the session key itself.
 
 ## 4. Consequences
 
@@ -54,6 +56,8 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 
 > 2026-11-05: `HELLO` and `HELLO_ACK` are tagged with the PSK. The session key needs `esp_nonce`, which is inside `HELLO_ACK`, and the tag is checked before the payload is read. Every later message uses the session key. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5. The decision is unchanged.
 
+> 2026-11-05: **The decision is extended: one key per direction** (GitHub #150, decided by the team). It supersedes "Every later message uses the session key" in the entry above. After the handshake, ground→ESP frames use `HMAC-SHA256(session key, "g2e")` and ESP→ground frames `"e2g"` (details in [[Protocol Spec v0]] §1); the session key itself tags nothing. Why: with one key for both directions, a node accepted its own frames sent back to it (reflection). One reflected `SETPOINT` could push the ground's window past every real `STATE` for the rest of the session, and could hide a real link loss. Separate keys make a reflected frame fail the tag, for every message type, and an implementation that gets it wrong refuses everything instead of letting reflections through. Cost: two extra HMACs once per session and 32 bytes of RAM; nothing extra per frame (the per-frame HMAC cost of §4 is unchanged). Recorded in [[Protocol Spec v0]] §1 (v1.2).
+
 ## 6. Glossary
 
 | Term | Meaning |
@@ -64,4 +68,11 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **MAC** | Message Authentication Code: a keyed tag that proves a message is intact and from a key holder (here a truncated HMAC-SHA256). |
+| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key. |
+| **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
+| **Nonce** | A random number used once per session (`ground_nonce`, `esp_nonce`), so every session gets a different session key. |
+| **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived ([[Protocol Spec v0]] §1). |
+| **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) ([[Protocol Spec v0]] §1, #150). |
+| **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
