@@ -25,6 +25,11 @@ tags:
 > - Since then the ESP's USB is never connected, as this ADR requires (its USB chip and FC T4 would both drive the ESP RX). It stays on the production SoftAP until the custom firmware ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]); the first flash of that firmware needs a written procedure.
 > - The decision does not change.
 
+> [!info] Update 2026-11-04: OTA and the written procedure (GitHub #62)
+> - [[ADR-024 OTA Firmware Updates|ADR-024]] keeps OTA as the normal way to update the ESP, with a password, and only while the FC is disarmed and no ground session is open.
+> - First flash and recovery stay on USB with the ESP taken off the FC wires, as this ADR requires. The written procedure is the "Flash" section of `drone/firmware/esp8266/README.md`.
+> - The decision does not change.
+
 ## 1. Context
 
 - UART0 (GPIO1 TX / GPIO3 RX) is the only full-duplex UART. `Serial1` (UART1) is **TX-only** on GPIO2 (ESP8266 Arduino core docs).

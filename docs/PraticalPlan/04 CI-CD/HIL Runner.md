@@ -3,7 +3,7 @@ title: HIL Runner
 type: ci-cd
 status: draft
 date: 2026-10-12
-updated: 2026-11-02
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - ci
@@ -67,7 +67,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 | Device name | `/dev/hil-esp`, udev rule in `/etc/udev/rules.d/99-hil.rules`, matched on vendor, product and FTDI serial |
 | Original firmware backup | `spare_esp_backup.bin`, 4 194 304 bytes, SHA-256 `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e`. Kept off the repo. |
 | Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. `hil.yaml` builds the `esp` env and uploads it to `/dev/hil-esp`. |
-| SoftAP | Its own name and passwords, never the drone's: Secrets `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters). `hil.yaml` stops if the SSID is empty. `SD_PSK_HIL` is kept for message signing (ADR-002) and is not used yet. |
+| SoftAP | Its own name and passwords, never the drone's: Secrets `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters, different from each other: `secrets.py` stops the build otherwise, ADR-024 D3). `hil.yaml` stops if the SSID is empty. `SD_PSK_HIL` is kept for message signing (ADR-002) and is not used yet. |
 | Network | The Pi has only its built-in Wi-Fi, used for the internet, so it time-slices it: Wi-Fi tests run in windows of under 2 minutes (decided 2026-10-26, [[ADR-020 HIL Runner|ADR-020]], #48). The lab profile is `netplan-wlan0-SEAME`, autoconnect on. `runner` may run `sudo nmcli` without a password (`/etc/sudoers.d/hil-nmcli`). The window is `drone/tests/hil/softap_window.sh` (§3.2). |
 
 ### 3.2 Wi-Fi window (`softap_window.sh`, #106)
@@ -110,7 +110,7 @@ Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.
 
 ## 4. First HIL tests (`drone/tests/hil/`)
 
-1. **Smoke:** OTA flash → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received. *Today (`test_smoke.py`): USB flash → `boot mode:(3,…)` in the ROM output, no crash markers → UART0 silent for 10 s at 115200. Boot output read at 115200 from the reset edge holds no MSP header or frame, over 3 resets (ESP-S1-03).*
+1. **Smoke:** USB flash (§3.1, not OTA) → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received. *Today (`test_smoke.py`): USB flash → `boot mode:(3,…)` in the ROM output, no crash markers → UART0 silent for 10 s at 115200. Boot output read at 115200 from the reset edge holds no MSP header or frame, over 3 resets (ESP-S1-03).*
 2. **Passthrough (ESP only, GitHub #106):** allowed MSP messages go through the gateway firmware (#101), all others are dropped. The 2026-10-26 scope decision ([[ADR-020 HIL Runner|ADR-020]]) takes the FC off the bench, so the AETR mapping on the real FC is checked by hand (GitHub #104) and in Betaflight SITL, not here. *Today (`wifi/test_bridge.py`, inside the window): on the transparent bridge, UDP 5760 ↔ UART0 in both directions.*
 3. **Failsafe timing:** stop sending → measure time until telemetry reports `LINK_FAILSAFE` (expect 250 ms ± one loop).
 4. **Security:** bad tag / stale seq → counters increase, FC values unchanged.
