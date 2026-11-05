@@ -31,7 +31,7 @@ tags:
 | 4 | 1 | flags | reserved in v0: sent as 0, ignored (§7.5) |
 | 5 | 1 | reserved | 0 |
 | 6 | 2 | payload_len | ≤ 256. Also the **TCP framing** length (OD-03) |
-| 8 | 4 | session_id | 0 only in `HELLO` |
+| 8 | 4 | session_id | 0 only in `HELLO`. `HELLO_ACK` carries the new `session_id` in the header and in the payload |
 | 12 | 4 | seq | per sender, per session, **per transport** (TCP and UDP each count on their own), starts at 1. `HELLO` and `HELLO_ACK` use 1 |
 | 16 | 4 | t_send_us | sender monotonic µs, **for latency logging only** (OD-10). Freshness uses the ESP's receive clock. |
 | 20 | n | payload | |
@@ -51,20 +51,22 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 
 ## 3. Messages v0
 
-| Type | Name | Payload |
-|---|---|---|
-| 0x01 | HELLO | proto u8, ground_nonce[16] (tag uses the PSK) |
-| 0x02 | HELLO_ACK | session_id u32, esp_nonce[16], fw_version[12] (tag uses the PSK) |
-| 0x03 | ARM_CONTROL_REQUEST | mask u8 (expected override mask) |
-| 0x04 | ARM_CONTROL_ACK | result u8 (§3.1) |
-| 0x05 | RESUME_REQUEST | none |
-| 0x06 | RESUME_ACK | result u8 (§3.1) |
-| 0x07 | BYE | reason u8 (§3.1) |
-| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | key u8, value i32. Keys in §7.3. `CONFIG_SET` is rejected while control is enabled (OD-16) |
-| 0x22 | CONFIG_ACK | key u8, result u8 (§3.1), value i32 (the current value; after a refused `CONFIG_SET`, the unchanged one). Reply to `CONFIG_GET` and `CONFIG_SET` |
-| 0x40 | EVENT | code u16 (§3.1), text[≤64] |
-| 0x60 | SETPOINT | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 (reserved in v0: sent as 0, ignored) |
-| 0x80 | STATE | esp_state u8 (§3.1), override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
+| Type | Name | Bytes | Payload |
+|---|---|---|---|
+| 0x01 | HELLO | 17 | proto u8, ground_nonce[16] (tag uses the PSK) |
+| 0x02 | HELLO_ACK | 32 | session_id u32, esp_nonce[16], fw_version[12] (tag uses the PSK) |
+| 0x03 | ARM_CONTROL_REQUEST | 1 | mask u8 (expected override mask) |
+| 0x04 | ARM_CONTROL_ACK | 1 | result u8 (§3.1) |
+| 0x05 | RESUME_REQUEST | 0 | none |
+| 0x06 | RESUME_ACK | 1 | result u8 (§3.1) |
+| 0x07 | BYE | 1 | reason u8 (§3.1) |
+| 0x20 / 0x21 | CONFIG_GET / CONFIG_SET | 5 | key u8, value i32 (ignored in `CONFIG_GET`, sent as 0). Keys in §7.3. `CONFIG_SET` is rejected while control is enabled (OD-16) |
+| 0x22 | CONFIG_ACK | 6 | key u8, result u8 (§3.1), value i32 (the current value; after a refused `CONFIG_SET`, the unchanged one; 0 when there is no value, for example an unknown key). Reply to `CONFIG_GET` and `CONFIG_SET` |
+| 0x40 | EVENT | 2–66 | code u16 (§3.1), text[≤64] |
+| 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 (reserved in v0: sent as 0, ignored) |
+| 0x80 | STATE | 28 | esp_state u8 (§3.1), override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
+
+Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, so they change no state (REQ-COM-001, REQ-COM-004).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
 
@@ -128,8 +130,8 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 1. Check length, magic and version, then the **tag** (constant time). On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
 3. A message is accepted only if `seq` is greater than the last one accepted from that sender **on the same transport** ([[ADR-003 Sequence Acceptance|ADR-003]]). Control uses `last_ctrl_seq`. Otherwise drop and count.
-4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. This check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
-5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. Neither triggers the failsafe on its own: only `T_loss` does (§7.2).
+4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs, and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. The `mode` check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
+5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. An unknown type or a wrong payload size (§3) is dropped and counted, and the connection stays open: the framing is intact. None of these triggers the failsafe on its own: only `T_loss` does (§7.2).
 
 ## 5. Command → RC channel mapping (resolves FC-08 in [[ESP_to_FC]])
 
@@ -151,14 +153,14 @@ Stored in `drone/tests/vectors/*.json` in the software repo. The C++ (#99) and P
 |---|---|---|
 | 1 Valid frames | One per message type in §3 | Both sides encode and decode the same bytes |
 | 2 HMAC | Tag with the PSK (`HELLO`) and with the session key; one flipped payload bit; one flipped tag bit | Any changed bit is rejected |
-| 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame | Garbage is rejected before it is read (§4 rule 1) |
+| 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame; unknown type (`bad_type`) and wrong payload size for the type (`bad_payload_size`, added 2026-11-05) | Garbage is rejected before it is read (§4 rule 1, §3 sizes) |
 | 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
 | 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
 | 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500, `mode` 2 rejected (`reject:bad_mode`) and then a valid `SETPOINT` with the same `seq` accepted | The RC channels sent to the FC (§4–5) |
-| 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` per result 0–5; a `SET` with an out-of-range value while `STREAMING` returns 5 (state checked first); a `GET` while `STREAMING` returns 0; `CONFIG_GET` on a Safety key returns 0 | Config replies (§3.1) |
+| 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
 
-- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5 and 6 list several steps or the expected channels.
+- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 7 list several steps or the expected channels.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
 - Adding a vector is free. Changing or deleting one changes the protocol and needs a dated entry in §8.
 
@@ -267,7 +269,7 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 |---|---|---|
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
-| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Test vector groups 7 and 8 added (§6). Wi-Fi re-association left to #101. |
+| 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
 
 ## 9. Glossary
 
