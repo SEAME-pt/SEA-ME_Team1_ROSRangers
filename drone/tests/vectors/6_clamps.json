@@ -1,5 +1,30 @@
 [
   {
+    "name": "mode_2_then_same_seq",
+    "description": "SETPOINT seq 1 with mode 2 is refused, then a valid SETPOINT with the same seq 1 is accepted: the refused frame used up nothing",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a007856341201000000204e000002000000000000000000676c37a056eabc9b",
+        "expect": "reject:bad_mode"
+      },
+      {
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 1,
+      "rx_rejected": 1,
+      "gaps": 0
+    },
+    "note": "Spec §4 rule 4 and §6 group 6 as decided in #142 (PR #148)."
+  },
+  {
     "name": "map_min",
     "description": "Roll, pitch and yaw -1000, throttle 0: every stick channel at 1000 us",
     "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",

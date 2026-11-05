@@ -25,7 +25,7 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Layer | Files | Does |
 |---|---|---|
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
-| Receiver | `sd/receiver.hpp` | Frame checks + session check, then `check_payload()` (known `type`, §3 payload size, `SETPOINT.mode` 0 or 1), then the sequence window (§4 rules 1–3). Counts rejects. Does not read the other payload values |
+| Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then `check_payload()` (known `type`, §3 payload size, `SETPOINT.mode` 0 or 1), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
 Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK ([[Protocol Spec v0]] §7.5 suggests the PSK also tags `HELLO_ACK`), not with the Receiver.
@@ -109,7 +109,7 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | Check | Where |
 |---|---|
 | Frame, session and sequence checks | `Receiver` (spec §4 rules 1–3) |
-| Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001) |
+| Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001, REQ-COM-002 for `mode`) |
 | `type` allowed on this transport (TCP vs UDP, spec §2) | #102 |
 | Unknown codes, value ranges | #102 (range-limit rule still open in #142) |
 | Config key exists, access (RO / RW), write range, no write while control is enabled | #102, answers with `CONFIG_ACK` (spec §7.3) |
@@ -149,7 +149,7 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **OD-16** | Decision ID in [[PC_to_ESP]] (accepted): configuration is rejected while control is enabled. |
 | **Payload** | The bytes between the 20-byte header and the 8-byte tag of a frame ([[Protocol Spec v0]] §1). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
-| **Receiver** | The library class that checks each frame (tag, session, seq) before any payload is used. |
+| **Receiver** | The library class that checks each frame (tag, session, type, payload size, `SETPOINT.mode`, seq) before any payload is used. |
 | **Session** | One run of the protocol between the ground and the ESP, named by `session_id`; opened by `HELLO` / `HELLO_ACK` ([[ADR-005 TCP Session\|ADR-005]]). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (spec §6). Also called a "golden vector". |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |

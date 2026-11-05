@@ -65,7 +65,7 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 | 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 |
 | 0x80 | STATE | 28 | esp_state u8, override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
 
-Bytes is the payload size. A payload of any other size is rejected (EVENT: 2 + text length, text ≤ 64).
+Bytes is the payload size. A payload of any other size is rejected as `reject:bad_payload_size` (EVENT: 2 + text length, text ≤ 64), and a type not in this table as `reject:bad_type` (REQ-COM-001). Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, so a rejected frame does not move `last_ctrl_seq` and changes no state (REQ-COM-004).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
 
@@ -201,7 +201,7 @@ Found while preparing the review, not discussed for lack of time. Each has a sug
 | `SETPOINT.flags` | Reserved in v0: sent as 0, ignored |
 | Key that tags `HELLO_ACK` | The PSK |
 | `seq` on TCP | One counter per sender, session and transport, from 1; only `seq > last seen` accepted |
-| Range limits (REQ-COM-002) | §4 clamps are the range check; unknown `mode` rejected; max tilt stays in Betaflight. The C++ decoders do not check `mode`, `SETPOINT.flags` or the header `reserved` byte yet |
+| Range limits (REQ-COM-002) | §4 clamps are the range check; unknown `mode` rejected; max tilt stays in Betaflight. The C++ Receiver rejects `mode` other than 0 or 1 (`reject:bad_mode`) before rule 3; `SETPOINT.flags` and the header `reserved` byte are not checked |
 | Repeated malformed TCP input (REQ-COM-019) | Bad tag: drop and count. Bad magic, version or length: close the TCP connection |
 | Wi-Fi re-association (REQ-COM-023) | Settle with the gateway firmware (#101) |
 | `CONFIG_GET.value` | Not decided: ignored and sent as 0? The codec carries it |
@@ -215,7 +215,7 @@ Found while preparing the review, not discussed for lack of time. Each has a sug
 |---|---|---|
 | 2026-10-12 | 0.1 | Draft. |
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
-| 2026-11-03 | 1.0.1 | Clarifications from the C++ library (#99), no wire change: payload sizes (§3), length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Four new open items in §7.5. |
+| 2026-11-03 | 1.0.1 | Clarifications from the C++ library (#99), no wire change: payload sizes, `bad_type` and `bad_payload_size` (§3), length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Four new open items in §7.5. |
 
 ## 9. Glossary
 

@@ -332,28 +332,13 @@ def group3() -> list[dict]:
         rejected("payload_len_mismatch", "The reference frame with one extra byte after the tag", good + b"\0", "bad_length"),
         rejected("truncated_frame", "The reference frame without its last byte", good[:-1], "truncated"),
         rejected("truncated_header", "Only the 20-byte header: shorter than header + tag (28 bytes)", good[:20], "truncated"),
-        # Header and tag are good: the type, size and mode checks (§3, REQ-COM-001/002), run before the seq window.
+        # Header, tag and session are good: the type and size checks (§3, REQ-COM-001), run before the seq window.
         rejected("unknown_type", "Type 0x99 with a valid tag and session: not a §3 message type",
                  with_tag(header(0x99, 10, **h), sp), "bad_type", state=state),
         rejected("setpoint_payload_9_bytes", "SETPOINT with a 9-byte payload (needs 10), valid tag",
                  with_tag(header(0x60, 9, **h), sp[:9]), "bad_payload_size", state=state),
         rejected("event_text_65", "EVENT with 65 text bytes (2 + 65 = 67 > 66), valid tag",
                  with_tag(header(0x40, 67, **h), struct.pack("<H", 0x0102) + b"x" * 65), "bad_payload_size", state=state),
-        rejected("setpoint_mode_2", "SETPOINT with mode 2 (only 0 neutral and 1 attitude exist), valid tag",
-                 encode(dict(REFERENCE, mode=2)), "bad_mode", state=state,
-                 note="reject:bad_mode is spec §4 rule 4 as decided in #142 (PR #148)."),
-        {
-            "name": "malformed_frame_keeps_seq",
-            "description": "seq 1, then seq 5 with mode 2 (refused), then seq 2: the refused frame did not use up seq 5",
-            "key": TEST_KEY.hex(),
-            "state": {"current_session": SESSION, "last_ctrl_seq": 0},
-            "steps": [
-                {"bytes": neutral(1), "expect": "accept"},
-                {"bytes": encode(setpoint(5, 100000, mode=2)).hex(), "expect": "reject:bad_mode"},
-                {"bytes": neutral(2), "expect": "accept"},
-            ],
-            "final": {"last_ctrl_seq": 2, "rx_rejected": 1, "gaps": 0},
-        },
     ]  # fmt: skip
 
 
@@ -387,6 +372,18 @@ def group5() -> list[dict]:
 
 def group6() -> list[dict]:
     return [
+        {
+            "name": "mode_2_then_same_seq",
+            "description": "SETPOINT seq 1 with mode 2 is refused, then a valid SETPOINT with the same seq 1 is accepted: the refused frame used up nothing",
+            "key": TEST_KEY.hex(),
+            "state": {"current_session": SESSION, "last_ctrl_seq": 0},
+            "steps": [
+                {"bytes": encode(setpoint(1, 20000, mode=2)).hex(), "expect": "reject:bad_mode"},
+                {"bytes": neutral(1), "expect": "accept"},
+            ],
+            "final": {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0},
+            "note": "Spec §4 rule 4 and §6 group 6 as decided in #142 (PR #148).",
+        },
         channels("map_min", "Roll, pitch and yaw -1000, throttle 0: every stick channel at 1000 us",
                  roll=-1000, pitch=-1000, yaw_rate=-1000, throttle=0),
         channels("map_center", "All sticks 0, throttle 500: 1500 us everywhere", throttle=500),

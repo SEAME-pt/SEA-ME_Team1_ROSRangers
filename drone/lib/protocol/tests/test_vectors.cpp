@@ -318,7 +318,7 @@ TEST_P(Vector, Check) {
     ASSERT_TRUE(rx.start_session(v["state"].at("current_session"), key));
   }
 
-  // Group 5: several frames, the result after each one.
+  // Groups 5 and 6: several frames, the result after each one.
   if (v.contains("steps")) {
     int i = 0;
     for (const auto &step : v["steps"]) {
@@ -426,7 +426,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 40U);
+  EXPECT_GE(names.size(), 44U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

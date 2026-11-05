@@ -154,13 +154,13 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 40 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 44 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
-| `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type, a wrong size or a bad mode | Garbage is refused before it is read, and a malformed frame does not use up its seq |
+| `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
 | `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
-| `6_clamps` | Setpoints to the 8 RC channels | The FC gets the right channels and never a value out of range |
+| `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |
