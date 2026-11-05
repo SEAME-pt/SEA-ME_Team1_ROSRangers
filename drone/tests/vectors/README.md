@@ -43,14 +43,14 @@ Optional fields:
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
 | `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3). A single frame goes to the Receiver of its type |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
-| `psk`, `ground_nonce`, `esp_nonce` | Group 2: `key` is the session key derived from these |
+| `psk`, `ground_nonce`, `esp_nonce`, `direction` | Group 2: `key` is derived from these: the session key, then the key of `direction` (`g2e` ground→ESP or `e2g` ESP→ground, spec §1) |
 
 ## 1a. The files and how they are made
 
 | File | Group | Vectors |
 |---|---|---|
 | `1_valid_frames.json` | 1 Valid frames | 15 |
-| `2_hmac.json` | 2 HMAC | 4 |
+| `2_hmac.json` | 2 HMAC | 6 |
 | `3_header.json` | 3 Header | 9 |
 | `4_session.json` | 4 Session | 2 |
 | `5_sequence.json` | 5 Sequence | 6 |
@@ -146,11 +146,11 @@ Proves: the byte layout is the same on both sides.
 }
 ```
 
-### Group 2: HMAC (4 vectors)
+### Group 2: HMAC (6 vectors)
 
-`hello_signed_with_psk` (accept), `setpoint_signed_with_session_key` (accept), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
+`hello_signed_with_psk` (accept), `setpoint_signed_with_ground_to_esp_key` (accept), `state_signed_with_esp_to_ground_key` (accept), `reflected_setpoint_rejected` (the ground's own SETPOINT checked with the ESP→ground key: `reject:bad_tag`), `setpoint_payload_bit_flipped` (reject), `setpoint_tag_bit_flipped` (reject).
 
-Proves: the tag is computed over the right bytes, and any changed bit is refused.
+Proves: the tag is computed over the right bytes with the key of the right direction, any changed bit is refused, and a frame sent back to its sender is refused (#150).
 
 Example: the reference frame with **one bit flipped in the roll byte** (`64` → `65`), tag unchanged:
 

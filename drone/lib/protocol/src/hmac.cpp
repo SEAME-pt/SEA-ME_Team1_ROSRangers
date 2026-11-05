@@ -168,6 +168,17 @@ Key derive_session_key(const Key &psk,
   return out;
 }
 
+DirectionKeys derive_direction_keys(const Key &session_key) {
+  static constexpr std::uint8_t kGroundToEsp[] = {'g', '2', 'e'};
+  static constexpr std::uint8_t kEspToGround[] = {'e', '2', 'g'};
+  DirectionKeys out{};
+  hmac_sha256(session_key.bytes, kKeySize, kGroundToEsp, sizeof(kGroundToEsp),
+              out.ground_to_esp.bytes);
+  hmac_sha256(session_key.bytes, kKeySize, kEspToGround, sizeof(kEspToGround),
+              out.esp_to_ground.bytes);
+  return out;
+}
+
 bool equal_constant_time(const std::uint8_t *a, const std::uint8_t *b,
                          std::size_t len) {
   std::uint8_t diff = 0;

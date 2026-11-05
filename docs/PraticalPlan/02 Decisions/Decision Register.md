@@ -91,6 +91,7 @@ tags:
   - **OD-06** resolved: `T_fresh` = 150 ms, separate from `T_loss` (spec §7.2). [[ADR-004 ESP Failsafe|ADR-004]] is unchanged: `T_loss` stays 250 ms.
   - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
   - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
+- 2026-11-05, decision **extended**: [[ADR-002 Message Integrity|ADR-002]] uses one key per direction (`"g2e"` / `"e2g"`, derived from the session key), so a node refuses its own frames sent back to it (#150, spec v1.2).
 
 ## 8. Still open
 

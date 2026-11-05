@@ -114,3 +114,29 @@ TEST(ConstantTime, EqualAndDifferent) {
   EXPECT_FALSE(sd::equal_constant_time(a, c, 4));
   EXPECT_TRUE(sd::equal_constant_time(a, c, 0));
 }
+
+// ADR-002 entry of 2026-11-05 (#150). Expected values from Python's hmac
+// module: PSK 00..1F, ground nonce 11 x 16, ESP nonce 22 x 16.
+TEST(DirectionKeys, AreHmacOfTheSessionKeyWithG2eAndE2g) {
+  sd::Key psk{};
+  for (std::size_t i = 0; i < sd::kKeySize; ++i) {
+    psk.bytes[i] = static_cast<std::uint8_t>(i);
+  }
+  std::uint8_t ground[sd::kNonceSize];
+  std::uint8_t esp[sd::kNonceSize];
+  std::memset(ground, 0x11, sizeof(ground));
+  std::memset(esp, 0x22, sizeof(esp));
+  const sd::Key session = sd::derive_session_key(psk, ground, esp);
+  const sd::DirectionKeys keys = sd::derive_direction_keys(session);
+
+  EXPECT_EQ(hex(keys.ground_to_esp.bytes, sd::kKeySize),
+            "bb0b20baf093c79ac77f89eb087d0e68a35bb31cf90f34a09bb2d41837b9e117");
+  EXPECT_EQ(hex(keys.esp_to_ground.bytes, sd::kKeySize),
+            "7353101a8458bfe9911c7269d2ec7aa4f94d13c0b2cfad27bd454e078f96b33d");
+  // Three different keys: a frame sealed for one direction never passes the
+  // other direction's check.
+  EXPECT_NE(hex(keys.ground_to_esp.bytes, sd::kKeySize),
+            hex(keys.esp_to_ground.bytes, sd::kKeySize));
+  EXPECT_NE(hex(keys.ground_to_esp.bytes, sd::kKeySize),
+            hex(session.bytes, sd::kKeySize));
+}

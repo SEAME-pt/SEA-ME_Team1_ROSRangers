@@ -70,9 +70,10 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 | `HmacSha256.Rfc4231Case2` | Key "Jefe", message "what do ya want for nothing?" → official result | Same, with a short key |
 | `HmacSha256.Rfc4231Case6KeyLongerThanBlock` | A 131-byte key (longer than 64) → official result | Long keys are handled (hashed first) |
 
-## SessionKey: the key of each connection
+## SessionKey and DirectionKeys: the keys of each connection
 | Test | What it does | Why it matters |
 |---|---|---|
+| `DirectionKeys.AreHmacOfTheSessionKeyWithG2eAndE2g` | The ground→ESP and ESP→ground keys equal HMAC(session key, "g2e") and HMAC(session key, "e2g") (values from Python), and differ from each other and from the session key | A frame sent back to its own sender fails the seal (#150) |
 | `SessionKey.IsHmacOfSessAndBothNonces` | The session key equals HMAC(PSK, "sess" + ground nonce + ESP nonce). Swapping the two nonces gives a different key | Both sides must compute the same key, and the order matters |
 
 ## ConstantTime: comparing seals safely
@@ -160,9 +161,9 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 57 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 59 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
-| `2_hmac` | Seals made with the PSK and with the session key; one changed bit | The seal is computed over the right bytes with the right key |
+| `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
 | `4_session` | Frames for another session, or session 0 | Old or foreign connections cannot be replayed |
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |

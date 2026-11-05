@@ -41,6 +41,20 @@ Key derive_session_key(const Key &psk,
                        const std::uint8_t ground_nonce[kNonceSize],
                        const std::uint8_t esp_nonce[kNonceSize]);
 
+// One key per direction (ADR-002 entry of 2026-11-05, #150):
+//   ground_to_esp = HMAC-SHA256(session key, "g2e")
+//   esp_to_ground = HMAC-SHA256(session key, "e2g")
+// Each side seals with its sending key and checks with its receiving key, so a
+// frame sent back to its own sender (reflection) fails the tag. The ESP's
+// Receivers use ground_to_esp, the ground's use esp_to_ground. HELLO and
+// HELLO_ACK stay tagged with the PSK. Wipe the session key after this call.
+struct DirectionKeys {
+  Key ground_to_esp;
+  Key esp_to_ground;
+};
+
+DirectionKeys derive_direction_keys(const Key &session_key);
+
 // Compares in time that depends only on len, not on where the bytes differ
 // (spec §4 rule 1).
 bool equal_constant_time(const std::uint8_t *a, const std::uint8_t *b,

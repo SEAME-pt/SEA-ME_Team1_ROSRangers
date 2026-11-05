@@ -325,12 +325,20 @@ TEST_P(Vector, Check) {
   const json &v = GetParam().v;
   const sd::Key key = key_from_hex(v.at("key"));
 
-  // Group 2: the key is the session key derived from the PSK and the nonces.
+  // Group 2: the key is derived from the PSK and the nonces: the session key,
+  // then the key of one direction ("g2e" or "e2g", ADR-002, #150).
   if (v.contains("psk")) {
     const Bytes ground = from_hex(v.at("ground_nonce"));
     const Bytes esp = from_hex(v.at("esp_nonce"));
-    const sd::Key derived = sd::derive_session_key(key_from_hex(v.at("psk")),
+    const sd::Key session = sd::derive_session_key(key_from_hex(v.at("psk")),
                                                    ground.data(), esp.data());
+    sd::Key derived = session;
+    if (v.contains("direction")) {
+      const std::string direction = v.at("direction");
+      ASSERT_TRUE(direction == "g2e" || direction == "e2g") << direction;
+      const sd::DirectionKeys keys = sd::derive_direction_keys(session);
+      derived = direction == "g2e" ? keys.ground_to_esp : keys.esp_to_ground;
+    }
     EXPECT_EQ(to_hex(derived.bytes, sd::kKeySize), v.at("key"));
   }
 
@@ -469,7 +477,7 @@ TEST(Vectors, FilesLoadedAndNamesUnique) {
   for (const auto &g : vectors()) {
     names.push_back(g.v.at("name"));
   }
-  EXPECT_GE(names.size(), 57U);
+  EXPECT_GE(names.size(), 59U);
   std::sort(names.begin(), names.end());
   EXPECT_EQ(std::adjacent_find(names.begin(), names.end()), names.end())
       << "vector names must be unique";

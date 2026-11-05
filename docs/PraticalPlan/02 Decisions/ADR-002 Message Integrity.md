@@ -3,6 +3,7 @@ title: ADR-002 — Message Integrity
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - D02
@@ -53,6 +54,8 @@ Every UDP and TCP message carries an **8-byte truncated HMAC-SHA256 tag** over h
 - [[PC_to_ESP]] §6, §8 · [[Protocol Spec v0]] · [[Decision Register]]
 
 > 2026-11-05: `HELLO` and `HELLO_ACK` are tagged with the PSK. The session key needs `esp_nonce`, which is inside `HELLO_ACK`, and the tag is checked before the payload is read. Every later message uses the session key. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5. The decision is unchanged.
+
+> 2026-11-05: **The decision is extended: one key per direction** (GitHub #150, decided by the team). After the handshake, ground→ESP frames are tagged with `HMAC-SHA256(session key, "g2e")` and ESP→ground frames with `HMAC-SHA256(session key, "e2g")`; the session key itself tags nothing. Why: with one key for both directions, a node accepted its own frames sent back to it (reflection). One reflected `SETPOINT` could push the ground's window past every real `STATE` for the rest of the session, and could hide a real link loss. Separate keys make a reflected frame fail the tag, for every message type, and an implementation that gets it wrong refuses everything instead of letting reflections through. Cost: two HMACs once per session and 32 bytes of RAM; nothing per frame. Recorded in [[Protocol Spec v0]] §1 (v1.2).
 
 ## 6. Glossary
 
