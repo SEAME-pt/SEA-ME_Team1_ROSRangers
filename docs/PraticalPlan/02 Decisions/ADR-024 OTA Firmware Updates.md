@@ -1,8 +1,9 @@
 ---
 title: ADR-024 — OTA Firmware Updates on the Flight ESP
 type: adr
-status: proposed
+status: accepted
 date: 2026-11-04
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - adr
@@ -13,8 +14,8 @@ tags:
 
 # ADR-024 — OTA Firmware Updates on the Flight ESP
 
-> [!warning] Status: PROPOSED (2026-11-04, GitHub #62)
-> D1 to D3 were decided by the team on 2026-11-04, and the upload lock in D2 on 2026-11-05. D4 and D5 are proposals. The approving review of the PR that adds this ADR accepts them: its last commit before the merge sets this ADR, the Decision Register and Home to Accepted.
+> [!success] Status: ACCEPTED (2026-11-05, GitHub #62)
+> D1 to D3 were decided by the team on 2026-11-04, and the upload lock in D2 on 2026-11-05. D4 and D5 were accepted by BrunoBMFT's approving review of PR #145 (2026-11-05). The status change was meant to be the last commit of #145; that PR merged first, so it is recorded here.
 > Resolves OD-23 in [[PC_to_ESP]] in part. Signed images are still planned for Module 3.
 
 ## 1. Context
@@ -64,9 +65,9 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
 
 Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environment variables). Both must be at least 8 characters and different from each other; `secrets.py` stops the build otherwise. They are never committed. A build without an OTA password is not allowed.
 
-**D4. Flight builds keep OTA** (proposal). `WITH_OTA` stays `1` in every env. The D2 gate already covers the flight case, and compiling OTA out would bring back the USB-on-FC problem from ADR-012. A build that turns it off must say so in its env comment.
+**D4. Flight builds keep OTA** (accepted 2026-11-05, #145). `WITH_OTA` stays `1` in every env. The D2 gate already covers the flight case, and compiling OTA out would bring back the USB-on-FC problem from ADR-012. A build that turns it off must say so in its env comment.
 
-**D5. Written procedure** (proposal). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
+**D5. Written procedure** (accepted 2026-11-05, #145). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
 - **Every update:** OTA, [[Safety Rules]] apply.
   - Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.
   - No ground session during the upload: the ground node is stopped (after #102 the ESP also blocks it, D2).
