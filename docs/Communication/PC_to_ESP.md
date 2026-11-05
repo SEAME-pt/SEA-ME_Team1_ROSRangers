@@ -3,7 +3,7 @@ title: Ground Computer ↔ ESP8266 Communication Architecture
 type: architecture-design
 status: draft
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-10-23
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -28,12 +28,12 @@ tags:
 > This page records agreed design directions and *proposes* further detail. Nothing described here has been implemented or tested. Exact packet formats, port numbers, timeouts, rates and numerical limits are deliberately **not** specified and are listed as open decisions in [§12](#12-open-decisions).
 
 > [!success] Update 2026-11-03: Protocol Spec v0 accepted
-> The design review of 2026-11-03 (#97) froze [[Protocol Spec v0]]. OD-04 (ports: UDP and TCP 5759) and OD-06 (`T_fresh` = 150 ms) are now accepted, see §12 and the spec §7. Items still open after the review are in the spec §7.5.
+> The design review of 2026-11-03 (#97) froze [[Protocol Spec v0]]. OD-04 (ports: UDP and TCP 5759) and OD-06 (`T_fresh` = 150 ms) are now accepted, see §12 and the spec §7. The items left open by the review were decided on 2026-11-05 (#142, spec §7.5); only Wi-Fi re-association (REQ-COM-023) is still open, to be settled with the gateway firmware (#101).
 
 > [!info] Update 2026-10-23: custom firmware
 > The 2026-10-20 note below is out of date. Since 2026-10-21 the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`) instead of AT 1.7.4. It is still a transparent bridge: the protocol on the ESP and the failsafe are not implemented yet. ESP-S1-05 passed on 2026-10-23 at short range (worst silence 203 ms, below `T_loss` = 250 ms, [[ESP Bench Test Plan]] §4).
 
-> [!info] Update 2026-10-20: bench state (history, out of date)
+> [!info] Update 2026-10-20: bench state
 > The banner above is the 2026-10-12 state. The ESP-12F (ESP8266) now runs the stock AT firmware in the production SoftAP scenario, soldered to FC UART4 since 2026-10-19. Latency and loss were measured with the AT bridge ([[ESP Bench Test Plan]] §4). The custom firmware, the protocol on the ESP and the failsafe are not implemented or tested yet.
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
@@ -260,8 +260,8 @@ All requirements apply to **control-setpoint UDP traffic** unless stated otherwi
 ### 6.1 Malformed packets *(agreed: must be handled)*
 
 - **REQ-COM-001 (was REQ-VAL-01)**: The receiver shall check every datagram for structural validity (e.g. length consistent with declared type, recognised protocol version, recognised message type) *before* interpreting its contents.
-- **REQ-COM-002 (was REQ-VAL-02)**: The receiver shall check field-level validity (values within the allowed range for that field) before any value is passed on toward the FC. Range limits are TBD. → Suggested in GitHub #142 ([[Protocol Spec v0]] §7.5).
-- **REQ-COM-003 (was REQ-VAL-03)**: The receiver shall verify an integrity check on each datagram. The mechanism (checksum/CRC vs. cryptographic authentication) is an open decision; see [§8](#8-security-considerations). → Accepted: truncated HMAC-SHA256 ([[ADR-002 Message Integrity|ADR-002]], [[Protocol Spec v0]] §1).
+- **REQ-COM-002 (was REQ-VAL-02)**: The receiver shall check field-level validity (values within the allowed range for that field) before any value is passed on toward the FC. Range limits are TBD.
+- **REQ-COM-003 (was REQ-VAL-03)**: The receiver shall verify an integrity check on each datagram. The mechanism (checksum/CRC vs. cryptographic authentication) is an open decision; see [§8](#8-security-considerations).
 - **REQ-COM-004 (was REQ-VAL-04)**: Datagrams failing any check shall be discarded without side effects on control state, and counted in a diagnostic counter (by failure category where practical).
 - **REQ-COM-005 (was REQ-VAL-05)**: Malformed input shall never cause a crash, hang, buffer overrun or undefined behaviour on the ESP8266.
 
@@ -269,8 +269,8 @@ All requirements apply to **control-setpoint UDP traffic** unless stated otherwi
 
 - **REQ-COM-006 (was REQ-SEQ-01)** *(proposed)*: Each control-setpoint message shall carry a sequence number assigned by the sender, advancing for each new setpoint sent.
 - **REQ-COM-007 (was REQ-SEQ-02)**: The receiver shall track the sequence number of the most recently accepted control message.
-- **REQ-COM-008 (was REQ-SEQ-03)**: Sequence-number width and wrap-around behaviour shall be defined, and comparison shall be correct across wrap-around. Width is TBD. → Accepted: 32-bit, no wrap-aware comparison; `seq ≥ 2^31` forces a new session ([[ADR-003 Sequence Acceptance|ADR-003]]).
-- **REQ-COM-009 (was REQ-SEQ-04)**: Sequence-number state shall be associated with a session so that a restarted sender is not confused with replayed old traffic. Session/epoch mechanism is TBD. → Accepted: random 32-bit `session_id` per session ([[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]]).
+- **REQ-COM-008 (was REQ-SEQ-03)**: Sequence-number width and wrap-around behaviour shall be defined, and comparison shall be correct across wrap-around. Width is TBD.
+- **REQ-COM-009 (was REQ-SEQ-04)**: Sequence-number state shall be associated with a session so that a restarted sender is not confused with replayed old traffic. Session/epoch mechanism is TBD.
 
 ### 6.3 Duplicates and reordering
 
@@ -292,7 +292,7 @@ Validation yields a stream of **accepted** control messages. [§7](#7-connection
 ### 6.6 TCP messages
 
 - **REQ-COM-017 (was REQ-TCP-01)**: TCP messages shall use explicit framing (length-delimited or equivalent) and be validated for structure, version and type before use.
-- **REQ-COM-018 (was REQ-TCP-02)**: Configuration requests shall be acknowledged, with success/failure reported to the ground side. → `CONFIG_ACK` suggested in GitHub #142 ([[Protocol Spec v0]] §7.5).
+- **REQ-COM-018 (was REQ-TCP-02)**: Configuration requests shall be acknowledged, with success/failure reported to the ground side.
 - **REQ-COM-019 (was REQ-TCP-03)**: Malformed TCP input shall be rejected without corrupting state; handling of repeated malformed input (e.g. closing the connection) is TBD.
 
 ---
@@ -522,7 +522,7 @@ The communication design is accepted for a given phase only when the relevant cr
 | # | Decision | Blocks | Owner | Status | Proposed resolution |
 |---|---|---|---|---|---|
 | OD-01 | ESP8266 firmware path: keep AT firmware or move to custom C++ | Implementation |  | Accepted | Custom ESP8266 firmware; portable protocol library tested off-target. [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] |
-| OD-02 | Wire message format: encoding, field layout, message IDs, versioning scheme | Implementation |  | Accepted (draft spec) | Fixed-layout binary, 20-byte header + 8-byte tag: Accepted 2026-11-03: [[Protocol Spec v0]] v1.0. |
+| OD-02 | Wire message format: encoding, field layout, message IDs, versioning scheme | Implementation |  | Accepted (draft spec) | Fixed-layout binary, 20-byte header + 8-byte tag: [[Protocol Spec v0]] (to freeze in week 3). |
 | OD-03 | TCP framing method | Implementation |  | Accepted | Length-prefixed: the header `payload_len` field frames TCP messages ([[Protocol Spec v0]] §1). |
 | OD-04 | Port numbers and addressing scheme (static IP / discovery) | Implementation |  | Accepted (2026-11-03) | Static IPs on the ESP SoftAP [[ADR-006 Network\|ADR-006]]. UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved ([[Protocol Spec v0]] §7.1). |
 | OD-05 | Control-setpoint update rate (and acceptable jitter) | Implementation |  | Method + initial value | Start at 50 Hz; confirm by measurement ([[Testing Strategy]]). |
@@ -536,16 +536,16 @@ The communication design is accepted for a given phase only when the relevant cr
 | OD-13 | Resumption handshake after loss | Bench testing |  | Accepted | No automatic resume: `RESUME_REQUEST` in a valid session + ≥ 500 ms neutral stream; new session needs `ARM_CONTROL_REQUEST`. [[ADR-004 ESP Failsafe\|ADR-004]] |
 | OD-14 | Policy when TCP drops but UDP continues (and vice versa) | Bench testing |  | Accepted (supersedes earlier rec.) | UDP decides liveness. TCP loss alone blocks new arming/config but does not failsafe. [[ADR-005 TCP Session\|ADR-005]] |
 | OD-15 | Telemetry transport per item (UDP vs TCP) and telemetry content/rate | Implementation |  | Accepted | Periodic state over UDP; events, logs, acks over TCP. [[ADR-008 Telemetry Transport\|ADR-008]] |
-| OD-16 | Restrictions on configuration while control is active | Bench testing |  | Accepted | Reject configuration while control is enabled, except disable-control ([[Protocol Spec v0]]). The spec has no such exception: open in spec §7.5. |
+| OD-16 | Restrictions on configuration while control is active | Bench testing |  | Accepted | Reject configuration while control is enabled. No exception: control is ended with `BYE`, not a config key (#142, 2026-11-05; [[Protocol Spec v0]] §3.1). |
 | OD-17 | Wi-Fi topology (ESP8266 as access point vs station on a ground-side access point) and supported security mode | Implementation |  | Accepted (supersedes earlier rec.) | ESP8266 SoftAP, WPA2-PSK, static IPs, Wi-Fi sleep off; revisit if > 4 clients. [[ADR-006 Network\|ADR-006]] |
 | OD-18 | Key/credential provisioning and rotation | Bench testing |  | Partly resolved | PSK injected at build time from a secret, never committed. Rotation still open. [[ADR-002 Message Integrity\|ADR-002]] |
-| OD-19 | Where the shared message definitions live and how both ends stay in sync | Implementation |  | Accepted | Spec in this vault ([[Protocol Spec v0]]); code in `drone/lib/protocol` and `drone/ground/src/sd_protocol_py` of this repo + shared golden vectors in `drone/tests/vectors` ([[Repository Layout]]). |
+| OD-19 | Where the shared message definitions live and how both ends stay in sync | Implementation |  | Accepted | Spec in this vault ([[Protocol Spec v0]]); code in `drone/lib/protocol` and `drone/ground/src/sd_protocol_py` of the software repo + shared golden vectors in `drone/tests/vectors` ([[Repository Layout]]). |
 | OD-20 | ESP8266 behaviour under overload (priorities, limits on non-control traffic) | Bench testing |  | Open | — |
 | OD-21 | Ground-side bridge form (ROS 2 node, library, other) | Implementation |  | Accepted | `flight_interface` ROS 2 lifecycle node ([[System Overview]]). |
 | OD-22 | Numerical acceptance thresholds for §11 | Bench testing |  | Open | — |
 | OD-23 | Firmware update mechanism and authentication | Flight testing |  | Recommended | Signed OTA (RSA-2048 + SHA256, supported by the ESP8266 core) in Module 3 ([[Roadmap to April 2027]]). |
 
-### Related pages
+### Suggested related pages *(none confirmed to exist)*
 
 - [[ESP_to_FC]] *(exists; hardware-specific FC details)*
 - `[[Drone Link Threat Model]]` *(suggested)*
@@ -585,21 +585,18 @@ The communication design is accepted for a given phase only when the relevant cr
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **API** | Application Programming Interface: a defined way for software components to communicate. |
 | **AT command** | Text command used to configure or control a modem or microcontroller module. |
-| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
-| **HMAC** | Hash-based Message Authentication Code: a keyed tag that proves a message came from someone holding the key (ADR-002 uses a truncated HMAC-SHA256). |
 | **Mermaid** | A text-based diagram syntax rendered by compatible Markdown tools. |
-| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
-| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
-| **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
-| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
-| **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
-| **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **API** | Application Programming Interface: a defined way for software components to communicate. |
+| **CRC** | Cyclic Redundancy Check: a checksum that detects accidental corruption (not tampering). |
+| **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
+| **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
+| **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
