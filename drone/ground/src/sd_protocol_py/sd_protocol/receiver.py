@@ -1,9 +1,11 @@
-"""Receive rules of spec §4 (1 to 3) for one transport inside one session.
+"""Receive rules of spec §4 for one transport inside one session.
 
-Frame checks, session check, the message type and its payload size
-(REQ-COM-001, spec §3), the SETPOINT mode (§4 rule 4), then the sequence window
-(ADR-003). Use one Receiver per transport (UDP control, TCP session): each has
-its own seq (spec §1).
+Order (spec §4, v1.1.1): frame checks (rule 1), session (rule 2), message type,
+transport (§2), payload size (§3, REQ-COM-001), SETPOINT mode (rule 4), then
+the sequence window (rule 3, ADR-003). A frame refused before the window
+changes no state. Use one Receiver per transport (UDP control, TCP session):
+each has its own seq, and each accepts only the types of its transport, so a
+frame captured on one cannot be replayed on the other.
 
 HELLO is not handled here: it arrives before a session exists and is tagged with
 the PSK, so the link state machine checks it with decode_frame() and then calls
@@ -24,6 +26,8 @@ from sd_protocol.messages import (
     HELLO_ACK_SIZE,
     HELLO_SIZE,
     STATE_SIZE,
+    Transport,
+    transport_of,
 )
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
 from sd_protocol.setpoint import SETPOINT_SIZE
@@ -47,6 +51,7 @@ class RxResult(IntEnum):
     BAD_TYPE = 12  # message type not in spec §3 (REQ-COM-001)
     BAD_PAYLOAD_SIZE = 13  # payload_len does not match the type (spec §3, REQ-COM-001)
     BAD_MODE = 14  # SETPOINT mode other than 0 or 1 (spec §4 rule 4, REQ-COM-002)
+    WRONG_TRANSPORT = 15  # a TCP type on the UDP Receiver or the other way (spec §2)
 
 
 def is_accepted(result: RxResult) -> bool:
@@ -70,6 +75,7 @@ class RxCounters:
     bad_type: int = 0
     bad_payload_size: int = 0
     bad_mode: int = 0
+    wrong_transport: int = 0
 
 
 _FRAME_REJECTS = {
@@ -113,6 +119,7 @@ class Receiver:
         self._key = b""
         self._session_id = 0
         self._in_session = False
+        self._transport = Transport.UDP
         self._window = SeqWindow()
         self.counters = RxCounters()
 
@@ -125,6 +132,10 @@ class Receiver:
         return self._session_id
 
     @property
+    def transport(self) -> Transport:
+        return self._transport
+
+    @property
     def last_seq(self) -> int:
         return self._window.last
 
@@ -132,19 +143,28 @@ class Receiver:
     def seq_counters(self) -> SeqCounters:
         return self._window.counters
 
-    def start_session(self, session_id: int, session_key: bytes) -> bool:
-        """Opens a session: the key and session_id every frame must match. Resets the window.
+    def start_session(
+        self, session_id: int, session_key: bytes, transport: Transport
+    ) -> bool:
+        """Opens a session on one transport: the key and session_id every frame must match.
 
-        session_id 0 is reserved for HELLO and is refused (returns False).
+        Only the types of `transport` (spec §2) are accepted. The window starts at 1
+        on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on UDP.
+        session_id 0 is reserved for HELLO and is refused (returns False); then
+        nothing changes, and a session that was open stays open. Never open the
+        same (session_id, key) twice: the window restarts, so every frame of that
+        session would be accepted again.
         """
         if len(session_key) != KEY_SIZE:
             raise ValueError(f"session key must be {KEY_SIZE} bytes")
+        transport = Transport(transport)  # ValueError before anything changes
         if session_id == 0:
             return False
         self._key = bytes(session_key)
         self._session_id = session_id
+        self._transport = transport
         self._in_session = True
-        self._window.reset()
+        self._window.reset(1 if transport is Transport.TCP else 0)
         return True
 
     def end_session(self) -> None:
@@ -173,11 +193,16 @@ class Receiver:
         if frame.header.session_id != self._session_id:
             return self._reject(RxResult.WRONG_SESSION)
 
-        # Type, payload size (REQ-COM-001) and SETPOINT mode (§4 rule 4), before
-        # the window: a malformed frame must not use up its seq (REQ-COM-004).
+        # Type, transport (§2), payload size (REQ-COM-001) and SETPOINT mode
+        # (§4 rule 4), before the window: a malformed frame must not use up its
+        # seq (REQ-COM-004).
         sizes = PAYLOAD_SIZES.get(frame.header.type)
         if sizes is None:
             return self._reject(RxResult.BAD_TYPE)
+        # Both transports use the same session key: without this, a frame
+        # captured on TCP could be replayed on UDP, or the other way.
+        if transport_of(frame.header.type) is not self._transport:
+            return self._reject(RxResult.WRONG_TRANSPORT)
         if not sizes[0] <= len(frame.payload) <= sizes[1]:
             return self._reject(RxResult.BAD_PAYLOAD_SIZE)
         if (

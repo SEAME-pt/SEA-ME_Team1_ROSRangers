@@ -55,6 +55,7 @@ class SeqWindow:
             return SeqResult.ACCEPTED_GAP
         return SeqResult.ACCEPTED
 
-    def reset(self) -> None:
-        self._last = 0
+    def reset(self, last: int = 0) -> None:
+        """Starts a new session. `last` is the seq already used (1 on TCP: HELLO)."""
+        self._last = last
         self.counters = SeqCounters()

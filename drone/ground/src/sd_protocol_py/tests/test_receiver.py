@@ -6,8 +6,10 @@ from sd_protocol import (
     MsgType,
     Receiver,
     RxResult,
+    Transport,
     encode_frame,
     is_accepted,
+    transport_of,
 )
 
 # Same cases as drone/lib/protocol/tests/test_receiver.cpp.
@@ -34,13 +36,21 @@ OTHER_SESSION = bytes.fromhex(
 )
 
 
-def open_receiver() -> Receiver:
+def open_receiver(transport: Transport = Transport.UDP) -> Receiver:
     rx = Receiver()
-    assert rx.start_session(SESSION, TEST_KEY)
+    assert rx.start_session(SESSION, TEST_KEY, transport)
     return rx
 
 
+def setpoint(session: int, seq: int) -> bytes:
+    """A neutral SETPOINT (UDP) with any session and seq."""
+    return encode_frame(
+        Header(MsgType.SETPOINT, 0, session, seq), SEQ1[20:30], TEST_KEY
+    )
+
+
 def resume_request(session: int, seq: int) -> bytes:
+    """A RESUME_REQUEST (TCP, empty payload)."""
     return encode_frame(Header(MsgType.RESUME_REQUEST, 0, session, seq), b"", TEST_KEY)
 
 
@@ -54,13 +64,20 @@ def test_nothing_is_accepted_before_a_session():
 
 def test_session_id_zero_is_reserved_for_hello():
     rx = Receiver()
-    assert not rx.start_session(0, TEST_KEY)
+    assert not rx.start_session(0, TEST_KEY, Transport.UDP)
     assert not rx.in_session
 
 
 def test_session_key_must_be_32_bytes():
     with pytest.raises(ValueError):
-        Receiver().start_session(SESSION, TEST_KEY[:31])
+        Receiver().start_session(SESSION, TEST_KEY[:31], Transport.UDP)
+
+
+def test_unknown_transport_refused_and_nothing_changes():
+    rx = open_receiver()
+    with pytest.raises(ValueError):
+        rx.start_session(SESSION + 1, TEST_KEY, 2)
+    assert (rx.session_id, rx.transport) == (SESSION, Transport.UDP)
 
 
 def test_accepts_a_valid_frame_and_returns_its_fields():
@@ -83,7 +100,7 @@ def test_wrong_session_rejected_even_with_a_valid_tag():
 
 def test_session_id_zero_outside_hello_rejected():
     rx = open_receiver()
-    assert rx.receive(resume_request(0, 1))[0] is RxResult.WRONG_SESSION
+    assert rx.receive(setpoint(0, 1))[0] is RxResult.WRONG_SESSION
 
 
 # Vector group 5 (sequence): the seq_duplicate example from the README.
@@ -102,8 +119,8 @@ def test_older_seq_zero_and_too_high_rejected():
     rx = open_receiver()
     assert rx.receive(SEQ7)[0] is RxResult.ACCEPTED_GAP
     assert rx.receive(SEQ3)[0] is RxResult.OLD_SEQ
-    assert rx.receive(resume_request(SESSION, 0))[0] is RxResult.OLD_SEQ
-    assert rx.receive(resume_request(SESSION, 0x80000000))[0] is RxResult.SEQ_TOO_HIGH
+    assert rx.receive(setpoint(SESSION, 0))[0] is RxResult.OLD_SEQ
+    assert rx.receive(setpoint(SESSION, 0x80000000))[0] is RxResult.SEQ_TOO_HIGH
     assert rx.counters.old_seq == 2
     assert rx.counters.seq_too_high == 1
     assert rx.seq_counters.gaps == 1
@@ -142,14 +159,14 @@ def test_wrong_key_rejected():
     rx = Receiver()
     other = bytearray(TEST_KEY)
     other[31] ^= 0xFF
-    assert rx.start_session(SESSION, bytes(other))
+    assert rx.start_session(SESSION, bytes(other), Transport.UDP)
     assert rx.receive(SEQ1)[0] is RxResult.BAD_TAG
 
 
 def test_new_session_resets_the_window_and_end_session_closes_it():
     rx = open_receiver()
     assert rx.receive(SEQ3)[0] is RxResult.ACCEPTED_GAP
-    assert rx.start_session(SESSION, TEST_KEY)
+    assert rx.start_session(SESSION, TEST_KEY, Transport.UDP)
     assert rx.last_seq == 0
     assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED
 
@@ -200,8 +217,8 @@ def test_payload_size_must_match_the_type():
     ],
 )
 def test_payload_size_bounds(msg_type, size, ok):
-    rx = open_receiver()
-    buf = encode_frame(Header(msg_type, 0, SESSION, 1), bytes(size), TEST_KEY)
+    rx = open_receiver(transport_of(msg_type))
+    buf = encode_frame(Header(msg_type, 0, SESSION, 2), bytes(size), TEST_KEY)
     assert is_accepted(rx.receive(buf)[0]) is ok
 
 
@@ -220,3 +237,36 @@ def test_setpoint_mode_other_than_0_or_1_rejected_before_the_seq_check():
     assert rx.receive(bad) == (RxResult.BAD_MODE, None)
     assert (rx.counters.bad_mode, rx.counters.rejected, rx.last_seq) == (1, 1, 0)
     assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED  # same seq, now accepted
+
+
+# Spec §2 (v1.1.1): each Receiver accepts only the types of its transport.
+def test_tcp_window_starts_at_1_after_hello():
+    tcp = open_receiver(Transport.TCP)
+    assert tcp.transport is Transport.TCP
+    assert tcp.last_seq == 1
+    assert tcp.receive(resume_request(SESSION, 1)) == (RxResult.DUPLICATE_SEQ, None)
+    assert tcp.receive(resume_request(SESSION, 2))[0] is RxResult.ACCEPTED
+
+
+def test_frame_on_the_wrong_transport_rejected_and_seq_not_used():
+    udp, tcp = open_receiver(Transport.UDP), open_receiver(Transport.TCP)
+    assert udp.receive(resume_request(SESSION, 2)) == (RxResult.WRONG_TRANSPORT, None)
+    assert tcp.receive(SEQ7) == (RxResult.WRONG_TRANSPORT, None)
+    assert (udp.counters.wrong_transport, udp.counters.rejected, udp.last_seq) == (
+        1,
+        1,
+        0,
+    )
+    assert (tcp.counters.wrong_transport, tcp.counters.rejected, tcp.last_seq) == (
+        1,
+        1,
+        1,
+    )
+    assert udp.receive(SEQ7)[0] is RxResult.ACCEPTED_GAP
+    assert tcp.receive(resume_request(SESSION, 2))[0] is RxResult.ACCEPTED
+
+
+def test_unknown_type_is_bad_type_not_wrong_transport():
+    tcp = open_receiver(Transport.TCP)
+    unknown = encode_frame(Header(0xA0, 0, SESSION, 2), b"", TEST_KEY)
+    assert tcp.receive(unknown)[0] is RxResult.BAD_TYPE

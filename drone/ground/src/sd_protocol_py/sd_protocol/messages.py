@@ -59,6 +59,22 @@ class EventCode(IntEnum):
     LINK_RESUMED = 0x0103
 
 
+class Transport(IntEnum):
+    """Spec §2: 0x01-0x5F travel on TCP, 0x60-0x9F on UDP."""
+
+    UDP = 0
+    TCP = 1
+
+
+def transport_of(msg_type: int) -> Transport | None:
+    """The transport a type belongs to (spec §2). None outside both ranges."""
+    if 0x01 <= msg_type <= 0x5F:
+        return Transport.TCP
+    if 0x60 <= msg_type <= 0x9F:
+        return Transport.UDP
+    return None
+
+
 # --- Payloads.
 
 NONCE_SIZE = 16

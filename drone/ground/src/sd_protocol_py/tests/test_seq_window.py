@@ -67,3 +67,13 @@ def test_reset_starts_a_new_session():
     assert w.last == 0
     assert w.counters.duplicates == 0
     assert w.accept(1) is SeqResult.ACCEPTED
+
+
+def test_reset_can_start_after_a_used_seq():
+    # TCP: HELLO and HELLO_ACK used seq 1, so the window starts at 1.
+    w = SeqWindow()
+    w.accept(9)
+    w.reset(1)
+    assert w.last == 1
+    assert w.accept(1) is SeqResult.DUPLICATE
+    assert w.accept(2) is SeqResult.ACCEPTED

@@ -32,6 +32,7 @@ from sd_protocol.messages import (
     Hello,
     HelloAck,
     State,
+    Transport,
     decode_config_ack,
     decode_config_kv,
     decode_event,
@@ -46,6 +47,7 @@ from sd_protocol.messages import (
     encode_hello_ack,
     encode_state,
     encode_u8_payload,
+    transport_of,
 )
 from sd_protocol.receiver import (
     PAYLOAD_SIZES,
@@ -107,6 +109,7 @@ __all__ = [
     "SeqWindow",
     "Setpoint",
     "State",
+    "Transport",
     "decode_config_ack",
     "decode_config_kv",
     "decode_event",
@@ -132,4 +135,5 @@ __all__ = [
     "is_accepted",
     "protocol_version",
     "setpoint_to_rc",
+    "transport_of",
 ]

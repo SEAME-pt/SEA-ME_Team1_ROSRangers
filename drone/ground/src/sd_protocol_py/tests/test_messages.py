@@ -22,6 +22,7 @@ from sd_protocol import (
     Hello,
     HelloAck,
     State,
+    Transport,
     decode_config_ack,
     decode_config_kv,
     decode_event,
@@ -36,6 +37,7 @@ from sd_protocol import (
     encode_hello_ack,
     encode_state,
     encode_u8_payload,
+    transport_of,
 )
 
 # Same cases and expected bytes as drone/lib/protocol/tests/test_messages.cpp.
@@ -150,3 +152,20 @@ def test_wrong_sizes_refused(d):
     assert decode_config_kv(bytes(CONFIG_KV_SIZE + d)) is None
     assert decode_config_ack(bytes(CONFIG_ACK_SIZE + d)) is None
     assert decode_state(bytes(STATE_SIZE + d)) is None
+
+
+@pytest.mark.parametrize(
+    "msg_type, transport",
+    [
+        (0x00, None),
+        (0x01, Transport.TCP),
+        (0x5F, Transport.TCP),
+        (0x60, Transport.UDP),
+        (0x9F, Transport.UDP),
+        (0xA0, None),
+        (0xFF, None),
+    ],
+)
+def test_transport_of_follows_spec_section_2(msg_type, transport):
+    assert transport_of(msg_type) is transport
+    assert [int(t) for t in Transport] == [0, 1]

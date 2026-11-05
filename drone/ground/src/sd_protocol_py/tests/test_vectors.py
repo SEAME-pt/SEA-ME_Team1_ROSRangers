@@ -11,6 +11,7 @@ import pytest
 
 from sd_protocol import (
     FW_VERSION_SIZE,
+    ConfigAck,
     ConfigKv,
     Event,
     Header,
@@ -21,6 +22,8 @@ from sd_protocol import (
     RxError,
     Setpoint,
     State,
+    Transport,
+    decode_config_ack,
     decode_config_kv,
     decode_event,
     decode_frame,
@@ -30,6 +33,7 @@ from sd_protocol import (
     decode_state,
     decode_u8_payload,
     derive_session_key,
+    encode_config_ack,
     encode_config_kv,
     encode_event,
     encode_frame,
@@ -40,6 +44,7 @@ from sd_protocol import (
     encode_u8_payload,
     is_accepted,
     setpoint_to_rc,
+    transport_of,
 )
 
 VECTOR_DIR = Path(__file__).resolve().parents[4] / "tests" / "vectors"
@@ -113,6 +118,10 @@ CODECS = {
     "RESUME_REQUEST": (lambda f: b"", lambda p: {} if p == b"" else None),
     "CONFIG_GET": _config(),
     "CONFIG_SET": _config(),
+    "CONFIG_ACK": (
+        lambda f: encode_config_ack(ConfigAck(f["config_key"], f["result"], f["value"])),
+        lambda p: (lambda m: {"config_key": m.key, "result": m.result, "value": m.value})(decode_config_ack(p)),
+    ),
     "EVENT": (
         lambda f: encode_event(Event(f["code"], f["text"].encode("ascii"))),
         lambda p: (lambda m: {"code": m.code, "text": m.text.decode("ascii")})(decode_event(p)),
@@ -139,14 +148,28 @@ def result_name(key: bytes, buf: bytes, rx: Receiver | None) -> str:
     return "accept" if is_accepted(result) else f"reject:{result.name.lower()}"
 
 
-def receiver_for(vector: dict, key: bytes) -> Receiver | None:
+def receivers_for(vector: dict, key: bytes) -> dict[Transport, Receiver] | None:
+    """One Receiver per transport with the vector's session open (README `state`)."""
     state = vector.get("state")
     if state is None:
         return None
-    rx = Receiver()
-    assert rx.start_session(state["current_session"], key)
     assert state.get("last_ctrl_seq", 0) == 0, "vectors start from a fresh session"
-    return rx
+    assert state.get("last_tcp_seq", 1) == 1, "the TCP window starts after HELLO"
+    rxs = {t: Receiver() for t in Transport}
+    for t, rx in rxs.items():
+        assert rx.start_session(state["current_session"], key, t)
+    return rxs
+
+
+def receiver_of(rxs: dict[Transport, Receiver] | None, buf: bytes) -> Receiver | None:
+    """A single frame goes to the Receiver of its type (README); unknown types to UDP."""
+    if rxs is None:
+        return None
+    return (
+        rxs[transport_of(buf[3]) or Transport.UDP]
+        if len(buf) > 3
+        else rxs[Transport.UDP]
+    )
 
 
 def test_names_are_unique():
@@ -157,23 +180,27 @@ def test_names_are_unique():
 @pytest.mark.parametrize("vector", VECTORS, ids=lambda v: v["name"])
 def test_vector(vector):
     key = bytes.fromhex(vector["key"])
-    rx = receiver_for(vector, key)
+    rxs = receivers_for(vector, key)
 
     if "steps" in vector:
         for i, step in enumerate(vector["steps"]):
             buf = bytes.fromhex(step["bytes"])
+            rx = rxs[Transport[step.get("transport", "udp").upper()]]
             assert result_name(key, buf, rx) == step["expect"], f"step {i}"
+        udp, tcp = rxs[Transport.UDP], rxs[Transport.TCP]
         final = vector.get("final", {})
         if "last_ctrl_seq" in final:
-            assert rx.last_seq == final["last_ctrl_seq"]
-        if "rx_rejected" in final:
-            assert rx.counters.rejected == final["rx_rejected"]
+            assert udp.last_seq == final["last_ctrl_seq"]
+        if "last_tcp_seq" in final:
+            assert tcp.last_seq == final["last_tcp_seq"]
+        if "rx_rejected" in final:  # totals over both transports
+            assert udp.counters.rejected + tcp.counters.rejected == final["rx_rejected"]
         if "gaps" in final:
-            assert rx.seq_counters.gaps == final["gaps"]
+            assert udp.seq_counters.gaps + tcp.seq_counters.gaps == final["gaps"]
         return
 
     buf = bytes.fromhex(vector["bytes"])
-    assert result_name(key, buf, rx) == vector["expect"]
+    assert result_name(key, buf, receiver_of(rxs, buf)) == vector["expect"]
 
     fields = vector.get("fields")
     if fields is None:
@@ -214,5 +241,4 @@ def test_session_key_derivation(vector):
 
 
 def test_every_message_type_has_a_codec():
-    # CONFIG_ACK has no vector and no field names in README §1a yet (#142).
-    assert set(CODECS) == {t.name for t in MsgType} - {"CONFIG_ACK"}
+    assert set(CODECS) == {t.name for t in MsgType}
