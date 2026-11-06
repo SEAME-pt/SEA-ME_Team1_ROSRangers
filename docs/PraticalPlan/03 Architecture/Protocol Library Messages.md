@@ -33,7 +33,7 @@ Who calls the codecs: the firmware (link state machine #102) after the Receiver 
 
 Then it calls `derive_keys(psk, ground_nonce, esp_nonce)` (spec §1, #150, #152). It returns only the two direction keys; the session key never leaves the function and is wiped there. The ESP seals with `esp_to_ground` and gives `ground_to_esp` to its Receivers; the ground does the opposite.
 
-Each side has one Receiver per transport, created with its role: `Receiver(Role::kEsp, Transport::kUdp)` and `Receiver(Role::kEsp, Transport::kTcp)` on the ESP, `Role::kGround` on the ground. `start_session(id, rx_key)` opens the session. A Receiver accepts only its transport's types and only what the other side sends (spec §2), the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it, and it wipes its key when it is destroyed or the session ends.
+Each side has one Receiver per transport, created with its role: `Receiver(Role::kEsp, Transport::kUdp)` and `Receiver(Role::kEsp, Transport::kTcp)` on the ESP, `Role::kGround` on the ground. `start_session(id, rx_key)` opens the session. A Receiver accepts only its transport's types and only what the other side sends (spec §2), the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it, and it wipes its key when it is destroyed or the session ends. During a pending session (#156) the ESP keeps a second, candidate Receiver per transport with the new key; the firmware (#102) promotes it at the first valid frame (the old session gets `BYE` reason 3) or drops it after 2 s.
 
 ## 2. API contract (all codecs)
 
