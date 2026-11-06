@@ -59,7 +59,7 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
 - **At every boot**, once, whatever the reason for the boot: after a successful update, after an abort in step 1 or 2 (`ESP.restart()`), and after a watchdog reset or power glitch during the transfer (the old image boots and does not know a lock was taken). This is harmless at any time: value 0 never arms or disarms.
 - **In the running firmware** after a failed upload: sent once and only if `locked` is set, by the main loop. Never from ArduinoOTA's callbacks: the error callback also runs for a wrong password (from the UDP callback, before any lock) and can run twice for one failed upload; it only marks the release as due.
 
- Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle also clears it.
+ Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle (disconnect the battery and the FC USB) also clears it.
 
 **Today:** the firmware is still the transparent bridge. It calls `handle()` without any gate and has neither the lock nor sessions. #102 implements D2; until then the D5 procedure is the only protection.
 
@@ -87,7 +87,7 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
   - The MSP allow-list ([[MSP Cheat Sheet]]) gets `MSP_SET_ARMING_DISABLED` (99) as **ESP-originated only**: never forwarded from the network.
   - The ESP polls `MSP_STATUS` itself at 5 Hz ([[ADR-009 ESP to FC Link|ADR-009]]), also with no session open, so 500 ms tolerates two missed replies. These replies are used by the ESP and **not forwarded** to the ground PC.
   - ArduinoOTA in core 3.1.2 does not close other sockets: `_runUpdate()` never calls `WiFiUDP::stopAll()` or `WiFiClient::stopAll()` (older 2.x cores did). So the bridge's UDP socket stays open after a failed or stale upload. If the core is updated, check this again; if it does close them, #102 reopens the sockets or restarts after any OTA error.
-  - **Bench test** (props off, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
+  - **Bench test** (props off, battery connected as D5 requires, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
     - an upload is refused while armed, with a session open (SESSION_IDLE, STREAMING, LINK_FAILSAFE) and with no recent `MSP_STATUS`; accepted when disarmed with no session;
     - the upload is aborted if the fresh `MSP_STATUS` in the start callback says armed or does not come;
     - a wrong password is refused while armed, no lock is taken and arming is unaffected;

@@ -3,6 +3,7 @@ title: ADR-012 — ESP UART Pins (ESP8266)
 type: adr
 status: accepted-with-conditions
 date: 2026-10-12
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - D12
@@ -40,6 +41,7 @@ tags:
 
 - Use **UART0 on GPIO1/GPIO3** (pins labelled TX/RX).
 - **Procedure:** USB and FC are never connected to UART0 at the same time. Unplug the FC wires (or use OTA) to flash.
+  - 2026-11-06 (#164): OTA needs the battery connected, because the FC USB does not power the ESP ([[ADR-024 OTA Firmware Updates|ADR-024]] D5 correction). Battery and USB together are allowed with props off (Safety Rules #16).
 - Debug output goes over Wi-Fi (diagnostics category) or to `Serial1` (GPIO2/D4) with a USB-TTL adapter. There is no `Serial.print` on UART0.
 
 ## 3. Rejected alternative

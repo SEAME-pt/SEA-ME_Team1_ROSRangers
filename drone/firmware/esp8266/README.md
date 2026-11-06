@@ -80,7 +80,7 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 ### Every later update (OTA)
 
-1. **Battery connected** (the ESP needs it), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**: the ESP sends no neutral frames while it updates and reboots.
+1. **Battery connected** (the ESP needs it; VTX antenna on before the battery goes in, Safety Rules #2), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**, two people present (#15), the battery never left unattended (#8): the ESP sends no neutral frames while it updates and reboots.
 2. No ground session: stop the ground node (`flight_interface`).
 3. Join the drone network: `python3 scripts/seame.py network connect`.
 4. Upload (the OTA password comes from `secrets.py`). The current firmware does **not** check the arm state or the session yet: steps 1 and 2 are the only protection until #102 adds the ADR-024 gate and lock.
