@@ -3,7 +3,7 @@ title: Open Questions
 type: tracking
 status: active
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - questions
@@ -86,7 +86,7 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 - [ ] **Second track label per issue:** allow one extra `track:` label when a task really belongs to two tracks (e.g. A+B bench tests, B+E ThoneFlow spike), instead of exactly one. Raised 2026-10-26; the team leans towards allowing it. Sprint 2 issues #104 and #108 already use two. Decide at the next weekly; then update the rule in `CLAUDE.md` (GitHub #110).
 
 ### Tests
-- [ ] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? (week 2)
+- [x] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? → Yes: 408 935 bytes ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30)
 - [ ] ThoneFlow frame rate (66 vs 25 Hz), byte order and checksum (week 3, [[ThoneFlow]] §9.2).
 
 ## 3. Glossary

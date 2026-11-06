@@ -58,7 +58,7 @@ SEA-ME_Team1_ROSRangers/
 │       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
 │       └── tools/             # (target, #60) unit tests of the bench tools, now in tests/scripts/
 ├── docs/                      # Obsidian vault (plan, ADRs, architecture, hardware, process)
-├── scripts/                   # repo tooling only: sync-labels.sh
+├── scripts/                   # repo tooling: sync-labels.sh
 │                              #   (the bench tools there move to drone/tools/bench, #60)
 ├── .github/
 │   ├── workflows/             # ci.yaml, hil.yaml, close-linked-issues.yaml

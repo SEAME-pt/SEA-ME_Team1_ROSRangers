@@ -3,7 +3,7 @@ title: Hardware Inventory
 type: hardware
 status: active
 date: 2026-10-12
-updated: 2026-10-29
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - hardware
@@ -25,7 +25,7 @@ tags:
 | Drone | Pilotix Brook 2.5" Cinewhoop 4S Analog PNP (SKU 5297) | [[2.5Drone]] |
 | FC + ESC | OddityRC F7 40A AIO, target `ODDITYRCF7AIO` (STM32F722, ICM-42688-P gyro, 16 MB blackbox flash, AT7456E OSD) | [[2.5Drone]], Betaflight config repo |
 | Barometer | **DPS310, detected** (`status` 2026-10-13/14: `I2C:1`, `BARO=DPS310`, 0 I2C errors) | [[2.5Drone]] |
-| Firmware | Betaflight 4.5.1, MSP API 1.46 → upgrade to 2026.6.2 ([[ADR-014 Betaflight Version\|ADR-014]]) | [[2.5Drone]] |
+| Firmware | Betaflight **2026.6.2** since 2026-10-28 (was 4.5.1, MSP API 1.46) ([[ADR-014 Betaflight Version\|ADR-014]]) | [[2.5Drone]] |
 | Motors / props | 1405-4800KV / HQ DT63-3 V2 | [[2.5Drone]] |
 | Camera | Ratel 2 (analog) | [[2.5Drone]] |
 | VTX | PandaRC VT5804 BAT LITE, up to 1.3 W, Tramp on UART3, MMCX antenna | [[2.5Drone]] |
