@@ -3,7 +3,7 @@ title: Betaflight Setup
 type: procedure
 status: draft
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - betaflight
@@ -40,6 +40,8 @@ Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_20
 | HORIZON | AUX2 (CH6) | 1300–1700 | not mapped yet |
 | BEEPER | AUX3 (CH7) | 1700–2100 | not mapped yet |
 | USER1 | AUX5 (CH9) | 1300–1700 | not mapped yet |
+
+> 2026-11-06 (team, GitHub #161): **airmode is off** on the drone (no AIRMODE mode on a switch; arming is the only switch mode used for it). With airmode off, an armed drone at zero throttle does not drive its motors above idle when the frame is tilted; the motors still spin at idle (`motor_idle`). Safety Rules #18 relies on this.
 
 > [!warning] Unmapped channels sit at mid-stick
 > Channels with no switch assigned sit at about 1500 µs. That value is inside the HORIZON and USER1 ranges, so both show as active in `MSP_STATUS` until the switches are assigned. MSP OVERRIDE is not configured yet ([[ADR-010 MSP Override|ADR-010]]).
@@ -116,6 +118,7 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
+| **Airmode** | Betaflight mode that keeps stabilising at zero throttle, so the motors can speed up above idle when the frame is tilted. Off on this drone (2026-11-06). |
 | **AUX1** | First auxiliary RC channel (CH5). On this drone it carries the ARM switch (SA). |
 | **ESC** | Electronic Speed Controller: drives one motor. The FC's 4-in-1 ESC also stores each motor's spin direction. |
 | **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
