@@ -27,6 +27,7 @@ Today it cannot:
   - 2026-10-29 blackbox: the DPS310 sits uncovered under the props and its reading jumps when the props blow on it; ALTHOLD engaged during a climb kept climbing twice; the drone drifts sideways (GitHub #134 "Known limits").
 - **Nothing measures drift.** The ThoneFlow sees image motion but no height. Image motion is roughly speed ÷ height, so without a height it cannot give a real speed ([[ADR-016 Flow Sensor Path|ADR-016]] §2.4). It also needs a reader on the ESP that is not built yet (GitHub #107, #108).
 - **The only spare height sensor is an HC-SR04 (ultrasonic).** §3.1 explains why ultrasound under our props is a weak choice.
+- **The pilot cannot be the height sensor.** The height limit is 1 m, then 1.5 m ([[Safety Rules]] #19), and today only the pilot can keep it by eye. No one on the team has the piloting experience to do that reliably, so relying on the pilot alone is not considered safe.
 
 A sensor that measures height and drift directly, and that Betaflight already uses, removes most of the pilot's work of keeping the drone still, without new code.
 

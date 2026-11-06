@@ -37,14 +37,15 @@ tags:
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
 17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Every other bench or flight session is attended. Rule #15 covers the drone, not this bench, but #10 still applies.
 18. **Hands off an armed drone** (added 2026-10-29, incident GitHub #131). Nobody touches, catches, pushes or guards an armed drone by hand, even close to the ground. Everyone except the pilot stays outside the flight area while it is armed. If the drone moves towards someone, the pilot disarms with the kill switch (SA) and the person steps back. Hands only after disarm and the props have stopped.
+19. **Height limit: 1 m above take-off for the first flights, then 1.5 m** (added 2026-11-06, team decision 2026-10-29, incidents GitHub #126 and #131). The limit moves to 1.5 m only after the team approves it. Nothing on the drone measures height reliably today (the barometer drifts, [[Height Sensor Study]] §1), so until a height sensor is fitted the pilot keeps the limit by eye.
+    - **Warning:** no one on the team has the piloting experience to hold a height by hand reliably, so relying on the pilot alone is **not considered safe**. That is why a height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06). Fly low, short and away from anything overhead.
 
 ---
 
 ## 2. Open items (not rules yet)
 
 - **Network isolation for the bridge (open, 2026-10-20).** Whether bridge tests need an isolated network is still being tested. The shared SEAME Wi-Fi is under evaluation. Tracked in [[Open Questions]]. Until the team decides, treat the bridge as props-off only (#13).
-- **Height limit and overhead clearance (open, 2026-10-29).** The flight area has no roof; on 2026-10-28 the drone climbed into a steel ceiling beam at about 2 m (incident #126). The team decides a maximum flight height and keeps flights away from beams and anything else overhead.
-  - **Proposed 2026-11-06:** at most **1.0–1.5 m** above take-off. Nothing on the drone measures height reliably today (the barometer drifts, [[Height Sensor Study]] §1), so until a height sensor is fitted the pilot keeps this limit by eye; no program can enforce it.
+- ~~**Height limit and overhead clearance (open, 2026-10-29).**~~ **Closed 2026-11-06:** the team decided the limit on 2026-10-29 (rule #19). The flight area has no roof; on 2026-10-28 the drone climbed into a steel ceiling beam at about 2 m (incident #126). Flights stay away from beams and anything else overhead.
 - ~~**Conflict between #13 and #10 (open, 2026-10-20).**~~ **Closed 2026-10-26.** The HIL scope decision (GitHub #61, [[ADR-020 HIL Runner|ADR-020]]) keeps the flight unit off the HIL bench, so bridge tests with a battery (#13) never run there. #10 stands unchanged: no battery on the HIL bench.
 
 ## 3. Safety roles
