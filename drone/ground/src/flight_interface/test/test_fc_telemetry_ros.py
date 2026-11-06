@@ -104,7 +104,7 @@ class FcTelemetryRosTests(unittest.TestCase):
         first, second = self.attitudes[:2]
         self.assertEqual(first.header.frame_id, "base_link")
         self.assertAlmostEqual(first.vector.x, -0.6 * DEG)
-        self.assertAlmostEqual(first.vector.y, 0.3 * DEG)
+        self.assertAlmostEqual(first.vector.y, -0.3 * DEG)
         self.assertEqual(first.vector.z, 0.0)
         self.assertAlmostEqual(second.vector.x, 171.3 * DEG)
         self.assertAlmostEqual(second.vector.z, -83 * DEG)
@@ -115,6 +115,22 @@ class FcTelemetryRosTests(unittest.TestCase):
         self.assertTrue(math.isnan(battery.percentage))
         self.assertEqual(len(battery.cell_voltage), 4)
         self.assertTrue(battery.present)
+
+    def test_publishes_from_the_real_bridge_trace(self):
+        # 2026-11-06 capture through the ESP bridge: level, then tilted
+        self.start(load_trace("msp_trace_bench_udp.txt"))
+        self.assertTrue(self.spin_until(lambda: len(self.attitudes) >= 2))
+        self.assertTrue(self.spin_until(lambda: len(self.batteries) >= 2))
+
+        level, tilted = self.attitudes[:2]
+        self.assertAlmostEqual(level.vector.x, -0.6 * DEG)
+        self.assertAlmostEqual(level.vector.y, 0.4 * DEG)
+        self.assertEqual(level.vector.z, 0.0)
+        self.assertAlmostEqual(tilted.vector.x, 18.7 * DEG)  # right side down
+        self.assertAlmostEqual(tilted.vector.y, 21.7 * DEG)  # nose down
+        self.assertAlmostEqual(tilted.vector.z, -38 * DEG)  # clockwise
+        self.assertAlmostEqual(self.batteries[0].voltage, 15.53, places=4)
+        self.assertAlmostEqual(self.batteries[1].voltage, 15.52, places=4)
 
     def test_stamp_lies_between_request_and_reply(self):
         self.start({msp.MSP_ATTITUDE: [attitude_payload(1.0, 2.0, 3)]})

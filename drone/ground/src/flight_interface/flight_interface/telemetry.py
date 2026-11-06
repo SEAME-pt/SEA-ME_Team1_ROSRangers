@@ -11,10 +11,12 @@ import math
 
 # Betaflight's signs, turned into REP-103 by multiplying.
 # Yaw was measured on 2026-11-02: clockwise reads positive.
-# Roll and pitch are NOT measured yet (bench check M1, props off): assumed
-# aerospace-like, roll + right side down and pitch + nose up. Fix them here.
+# Roll and pitch were measured on 2026-11-06 (bench check M1, props off,
+# Betaflight 2026.6.2, test/data/msp_trace_bench_udp.txt): right side down
+# reads positive and nose up negative, so both already match REP-103
+# (roll + right side down, pitch + nose down).
 BF_ROLL_SIGN = 1.0
-BF_PITCH_SIGN = -1.0
+BF_PITCH_SIGN = 1.0
 BF_YAW_SIGN = -1.0
 
 POWER_SUPPLY_TECHNOLOGY_LIPO = 3  # sensor_msgs/BatteryState constant

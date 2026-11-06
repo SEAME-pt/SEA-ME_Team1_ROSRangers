@@ -1,8 +1,8 @@
 # SYNTHETIC trace in the `msp_check --trace` format, built from the values of
 # the 2026-10-27 bridge capture and the 2026-10-23 USB reading (Betaflight 4.5.1,
-# #96 comments). Replace it with a real `msp_check --trace` capture on
-# Betaflight 2026.6.2 (props off). The voltage_v field (0.01 V) is made up to
-# match the 0.1 V reading. The last attitude request gets no reply.
+# #96 comments). The real capture is msp_trace_bench_udp.txt; this one stays
+# for the case a real trace cannot show: the last attitude request gets no
+# reply. The voltage_v field (0.01 V) is made up to match the 0.1 V reading.
 PC -> ESP/FC: 24 4d 3c 00 6c 6c
 PC <- ESP/FC: 24 4d 3e 06 6c fa ff fd ff 66 01 0a
 PC -> ESP/FC: 24 4d 3c 00 6e 6e

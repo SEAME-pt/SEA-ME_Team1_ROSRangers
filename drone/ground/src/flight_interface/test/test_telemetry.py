@@ -53,11 +53,11 @@ def test_level_drone_is_all_zero():
 
 
 def test_roll_and_pitch_to_rep103_radians():
-    # Assumed Betaflight signs (bench check M1 pending): roll + right side
-    # down (= REP-103), pitch + nose up (REP-103: + nose down).
+    # Betaflight signs, measured 2026-11-06: roll + right side down, pitch
+    # + nose down. Both equal REP-103.
     roll, pitch, _ = AttitudeConverter().convert(attitude(roll=10.0, pitch=5.0))
     assert roll == pytest.approx(10 * DEG)
-    assert pitch == pytest.approx(-5 * DEG)
+    assert pitch == pytest.approx(5 * DEG)
 
 
 def test_yaw_is_relative_to_the_first_sample_and_counter_clockwise():
@@ -128,7 +128,7 @@ def test_trace_replay_through_the_client():
 
     frame, _ = client.request(msp.MSP_ATTITUDE, timeout=0.05)
     roll, pitch, yaw = conv.convert(msp.decode(frame.cmd, frame.payload))
-    assert (roll, pitch, yaw) == pytest.approx((-0.6 * DEG, 0.3 * DEG, 0.0))
+    assert (roll, pitch, yaw) == pytest.approx((-0.6 * DEG, -0.3 * DEG, 0.0))
 
     frame, _ = client.request(msp.MSP_ANALOG, timeout=0.05)
     fields = battery_fields(msp.decode(frame.cmd, frame.payload), cell_count=4)
@@ -137,10 +137,43 @@ def test_trace_replay_through_the_client():
     frame, _ = client.request(msp.MSP_ATTITUDE, timeout=0.05)
     roll, pitch, yaw = conv.convert(msp.decode(frame.cmd, frame.payload))
     # Yaw 358 -> 81 deg: 83 deg clockwise, so -83 deg in REP-103
-    assert (roll, pitch, yaw) == pytest.approx((171.3 * DEG, -9.2 * DEG, -83 * DEG))
+    assert (roll, pitch, yaw) == pytest.approx((171.3 * DEG, 9.2 * DEG, -83 * DEG))
 
     frame, _ = client.request(msp.MSP_ANALOG, timeout=0.05)
     assert msp.decode(frame.cmd, frame.payload)["voltage_v"] == 15.5
 
     # The trace ends with an attitude request the FC never answered
     assert client.request(msp.MSP_ATTITUDE, timeout=0.01) == (None, None)
+
+
+def test_real_bridge_trace_replay():
+    """Real capture through the ESP bridge (2026-11-06, Betaflight 2026.6.2).
+
+    Two `msp_check info` runs: drone level, then turned ~40 deg clockwise and
+    held with the right side and the nose down.
+    """
+    answers = load_trace("msp_trace_bench_udp.txt")
+    assert len(answers[msp.MSP_ATTITUDE]) == 2
+    assert len(answers[msp.MSP_ANALOG]) == 2
+    client = msp.Client(FakeFc(answers))
+    conv = AttitudeConverter()
+
+    # Level: raw roll -0.6, pitch 0.4, yaw 17 (the yaw zero)
+    frame, _ = client.request(msp.MSP_ATTITUDE, timeout=0.05)
+    roll, pitch, yaw = conv.convert(msp.decode(frame.cmd, frame.payload))
+    assert (roll, pitch, yaw) == pytest.approx((-0.6 * DEG, 0.4 * DEG, 0.0))
+
+    frame, _ = client.request(msp.MSP_ANALOG, timeout=0.05)
+    fields = battery_fields(msp.decode(frame.cmd, frame.payload), cell_count=4)
+    assert fields["voltage"] == pytest.approx(15.53)
+    assert fields["present"]
+
+    # Tilted: raw roll 18.7, pitch 21.7, yaw 55. Right side down and nose
+    # down are both positive in REP-103; 38 deg clockwise is -38 deg.
+    frame, _ = client.request(msp.MSP_ATTITUDE, timeout=0.05)
+    roll, pitch, yaw = conv.convert(msp.decode(frame.cmd, frame.payload))
+    assert (roll, pitch, yaw) == pytest.approx((18.7 * DEG, 21.7 * DEG, -38 * DEG))
+
+    frame, _ = client.request(msp.MSP_ANALOG, timeout=0.05)
+    fields = battery_fields(msp.decode(frame.cmd, frame.payload), cell_count=4)
+    assert fields["voltage"] == pytest.approx(15.52)
