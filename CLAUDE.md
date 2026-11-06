@@ -71,6 +71,21 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
   - Fields: Sprint (2-week iterations: Sprint 0 = 7–18 Oct 2026, Sprint 1 from 19 Oct, … Sprint 4 ends 13 Dec), Phase (Development Plan 1–6), Requirement (text).
   - Automations: auto-add from the repo, item added → Backlog, PR linked → In Review, closed → Done, auto-archive.
   - New sprint: add the next iterations to the Sprint field (Module 2 starts 14 Dec), then turn the next Study Plan weeks into issues with the issue forms.
+- When you create an issue, also do this in the same step:
+  1. Find what it depends on and what depends on it (`gh issue list`, the Study Plan week). Set the GitHub relations with `gh api graphql -f query='mutation{addBlockedBy(input:{issueId:"<blocked node id>",blockingIssueId:"<blocker node id>"}){issue{number}}}'` (node id: `gh issue view N --json id -q .id`). One call per pair; GitHub shows it on both issues.
+  2. Add the `blocked` label while any blocker is open (and to an existing issue the new one blocks).
+  3. End the description with this block, and add the matching `Blocked by #new` / `Blocks #new` line to each existing issue you linked (`gh issue edit N --body-file`):
+     ```
+     ### Planning
+
+     - Sprint: Sprint 2 (2–15 Nov 2026)
+     - Phase: 2
+     - Requirement: REQ-COM-001
+     - Blocked by: #102, #104
+     - Blocks: #109
+     ```
+     Write `none` for an empty line.
+  4. Set the same Sprint, Phase and Requirement fields on the board item.
 - `close-linked-issues.yaml` closes linked issues when a PR merges into `dev`. GitHub only does this by itself for `main`.
 
 ## CI
