@@ -99,6 +99,8 @@ tags:
 
 - New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
 
+- 2026-11-06, #164, PR #165: [[ADR-024 OTA Firmware Updates|ADR-024]] D5 corrected: an OTA update needs the battery connected (the FC USB does not power the ESP); the D2 gate does not refuse an update because of the battery.
+
 ## 9. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.

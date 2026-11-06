@@ -102,7 +102,7 @@ What it does now (ADR-009):
 - **Never sends RC.** Sessions, `SETPOINT` → `MSP_SET_RAW_RC`, the failsafe and `STATE` are #102. OTA is still ungated here, as in the bridge (the ADR-024 gate is #102).
 - **Still missing for #102:** an `MSP_API_VERSION` check at boot (the state machine's BOOT → NO_SESSION), reading `override_active` from `MSP_STATUS`, and a separate internal encoder for `MSP_SET_ARMING_DISABLED` (99, ADR-024 lock): `encode_request` refuses it on purpose.
 
-Flash it like any OTA update (props off, battery out, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
 
 **Bench view (read-only, diagnostic):** any datagram to UDP 5770 gets one text line back:
 
