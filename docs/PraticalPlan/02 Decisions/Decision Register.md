@@ -38,7 +38,7 @@ tags:
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro (2026-11-06: ToF height sensor proposed) | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |

@@ -40,7 +40,7 @@ tags:
 | Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted; ADR-010 and ADR-012 with conditions) |
 | Architecture | [[Architecture Document]] · [[System Overview]] · [[Protocol Spec v0]] · [[Protocol Library Messages]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
-| Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] |
+| Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] · [[Height Sensor Study]] |
 | Gestures | [[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[02 Gesture Node]] · [[03 Intent Node]] · [[04 Mission Node]] · [[05 Future Nodes]] |
 | Reference | [[Verified Facts and Sources]] · [[Open Questions]] |
 
