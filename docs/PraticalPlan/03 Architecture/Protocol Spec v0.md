@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.3.1
+version: 1.3.2
 date: 2026-10-12
 updated: 2026-11-06
 project: SEA autonomous drone
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.3.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.3.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -39,7 +39,7 @@ tags:
 
 Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped (`reject:wrong_direction`), so a reflected `HELLO` or `HELLO_ACK` does nothing. A `HELLO` must have `session_id` 0; a `HELLO_ACK` must carry the same non-zero `session_id` in its header and payload (`reject:wrong_session` otherwise). Both use seq 1 (`reject:bad_seq` otherwise). Payload sizes are checked as in §3. Checked in this order: tag (with the PSK), type, payload size, `session_id`, seq. `HELLO` and `HELLO_ACK` are TCP types (§2): only frames from the TCP connection go to this check.
 
-Random values: `ground_nonce` comes from the ground's operating-system random source, `esp_nonce` and `session_id` from the ESP8266 hardware random number generator (#101/#102). They must never repeat: a repeated pair of nonces gives the same keys, and a recorded session could then be replayed whole. Every `HELLO` (type 0x01) goes to this check, also during a session: a new `HELLO` replaces the session (§3.1, `BYE` reason 3), and the in-session receiver never accepts it.
+Random values: `ground_nonce` comes from the ground's operating-system random source, `esp_nonce` and `session_id` from the ESP8266 hardware random number generator (#101/#102). They must never repeat: a repeated pair of nonces gives the same keys, and a recorded session could then be replayed whole. Every `HELLO` (type 0x01) goes to this check, also during a session: a new `HELLO` opens a pending session, which replaces the current one only once its first valid frame arrives (§3.1, `BYE` reason 3, #156), and the in-session receiver never accepts it.
 
 Every later message is tagged with the key of its direction (2026-11-05, #150): `ground→ESP key = HMAC-SHA256(session key, "g2e")` and `ESP→ground key = HMAC-SHA256(session key, "e2g")`. Each side seals with its sending key and checks with its receiving key, so a frame sent back to its own sender fails the tag (`reject:bad_tag`). The session key itself tags nothing and is wiped once both keys are derived.
 
@@ -123,7 +123,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 | 0 | normal | Operator stops the ground node |
 | 1 | timeout | No traffic from the other side for too long |
 | 2 | protocol error | The other side sent invalid input (§4 rule 5) |
-| 3 | replaced by a new session | A new `HELLO` arrived; the ESP tells the old session it has ended |
+| 3 | replaced by a new session | A new session was confirmed by its first valid frame (a new `HELLO` alone never ends the current session, [[ADR-005 TCP Session\|ADR-005]] entry of 2026-11-06, #156); the ESP tells the old session it has ended |
 
 `EVENT.code` (u16): the high byte is the subsystem, the low byte the event, so a log filter on `0x01xx` shows all link events.
 
@@ -289,6 +289,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.2 | One key per direction (#150, decided by the team; [[ADR-002 Message Integrity\|ADR-002]] entry): in-session tags use the `"g2e"` / `"e2g"` keys (§1), so a reflected frame is refused. Pre-session rule (§1): the ESP accepts only `HELLO` and the ground only `HELLO_ACK`; **not enforced in code yet** (#152, before #101/#102). **Wire change:** the tag of every in-session frame changes; no firmware had shipped. Group 2: `setpoint_signed_with_session_key` replaced by one vector per direction and one reflected frame per direction (§6). |
 | 2026-11-05 | 1.3 | The rules of v1.2 are enforced in code (#152): each side accepts only the types the other side sends (`reject:wrong_direction`, §2); the pre-session checks of `HELLO` / `HELLO_ACK` (§1: `wrong_direction`, `wrong_session`, `bad_seq`). The C++ library derives only the direction keys (`derive_keys`, the session key is wiped inside). Vector group 9 and one more group 8 vector (§6). Also stated: `HELLO` / `HELLO_ACK` are checked only from TCP, the nonces and `session_id` come from a hardware or OS random source and never repeat (§1), and a reflected `BYE` is the one exception to the direction check (§2). |
 | 2026-11-06 | 1.3.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
+| 2026-11-06 | 1.3.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
 
 ## 9. Glossary
 
@@ -315,6 +316,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
+| **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (§3.1, #156). |
 | **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived. It tags nothing and is wiped after that (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) (§1, #150). |
 | **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1), and each side accepts only what the other sends (§2). |
