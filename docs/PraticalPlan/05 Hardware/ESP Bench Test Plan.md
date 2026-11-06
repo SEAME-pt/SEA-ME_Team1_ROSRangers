@@ -38,7 +38,7 @@ tags:
 | ESP-S1-05 | UDP echo at 50 Hz for 10 min, `WIFI_NONE_SLEEP` | Real latency and loss | Median, p99, max RTT and loss % recorded; threshold agreed beforehand | OD-05/06/07 in [[PC_to_ESP]] |
 | ESP-S1-06 | Same as S1-05 with sleep enabled | Why ADR-006 disables sleep | Difference recorded | ADR-006 |
 | ESP-S1-07 | TCP session open + UDP stream at the same time | TCP does not stall control | No UDP gap above the S1-05 max | [[ADR-005 TCP Session\|ADR-005]] |
-| ESP-S1-08 | Current draw with a USB power meter during Wi-Fi transmit | Whether the FC 5V rail can feed it | Peak and average mA recorded | FC-05, [[ADR-013 Wiring and Power\|ADR-013]] |
+| ESP-S1-08 | Current draw with a USB power meter during Wi-Fi transmit | Whether the FC 5V rail can feed it | Peak and average mA recorded. **2026-11-06:** the USB-meter method no longer works: the FC USB alone does not power the ESP, the battery is needed (#164). Method open (for example a meter in series on the ESP 5V wire, battery connected) | FC-05, [[ADR-013 Wiring and Power\|ADR-013]] |
 | ESP-S1-09 | Range: laptop in the coding room, ESP in the cage | The link reaches through the building | S1-05 repeated at the real distance; loss and RTT recorded | ADR-006 |
 | ESP-S1-10 | Watchdog: hang the loop on purpose | The ESP recovers on its own, in a safe state | Reboot + reset reason logged; no control output after reboot | REQ-SAF-016 (was REQ-FS-04) in [[PC_to_ESP]] |
 | ESP-S1-10 | 2026-10-26 | ptorrao-git (comment on #25) | **PASS (bridge part).** ESP on `esp_diag_wdt`, FC on USB, props off, no MSP stream running. Software watchdog (`HANG`, 5 cycles, `s1-10_sw.csv`): 5/5 came back by themselves with reason `Software Watchdog`, network back after 10.0–11.1 s, uptime 7.2–8.6 s when asked. Hardware watchdog (`HANG_HW`, 2 cycles, `s1-10_hw.csv`): 2/2 with reason `Hardware Watchdog`, back after 16.1–18.0 s. FC over USB for the whole 134 s (`s1-10_fc.csv`, 1,211 polls, no gap over 0.12 s): never armed, arming-disable flags constant (4), no reboot, 0 I2C errors. `s2-01` afterwards: 100/100, median 11.5 ms. | #25. Covers the ESP part of REQ-SAF-016 (recovers by itself, sends nothing to the FC). The ESP core's crash report after each reset reached the FC UART without effect. "Forwarding only inside a session" waits for the gateway firmware; repeat there |
@@ -142,11 +142,11 @@ From #30, 2026-10-16. With the initial `T_loss` = 250 ms ([[ADR-004 ESP Failsafe
 3. **Antenna placement:** the ESP-12F PCB antenna is now against the FC and frame.
 4. **Heat** inside the frame (ESP and VTX).
 
-Next runs (near, 10 min each): FC on the laptop USB with no battery and the radio off (if this matches 2026-10-16, power was the cause); the same with the radio on and bound (ELRS coexistence); if still bad, change the ESP antenna position and check for heat.
+~~Next runs (near, 10 min each): FC on the laptop USB with no battery and the radio off (if this matches 2026-10-16, power was the cause); the same with the radio on and bound (ELRS coexistence); if still bad, change the ESP antenna position and check for heat.~~ **2026-11-06:** not possible as written: the FC USB alone does not power the ESP (#164).
 
 ### Still open
 
-- S1-08 current in mA (recorded as partial on 2026-10-23, no meter). S1-07 and S1-10 (bridge part) passed on 2026-10-26; repeat S1-10 on the gateway firmware.
+- S1-08 current in mA (recorded as partial on 2026-10-23, no meter); the USB-meter method no longer works, method open (2026-11-06, #164). S1-07 and S1-10 (bridge part) passed on 2026-10-26; repeat S1-10 on the gateway firmware.
 - Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall.
 - [[ESP_to_FC]] §10 photos of the soldered joints: not taken (the checks themselves were done, #69).
 - S2-05 and S2-06 on the soldered link. S2-02 passed on it (#69), numbers not recorded. S2-06 was not run: the link was only lost by accident (§4).

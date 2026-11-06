@@ -98,7 +98,7 @@ python3 scripts/msp_check.py cycle1a --csv cycle1a_test.csv
 Pass: `Cycle 1a PASS` (≤ 1 % loss at 50 Hz, no bad checksums). Optional: repeat with `setup_production.py`,
 `setup_production.py connect`, `msp_check.py cycle1a`, then `setup_production.py disconnect`.
 
-### Cycle 1b · Bridge with the flight controller (props off, USB power)
+### Cycle 1b · Bridge with the flight controller (props off, battery connected)
 
 Before: instructor OK for soldering on the lab drone, `ESP_to_FC` §10 checks done (T4/R4 continuity, no shorts, 5 V rail).
 

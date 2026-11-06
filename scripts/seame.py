@@ -380,6 +380,9 @@ def test_s2_06(first: float = 10, second: float = 25, total: float = 40) -> int:
 def test_s1_08() -> int:
     print(
         "S1-08: ESP current. USB power meter between this PC and the FC.\n"
+        "  NOTE (2026-11-06, #164): this method no longer works. The FC USB alone\n"
+        "  does not power the ESP, the battery is needed. Method open: see the\n"
+        "  ESP-S1-08 row in the ESP Bench Test Plan.\n"
         "  1. Hold the ESP reset button and note the current (FC alone).\n"
         "  2. Release it, wait for the drone Wi-Fi, then note average and peak during\n"
         "     the 60 s stream below. ESP current = stream current - step 1."
