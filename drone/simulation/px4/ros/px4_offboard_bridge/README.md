@@ -16,15 +16,17 @@ Stand-in for the PX4 backend of `flight_interface` (ADR-019), so the ground chai
 - Streams `OffboardControlMode` (velocity) and `TrajectorySetpoint` at 20 Hz all the time: PX4 needs them before and during Offboard.
 - Sends **zero** (hover) when the target would be older than `target_timeout_sec` by the next tick, so the zero is out within 0.25 s whatever the tick phase (REQ-SAF-017, the same rule as `mission_node`). The timeout can be shorter but never longer than 0.25 s.
 - Also sends zero when the PX4 heading is missing, not `heading_good_for_control`, or older than 0.5 s: a frozen heading would send the drone the wrong way.
-- Zeroes the axes outside `mask` (8, 11 or 15, as in `mission_node`, REQ-SAF-018) and clamps to the same hard ceilings (0.5 m/s, 45 °/s).
-- Publishes `/flight/state` for `mission_node`: `link_ok` = `vehicle_status` within 1.5 s (PX4 publishes it at 2 Hz) and the local position within 0.5 s; `override_active` = armed **and** in Offboard (the sim's "takeover switch on"); `airborne` = PX4 says not landed (false until it says so); `mask` = the parameter. `esp_state` is synthetic (there is no ESP): it only mirrors `link_ok`.
+- Zeroes the axes outside `mask` (8, 11 or 15, as in `mission_node`, REQ-SAF-018) and clamps to the same ceiling values (0.5 m/s horizontal speed as a whole, so a diagonal is not faster; 0.5 m/s vertical; 45 °/s). The axes outside the mask are zeroed first, so they never slow down an owned axis.
+- Publishes `/flight/state` for `mission_node`: `link_ok` = `vehicle_status` within 1.5 s (PX4 publishes it at 2 Hz) and the local position within 0.5 s; `override_active` = armed **and** in Offboard (the sim's "takeover switch on"); `airborne` = PX4 says not landed (false until it says so, and false again if `vehicle_land_detected` is older than 3 s; PX4 sends it at least once a second); `mask` = the parameter. `esp_state` is synthetic (there is no ESP): it only mirrors `link_ok`.
 - Freshness uses the monotonic clock, so a wall-clock step cannot make an old target look fresh.
-- On Ctrl+C or `docker stop` it sends one last zero setpoint, so PX4 does not keep the last one until its offboard-loss timeout.
+- On Ctrl+C or `docker stop` it sends one last zero setpoint, so PX4 does not keep the last one until its offboard-loss timeout. It then logs how many ticks sent zero because the target was stale or the heading was not usable.
 - **Never arms, disarms or changes mode.** That is the scenario's job (the safety pilot's, on the real drone).
 
 Limits of this stand-in:
 
 - With mask 11 the bridge sends `v_down = 0`, so PX4 **holds** the altitude: in the sim nobody else flies z. The real `flight_interface` backend must leave the pilot's axes to the pilot (Betaflight MSP override mask), not command them to zero.
+- Freshness is measured on the wall (monotonic) clock while PX4 SITL runs on Gazebo time. If Gazebo runs much slower than real time (real-time factor below about 0.33), `link_ok` and `airborne` can flicker to false.
+- `airborne` reads false when the land detector is silent: fine here, where it is display only. The real backend must treat "unknown" as airborne wherever it drives a landing or a disarm.
 - `mission_node` always publishes `/mission/velocity_target`. A scenario must drive the chain through `/gesture/raw` only; publishing `/mission/velocity_target` directly while `mission_node` runs gives two interleaved publishers.
 
 ## Frames: body FLU to local NED

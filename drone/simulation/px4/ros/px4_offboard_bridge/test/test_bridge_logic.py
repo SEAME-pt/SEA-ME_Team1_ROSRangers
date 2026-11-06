@@ -63,13 +63,28 @@ def test_mask_zeroes_the_axes_the_ground_does_not_own():
 
 
 def test_clamp_to_the_ceilings_and_drop_non_finite():
-    assert clamp_target(2, -2, 0.1, 9) == (
+    assert clamp_target(2, 0, -2, 9) == (
         CEILING_LINEAR_MPS,
+        0.0,
         -CEILING_LINEAR_MPS,
-        0.1,
         CEILING_YAW_RPS,
     )
     assert clamp_target(math.nan, math.inf, -math.inf, math.nan) == ZERO
+
+
+def test_diagonal_speed_is_limited_as_a_whole_and_keeps_its_direction():
+    # Per axis, (0.5, 0.5) would be 0.71 m/s; the horizontal speed is what counts.
+    vx, vy, vz, wz = clamp_target(0.5, 0.5, 0.0, 0.0)
+    assert math.hypot(vx, vy) == pytest.approx(CEILING_LINEAR_MPS)
+    assert vx == pytest.approx(vy)
+    vx, vy, _, _ = clamp_target(2.0, -1.0, 0.0, 0.0)
+    assert math.hypot(vx, vy) == pytest.approx(CEILING_LINEAR_MPS)
+    assert vx / vy == pytest.approx(-2.0)
+    # One non-finite axis becomes 0; the other is kept (and still limited).
+    assert clamp_target(math.nan, 0.3, 0, 0) == (0.0, 0.3, 0, 0)
+    assert clamp_target(math.inf, 0.9, 0, 0)[:2] == (0.0, CEILING_LINEAR_MPS)
+    # Under the ceiling nothing changes.
+    assert clamp_target(0.3, 0.3, 0.1, 0.2) == (0.3, 0.3, 0.1, 0.2)
 
 
 def test_unknown_mask_refused():
@@ -154,7 +169,7 @@ def test_clamp_mask_and_rotate_together_at_any_heading():
 # ---------- /flight/state ----------
 def test_flight_state_follows_px4():
     logic = fresh_logic(mask=11)
-    logic.on_landed(False)
+    logic.on_landed(False, 0.0)
     assert logic.flight_state(0.1) == {
         "link_ok": True,
         "esp_state": "STREAMING",
@@ -194,6 +209,16 @@ def test_not_airborne_until_px4_says_so():
     assert BridgeLogic().flight_state(0.0)["airborne"] is False
 
 
+def test_airborne_times_out_when_the_land_detector_goes_quiet():
+    # PX4 sends vehicle_land_detected at least once a second.
+    logic = fresh_logic()
+    logic.on_landed(False, 0.0)
+    assert logic.flight_state(3.0)["airborne"] is True
+    assert logic.flight_state(3.1)["airborne"] is False  # 3.1 s old > 3 s
+    logic.on_landed(False, 3.2)
+    assert logic.flight_state(3.3)["airborne"] is True
+
+
 def test_heading_not_yet_good_keeps_the_link_but_holds_zero():
     # First seconds after PX4 starts: messages arrive, heading not good for control.
     logic = BridgeLogic()
@@ -202,3 +227,27 @@ def test_heading_not_yet_good_keeps_the_link_but_holds_zero():
     logic.on_target(0.3, 0, 0, 0, now=0.0)
     assert logic.flight_state(0.0)["link_ok"] is True
     assert logic.setpoint(0.0) == ZERO
+
+
+def test_diagonal_through_the_whole_pipeline_at_any_heading():
+    # Clamp, mask and rotate together: a diagonal over the ceiling leaves at
+    # 0.5 m/s, in the commanded direction, whatever the heading.
+    for yaw in (NORTH, EAST, math.radians(30), SOUTH, WEST):
+        logic = BridgeLogic(mask=15)
+        logic.on_position(yaw, True, 0.0)
+        logic.on_target(0.6, 0.6, 0.0, 0.0, now=0.0)
+        n, e, d, r = logic.setpoint(0.0)
+        assert math.hypot(n, e) == pytest.approx(CEILING_LINEAR_MPS)
+        # Body forward-left at 45 degrees -> heading minus 45 degrees in NED.
+        assert math.atan2(e, n) == pytest.approx(
+            math.atan2(math.sin(yaw - math.pi / 4), math.cos(yaw - math.pi / 4))
+        )
+        assert (d, r) == approx((0.0, 0.0))
+
+
+def test_an_axis_outside_the_mask_never_slows_an_owned_one():
+    # Mask 11 does not own z: a large z command must not reduce x.
+    logic = BridgeLogic(mask=11)
+    logic.on_position(NORTH, True, 0.0)
+    logic.on_target(0.4, 0.0, 5.0, 0.0, now=0.0)
+    assert logic.setpoint(0.0) == approx((0.4, 0.0, 0.0, 0.0))

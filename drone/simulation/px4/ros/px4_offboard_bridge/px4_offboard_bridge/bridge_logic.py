@@ -28,7 +28,10 @@ MASK_AXES = {
     15: {"x", "y", "z", "yaw"},
 }
 
-# Same hard ceilings as mission_node: the bridge never sends more, whatever arrives.
+# Same ceiling values as mission_node, and the bridge never sends more, whatever
+# arrives (mission_node clamps x and y one by one; the bridge is stricter). The
+# linear one bounds the horizontal SPEED (the norm of x and y, so a
+# diagonal is not 0.71 m/s) and the vertical speed; the yaw one the yaw rate.
 CEILING_LINEAR_MPS = 0.5
 CEILING_YAW_RPS = math.radians(45.0)
 
@@ -57,17 +60,19 @@ def apply_mask(vx, vy, vz, wz, mask):
 
 
 def clamp_target(vx, vy, vz, wz):
-    """Non-finite -> 0, then each axis to the hard ceiling."""
+    """Non-finite -> 0, then the hard ceilings: the horizontal speed (x, y) is
+    scaled down to CEILING_LINEAR_MPS keeping its direction, z and the yaw rate
+    are clamped on their own."""
 
     def lim(v, top):
         return max(-top, min(top, v)) if _finite(v) else 0.0
 
-    return (
-        lim(vx, CEILING_LINEAR_MPS),
-        lim(vy, CEILING_LINEAR_MPS),
-        lim(vz, CEILING_LINEAR_MPS),
-        lim(wz, CEILING_YAW_RPS),
-    )
+    vx, vy = (v if _finite(v) else 0.0 for v in (vx, vy))
+    speed = math.hypot(vx, vy)
+    if speed > CEILING_LINEAR_MPS:
+        scale = CEILING_LINEAR_MPS / speed
+        vx, vy = vx * scale, vy * scale
+    return (vx, vy, lim(vz, CEILING_LINEAR_MPS), lim(wz, CEILING_YAW_RPS))
 
 
 # REQ-SAF-017: the zero must be out no later than this after the last target.
@@ -76,6 +81,10 @@ MAX_TARGET_TIMEOUT = 0.25
 # the local position much faster, so each gets its own freshness limit.
 STATUS_TIMEOUT = 1.5
 POSITION_TIMEOUT = 0.5
+# PX4 publishes vehicle_land_detected on every change and at least once a second
+# (LandDetector.cpp: "publish at 1 Hz ... or when the result has changed").
+# About 3 periods, like STATUS_TIMEOUT: one lost sample does not flip airborne.
+LAND_TIMEOUT = 3.0
 
 
 class BridgeLogic:
@@ -91,6 +100,11 @@ class BridgeLogic:
         messages within POSITION_TIMEOUT. A heading that is not yet good for
         control (the first seconds after PX4 starts) does not drop the link:
         it only holds the setpoint at zero.
+      * flight_state()["airborne"]: a land-detector message within
+        LAND_TIMEOUT that says not landed. Unknown reads as False because here
+        it is display only (mission_node gates nothing on it). Do not copy this
+        into flight_interface unchanged: where airborne drives a landing or a
+        disarm, unknown must be treated as airborne.
     """
 
     def __init__(
@@ -100,6 +114,7 @@ class BridgeLogic:
         tick_period=0.05,
         status_timeout=STATUS_TIMEOUT,
         position_timeout=POSITION_TIMEOUT,
+        land_timeout=LAND_TIMEOUT,
     ):
         if mask not in MASK_AXES:
             raise ValueError(f"mask must be 8, 11 or 15, got {mask!r}")
@@ -111,6 +126,7 @@ class BridgeLogic:
         self.tick_period = tick_period
         self.status_timeout = status_timeout
         self.position_timeout = position_timeout
+        self.land_timeout = land_timeout
         self._target = ZERO
         self._target_t = None
         self._yaw = None
@@ -119,6 +135,7 @@ class BridgeLogic:
         self.armed = False
         self.offboard = False
         self.landed = True  # until PX4 says otherwise
+        self._landed_t = None
         self._status_t = None
         self.stale_targets = 0  # ticks that sent zero after a target had arrived
 
@@ -140,8 +157,9 @@ class BridgeLogic:
         self.offboard = bool(offboard)
         self._status_t = now
 
-    def on_landed(self, landed):
+    def on_landed(self, landed, now):
         self.landed = bool(landed)
+        self._landed_t = now
 
     # ---------- checks ----------
     @staticmethod
@@ -168,20 +186,22 @@ class BridgeLogic:
         Zero (hover) when the target would be older than `target_timeout` by the
         next tick (REQ-SAF-017) or the heading is missing or stale (a frozen
         heading would send the drone the wrong way). Axes outside the mask are
-        zero (REQ-SAF-018).
+        zero (REQ-SAF-018), and they are zeroed BEFORE the ceilings, so an axis
+        the ground does not own can never slow down one it owns.
         """
         if not self.target_fresh(now) or not self.heading_fresh(now):
             if self._target_t is not None:
                 self.stale_targets += 1
             return ZERO
-        body = apply_mask(*clamp_target(*self._target), self.mask)
+        body = clamp_target(*apply_mask(*self._target, self.mask))
         return flu_body_to_ned(*body, self._yaw)
 
     def flight_state(self, now):
         """The /flight/state fields mission_node expects ("04 Mission Node" §3.2).
 
         link_ok: PX4 status and position are fresh. override_active: armed and in
-        Offboard (the sim's "takeover switch on"). airborne: PX4 says not landed.
+        Offboard (the sim's "takeover switch on"). airborne: PX4 says not landed,
+        and said so within land_timeout (a silent land detector is not "airborne").
         esp_state is synthetic in the sim (there is no ESP): it only mirrors link_ok.
         """
         link = self.px4_fresh(now)
@@ -190,5 +210,6 @@ class BridgeLogic:
             "esp_state": "STREAMING" if link else "LINK_FAILSAFE",
             "override_active": link and self.armed and self.offboard,
             "mask": self.mask,
-            "airborne": not self.landed,
+            "airborne": self._fresh(self._landed_t, now, self.land_timeout)
+            and not self.landed,
         }

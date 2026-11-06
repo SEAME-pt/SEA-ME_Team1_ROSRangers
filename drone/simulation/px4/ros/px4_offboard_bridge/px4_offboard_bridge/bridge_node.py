@@ -128,7 +128,7 @@ class Px4OffboardBridge(Node):
         self._logic.on_position(msg.heading, msg.heading_good_for_control, self._now())
 
     def _on_land(self, msg):
-        self._logic.on_landed(msg.landed)
+        self._logic.on_landed(msg.landed, self._now())
 
     # ---------- 20 Hz output ----------
     def _tick(self):
@@ -161,8 +161,12 @@ class Px4OffboardBridge(Node):
 
     def stop_output(self):
         """One zero setpoint on the way out, so PX4 does not keep the last one
-        until its offboard-loss timeout."""
+        until its offboard-loss timeout. Also logs how often the target was stale."""
         self._publish_setpoint(ZERO)
+        self.get_logger().info(
+            f"stopping: {self._logic.stale_targets} ticks sent zero because the "
+            "target was stale or the heading was not usable"
+        )
 
 
 def main(args=None):
