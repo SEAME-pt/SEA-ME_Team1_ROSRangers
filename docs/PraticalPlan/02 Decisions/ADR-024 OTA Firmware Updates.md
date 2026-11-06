@@ -3,7 +3,7 @@ title: ADR-024 — OTA Firmware Updates on the Flight ESP
 type: adr
 status: accepted
 date: 2026-11-04
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - adr
@@ -59,7 +59,7 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
 - **At every boot**, once, whatever the reason for the boot: after a successful update, after an abort in step 1 or 2 (`ESP.restart()`), and after a watchdog reset or power glitch during the transfer (the old image boots and does not know a lock was taken). This is harmless at any time: value 0 never arms or disarms.
 - **In the running firmware** after a failed upload: sent once and only if `locked` is set, by the main loop. Never from ArduinoOTA's callbacks: the error callback also runs for a wrong password (from the UDP callback, before any lock) and can run twice for one failed upload; it only marks the release as due.
 
- Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle also clears it.
+ Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle (disconnect the battery and the FC USB) also clears it.
 
 **Today:** the firmware is still the transparent bridge. It calls `handle()` without any gate and has neither the lock nor sessions. #102 implements D2; until then the D5 procedure is the only protection.
 
@@ -73,7 +73,8 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 
 **D5. Written procedure** (accepted 2026-11-05, #145). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
 - **Every update:** OTA, [[Safety Rules]] apply.
-  - Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.
+  - ~~Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.~~
+  - 2026-11-06, #164 (see the dated entry in §5): **the battery must be connected**, because the FC USB cannot power the ESP; "battery out" above no longer applies.
   - No ground session during the upload: the ground node is stopped (after #102 the ESP also blocks it, D2).
   - Note the image SHA-256 when you flash.
 - **First flash or recovery:** USB, only with the ESP taken off the FC wires (ADR-012).
@@ -86,7 +87,7 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
   - The MSP allow-list ([[MSP Cheat Sheet]]) gets `MSP_SET_ARMING_DISABLED` (99) as **ESP-originated only**: never forwarded from the network.
   - The ESP polls `MSP_STATUS` itself at 5 Hz ([[ADR-009 ESP to FC Link|ADR-009]]), also with no session open, so 500 ms tolerates two missed replies. These replies are used by the ESP and **not forwarded** to the ground PC.
   - ArduinoOTA in core 3.1.2 does not close other sockets: `_runUpdate()` never calls `WiFiUDP::stopAll()` or `WiFiClient::stopAll()` (older 2.x cores did). So the bridge's UDP socket stays open after a failed or stale upload. If the core is updated, check this again; if it does close them, #102 reopens the sockets or restarts after any OTA error.
-  - **Bench test** (props off, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
+  - **Bench test** (props off, battery connected as D5 requires, on the real FC: Betaflight SITL ignores `MSP_SET_ARMING_DISABLED`):
     - an upload is refused while armed, with a session open (SESSION_IDLE, STREAMING, LINK_FAILSAFE) and with no recent `MSP_STATUS`; accepted when disarmed with no session;
     - the upload is aborted if the fresh `MSP_STATUS` in the start callback says armed or does not come;
     - a wrong password is refused while armed, no lock is taken and arming is unaffected;
@@ -101,6 +102,8 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 ## 5. Related pages
 
 - [[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]] · [[ADR-012 ESP UART Pins|ADR-012]] · [[ADR-020 HIL Runner|ADR-020]] · [[ADR-021 Removable ESP Connector|ADR-021]] · [[Safety Rules]] · [[Decision Register]]
+
+> 2026-11-06 (incident GitHub #164): **D5 corrected: an OTA update needs the battery connected.** The ESP is powered from the FC's 5 V pad ([[ADR-013 Wiring and Power|ADR-013]]), and the FC USB does not give enough power to run it, so "battery out, powered from the FC USB" in D5 could not work. Every update is now: **battery connected, props off, FC disarmed, arm and takeover switches off**, [[Safety Rules]] apply. The D2 gate (#102) does **not** refuse an update because a battery is connected; it refuses only when the FC is armed or its state is unknown or stale, or a ground session is open. USB on the ESP itself stays for the first flash and recovery only, with the ESP off the FC (ADR-012). The rest of D5 is unchanged.
 
 ## 6. Glossary
 

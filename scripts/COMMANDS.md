@@ -449,7 +449,7 @@ ESP-to-FC UART connection.
 
 Commands for the vault's *ESP Bench Test Plan*. Results go to `results/` (bare
 file names, git-ignored: copy the numbers to #30 and the vault results log).
-Props off, no battery and the ESP USB unplugged for every test.
+Props off, battery connected (the FC USB alone does not power the ESP, #164) and the ESP USB unplugged for every test.
 
 ### Stage 2 on the soldered link: `seame.py test`
 
@@ -466,7 +466,7 @@ says what you have to do by hand and runs the steps in order.
 | `s2-04-write` | S2-04 (write) | `msp rc-order --write` after you type `yes` | Only with MSP Override configured and approved. Sends roll 1200, pitch 1400, throttle 1000, yaw 1600, AUX1-4 at 1000; checks the readback against AETR1234; refuses when armed. |
 | `s2-05` | S2-05 | `msp ping --stream --duration 300 --csv s2-05_ch6.csv` | Read the ELRS LQ on the radio. Only the current AP channel (6): changing it needs `network setup`, i.e. the ESP USB. |
 | `s2-06` | S2-06 | `msp link-watch --duration 40 --csv s2-06.csv`, with `fc reboot` at 10 s and 25 s | Nothing; needs the FC on USB. A soldered wire cannot be unplugged, so the FC goes silent by rebooting while the ESP stays powered. PASS when each loss is reported within 500 ms. |
-| `s1-08` | S1-08 | `msp ping --stream --duration 60 --csv s1-08_stream.csv` | USB power meter between the PC and the FC. Note the current with the ESP reset button held, then average and peak during the stream. ESP current = the difference. |
+| `s1-08` | S1-08 | `msp ping --stream --duration 60 --csv s1-08_stream.csv` | **2026-11-06: this method no longer works** (the FC USB alone does not power the ESP, #164); method open. Was: USB power meter between the PC and the FC. Note the current with the ESP reset button held, then average and peak during the stream. ESP current = the difference. |
 
 ### Stage 1 (before soldering, ESP on USB)
 
@@ -482,7 +482,7 @@ Kept for reference and for a re-run with the ESP on its own USB (needs
 | S1-05 | `msp cycle1a --stream --sleep none --duration 600 --csv s1-05.csv` | 10 min at a true 50 Hz with Wi-Fi sleep off (ADR-006). Shows median, p99, max RTT and the longest silence between answers. |
 | S1-06 | `msp cycle1a --stream --sleep modem --duration 600 --csv s1-06.csv` | Same, with modem sleep. Sleep only matters in station mode (the test scenario). |
 | S1-07 | Not possible | AT transparent mode has a single link. Needs the custom firmware (ADR-007). |
-| S1-08 | Manual | USB power meter. Record peak and average mA. |
+| S1-08 | Manual | USB power meter. Record peak and average mA. **2026-11-06:** no longer works (#164); method open. |
 | S1-09 | `msp ping --loopback --stream --duration 600 --csv s1-09_cage.csv` | Production scenario (the PC talks to the ESP directly). The ESP is far from the PC, so no fake FC: a jumper from the ESP TX pin to its RX pin echoes every request. See below. |
 | S1-10 | Not possible | Needs the custom firmware. |
 

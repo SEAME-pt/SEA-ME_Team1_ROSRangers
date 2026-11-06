@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""One entry point for the SEA:ME drone bench scripts. Props off, no battery.
+"""One entry point for the SEA:ME drone bench scripts. Props off; battery connected
+whenever the ESP must run (the FC USB alone does not power it, #164).
 
 The ESP is soldered to the FC (UART4). This PC reaches the FC in two ways:
   - through the ESP, over the drone Wi-Fi (the default for `msp`)
@@ -324,8 +325,10 @@ def test_s2_04_read() -> int:
 def test_s2_04_write() -> int:
     if not confirm(
         "S2-04 (write) sends MSP_SET_RAW_RC: roll 1200, pitch 1400, throttle 1000,\n"
-        "yaw 1600, AUX1-4 low. Only with props off, no battery, and MSP Override\n"
-        "configured and approved (ESP_to_FC §10.5)."
+        "yaw 1600, AUX1-4 low. Props off, battery connected (the ESP needs it),\n"
+        "MSP Override configured and approved (ESP_to_FC §10.5). The motors can\n"
+        "spin: two people, a finger on the kill switch (SA), nobody touches the\n"
+        "drone (Safety Rules #18)."
     ):
         return 1
     if not check_drone_network():
@@ -377,6 +380,9 @@ def test_s2_06(first: float = 10, second: float = 25, total: float = 40) -> int:
 def test_s1_08() -> int:
     print(
         "S1-08: ESP current. USB power meter between this PC and the FC.\n"
+        "  NOTE (2026-11-06, #164): this method no longer works. The FC USB alone\n"
+        "  does not power the ESP, the battery is needed. Method open: see the\n"
+        "  ESP-S1-08 row in the ESP Bench Test Plan.\n"
         "  1. Hold the ESP reset button and note the current (FC alone).\n"
         "  2. Release it, wait for the drone Wi-Fi, then note average and peak during\n"
         "     the 60 s stream below. ESP current = stream current - step 1."
@@ -519,7 +525,7 @@ def menu_fc_usb() -> int | None:
 
 def menu_tests() -> int | None:
     return pick(
-        "Bench tests on the soldered link. Props off, no battery, ESP USB unplugged:",
+        "Bench tests on the soldered link. Props off, battery connected, ESP USB unplugged:",
         [(label, func) for label, func in TESTS.values()],
     )
 

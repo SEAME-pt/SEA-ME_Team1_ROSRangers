@@ -293,7 +293,7 @@ After Cycle 1a passes:
 2. Wire FC `T4` to ESP `RX`.
 3. Wire FC `R4` to ESP `TX`.
 4. Wire `5V` to `5V` and `GND` to `G`.
-5. Power the FC by USB only.
+5. Connect the battery, props off: the FC USB alone does not power the ESP (#164).
 
 Then query the FC through the bridge:
 

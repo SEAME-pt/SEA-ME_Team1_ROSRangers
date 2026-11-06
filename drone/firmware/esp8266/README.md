@@ -65,7 +65,7 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
 
 ## Flash
 
-This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off, no battery. After every flash, note the image SHA-256 (`sha256sum .pio/build/<env>/firmware.bin`) in #30 or in `backup/README.md`: the firmware cannot report its version.
+This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off. An OTA update needs the battery connected: the ESP is powered from the FC's 5 V pad, and the FC USB does not give it enough power (ADR-024 entry of 2026-11-06, #164). After every flash, note the image SHA-256 (`sha256sum .pio/build/<env>/firmware.bin`) in #30 or in `backup/README.md`: the firmware cannot report its version.
 
 ### First flash or recovery (USB)
 
@@ -80,7 +80,7 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 ### Every later update (OTA)
 
-1. Drone powered from the FC USB, no battery, props off, **arm switch and takeover (MSP Override) switch off**: the ESP sends no neutral frames while it updates and reboots.
+1. **Battery connected** (the ESP needs it; VTX antenna on before the battery goes in, Safety Rules #2), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**, two people present (#15), the battery never left unattended (#8): the ESP sends no neutral frames while it updates and reboots.
 2. No ground session: stop the ground node (`flight_interface`).
 3. Join the drone network: `python3 scripts/seame.py network connect`.
 4. Upload (the OTA password comes from `secrets.py`). The current firmware does **not** check the arm state or the session yet: steps 1 and 2 are the only protection until #102 adds the ADR-024 gate and lock.
@@ -88,7 +88,7 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
    pio run -d drone/firmware/esp8266 -e esp_ota -t upload
    ```
 5. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
-6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (unplug its USB).
+6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
@@ -102,7 +102,7 @@ What it does now (ADR-009):
 - **Never sends RC.** Sessions, `SETPOINT` → `MSP_SET_RAW_RC`, the failsafe and `STATE` are #102. OTA is still ungated here, as in the bridge (the ADR-024 gate is #102).
 - **Still missing for #102:** an `MSP_API_VERSION` check at boot (the state machine's BOOT → NO_SESSION), reading `override_active` from `MSP_STATUS`, and a separate internal encoder for `MSP_SET_ARMING_DISABLED` (99, ADR-024 lock): `encode_request` refuses it on purpose.
 
-Flash it like any OTA update (props off, battery out, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
 
 **Bench view (read-only, diagnostic):** any datagram to UDP 5770 gets one text line back:
 
@@ -136,7 +136,7 @@ A value that has not arrived yet (or is older than 10 s) prints as `-1`: `armed`
 1. The soldered UART4 joints (intermittent contact). This fits the all-or-nothing pattern and the few bad checksums (4 and 2). The ESP_to_FC §10 continuity evidence is still missing (#69).
 2. The FC stops answering on UART4 (reboot, something holding its USB CLI).
 
-**The test.** Three terminals at the same time, props off, no battery, FC on USB. Write down the start time.
+**The test.** Three terminals at the same time, props off, battery connected (the ESP needs it, #164), FC also on USB. Write down the start time.
 
 ```bash
 # 1. the bridge, 10 min at 50 Hz (CSV: s1-05_diag_run4.csv). Request i is sent at start + i × 20 ms
@@ -206,7 +206,7 @@ Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05
 | `HANG` | Answers `HANGING`, then loops without yielding: the software watchdog resets it after about 3 s |
 | `HANG_HW` | Same with the software watchdog off: the hardware watchdog resets it (about 8 s) |
 
-Props off, no battery. FC on USB, so the FC can be watched while the ESP reboots. **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
+Props off, battery connected (the ESP needs it, #164). FC also on USB, so the FC can be watched while the ESP reboots (Safety Rules #16). **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network

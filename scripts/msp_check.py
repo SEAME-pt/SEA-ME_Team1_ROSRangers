@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""MSP checks over USB or through the ESP bridge. Props off, no battery.
+"""MSP checks over USB or through the ESP bridge. Props off; battery connected
+whenever the ESP must run (the FC USB alone does not power it, #164).
 
 Read-only MSP requests only, except `rc-order --write` (MSP_SET_RAW_RC with throttle
 low and every AUX channel low, refused when the FC reports it is armed).
@@ -485,7 +486,9 @@ def check_rc_order(readback):
 def cmd_rc_order(args):
     if not args.write:
         sys.exit(
-            "rc-order sends MSP_SET_RAW_RC (throttle and AUX low). Props off, no battery.\n"
+            "rc-order sends MSP_SET_RAW_RC (throttle and AUX low). Props off, battery\n"
+            "connected (the ESP needs it): the motors can spin, so two people, a finger\n"
+            "on the kill switch (SA), nobody touches the drone (Safety Rules #18).\n"
             "Add --write if you mean it."
         )
     c, label = make_client(args)

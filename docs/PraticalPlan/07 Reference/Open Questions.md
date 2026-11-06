@@ -56,7 +56,7 @@ tags:
 - [x] **Baro:** DPS310 detected in `status`, and the Sensors tab altitude follows the board when raised/lowered (2026-10-14, GitHub #15).
 - [x] ELRS wires really on R2/T2 (multimeter, [[2.5Drone]] #22). → Yes (#15 above)
 - [x] T4/R4 continuity to the MCU side, no shorts to neighbours. → Yes (#16 above)
-- [ ] FC 5V rail: available current for the ESP (FC-05).
+- [ ] FC 5V rail: available current for the ESP (FC-05). 2026-11-06: the FC USB alone does not power the ESP (#164); with the battery it runs. The current itself (ESP-S1-08) is still not measured.
 - [ ] Motor pole count: the FC has `motor_poles = 12`, but 1405 motors are often 14-pole. Count the magnets in one motor bell; if 14, set `motor_poles = 14` (with team approval and a saved `diff all`), because RPM readings and the RPM filter depend on it ([[Betaflight Setup]] §1.2).
 - [x] What exactly are the CAM and DV5V pads used for on this board? → camera video in, receiver 5 V (#17 above)
 - [x] Is the ELRS red (5 V) wire on **DV5V** or on a **5V** pad? → **5V** (team, 2026-10-16). Moving it to DV5V: GitHub #41.
