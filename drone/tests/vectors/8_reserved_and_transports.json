@@ -1,0 +1,153 @@
+[
+  {
+    "name": "header_flags_bit0_ignored",
+    "description": "SETPOINT with header flags bit 0 set (was 'ack requested'): accepted, the bit is ignored",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "SETPOINT",
+      "flags": 1,
+      "session_id": 305419896,
+      "seq": 7,
+      "t_send_us": 1000,
+      "mode": 1,
+      "roll": 100,
+      "pitch": -200,
+      "yaw_rate": 0,
+      "throttle": 500,
+      "sp_flags": 0
+    },
+    "bytes": "5344016001000a007856341207000000e803000001640038ff0000f401007da476b6259cd30b",
+    "expect": "accept",
+    "state": {
+      "current_session": 305419896
+    }
+  },
+  {
+    "name": "setpoint_flags_nonzero_ignored",
+    "description": "SETPOINT with SETPOINT.flags 0xFF: accepted, the flags are ignored",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "SETPOINT",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 7,
+      "t_send_us": 1000,
+      "mode": 1,
+      "roll": 100,
+      "pitch": -200,
+      "yaw_rate": 0,
+      "throttle": 500,
+      "sp_flags": 255
+    },
+    "bytes": "5344016000000a007856341207000000e803000001640038ff0000f401ff67d8bde2480cf0e0",
+    "expect": "accept",
+    "state": {
+      "current_session": 305419896
+    }
+  },
+  {
+    "name": "hello_ack_signed_with_psk",
+    "description": "HELLO_ACK is tagged with the PSK (here the test key), not the session key",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 1,
+      "t_send_us": 0,
+      "new_session_id": 305419896,
+      "esp_nonce": "22222222222222222222222222222222",
+      "fw_version": "v0.1.0"
+    },
+    "bytes": "5344010200002000785634120100000000000000785634122222222222222222222222222222222276302e312e300000000000006a15cb22cce337f5",
+    "expect": "accept"
+  },
+  {
+    "name": "hello_ack_signed_with_session_key",
+    "description": "The same HELLO_ACK tagged with the session key: refused when checked with the PSK",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344010200002000785634120100000000000000785634122222222222222222222222222222222276302e312e300000000000006771e3855acb04ff",
+    "expect": "reject:bad_tag"
+  },
+  {
+    "name": "tcp_and_udp_seq_apart",
+    "description": "UDP and TCP count seq on their own. TCP starts at 1 (HELLO used seq 1). UDP 1, TCP 2, UDP 2, TCP 3 are all accepted; then TCP 2 again is old",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0,
+      "last_tcp_seq": 1
+    },
+    "steps": [
+      {
+        "transport": "udp",
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      },
+      {
+        "transport": "tcp",
+        "bytes": "53440103000001007856341202000000000000000fb7d79066f835b628",
+        "expect": "accept"
+      },
+      {
+        "transport": "udp",
+        "bytes": "5344016000000a007856341202000000409c000001000000000000000000712720248f2ea86c",
+        "expect": "accept"
+      },
+      {
+        "transport": "tcp",
+        "bytes": "534401050000000078563412030000000000000016d5380315fc2456",
+        "expect": "accept"
+      },
+      {
+        "transport": "tcp",
+        "bytes": "53440103000001007856341202000000000000000fb7d79066f835b628",
+        "expect": "reject:old_seq"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 2,
+      "last_tcp_seq": 3,
+      "rx_rejected": 1,
+      "gaps": 0
+    }
+  },
+  {
+    "name": "frame_on_the_wrong_transport",
+    "description": "Both transports share the direction key, so each accepts only its own types (spec §2): a TCP ARM_CONTROL_REQUEST replayed on UDP and a SETPOINT sent on TCP are refused and move no window",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0,
+      "last_tcp_seq": 1
+    },
+    "steps": [
+      {
+        "transport": "tcp",
+        "bytes": "53440103000001007856341202000000000000000fb7d79066f835b628",
+        "expect": "accept"
+      },
+      {
+        "transport": "udp",
+        "bytes": "53440103000001007856341202000000000000000fb7d79066f835b628",
+        "expect": "reject:wrong_transport"
+      },
+      {
+        "transport": "tcp",
+        "bytes": "5344016000000a00785634123200000040420f000100000000000000000094ce31c482c68f43",
+        "expect": "reject:wrong_transport"
+      },
+      {
+        "transport": "udp",
+        "bytes": "5344016000000a007856341201000000204e0000010000000000000000006c870020e780aa97",
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 1,
+      "last_tcp_seq": 2,
+      "rx_rejected": 2,
+      "gaps": 0
+    }
+  }
+]

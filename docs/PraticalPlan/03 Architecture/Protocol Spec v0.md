@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.1.1
+version: 1.2
 date: 2026-10-12
 updated: 2026-11-05
 project: SEA autonomous drone
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.1.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5).
+> [!success] Status: ACCEPTED v1.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -35,9 +35,11 @@ tags:
 | 12 | 4 | seq | per sender, per session, **per transport** (TCP and UDP each count on their own), starts at 1. `HELLO` and `HELLO_ACK` use 1 |
 | 16 | 4 | t_send_us | sender monotonic µs, **for latency logging only** (OD-10). Freshness uses the ESP's receive clock. |
 | 20 | n | payload | |
-| 20+n | 8 | tag | HMAC-SHA256(session key, bytes 0..20+n-1), first 8 bytes |
+| 20+n | 8 | tag | HMAC-SHA256(key of this direction, bytes 0..20+n-1), first 8 bytes |
 
-Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Every later message uses the session key.
+Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped, so a reflected `HELLO` or `HELLO_ACK` does nothing.
+
+Every later message is tagged with the key of its direction (2026-11-05, #150): `ground→ESP key = HMAC-SHA256(session key, "g2e")` and `ESP→ground key = HMAC-SHA256(session key, "e2g")`. Each side seals with its sending key and checks with its receiving key, so a frame sent back to its own sender fails the tag (`reject:bad_tag`). The session key itself tags nothing and is wiped once both keys are derived.
 
 ## 2. Type ranges (five categories)
 
@@ -49,7 +51,7 @@ Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(
 | 0x60–0x7F | Control setpoints | UDP |
 | 0x80–0x9F | Telemetry (periodic state) | UDP |
 
-A type that arrives on the other transport is rejected as `reject:wrong_transport`, with its own counter, counted in `rx_rejected`, after the type check and before rule 3. Both transports use the same session key and count `seq` apart, so without this check a frame captured on one transport could be replayed on the other (added 2026-11-05, #99).
+A type that arrives on the other transport is rejected as `reject:wrong_transport`, with its own counter, counted in `rx_rejected`, after the type check and before rule 3. Both transports use the same direction keys and count `seq` apart, so without this check a frame captured on one transport could be replayed on the other (added 2026-11-05, #99).
 
 ## 3. Messages v0
 
@@ -158,7 +160,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 | Group | Cases | Proves |
 |---|---|---|
 | 1 Valid frames | One per message type in §3 | Both sides encode and decode the same bytes |
-| 2 HMAC | Tag with the PSK (`HELLO`) and with the session key; one flipped payload bit; one flipped tag bit | Any changed bit is rejected |
+| 2 HMAC | Tag with the PSK (`HELLO`) and with each direction key; a reflected frame (sealed for the other direction); one flipped payload bit; one flipped tag bit | Any changed bit, and any reflection, is rejected |
 | 3 Header | Wrong magic, wrong version, `payload_len` > 256, length mismatch, truncated frame; unknown type (`bad_type`) and wrong payload size for the type (`bad_payload_size`, added 2026-11-05) | Garbage is rejected before it is read (§4 rule 1, §3 sizes) |
 | 4 Session | Wrong `session_id`; `session_id` 0 outside `HELLO` | Other sessions are rejected (§4 rule 2) |
 | 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq` 0, `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
@@ -279,6 +281,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-03 | 1.0 | Design review (Guilherme, Bruno, Paulo; #97). Accepted: ports (§7.1), `T_fresh` = 150 ms and "no command is not no link" (§7.2), configuration keys (§7.3), test vector list (§6). Session key formula copied from ADR-002 (§1). Open items listed in §7.5. |
 | 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
 | 2026-11-05 | 1.1.1 | From the C++ library (#99). New receive check: `reject:wrong_transport` (§2), found by the #99 review, so a frame cannot be replayed on the other transport. Clarifications, no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), check order and TCP partial frames (§4 rules 1 and 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
+| 2026-11-05 | 1.2 | One key per direction (#150, decided by the team; [[ADR-002 Message Integrity\|ADR-002]] entry): in-session tags use the `"g2e"` / `"e2g"` keys (§1), so a reflected frame is refused. Pre-session rule (§1): the ESP accepts only `HELLO` and the ground only `HELLO_ACK`; **not enforced in code yet** (#152, before #101/#102). **Wire change:** the tag of every in-session frame changes; no firmware had shipped. Group 2: `setpoint_signed_with_session_key` replaced by one vector per direction and one reflected frame per direction (§6). |
 
 ## 9. Glossary
 
@@ -303,5 +306,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
-| **Session key** | Key that tags every frame after `HELLO_ACK`: `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)` (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
+| **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived. It tags nothing and is wiped after that (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
+| **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) (§1, #150). |
+| **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |

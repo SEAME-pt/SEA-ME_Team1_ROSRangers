@@ -1,0 +1,11 @@
+{
+  "name": "sd_protocol",
+  "version": "0.1.0",
+  "description": "Ground <-> ESP protocol library (Protocol Spec v0), shared by the host tests and the ESP8266 firmware",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "includeDir": "include",
+    "srcDir": "src"
+  }
+}

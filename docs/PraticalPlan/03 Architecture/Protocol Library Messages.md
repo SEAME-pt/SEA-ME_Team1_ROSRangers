@@ -14,7 +14,7 @@ tags:
 
 # Protocol Library Messages
 
-> [!info] Status: DRAFT, follows Protocol Spec v0 v1.1.1
+> [!info] Status: DRAFT, follows Protocol Spec v0 v1.2
 > Payload codecs of the C++ protocol library (`drone/lib/protocol`, #99, PR #143) for the messages in [[Protocol Spec v0]] §3. The code values in §5 are the ones decided on #142 (spec §3.1, 2026-11-05). For firmware (#101, #102) and for keeping the Python twin (#100) in sync.
 
 ---
@@ -29,7 +29,9 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
-Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver. Then it opens one Receiver per transport: `start_session(id, key, Transport::kUdp)` and `start_session(id, key, Transport::kTcp)`. Each accepts only its own types (spec §2), and the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it.
+Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver.
+
+Then it derives the session key (`derive_session_key`) and the two direction keys (`derive_direction_keys`, spec §1, #150), and wipes the session key: the ESP seals with `esp_to_ground` and gives `ground_to_esp` to its Receivers; the ground does the opposite. Then it opens one Receiver per transport: `start_session(id, key, Transport::kUdp)` and `start_session(id, key, Transport::kTcp)`. Each accepts only its own types (spec §2), and the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it.
 
 ## 2. API contract (all codecs)
 
@@ -153,5 +155,8 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Info / Safety / Tunable key** | The three configuration key groups: read-only, firmware-only, ground-writable (spec §7.3). |
 | **Session** | One run of the protocol between the ground and the ESP, named by `session_id`; opened by `HELLO` / `HELLO_ACK` ([[ADR-005 TCP Session\|ADR-005]]). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (spec §6). Also called a "golden vector". |
+| **Session key** | HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce), from which the two direction keys are derived ([[Protocol Spec v0]] §1). |
+| **Direction key** | The key that tags frames going one way: ground→ESP ("g2e") or ESP→ground ("e2g") ([[Protocol Spec v0]] §1, #150). |
+| **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |

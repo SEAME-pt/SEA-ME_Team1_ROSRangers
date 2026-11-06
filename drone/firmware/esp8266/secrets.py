@@ -35,6 +35,10 @@ values = {
 for name, value in values.items():
     if name != "AP_SSID" and len(value) < 8:
         env.Exit(f"ERROR: {name} missing or shorter than 8 characters.")
+if values["AP_PASS"] == values["OTA_PASS"]:
+    # Two separate secrets (ADR-024 D3): knowing the Wi-Fi password alone
+    # must not be enough to flash the ESP.
+    env.Exit("ERROR: OTA_PASS must differ from AP_PASS (ADR-024 D3).")
 
 env.Append(
     CPPDEFINES=[(k, env.StringifyMacro(v)) for k, v in values.items()]
