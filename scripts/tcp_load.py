@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """S1-07 TCP load: keep a TCP connection to the esp_diag_tcp firmware busy.
 
-The ESP echoes everything on TCP 5762. This sends a steady stream, checks the echo,
+The ESP echoes everything on TCP 5759. This sends a steady stream, checks the echo,
 and reconnects from time to time (a new session, ADR-005), while the UDP latency
 test runs in another terminal. Props off.
 
@@ -18,7 +18,7 @@ import statistics
 import time
 
 HOST = "192.168.4.1"
-PORT = 5762
+PORT = 5759
 RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
 
 

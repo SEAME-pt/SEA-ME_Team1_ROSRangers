@@ -30,6 +30,7 @@ jobs:
       cpp: ${{ steps.check.outputs.cpp }}
       python: ${{ steps.check.outputs.python }}
       scripts: ${{ steps.check.outputs.scripts }}
+      sim_bridge: ${{ steps.check.outputs.sim_bridge }}
       hil_unit: ${{ steps.check.outputs.hil_unit }}
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
@@ -66,6 +67,13 @@ jobs:
           else
             echo "scripts=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=scripts-python skipped::no test in tests/scripts"
+          fi
+
+          if [[ -f drone/simulation/px4/ros/px4_offboard_bridge/setup.py ]]; then
+            echo "sim_bridge=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sim_bridge=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=sim-bridge-python skipped::drone/simulation/px4/ros/px4_offboard_bridge/setup.py not found"
           fi
 
           if [[ -f drone/tests/hil/softap_window.sh ]]; then
@@ -196,6 +204,25 @@ jobs:
       - run: pip install -r scripts/requirements.txt
       - run: pytest tests/scripts -q
 
+  # Logic of the sim-only PX4 offboard bridge (#86): frames, mask, freshness.
+  # No ROS and no px4_msgs: bridge_logic.py has no ROS imports. The node itself
+  # needs px4_msgs and runs only in the PX4 SITL image (sim_smoke.sh)
+  sim-bridge-python:
+    needs: [lint, check-components]
+    if: ${{ needs.check-components.outputs.sim_bridge == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: drone/simulation/px4/ros/px4_offboard_bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-cov
+      - run: python3 -m pytest test -q --cov=px4_offboard_bridge.bridge_logic --cov-fail-under=90
+
   # The HIL tests that need no bench, on every PR: the Wi-Fi window script
   # against a fake nmcli, and the smoke test's parsers. The hardware tests
   # skip here (no /dev/hil-esp, no HIL_REQUIRED); they run in hil.yaml
@@ -301,7 +328,7 @@ jobs:
       - run: pip install platformio
       - name: Build ESP8266 firmware
         # the diagnostic envs too, so a broken diag build fails the PR (same cache)
-        run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
+        run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart -e esp_gateway
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass

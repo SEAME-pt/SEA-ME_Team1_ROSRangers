@@ -3,6 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - simulation
@@ -96,6 +97,10 @@ Then start the agent and `make px4_sitl gz_x500` as in §3, **without** `HEADLES
 
 - The `px4io/px4-sitl` image on the PX4 quickstart page is headless without Gazebo or ROS 2. It is a smoke test only.
 - Clean up with `docker rm -f px4sim`.
+
+## 6.2 Ground chain smoke test (2026-11-05, #86)
+
+`drone/simulation/px4/sim_smoke.sh up` runs the same image headless in its own container (`px4sim-smoke`), builds `intent_node`, `mission_node` and the sim-only `px4_offboard_bridge`, and launches `/gesture/raw → intent_node → mission_node → px4_offboard_bridge → PX4`. `up 15 gui` also opens the Gazebo window, `check` shows the topic rates, `down` stops it. It sets `NAV_DLL_ACT 0` once PX4 answers (§4): the `PX4_PARAM_NAV_DLL_ACT` start-up variable did not apply on v1.17. Details and the body FLU → NED conversion: `drone/simulation/px4/ros/px4_offboard_bridge/README.md`.
 
 ## 7. Related pages
 

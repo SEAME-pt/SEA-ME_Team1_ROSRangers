@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-10-30
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - safety
@@ -24,7 +24,7 @@ tags:
 4. **Safety pilot** with the RadioMaster at the cage, line of sight, with the kill switch (SA) and the takeover switch under a finger (§3). The radio always wins over code.
 5. **Gestures never arm or disarm.** The gesture operator is in the coding room and may not see the drone ([[ADR-015 Gesture Input Source|ADR-015]]).
 6. Switch MSP Override on only when telemetry shows the ESP is `STREAMING` ([[ADR-010 MSP Override|ADR-010]]).
-7. Pre-arm checklist: battery charged and inspected, props tight and in the right direction, failsafe tested today, ESP wires or connector inspected ([[ADR-021 Removable ESP Connector|ADR-021]]), zone clear, nobody in the cage.
+7. Pre-arm checklist: battery charged and inspected, props tight and in the right direction, failsafe tested today, ESP solder joints and wires inspected ([[ADR-021 Removable ESP Connector|ADR-021]], soldered directly since 2026-10-26), zone clear, nobody in the cage.
 8. LiPo: charge only at the lab station/bags, never unattended, land at 3.5 V/cell.
 9. ESP8266 GPIOs are 3.3 V. Feed 5 V only to the ESP **5V** pin. Never connect USB and the FC to the ESP at the same time ([[ADR-012 ESP UART Pins|ADR-012]]).
 10. HIL bench: **no LiPo** connected, ever.
@@ -59,7 +59,7 @@ tags:
 
 ## 4. Related pages
 
-- [[Radio Link Tests]] · [[Battery Log]] · [[ADR-004 ESP Failsafe|ADR-004]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]
+- [[Radio Link Tests]] · [[Battery Log]] · [[ADR-004 ESP Failsafe|ADR-004]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]] · [[ADR-024 OTA Firmware Updates|ADR-024]]
 
 ---
 
