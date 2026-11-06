@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -36,7 +36,7 @@ tags:
 | [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2 | ✅ Accepted | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
-| [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14) | FC-11 (mitigation) |
+| [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
 | [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
@@ -61,7 +61,7 @@ tags:
 
 ## 3. What changed on 2026-10-21
 
-- New [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed, accepted when PR #74 merges): CI gates and lint rules, taken while preparing `ci.yaml` for the ROS 2 ground nodes (#73, PR #74).
+- New [[ADR-022 CI Gates and Lint Rules|ADR-022]] (proposed; accepted on 2026-10-21 when PR #74 merged, see §5): CI gates and lint rules, taken while preparing `ci.yaml` for the ROS 2 ground nodes (#73, PR #74).
 - [[ADR-017 Branching Model|ADR-017]] has an update. On a PR, `ground-ros2` and `ground-docker` run only when the PR touches the ground code or `ci.yaml`. Pushes are never path-filtered.
 
 ## 4. What changed on 2026-10-22
@@ -73,7 +73,7 @@ tags:
 - [[ADR-022 CI Gates and Lint Rules|ADR-022]] is **accepted**: PR #74 was merged into `dev` on 2026-10-21.
 - Dated updates, no decision changed:
   - [[ADR-004 ESP Failsafe|ADR-004]]: on link loss the drone levels, it does not hold position. `T_loss` stays 250 ms while #30 is re-measured.
-  - [[ADR-006 Network|ADR-006]]: port numbers are still open.
+  - [[ADR-006 Network|ADR-006]]: port numbers were still open (set on 2026-11-03, see §7).
   - [[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]: one repository.
   - [[ADR-014 Betaflight Version|ADR-014]]: the upgrade may slip to week 3.
   - [[ADR-018 Ground OS and ROS 2|ADR-018]]: PX4 check closed.
@@ -98,11 +98,15 @@ tags:
 
 - New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
 
-## 9. Still open
+## 9. What changed on 2026-10-30
+
+- Dated update, no decision changed: [[ADR-014 Betaflight Version|ADR-014]]. The FC runs 2026.6.2 since 2026-10-28. The 4.5.1 hover baseline was not recorded (incident #126), so #23 is redone on 2026.6.2. MSP Override flight conditions: [[Safety Rules]] #14.
+
+## 10. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 10. Glossary
+## 11. Glossary
 
 | Term | Meaning |
 | --- | --- |

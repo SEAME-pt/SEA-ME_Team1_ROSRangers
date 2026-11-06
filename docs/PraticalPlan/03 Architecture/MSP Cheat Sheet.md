@@ -3,7 +3,7 @@ title: MSP Cheat Sheet
 type: reference
 status: active
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - msp
@@ -16,7 +16,7 @@ tags:
 > [!danger] Hardware work follows [[Safety Rules]]: props off on the bench, the radio and the safety pilot win over code, no LiPo on the HIL bench.
 
 > [!info] Sources
-> Command IDs come from Betaflight's `msp_protocol.h`. The byte vectors were sent to a running **Betaflight 2026.6.2 SITL** on 2026-10-12, and the replies below are what it answered. Our FC runs **4.5.1 (MSP API 1.46)** ([[2.5Drone]]).
+> Command IDs come from Betaflight's `msp_protocol.h`. The byte vectors were sent to a running **Betaflight 2026.6.2 SITL** on 2026-10-12, and the replies below are what it answered. Our FC ran 4.5.1 (MSP API 1.46) until 2026-10-28 and runs **2026.6.2** since ([[ADR-014 Betaflight Version|ADR-014]]).
 
 ---
 
@@ -29,7 +29,7 @@ tags:
 
 | Request | Bytes | SITL reply |
 |---|---|---|
-| v1 `MSP_API_VERSION` (1) | `24 4d 3c 00 01 01` | payload `[0, 1, 48]` → API 1.48 (our 4.5.1 FC reports 1.46) |
+| v1 `MSP_API_VERSION` (1) | `24 4d 3c 00 01 01` | payload `[0, 1, 48]` → API 1.48 (our FC reported 1.46 on 4.5.1; confirm the value on 2026.6.2) |
 | v2 `MSP_FC_VARIANT` (2) | `24 58 3c 00 02 00 00 00 8a` | `BTFL`, CRC valid |
 | v1 `MSP_FC_VERSION` (3) | `24 4d 3c 00 03 03` | `26.6.2` |
 | v1 `MSP_SET_RAW_RC` (200), channels 1100, 1200 … 1800 | `24 4d 3c 10 c8 4c 04 b0 04 14 05 78 05 dc 05 40 06 a4 06 08 07 7a` | accepted |

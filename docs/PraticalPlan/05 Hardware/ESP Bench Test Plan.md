@@ -56,7 +56,7 @@ tags:
 
 | ID | Test | What it proves | Pass criterion | Links |
 |---|---|---|---|---|
-| ESP-S2-01 | `MSP_API_VERSION` round trip | Wiring, crossover and baud are right | Reply 1.46 (4.5.1), 100/100 requests | [[ADR-009 ESP to FC Link\|ADR-009]] |
+| ESP-S2-01 | `MSP_API_VERSION` round trip | Wiring, crossover and baud are right | Reply 1.46 on 4.5.1 (confirm the value on 2026.6.2), 100/100 requests | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP-S2-02 | Power-cycle the ESP 20× while the FC runs | The FC ignores the boot bytes | No FC errors, no change in Betaflight | F5, F7 in [[ESP_to_FC]] |
 | ESP-S2-03 | `MSP_ATTITUDE` while tilting the FC by hand | Telemetry path FC → ESP → laptop | Angles follow the tilt | TEL-03 |
 | ESP-S2-04 | `MSP_SET_RAW_RC` with distinct values → `MSP_RC` readback | Channel order (AETR) | Each value lands on the expected channel | Phase 3 of [[ESP_to_FC]] §11 |

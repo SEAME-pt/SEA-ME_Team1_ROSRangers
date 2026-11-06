@@ -3,7 +3,7 @@ title: SEA:ME Drone — Practical Plan Home
 type: moc
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - Home
@@ -16,13 +16,14 @@ tags:
 # SEA:ME Drone — Practical Plan Home
 
 > [!summary] In one sentence
-> This folder turns the project's documentation into a **dated, team-of-5 plan** with **accepted decisions (ADRs)**, an **architecture**, and a **CI/CD + HIL setup** that meets the Module 1 deliverables.
+> This folder turns the project's documentation into a **dated, team-of-4 plan** with **accepted decisions (ADRs)**, an **architecture**, and a **CI/CD + HIL setup** that meets the Module 1 deliverables.
 
 > [!info] Where we are (2026-10-23)
 > - SEA:ME started on **7 Oct 2026**. Sprint 0 ran **7–18 Oct**. **Module 1 started 19 Oct**: we are in week 1 of Sprint 1.
 > - Closed GitHub issues so far: safety induction (#13), Betaflight 4.5.1 `diff all` baseline (#14), barometer re-check (#15), FC multimeter checks (#16), ESP AT firmware backup (#17), instructor questions (#18), XT30 to XT60 adapter and battery check (#19), PX4 SITL + Gazebo default quad (#29), docs vault in the repo (#36), `MSP_API_VERSION` / `MSP_STATUS` / `MSP_ATTITUDE` read over the FC USB (#24, closed 2026-10-19). See [[Study Plan v2#2. Sprint 0 — status (7–18 Oct)]].
 > - Done since 2026-10-20: ELRS link restored on 4.1.0 CE_LBT (2026-10-21, [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]). Failsafe with the TX off, with a video (2026-10-22, #22). Pi 4 HIL runner registered (2026-10-22, #48). `gesture_node` and `intent_node` in `dev` (#78). Betaflight SITL MSP tests in CI (#85, #87).
-> - Open: the first 4.5.1 hover (#23), the link-loss tests, being redone after hardware problems (#30), incident #69, the HIL runner setup (#48) and the HIL-without-spare-hardware spike (#61). Tasks live on the board, not here.
+> - Open: the baseline hover on 2026.6.2 (#23, redone after incident #126), the link-loss tests, being redone after hardware problems (#30), incident #69, the HIL runner setup (#48) and the HIL-without-spare-hardware spike (#61). Tasks live on the board, not here.
+> - Since 2026-10-28 the FC runs Betaflight **2026.6.2** ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30).
 > - All decisions are **accepted** as ADRs (ADR-001 to ADR-024). See [[Decision Register]].
 > - Project: **gesture control** with MediaPipe, accepted by instructors as our Module 2 "edge inference in the loop".
 
@@ -33,7 +34,7 @@ tags:
 | Area | Notes |
 |---|---|
 | Plan | [[Study Plan v2]] · [[Roadmap to April 2027]] · [[Team Tracks]] · [[Requirements]] · [[Weekly Rituals]] · [[Dailys]] |
-| Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted) |
+| Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted; ADR-010 and ADR-012 with conditions) |
 | Architecture | [[Architecture Document]] · [[System Overview]] · [[Protocol Spec v0]] · [[Protocol Library Messages]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
 | Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] |
@@ -53,7 +54,7 @@ tags:
 
 ## 3. The five things to remember
 
-1. On Betaflight **4.5.1**, MSP Override **holds the last values** if the ESP stops. Never flip the override switch before the ESP is streaming. We upgrade to **2026.6.2** ([[ADR-014 Betaflight Version|ADR-014]]).
+1. On Betaflight 4.5.1, MSP Override **held the last values** if the ESP stopped. The FC runs **2026.6.2** since 2026-10-28 ([[ADR-014 Betaflight Version|ADR-014]]); override flight conditions are in [[Safety Rules]] #14. Never flip the override switch before the ESP is streaming.
 2. The **ELRS radio and the safety pilot always win**. Gestures never arm the drone.
 3. ESP on **UART4 (T4/R4)**. ELRS stays on **UART2**, the VTX on **UART3** ([[ADR-011 FC UART Allocation|ADR-011]]).
 4. Gestures come from a **ground webcam** in the coding room ([[ADR-015 Gesture Input Source|ADR-015]]).

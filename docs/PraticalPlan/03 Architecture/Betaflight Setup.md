@@ -3,7 +3,7 @@ title: Betaflight Setup
 type: procedure
 status: draft
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - betaflight
@@ -17,11 +17,11 @@ tags:
 
 ---
 
-## 1. Current state (4.5.1)
+## 1. Current state (2026.6.2 since 2026-10-28; rows below not yet re-read on 2026.6.2 unless stated)
 
 | Item | Value | Source |
 |---|---|---|
-| Firmware | Betaflight 4.5.1 (17 Oct 2024), MSP API 1.46 | [[2.5Drone]] |
+| Firmware | Betaflight **2026.6.2** since 2026-10-28 (was 4.5.1, 17 Oct 2024, MSP API 1.46). Config: `drone/config/betaflight/2026.6.2/` | [[ADR-014 Betaflight Version\|ADR-014]] |
 | Target | `ODDITYRCF7AIO` (STM32F722) | [[2.5Drone]] |
 | UART2 | Serial RX (ELRS, CRSF) | [[ESP_to_FC]] §2 |
 | UART3 | IRC Tramp VTX | [[ESP_to_FC]] §2 |
