@@ -116,8 +116,8 @@ private:
 // HELLO_ACK, both tagged with the PSK, so a reflected or out-of-place handshake
 // frame does nothing. The ESP sends every HELLO (type 0x01) here, also during a
 // session (a new HELLO opens a pending session, #156); a Receiver never
-// accepts HELLO. Only
-// frames from the TCP connection come here (HELLO and HELLO_ACK are TCP types).
+// accepts HELLO. Only frames from the TCP connection come here (HELLO and
+// HELLO_ACK are TCP types).
 // Checked in this order: tag, type, payload size, session_id, seq.
 enum class HandshakeResult : std::uint8_t {
   kAccepted = 0,
