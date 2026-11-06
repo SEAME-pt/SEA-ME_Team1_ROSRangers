@@ -3,6 +3,7 @@ import hmac
 
 import pytest
 
+import sd_protocol
 from sd_protocol import derive_keys, equal_constant_time, hmac_sha256
 from sd_protocol.crypto import derive_direction_keys, derive_session_key
 
@@ -77,8 +78,6 @@ def test_derive_keys_equals_the_two_steps():
 
 
 def test_internal_steps_are_not_exported():
-    import sd_protocol
-
     assert not hasattr(sd_protocol, "derive_session_key")
     assert not hasattr(sd_protocol, "derive_direction_keys")
 

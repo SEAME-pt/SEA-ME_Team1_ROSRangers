@@ -187,6 +187,7 @@ def receiver_of(rxs: Receivers | None, buf: bytes) -> Receiver | None:
 
 def test_names_are_unique():
     names = [v["name"] for v in VECTORS]
+    assert len(names) >= 69  # an empty or moved folder must not pass quietly
     assert len(names) == len(set(names))
 
 
@@ -227,7 +228,19 @@ def test_vector(vector):
         assert got == vector["expect"]
         assert (frame is None) is (result is not HandshakeResult.ACCEPTED)
     else:
-        assert result_name(key, buf, receiver_of(rxs, buf)) == vector["expect"]
+        own = receiver_of(rxs, buf)
+        got = result_name(key, buf, own)
+        assert got == vector["expect"]
+        # A rejected frame is also refused by the Receiver of its side and
+        # transport, and counted there (as in test_vectors.cpp).
+        if got != "accept":
+            if own is None:
+                own = receiver_of(
+                    {(r, t): Receiver(r, t) for r in Role for t in Transport}, buf
+                )
+                assert own.start_session(0x12345678, key)
+                assert result_name(key, buf, own) == got
+            assert (own.counters.rejected, own.counters.accepted) == (1, 0)
 
     fields = vector.get("fields")
     if fields is None:
@@ -260,6 +273,7 @@ def test_vector(vector):
 def test_session_key_derivation(vector):
     """Group 2: the vector's key is the direction key ("g2e" or "e2g") that
     derive_keys() gives for the PSK and the nonces (#150, #152)."""
+    assert vector["direction"] in ("g2e", "e2g"), vector["direction"]
     keys = derive_keys(
         bytes.fromhex(vector["psk"]),
         bytes.fromhex(vector["ground_nonce"]),

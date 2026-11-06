@@ -4,6 +4,8 @@ from sd_protocol import (
     HELLO_ACK_SIZE,
     HELLO_SIZE,
     PAYLOAD_SIZES,
+    SETPOINT_SIZE,
+    STATE_SIZE,
     HandshakeResult,
     Header,
     HelloAck,
@@ -12,6 +14,7 @@ from sd_protocol import (
     Role,
     RxResult,
     Transport,
+    derive_keys,
     encode_frame,
     encode_hello_ack,
     is_accepted,
@@ -83,7 +86,7 @@ def test_session_key_must_be_32_bytes():
         Receiver(Role.ESP, Transport.UDP).start_session(SESSION, TEST_KEY[:31])
 
 
-def test_unknown_transport_refused_and_nothing_changes():
+def test_unknown_transport_refused():
     with pytest.raises(ValueError):
         Receiver(Role.ESP, 2)
 
@@ -311,8 +314,8 @@ def test_own_frames_rejected_even_with_the_same_key():
     esp_tcp = open_receiver(Transport.TCP)
     ground_tcp = open_receiver(Transport.TCP, Role.GROUND)
 
-    state = frame_of(MsgType.STATE, bytes(28), 100)
-    setpoint_frame = frame_of(MsgType.SETPOINT, SEQ1[20:30], 100)
+    state = frame_of(MsgType.STATE, bytes(STATE_SIZE), 100)
+    setpoint_frame = frame_of(MsgType.SETPOINT, bytes(SETPOINT_SIZE), 100)
     assert esp.receive(state) == (RxResult.WRONG_DIRECTION, None)
     assert ground.receive(setpoint_frame) == (RxResult.WRONG_DIRECTION, None)
     ack = frame_of(MsgType.ARM_CONTROL_ACK, b"\x00", 100)
@@ -402,6 +405,32 @@ HELLO_ACK = handshake(MsgType.HELLO_ACK, SESSION, 1, hello_ack_payload(SESSION))
         ),
         (
             Role.ESP,
+            handshake(MsgType.HELLO, 0, 0, HELLO_PAYLOAD),
+            HandshakeResult.BAD_SEQ,
+        ),
+        (
+            Role.GROUND,
+            handshake(MsgType.HELLO_ACK, SESSION, 0, hello_ack_payload(SESSION)),
+            HandshakeResult.BAD_SEQ,
+        ),
+        # Order (tag, type, size, session_id, seq): the first broken rule wins.
+        (
+            Role.ESP,
+            handshake(MsgType.HELLO, 5, 2, HELLO_PAYLOAD),
+            HandshakeResult.WRONG_SESSION,
+        ),
+        (
+            Role.ESP,
+            handshake(MsgType.HELLO, 5, 2, bytes(3)),
+            HandshakeResult.BAD_PAYLOAD_SIZE,
+        ),
+        (
+            Role.ESP,
+            HELLO_ACK[:-1] + bytes([HELLO_ACK[-1] ^ 1]),
+            HandshakeResult.BAD_TAG,
+        ),
+        (
+            Role.ESP,
             handshake(MsgType.HELLO, 0, 1, bytes(HELLO_SIZE - 1)),
             HandshakeResult.BAD_PAYLOAD_SIZE,
         ),
@@ -435,3 +464,35 @@ def test_handshake_with_the_wrong_key_or_role_refused():
     assert receive_handshake(Role.ESP, HELLO, bytes(32))[0] is HandshakeResult.BAD_TAG
     with pytest.raises(ValueError):
         receive_handshake(2, HELLO, TEST_KEY)
+    with pytest.raises(ValueError):  # a missing or short PSK must not pass silently
+        receive_handshake(Role.ESP, HELLO, b"")
+
+
+# #150: the ESP's Receivers use ground_to_esp, the ground's use esp_to_ground.
+# A frame sealed with the other direction's key (a reflection) is refused as a
+# bad tag and changes nothing, on both sides
+# (FrameSealedForTheOtherDirectionRejected in test_receiver.cpp).
+def test_frame_sealed_for_the_other_direction_rejected():
+    keys = derive_keys(TEST_KEY, b"\x11" * 16, b"\x22" * 16)
+    esp = Receiver(Role.ESP, Transport.UDP)
+    ground = Receiver(Role.GROUND, Transport.UDP)
+    assert esp.start_session(SESSION, keys.ground_to_esp)
+    assert ground.start_session(SESSION, keys.esp_to_ground)
+
+    def seal(msg_type: MsgType, size: int, seq: int, key: bytes) -> bytes:
+        return encode_frame(Header(msg_type, 0, SESSION, seq), bytes(size), key)
+
+    # The real traffic goes through.
+    sp = seal(MsgType.SETPOINT, SETPOINT_SIZE, 1, keys.ground_to_esp)
+    assert esp.receive(sp)[0] is RxResult.ACCEPTED
+    st = seal(MsgType.STATE, STATE_SIZE, 1, keys.esp_to_ground)
+    assert ground.receive(st)[0] is RxResult.ACCEPTED
+
+    # Reflections, with a high seq so only the tag can stop them.
+    own_state = seal(MsgType.STATE, STATE_SIZE, 1000, keys.esp_to_ground)
+    assert esp.receive(own_state) == (RxResult.BAD_TAG, None)
+    own_setpoint = seal(MsgType.SETPOINT, SETPOINT_SIZE, 1000, keys.ground_to_esp)
+    assert ground.receive(own_setpoint) == (RxResult.BAD_TAG, None)
+
+    assert (esp.last_seq, ground.last_seq) == (1, 1)
+    assert (esp.counters.bad_tag, ground.counters.bad_tag) == (1, 1)

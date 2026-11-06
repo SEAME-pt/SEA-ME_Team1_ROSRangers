@@ -203,8 +203,8 @@ class Receiver:
         if frame.header.session_id != self._session_id:
             return self._reject(RxResult.WRONG_SESSION)
 
-        # Type, transport (§2), payload size (REQ-COM-001) and SETPOINT mode
-        # (§4 rule 4), before the window: a malformed frame must not use up its
+        # Type, transport and direction (§2), payload size (REQ-COM-001) and
+        # SETPOINT mode (§4 rule 4), before the window: a malformed frame must not use up its
         # seq (REQ-COM-004).
         sizes = PAYLOAD_SIZES.get(frame.header.type)
         if sizes is None:
@@ -272,6 +272,8 @@ def receive_handshake(
     handshake attempts.
     """
     role = Role(role)
+    if len(psk) != KEY_SIZE:
+        raise ValueError(f"PSK must be {KEY_SIZE} bytes")
     error, frame = decode_frame(buf, psk)
     if error is not RxError.OK:
         return _HANDSHAKE_FRAME_REJECTS[error], None
