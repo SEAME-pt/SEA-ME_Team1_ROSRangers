@@ -37,8 +37,13 @@ tags:
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
 17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Every other bench or flight session is attended. Rule #15 covers the drone, not this bench, but #10 still applies.
 18. **Hands off an armed drone** (added 2026-10-29, incident GitHub #131). Nobody touches, catches, pushes or guards an armed drone by hand, even close to the ground. Everyone except the pilot stays outside the flight area while it is armed. If the drone moves towards someone, the pilot disarms with the kill switch (SA) and the person steps back. Hands only after disarm and the props have stopped.
-19. **Height limit: 1 m above take-off for the first flights, then 1.5 m** (added 2026-11-06, team decision 2026-10-29, incidents GitHub #126 and #131). The limit moves to 1.5 m only after the team approves it. Nothing on the drone measures height reliably today (the barometer drifts, [[Height Sensor Study]] §1), so until a height sensor is fitted the pilot keeps the limit by eye.
-    - **Warning:** no one on the team has the piloting experience to hold a height by hand reliably, so relying on the pilot alone is **not considered safe**. That is why a height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06). Fly low, short and away from anything overhead.
+19. **Height limit: 1 m above take-off for the first flights, then 1.5 m** (added 2026-11-06; team decision of 2026-10-29, after incident GitHub #131, recorded on #131 on 2026-11-06; see also #126). The limit moves to 1.5 m only after the team approves it. Nothing on the drone measures height reliably today (the barometer drifts, [[Height Sensor Study]] §1), and no one on the team has the piloting experience to hold a height by hand reliably, so the pilot's eye alone is **not enough**. Until a height sensor is fitted, every flight also needs all of these:
+    - a **visible 1 m marker** (pole or tape) next to the flight area;
+    - the **second person** (#15) calls the height out loud and calls "**disarm**" when the drone reaches the marker; the pilot then disarms with SA;
+    - **ALTHOLD only from a steady hover** (as in GitHub #134), never engaged during a climb;
+    - the **60 % throttle limit** stays in the Betaflight config (`throttle_limit_percent = 60`, `drone/config/betaflight/2026.6.2/`).
+
+    Fly low, short and away from anything overhead. A height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06).
 
 ---
 

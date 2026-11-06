@@ -53,7 +53,7 @@ Module 1 needs "holds position" in SITL and in the cage. The numbers below are p
 - **The ThoneFlow alone does not solve it.** It measures no height, so it cannot hold height, and its image motion cannot be turned into a speed without a height (§2.4). Betaflight also needs a rangefinder for optical flow, so a flow-only position hold would have to be written by the team on the ESP or the ground.
 - **Proposal: a ToF height + optical-flow module on a free FC UART**, which Betaflight 2026.6.2 supports by name (`rangefinder_hardware`, `opticalflow_hardware = MT`). ALTHOLD can then prefer the rangefinder (`altitude_source = RANGEFINDER_PREFER`) and Position Hold can use the flow (`poshold_position_source = OPTICALFLOW_ONLY`), with no new code. The comparison of four sensors and the sources are in [[Height Sensor Study]]; the best match there is the MicoAir MTF-02P.
 - **Not available in the lab.** Until the team decides and the hardware is there, §2.4 stands. A cheap check meanwhile: cover the baro with foam and compare the blackbox height against the uncovered flights.
-- If accepted, it needs dated entries in [[ADR-011 FC UART Allocation|ADR-011]] (UART) and in §2.4 here.
+- If accepted, it needs dated entries in [[ADR-011 FC UART Allocation|ADR-011]] (UART) and in §2.4 here. The free UART is UART1, which is the ESP's only spare / fallback port in ADR-011: using it for the sensor removes that fallback.
 
 ## 3. Consequences
 

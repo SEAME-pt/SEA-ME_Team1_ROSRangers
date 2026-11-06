@@ -142,7 +142,7 @@ What Betaflight 2026.6.2 does with it [SRC 8]:
 | Height method | Ultrasound | Ultrasound | Light (ToF) | **Light (ToF)** |
 | Affected by prop noise and airflow | **Yes** | **Yes** | No | **No** |
 | Beam | 15° | Conical | About 6° | **2°** |
-| Accuracy below 2 m | 3 mm (bench) | 3–4 cm | 4 cm | **2 cm** |
+| Resolution / accuracy below 2 m (datasheet) | 3 mm resolution (bench) | 3–4 cm resolution | 4 cm accuracy | **2 cm accuracy** |
 | Measures drift | No | No | Yes | **Yes** |
 | Update rate | ~16 Hz | ~15 Hz | 100 Hz | 50 Hz |
 | Works with Betaflight 2026.6.2 | Yes (build and pins not checked) | **No** | Yes | **Yes** |
@@ -152,7 +152,7 @@ What Betaflight 2026.6.2 does with it [SRC 8]:
 
 ## 5. How it would be used (if accepted)
 
-1. **Bench, props off ([[Safety Rules]] #1):** connect to a free FC UART (UART1 is free, and is also the ESP's spare in [[ADR-011 FC UART Allocation|ADR-011]]), set MSP, check height and flow in the Configurator Sensors tab. Dated entries in ADR-011 and ADR-016.
+1. **Bench, props off ([[Safety Rules]] #1):** connect to a free FC UART (UART1 is free, but it is the ESP's only spare / fallback port in [[ADR-011 FC UART Allocation|ADR-011]]; using it for the sensor removes that fallback), set MSP, check height and flow in the Configurator Sensors tab. Dated entries in ADR-011 and ADR-016.
 2. **Flight area, pilot plus one more person ([[Safety Rules]] #4, #15, #18):** ALTHOLD with `altitude_source = RANGEFINDER_PREFER`; compare the blackbox with the barometer-only flights (GitHub #134).
 3. **Then Position Hold** with the flow: measure drift over a fixed time and tune.
 4. Then the throttle-only MSP Override stage can be proposed again ([[ADR-010 MSP Override|ADR-010]] update 2026-11-06).
