@@ -173,6 +173,37 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
 | `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport refused | The 2026-11-05 decisions hold on both sides |
 
+## Msp: talking to the flight controller (#101)
+The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the commands on the allow-list of the MSP Cheat Sheet.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `Msp.KnownRequestBytes` | MSP_API_VERSION and MSP_STATUS requests are exactly `$M< 00 01 01` and `$M< 00 65 65` | The bytes match what Betaflight expects |
+| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108, 110 and 200 can be built; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
+| `Msp.EncodeRefusesBadArguments` | Null buffers, a too-small buffer, a too-long payload are refused | A bad call writes nothing |
+| `Msp.SetRawRcBytes` | 8 channels become a 16-byte little-endian payload with the right checksum | The RC frame #102 will send is right |
+
+## MspParser and MspDecode: reading the FC's replies
+| Test | What it does | Why it matters |
+|---|---|---|
+| `MspParser.ReadsRepliesAndSkipsNoise` | Noise and a false start, then an MSP_ATTITUDE reply: one reply, roll −10.0°, pitch 30.0°, heading 359° | Boot noise on the UART does not confuse the reader |
+| `MspParser.BadChecksumTooLongAndRequestsAreDropped` | A wrong checksum and a 100-byte reply full of `$` are dropped, the next reply is read; an echoed request is not a reply | A corrupted or oversized frame never becomes data |
+| `MspParser.ErrorReplyAndEmptyReply` | An `!` error reply and an empty reply are reported as such and never decoded as values | The FC refusing a command is not read as numbers |
+| `MspParser.RandomBytesNeverCrashAndAlwaysResync` | 200,000 random bytes, then a valid reply: the reply is read | The reader always recovers |
+| `MspDecode.StatusArmedAndArmingFlags` | MSP_STATUS laid out as Betaflight 2026.6.2 writes it: armed bit and arming-disable flags, with 0 to 3 extra mode bytes; a cut reply is refused | The ESP knows if the drone is armed (failsafe, ADR-024 gate) |
+| `MspDecode.AnalogTakesTheCentivoltField` | MSP_ANALOG gives 1110 = 11.10 V from its last field; an old 7-byte reply is refused | The battery voltage has the unit STATE needs |
+
+## FcLink: the scheduler that owns the FC UART (#101)
+| Test | What it does | Why it matters |
+|---|---|---|
+| `FcLink.PollsAtTheAdr009Rates` | One simulated second: 25 ATTITUDE, 5 STATUS, 5 ANALOG requests, every one answered | The rates of ADR-009 |
+| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the three poll commands are sent | The gateway alone never sends RC |
+| `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout; a late reply is not taken | Requests never collide on the UART |
+| `FcLink.ArmedStateAndFreshness` | The armed flag is read, and the status is fresh for 500 ms only | The ADR-024 gate needs a fresh "disarmed" |
+| `FcLink.ErrorAndBadRepliesCounted` | Error replies, bad checksums and undecodable replies are counted, never stored | Bad data never reaches the telemetry |
+| `FcLink.SurvivesTheMillisWrap` | Polling keeps going across the 49-day `millis()` wrap | No stall after a long uptime |
+| `FcLink.PollRefusesASmallBuffer` | A buffer too small for a request: nothing is sent or counted | A bad call writes nothing |
+
 ## Version: protocol version
 | Test | What it does | Why it matters |
 |---|---|---|

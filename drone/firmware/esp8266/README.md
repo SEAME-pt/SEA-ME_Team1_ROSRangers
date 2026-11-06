@@ -24,7 +24,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 
 Same as before: SoftAP `seame-drone-0850`, 192.168.4.1, at most 1 client, UDP 5760 both ways, replies go to whoever sent the last packet. Nothing is printed on UART0 except the boot ROM (~731 bytes at 74880 baud at power-up, no MSP headers, ESP-S1-03) and crash dumps.
 
-Not there yet: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. The normal build has no status port; the timestamps on UDP 5761 exist only in the diagnostic env `esp_diag_timing` (see below).
+Not there yet: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. The normal build has no status port; the timestamps on UDP 5770 exist only in the diagnostic env `esp_diag_timing` (see below).
 
 **Env rename (2026-10-22).** The envs were called `d1_mini*`, but the board is an ESP-12F module, not a D1 mini. They are now `esp*` with `board = esp12e`. The binary is the same code: compared with the 2026-10-21 image (`firmware.bin` SHA-256 `836717987db3…`), only 12 bytes differ (the board name string `d1_mini` → `esp12e`, a build stamp and the image checksum).
 
@@ -36,9 +36,10 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
 | `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | Every later update of the flight ESP (ADR-024). The HIL runner flashes its spare ESP over USB with `esp` (`hil.yaml`) |
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
-| `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5761 (`WITH_TIMING=1`), see below |
-| `esp_diag_tcp` | Wi-Fi (OTA) | S1-07: TCP echo server on 5762 next to the bridge, plus the timestamps (`WITH_TCP_ECHO=1 WITH_TIMING=1`) |
-| `esp_diag_wdt` | Wi-Fi (OTA) | S1-10: hangs on command (UDP 5763) so the watchdog resets the ESP (`WITH_WDT_TEST=1`) |
+| `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5770 (`WITH_TIMING=1`), see below |
+| `esp_diag_tcp` | Wi-Fi (OTA) | S1-07: TCP echo server on TCP 5759 next to the bridge, plus the timestamps (`WITH_TCP_ECHO=1 WITH_TIMING=1`) |
+| `esp_diag_wdt` | Wi-Fi (OTA) | S1-10: hangs on command (UDP 5771) so the watchdog resets the ESP (`WITH_WDT_TEST=1`) |
+| `esp_gateway` | Wi-Fi (OTA) | **Gateway firmware (#101)**, not the default yet: allow-listed FC link, no bridge. Bench view on UDP 5770, see "Gateway" below |
 
 ## Build
 
@@ -91,6 +92,26 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
+## Gateway (#101, env `esp_gateway`)
+
+The gateway replaces the transparent bridge step by step. Until it has passed its bench tests, `esp` stays the bridge and the gateway is its own env.
+
+What it does now (ADR-009):
+- **One scheduler owns the FC UART** (`sd::FcLink` in `drone/lib/protocol`). It polls `MSP_ATTITUDE` at 25 Hz and `MSP_STATUS` / `MSP_ANALOG` at 5 Hz, one request at a time (50 ms reply timeout), and keeps the latest values with their age.
+- **Allow-list:** every MSP frame it sends is built by `sd::msp::encode_request`, which refuses any command not in the MSP Cheat Sheet list (1, 101, 105, 108, 110, 200). Nothing from the network is ever written to the UART. There is no UDP 5760 bridge in this build, so `seame.py msp` over Wi-Fi does not work with it: flash the bridge back for those tools.
+- **Never sends RC.** Sessions, `SETPOINT` → `MSP_SET_RAW_RC`, the failsafe and `STATE` are #102. OTA is still ungated here, as in the bridge (the ADR-024 gate is #102).
+
+Flash it like any OTA update (props off, battery out, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. To go back to the bridge, flash `-e esp_ota`.
+
+**Bench view (read-only, diagnostic):** any datagram to UDP 5770 gets one text line back:
+
+```bash
+echo | nc -u -w1 192.168.4.1 5770
+# armed=0 arming_flags=0x00000000 status_age_ms=87 roll=-12 pitch=4 heading=271 vbat_cV=1110 att_age_ms=12 req=1520 rep=1520 timeout=0 bad_cksum=0 too_long=0 err=0 unexpected=0
+```
+
+`armed=-1` and `status_age_ms=-1` mean no `MSP_STATUS` has arrived yet. `req` and `rep` should grow together (about 35 per second); `timeout` growing means the FC does not answer (wiring, baud, MSP not enabled on UART4).
+
 ## Diagnosis test: link dead periods (2026-10-22)
 
 **Symptom.** Two 10-min `test latency` runs at close range on 2026-10-22 (`s1-05_custom_close_run2`, `run3`) had periods of **100 % loss** lasting 5–188 s, at the start and also mid-run. Between them the link was better than ever: p99 53 / 80 ms, only 4 / 3 gaps over 250 ms.
@@ -139,7 +160,7 @@ Post run2, run3 and this run on #30 as they are, failures included.
 
 ## Diagnosis: timestamps per request (`esp_diag_timing`)
 
-For each request the ESP records four `micros()` stamps and sends them every 100 ms to the PC on UDP 5761. The bridge on 5760 is unchanged, and the normal `esp` / `esp_ota` build is byte for byte the same (`WITH_TIMING` defaults to 0).
+For each request the ESP records four `micros()` stamps and sends them every 100 ms to the PC on UDP 5770. The bridge on 5760 is unchanged, and the normal `esp` / `esp_ota` build is byte for byte the same (`WITH_TIMING` defaults to 0).
 
 | Stamp | When | |
 |---|---|---|
@@ -163,7 +184,7 @@ The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this 
 
 ## S1-07: TCP and UDP at the same time (`esp_diag_tcp`)
 
-The ESP accepts one TCP client on 5762 (a second one is refused, as in ADR-005) and echoes what it receives. It only moves what the TCP send buffer can take, so a TCP stall can't block the loop. The UDP bridge and the timestamps on 5761 run as usual. Setup as for S1-05: PC next to the drone, props off, PC Wi-Fi power save off.
+The ESP accepts one TCP client on 5759 (a second one is refused, as in ADR-005) and echoes what it receives. It only moves what the TCP send buffer can take, so a TCP stall can't block the loop. The UDP bridge and the timestamps on 5761 run as usual. Setup as for S1-05: PC next to the drone, props off, PC Wi-Fi power save off.
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_tcp -t upload            # OTA, then wait for the network
@@ -176,7 +197,7 @@ Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05
 
 ## S1-10: watchdog recovery (`esp_diag_wdt`)
 
-| Command on UDP 5763 | ESP |
+| Command on UDP 5771 | ESP |
 |---|---|
 | `REASON?` | `REASON,<reset reason>,<uptime ms>` |
 | `HANG` | Answers `HANGING`, then loops without yielding: the software watchdog resets it after about 3 s |

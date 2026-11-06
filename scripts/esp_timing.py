@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ESP timestamps per request, from the esp_diag_timing firmware (UDP 5761).
+"""ESP timestamps per request, from the esp_diag_timing firmware (UDP 5770).
 
 For each request the ESP records four micros() stamps: esp_in (UDP packet read),
 uart_out (written to the FC), uart_in (first reply byte from the FC) and esp_out
@@ -19,7 +19,7 @@ import socket
 import statistics
 import time
 
-PORT = 5761
+PORT = 5770
 RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
 STAMP_FIELDS = ("pc_time_s", "seq", "esp_in", "uart_out", "uart_in", "esp_out", "sent")
 REPORT_FIELDS = ("pc_time_s", "report", "now_us", "loop_max_us", "dropped")

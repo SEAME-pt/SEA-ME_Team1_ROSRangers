@@ -3,7 +3,7 @@ title: MSP Cheat Sheet
 type: reference
 status: active
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - msp
@@ -50,7 +50,7 @@ tags:
 | 200 | MSP_SET_RAW_RC | setpoints (AETR order) |
 
 > [!danger] Never forwarded from the network (gateway allow-list)
-> `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. `MSP_SET_ARMING_DISABLED` (99) is sent only by the ESP itself, for the OTA lock ([[ADR-024 OTA Firmware Updates|ADR-024]]), never forwarded. The week-2 transparent-bridge spike forwards all of these: use it only with props off ([[Safety Rules]] #13). Network isolation is still an open item ([[Safety Rules]] §2).
+> `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. `MSP_SET_ARMING_DISABLED` (99) is sent only by the ESP itself, for the OTA lock ([[ADR-024 OTA Firmware Updates|ADR-024]]), never forwarded. The gateway (#101) enforces this list in code: `sd::msp::encode_request` refuses every other command. The week-2 transparent-bridge spike forwards all of these: use it only with props off ([[Safety Rules]] #13). Network isolation is still an open item ([[Safety Rules]] §2).
 
 ## 4. Channel-order trap
 

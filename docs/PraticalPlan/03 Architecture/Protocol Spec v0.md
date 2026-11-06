@@ -186,7 +186,7 @@ Static IPs are set by [[ADR-006 Network|ADR-006]].
 | TCP 5759 | Session | v0 |
 | 5760 | Reserved for a future channel. Until the gateway firmware (#101) replaces it, this is the transparent bridge's port | reserved |
 | TCP 5761–5768 | Betaflight SITL on the PC (UART1–8). Never used | taken |
-| UDP 5770 | Timing test, diagnostic build only | test |
+| UDP 5770 | Diagnostic builds only: timing test (bridge, `esp_diag_timing`); FC status view (gateway, `esp_gateway`, until #102 sends `STATE`) | test |
 | UDP 5771 | Watchdog test, diagnostic build only | test |
 
 - 5759 and not 5760: the transparent bridge forwards every byte on UDP 5760 to the FC. Protocol traffic sent to a drone that still runs the bridge then gets no answer instead of reaching the FC.
@@ -251,7 +251,7 @@ v0 keys:
 
 ### 7.4 Implementation of the port changes
 
-The diagnostic builds and their scripts still use the old ports (timing 5761, TCP echo 5762, watchdog 5763). They move to 5770, 5759 and 5771 in #101. Recorded bench results keep the ports they were measured with.
+Done in #101 (2026-11-06): the diagnostic builds and their scripts moved from the old ports (timing 5761, TCP echo 5762, watchdog 5763) to 5770, 5759 and 5771. Recorded bench results keep the ports they were measured with.
 
 ### 7.5 Items decided on 2026-11-05 (GitHub #142)
 
@@ -282,6 +282,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
 | 2026-11-05 | 1.1.1 | From the C++ library (#99). New receive check: `reject:wrong_transport` (§2), found by the #99 review, so a frame cannot be replayed on the other transport. Clarifications, no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), check order and TCP partial frames (§4 rules 1 and 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
 | 2026-11-05 | 1.2 | One key per direction (#150, decided by the team; [[ADR-002 Message Integrity\|ADR-002]] entry): in-session tags use the `"g2e"` / `"e2g"` keys (§1), so a reflected frame is refused. Pre-session rule (§1): the ESP accepts only `HELLO` and the ground only `HELLO_ACK`; **not enforced in code yet** (#152, before #101/#102). **Wire change:** the tag of every in-session frame changes; no firmware had shipped. Group 2: `setpoint_signed_with_session_key` replaced by one vector per direction and one reflected frame per direction (§6). |
+| 2026-11-06 | 1.2.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
 
 ## 9. Glossary
 
