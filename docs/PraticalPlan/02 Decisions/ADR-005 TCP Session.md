@@ -3,6 +3,7 @@ title: ADR-005 — TCP Session as Prerequisite for Control
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - D05
@@ -41,11 +42,15 @@ tags:
 
 - [[PC_to_ESP]] §7.3–7.4 · [[ESP Link State Machine]] · [[Decision Register]]
 
+> 2026-11-06: **The decision is extended: a new `HELLO` does not end the current session** (GitHub #156, decided by the team). The ESP answers it with `HELLO_ACK` and keeps the current session; the new session is *pending* and takes over only when its **first valid frame under the new keys** arrives. Then the ESP sends `BYE` reason 3 to the old session. A pending session with no valid frame within 2 s is dropped, and `HELLO` is rate-limited (at most one per 500 ms). Why: a `HELLO` is tagged with the PSK and carries nothing fresh, so a recorded one could be replayed at any time and end a live session in flight. A replayed `HELLO` cannot produce that first frame (no PSK, no new keys), so the live session survives. The same first exchange confirms the keys on the ground side: a ground that took a replayed old `HELLO_ACK` has the wrong keys, gets no answer to its first frame and redoes the handshake. No wire change. "New TCP connection: a new session" above now means: a new *pending* session; the one-client rule still applies. Recorded in [[ESP Link State Machine]] and [[Protocol Spec v0]] §3.1.
+
 ## 5. Glossary
 
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **HELLO / HELLO_ACK** | The handshake that opens a session over TCP ([[Protocol Spec v0]] §1). |
+| **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (#156). |
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |

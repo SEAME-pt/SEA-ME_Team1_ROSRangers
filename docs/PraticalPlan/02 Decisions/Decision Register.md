@@ -94,9 +94,11 @@ tags:
   - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
 - 2026-11-05, decision **extended**: [[ADR-002 Message Integrity|ADR-002]] uses one key per direction (`"g2e"` / `"e2g"`, derived from the session key), so a node refuses its own frames sent back to it (#150, spec v1.2).
 
-## 8. What changed on 2026-11-04 and 2026-11-05
+## 8. What changed on 2026-11-04 to 2026-11-06
 
 - New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
+
+- 2026-11-06, decision **extended**: [[ADR-005 TCP Session|ADR-005]]: a new `HELLO` does not end the current session; the new session is pending until its first valid frame (#156). No wire change.
 
 ## 9. Still open
 

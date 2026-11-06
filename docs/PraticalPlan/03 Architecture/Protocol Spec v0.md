@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.2
+version: 1.2.2
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.2.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -119,7 +119,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 | 0 | normal | Operator stops the ground node |
 | 1 | timeout | No traffic from the other side for too long |
 | 2 | protocol error | The other side sent invalid input (§4 rule 5) |
-| 3 | replaced by a new session | A new `HELLO` arrived; the ESP tells the old session it has ended |
+| 3 | replaced by a new session | A new session was confirmed by its first valid frame (a new `HELLO` alone never ends the current session, [[ADR-005 TCP Session\|ADR-005]] entry of 2026-11-06, #156); the ESP tells the old session it has ended |
 
 `EVENT.code` (u16): the high byte is the subsystem, the low byte the event, so a log filter on `0x01xx` shows all link events.
 
@@ -282,6 +282,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
 | 2026-11-05 | 1.1.1 | From the C++ library (#99). New receive check: `reject:wrong_transport` (§2), found by the #99 review, so a frame cannot be replayed on the other transport. Clarifications, no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), check order and TCP partial frames (§4 rules 1 and 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
 | 2026-11-05 | 1.2 | One key per direction (#150, decided by the team; [[ADR-002 Message Integrity\|ADR-002]] entry): in-session tags use the `"g2e"` / `"e2g"` keys (§1), so a reflected frame is refused. Pre-session rule (§1): the ESP accepts only `HELLO` and the ground only `HELLO_ACK`; **not enforced in code yet** (#152, before #101/#102). **Wire change:** the tag of every in-session frame changes; no firmware had shipped. Group 2: `setpoint_signed_with_session_key` replaced by one vector per direction and one reflected frame per direction (§6). |
+| 2026-11-06 | 1.2.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
 
 ## 9. Glossary
 
@@ -306,6 +307,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
+| **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (§3.1, #156). |
 | **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived. It tags nothing and is wiped after that (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) (§1, #150). |
 | **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1). |

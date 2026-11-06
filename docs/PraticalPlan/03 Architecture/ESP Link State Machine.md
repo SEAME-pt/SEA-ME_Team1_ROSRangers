@@ -3,6 +3,7 @@ title: ESP Link State Machine
 type: architecture
 status: draft
 date: 2026-10-12
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - architecture
@@ -28,9 +29,11 @@ stateDiagram-v2
     STREAMING --> LINK_FAILSAFE: no accepted control for 250 ms
     LINK_FAILSAFE --> STREAMING: RESUME_REQUEST + 500 ms neutral stream
     SESSION_IDLE --> NO_SESSION: BYE / TCP closed and no UDP
-    STREAMING --> NO_SESSION: new HELLO (new session)
-    LINK_FAILSAFE --> NO_SESSION: new HELLO
+    STREAMING --> SESSION_IDLE: new session confirmed (first valid frame under its keys)
+    LINK_FAILSAFE --> SESSION_IDLE: new session confirmed
 ```
+
+**A new `HELLO` does not end the current session** (2026-11-06, #156, [[ADR-005 TCP Session|ADR-005]] entry). In any state the ESP answers a valid `HELLO` with `HELLO_ACK` and keeps its current state and session. The new session is *pending*: it takes over only when its first valid frame under the new keys arrives; then the ESP sends `BYE` reason 3 to the old session and continues in SESSION_IDLE with the new one. A pending session with no valid frame within 2 s is dropped. `HELLO` is rate-limited (at most one per 500 ms). A replayed `HELLO` therefore never ends a live session.
 
 ## 2. Behaviour per state
 
