@@ -28,6 +28,7 @@ tags:
 | UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). The ESP is soldered to UART4 since 2026-10-19 | [[ADR-011 FC UART Allocation\|ADR-011]] |
 | UART1 / UART6 | unassigned | [[ESP_to_FC]] §2 |
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
+| Airmode | **On** (read 2026-11-06 over MSP, `MSP_FEATURE_CONFIG` mask `0x10440408`: RX_SERIAL, TELEMETRY, OSD, AIRMODE, ANTI_GRAVITY). `FEATURE_AIRMODE` is a Betaflight default and `diff_all_2026-10-30.txt` has no `feature -AIRMODE`; no AIRMODE switch is needed. Turning it off would be a config change (team approval, `diff all`, CHANGELOG). Safety Rules #18: disarm before handling | GitHub #161, PR #162 |
 
 ### 1.1 Modes (CLI `aux`, read 2026-10-21)
 
@@ -116,6 +117,7 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
+| **Airmode** | Betaflight mode that keeps stabilising at zero throttle, so the motors can speed up above idle when the frame is tilted. On on this drone through the default `feature AIRMODE` (§1, read 2026-11-06). |
 | **AUX1** | First auxiliary RC channel (CH5). On this drone it carries the ARM switch (SA). |
 | **ESC** | Electronic Speed Controller: drives one motor. The FC's 4-in-1 ESC also stores each motor's spin direction. |
 | **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
