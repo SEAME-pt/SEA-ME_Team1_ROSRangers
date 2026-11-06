@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""S1-10 watchdog test with the esp_diag_wdt firmware (UDP 5763). Props off.
+"""S1-10 watchdog test with the esp_diag_wdt firmware (UDP 5771). Props off.
 
 Stop every MSP stream first: the bridge forwards whatever the PC sends, so a
 running stream would look like control output after the reboot.
@@ -16,7 +16,7 @@ import socket
 import time
 
 HOST = "192.168.4.1"
-PORT = 5763
+PORT = 5771
 RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
 FIELDS = (
     "cycle",

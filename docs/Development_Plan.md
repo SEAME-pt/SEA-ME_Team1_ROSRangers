@@ -197,6 +197,7 @@ See [[Dev_Strategy]] §23. Project-specific additions:
 - No gesture that can arm, disarm or override the pilot.
 - No firmware on the FC other than Betaflight (PX4 does not fit; INAV has no target).
 - No dependency on ESP8266 SoftwareSerial until the experiment passes ([[ADR-016 Flow Sensor Path|ADR-016]]).
+
 ## 7. Glossary
 
 | Term | Meaning |

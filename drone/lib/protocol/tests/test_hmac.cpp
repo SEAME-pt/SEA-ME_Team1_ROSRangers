@@ -98,11 +98,11 @@ TEST(SessionKey, IsHmacOfSessAndBothNonces) {
   std::uint8_t expected[sd::kSha256Size];
   sd::hmac_sha256(psk.bytes, sd::kKeySize, msg, sizeof(msg), expected);
 
-  const sd::Key session = sd::derive_session_key(psk, ground, esp);
+  const sd::Key session = sd::detail::derive_session_key(psk, ground, esp);
   EXPECT_EQ(hex(session.bytes, sd::kKeySize), hex(expected, sd::kSha256Size));
 
   // Swapping the nonces gives a different key.
-  const sd::Key swapped = sd::derive_session_key(psk, esp, ground);
+  const sd::Key swapped = sd::detail::derive_session_key(psk, esp, ground);
   EXPECT_NE(hex(swapped.bytes, sd::kKeySize), hex(session.bytes, sd::kKeySize));
 }
 
@@ -126,8 +126,8 @@ TEST(DirectionKeys, AreHmacOfTheSessionKeyWithG2eAndE2g) {
   std::uint8_t esp[sd::kNonceSize];
   std::memset(ground, 0x11, sizeof(ground));
   std::memset(esp, 0x22, sizeof(esp));
-  const sd::Key session = sd::derive_session_key(psk, ground, esp);
-  const sd::DirectionKeys keys = sd::derive_direction_keys(session);
+  const sd::Key session = sd::detail::derive_session_key(psk, ground, esp);
+  const sd::DirectionKeys keys = sd::detail::derive_direction_keys(session);
 
   EXPECT_EQ(hex(keys.ground_to_esp.bytes, sd::kKeySize),
             "bb0b20baf093c79ac77f89eb087d0e68a35bb31cf90f34a09bb2d41837b9e117");
@@ -154,4 +154,24 @@ TEST(SecureZero, ClearsEveryByteAndNothingElse) {
   std::memset(key.bytes, 0x5A, sd::kKeySize);
   sd::secure_zero(&key, sizeof(key));
   EXPECT_EQ(hex(key.bytes, sd::kKeySize), std::string(64, '0'));
+}
+
+// #152: derive_keys() gives the same two keys as the two steps, without
+// handing out the session key.
+TEST(DirectionKeys, DeriveKeysEqualsTheTwoSteps) {
+  sd::Key psk{};
+  for (std::size_t i = 0; i < sd::kKeySize; ++i) {
+    psk.bytes[i] = static_cast<std::uint8_t>(i);
+  }
+  std::uint8_t ground[sd::kNonceSize];
+  std::uint8_t esp[sd::kNonceSize];
+  std::memset(ground, 0x11, sizeof(ground));
+  std::memset(esp, 0x22, sizeof(esp));
+  const sd::DirectionKeys keys = sd::derive_keys(psk, ground, esp);
+  const sd::DirectionKeys steps = sd::detail::derive_direction_keys(
+      sd::detail::derive_session_key(psk, ground, esp));
+  EXPECT_EQ(hex(keys.ground_to_esp.bytes, sd::kKeySize),
+            hex(steps.ground_to_esp.bytes, sd::kKeySize));
+  EXPECT_EQ(hex(keys.esp_to_ground.bytes, sd::kKeySize),
+            "7353101a8458bfe9911c7269d2ec7aa4f94d13c0b2cfad27bd454e078f96b33d");
 }

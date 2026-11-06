@@ -20,13 +20,13 @@
 #ifndef WITH_UART // FC -> PC: UART to UDP
 #define WITH_UART 1
 #endif
-#ifndef WITH_TIMING // env esp_diag_timing: timestamps per request on UDP 5761
+#ifndef WITH_TIMING // env esp_diag_timing: timestamps per request on UDP 5770
 #define WITH_TIMING 0
 #endif
-#ifndef WITH_TCP_ECHO // env esp_diag_tcp (S1-07): TCP echo server on 5762
+#ifndef WITH_TCP_ECHO // env esp_diag_tcp (S1-07): TCP echo server on 5759
 #define WITH_TCP_ECHO 0
 #endif
-#ifndef WITH_WDT_TEST // env esp_diag_wdt (S1-10): hang on command, UDP 5763
+#ifndef WITH_WDT_TEST // env esp_diag_wdt (S1-10): hang on command, UDP 5771
 #define WITH_WDT_TEST 0
 #endif
 
@@ -45,9 +45,9 @@ uint32_t last_rx_us = 0;
 // Four micros() stamps per request, to see where the time of a slow reply
 // goes: esp_in (UDP packet read), uart_out (written to the FC), uart_in
 // (first reply byte from the FC), esp_out (reply handed to the Wi-Fi stack).
-// Sent every 100 ms as text lines to the last sender, UDP 5761 (read by
+// Sent every 100 ms as text lines to the last sender, UDP 5770 (read by
 // scripts/esp_timing.py). The bridge bytes are not changed.
-constexpr uint16_t kTimingPort = 5761;
+constexpr uint16_t kTimingPort = 5770;
 constexpr uint32_t kReportMs = 100;
 constexpr uint32_t kNoReplyUs = 500000; // no reply after this: unanswered
 constexpr size_t kLinesPerPacket = 20;  // about 1 kB, below one Wi-Fi frame
@@ -133,7 +133,7 @@ void report() {
 // S1-07: one TCP client at a time (ADR-005), everything it sends is echoed
 // back (read by scripts/tcp_load.py). Never blocks the loop: it only moves
 // what the TCP send buffer can take, so a TCP stall cannot stall UDP here.
-constexpr uint16_t kTcpPort = 5762;
+constexpr uint16_t kTcpPort = 5759;
 WiFiServer tcp_server(kTcpPort);
 WiFiClient tcp_client;
 
@@ -167,7 +167,7 @@ void tcp_echo() {
 // off, so the hardware watchdog does it (about 8 s). "REASON?" answers with
 // the reset reason and the uptime (read by scripts/esp_wdt.py). The serial
 // port goes to the FC, so nothing is printed there.
-constexpr uint16_t kWdtPort = 5763;
+constexpr uint16_t kWdtPort = 5771;
 WiFiUDP wdt_udp;
 
 void wdt_test() {

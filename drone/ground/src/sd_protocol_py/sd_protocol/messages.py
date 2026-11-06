@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from sd_protocol.crypto import NONCE_SIZE
+from sd_protocol.frame import MsgType
 
 # --- Code values: Protocol Spec v0 §3.1 (v1.1, decided on #142, 2026-11-05).
 # Change here and in messages.hpp together. Values are part of the wire format:
@@ -75,6 +76,45 @@ def transport_of(msg_type: int) -> Transport | None:
     if 0x60 <= msg_type <= 0x9F:
         return Transport.UDP
     return None
+
+
+class Role(IntEnum):
+    """The side a Receiver works for (#152)."""
+
+    ESP = 0
+    GROUND = 1
+
+
+# Spec §2 (v1.3): what each side receives, i.e. what the other side sends. BYE
+# goes both ways. HELLO and HELLO_ACK are pre-session: receive_handshake().
+_RECEIVES = {
+    Role.ESP: frozenset(
+        {
+            MsgType.SETPOINT,
+            MsgType.ARM_CONTROL_REQUEST,
+            MsgType.RESUME_REQUEST,
+            MsgType.BYE,
+            MsgType.CONFIG_GET,
+            MsgType.CONFIG_SET,
+        }
+    ),
+    Role.GROUND: frozenset(
+        {
+            MsgType.STATE,
+            MsgType.ARM_CONTROL_ACK,
+            MsgType.RESUME_ACK,
+            MsgType.BYE,
+            MsgType.CONFIG_ACK,
+            MsgType.EVENT,
+        }
+    ),
+}
+
+
+def receives(role: Role, msg_type: int) -> bool:
+    """True if `role` receives `msg_type` in a session (spec §2). False for HELLO,
+    HELLO_ACK and unknown types."""
+    return msg_type in _RECEIVES[Role(role)]
 
 
 # --- Payloads.

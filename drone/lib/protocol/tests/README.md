@@ -75,6 +75,7 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 |---|---|---|
 | `DirectionKeys.AreHmacOfTheSessionKeyWithG2eAndE2g` | The ground→ESP and ESP→ground keys equal HMAC(session key, "g2e") and HMAC(session key, "e2g") (values from Python), and differ from each other and from the session key | A frame sent back to its own sender fails the seal (#150) |
 | `SecureZero.ClearsEveryByteAndNothingElse` | Zeroes exactly the bytes asked for, including a whole key | The session key can really be wiped: a plain memset can be dropped by the compiler |
+| `DirectionKeys.DeriveKeysEqualsTheTwoSteps` | `derive_keys()` gives the same two keys as the session key then the direction keys | The one public function gives the right keys without handing out the session key (#152) |
 | `SessionKey.IsHmacOfSessAndBothNonces` | The session key equals HMAC(PSK, "sess" + ground nonce + ESP nonce). Swapping the two nonces gives a different key | Both sides must compute the same key, and the order matters |
 
 ## ConstantTime: comparing seals safely
@@ -103,6 +104,10 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the direction keys: without this check a captured frame could be replayed on the other one |
 | `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
 | `Receiver.FrameSealedForTheOtherDirectionRejected` | ESP and ground Receivers opened with their direction keys accept the real traffic; each side's own frame sent back to it (seq 1000) is a bad tag and moves nothing | A reflection never reaches either side (#150) |
+| `Receiver.OwnFramesRejectedEvenWithTheSameKey` | With the same key everywhere, the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT and an ARM_CONTROL_REQUEST (`wrong_direction`), no window moves; BYE is accepted by both; the real traffic still goes through | Even if both ends got the keys wrong, a node's own frame is never accepted (#152) |
+| `Receiver.KeepsItsRoleAndTransport` | A Receiver created for the ground on TCP reports exactly that | The role and transport are fixed for its whole life |
+| `Handshake.EachSideAcceptsOnlyItsOwnHandshakeFrame` | The ESP accepts HELLO, the ground HELLO_ACK; each refuses the other's and a PSK-tagged SETPOINT; wrong session ID, seq 2, short payload, bad tag and a cut frame refused; the output is written only on accept | Before a session only the right handshake frame gets through (#152) |
+| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–16), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -116,6 +121,7 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `ConfigKv.BytesAndRoundTrip` | Config key 0x80 with value −2 → `80 FE FF FF FF` and back | Negative numbers are stored correctly |
 | `ConfigAck.BytesAndRoundTrip` | Reply for Safety key 0x40, result "safety parameter, firmware only" (3), value 250 → `40 03 FA 00 00 00` | The ESP's answer to a config change |
 | `Transport.MatchesSpecSection2` | Types 0x01–0x5F are TCP, 0x60–0x9F UDP, anything else neither | Each Receiver knows which types it may accept |
+| `Role.ReceivesOnlyWhatTheOtherSideSends` | The ESP receives SETPOINT and the requests, the ground STATE, the ACKs and EVENT, both BYE; nobody HELLO/HELLO_ACK or unknown types in a session | Each Receiver knows which types it may accept (spec §2) |
 | `Codes.MatchSpecSection31` | Every result, reason, state and event number, and `CONFIG_ACK` = 0x22, equals spec §3.1 | A renumbered code would silently break the ground |
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
@@ -163,7 +169,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 60 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 69 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
@@ -171,7 +177,41 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
 | `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
-| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport refused | The 2026-11-05 decisions hold on both sides |
+| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions hold on both sides |
+| `9_handshake` | HELLO accepted only by the ESP, HELLO_ACK only by the ground; reflected ones, other PSK-tagged types, a wrong session ID or seq ≠ 1 refused | Before a session nothing but the right handshake frame gets through (#152) |
+
+## Msp: talking to the flight controller (#101)
+The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the commands on the allow-list of the MSP Cheat Sheet.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `Msp.KnownRequestBytes` | MSP_API_VERSION and MSP_STATUS requests are exactly `$M< 00 01 01` and `$M< 00 65 65` | The bytes match what Betaflight expects |
+| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108 and 110 can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
+| `Msp.EncodeRefusesBadArguments` | Null buffers, a too-small buffer, a too-long payload are refused | A bad call writes nothing |
+| `Msp.SetRawRcOnlyThroughTheTypedEncoder` | `encode_request` refuses MSP_SET_RAW_RC with every payload length 0–64; only `encode_set_raw_rc` builds it, always with 8 channels | The one write command on the allow-list cannot be built with an arbitrary payload |
+| `Msp.SetRawRcBytes` | 8 channels become a 16-byte little-endian payload with the right checksum | The RC frame #102 will send is right |
+
+## MspParser and MspDecode: reading the FC's replies
+| Test | What it does | Why it matters |
+|---|---|---|
+| `MspParser.ReadsRepliesAndSkipsNoise` | Noise and a false start, then an MSP_ATTITUDE reply: one reply, roll −10.0°, pitch 30.0°, heading 359° | Boot noise on the UART does not confuse the reader |
+| `MspParser.BadChecksumTooLongAndRequestsAreDropped` | A wrong checksum and a 100-byte reply full of `$` are dropped, the next reply is read; an echoed request is not a reply | A corrupted or oversized frame never becomes data |
+| `MspParser.ErrorReplyAndEmptyReply` | An `!` error reply and an empty reply are reported as such and never decoded as values | The FC refusing a command is not read as numbers |
+| `MspParser.RandomBytesNeverCrashAndAlwaysResync` | 200,000 random bytes, then a valid reply: the reply is read | The reader always recovers |
+| `MspDecode.StatusArmedAndArmingFlags` | MSP_STATUS laid out as Betaflight 2026.6.2 writes it: armed bit and arming-disable flags, with 0 to 3 extra mode bytes; a cut reply is refused | The ESP knows if the drone is armed (failsafe, ADR-024 gate) |
+| `MspDecode.AnalogTakesTheCentivoltField` | MSP_ANALOG gives 1110 = 11.10 V from its last field; an old 7-byte reply is refused | The battery voltage has the unit STATE needs |
+
+## FcLink: the scheduler that owns the FC UART (#101)
+| Test | What it does | Why it matters |
+|---|---|---|
+| `FcLink.PollsAtTheAdr009Rates` | One simulated second: 25 ATTITUDE, 5 STATUS, 5 ANALOG requests, every one answered | The rates of ADR-009 |
+| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the three poll commands are sent | The gateway alone never sends RC |
+| `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout, then 50 ms of drain where nothing is sent and a late reply is dropped | Requests never collide, and a late reply is never taken as the answer to a newer request |
+| `FcLink.ArmedStateAndFreshness` | The armed flag is read, and the status is fresh for 500 ms only | The ADR-024 gate needs a fresh "disarmed" |
+| `FcLink.ErrorAndBadRepliesCounted` | Error replies, bad checksums and undecodable replies are counted, never stored | Bad data never reaches the telemetry |
+| `FcLink.SurvivesTheMillisWrap` | Polling keeps going across the 49-day `millis()` wrap | No stall after a long uptime |
+| `FcLink.OldValuesAreForgotten` | The FC goes silent: after 10 s every value is forgotten, and an old status never looks fresh again, even across the `millis()` wrap | An old "disarmed" can never open the ADR-024 OTA gate |
+| `FcLink.PollRefusesASmallBuffer` | A buffer too small for a request: nothing is sent or counted | A bad call writes nothing |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |
