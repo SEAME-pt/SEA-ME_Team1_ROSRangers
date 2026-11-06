@@ -1,16 +1,17 @@
-"""Receive rules of spec §4 for one transport inside one session.
+"""Receive rules of spec §4 for one side and one transport inside one session.
 
-Order (spec §4, v1.1.1): frame checks (rule 1), session (rule 2), message type,
-transport (§2), payload size (§3, REQ-COM-001), SETPOINT mode (rule 4), then
-the sequence window (rule 3, ADR-003). A frame refused before the window
-changes no state. Use one Receiver per transport (UDP control, TCP session):
-each has its own seq, and each accepts only the types of its transport, so a
-frame captured on one cannot be replayed on the other.
+Order (spec §4, v1.3): frame checks (rule 1), session (rule 2), message type,
+transport (§2), direction (§2: only what the other side sends, #152), payload
+size (§3, REQ-COM-001), SETPOINT mode (rule 4), then the sequence window
+(rule 3, ADR-003). A frame refused before the window changes no state. Use one
+Receiver per transport (UDP control, TCP session): each has its own seq, and
+each accepts only the types of its transport, so a frame captured on one cannot
+be replayed on the other.
 
-HELLO is not handled here: it arrives before a session exists and is tagged with
-the PSK, so the link state machine checks it with decode_frame() and then calls
-start_session(). Rejected frames are dropped and counted (REQ-COM-004); the
-caller must not reset the link-loss timer for them (REQ-SAF-011).
+HELLO and HELLO_ACK are not handled by a Receiver: they arrive before a session
+exists and are tagged with the PSK, so they go to receive_handshake() (spec §1).
+Rejected frames are dropped and counted (REQ-COM-004); the caller must not
+reset the link-loss timer for them (REQ-SAF-011).
 """
 
 from dataclasses import dataclass
@@ -26,7 +27,10 @@ from sd_protocol.messages import (
     HELLO_ACK_SIZE,
     HELLO_SIZE,
     STATE_SIZE,
+    Role,
     Transport,
+    decode_hello_ack,
+    receives,
     transport_of,
 )
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
@@ -52,6 +56,7 @@ class RxResult(IntEnum):
     BAD_PAYLOAD_SIZE = 13  # payload_len does not match the type (spec §3, REQ-COM-001)
     BAD_MODE = 14  # SETPOINT mode other than 0 or 1 (spec §4 rule 4, REQ-COM-002)
     WRONG_TRANSPORT = 15  # a TCP type on the UDP Receiver or the other way (spec §2)
+    WRONG_DIRECTION = 16  # a type this side never receives: its own, sent back (§2)
 
 
 def is_accepted(result: RxResult) -> bool:
@@ -76,6 +81,7 @@ class RxCounters:
     bad_payload_size: int = 0
     bad_mode: int = 0
     wrong_transport: int = 0
+    wrong_direction: int = 0
 
 
 _FRAME_REJECTS = {
@@ -115,13 +121,19 @@ _SEQ_RESULTS = {
 
 
 class Receiver:
-    def __init__(self) -> None:
+    def __init__(self, role: Role, transport: Transport) -> None:
+        """The role and the transport are fixed for the Receiver's lifetime (#152)."""
+        self._role = Role(role)  # ValueError for anything else
+        self._transport = Transport(transport)
         self._key = b""
         self._session_id = 0
         self._in_session = False
-        self._transport = Transport.UDP
         self._window = SeqWindow()
         self.counters = RxCounters()
+
+    @property
+    def role(self) -> Role:
+        return self._role
 
     @property
     def in_session(self) -> bool:
@@ -143,15 +155,13 @@ class Receiver:
     def seq_counters(self) -> SeqCounters:
         return self._window.counters
 
-    def start_session(
-        self, session_id: int, rx_key: bytes, transport: Transport
-    ) -> bool:
-        """Opens a session on one transport: the key and session_id every frame must match.
+    def start_session(self, session_id: int, rx_key: bytes) -> bool:
+        """Opens a session: the key and session_id every frame must match.
 
-        `rx_key` is the receiving direction key (spec §1, #150): esp_to_ground on
-        the ground, ground_to_esp on the ESP; never the session key itself.
-        Only the types of `transport` (spec §2) are accepted. The window starts at 1
-        on TCP (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on UDP.
+        `rx_key` is this side's receiving direction key from derive_keys()
+        (spec §1, #150, #152): ground_to_esp on the ESP, esp_to_ground on the
+        ground; never the session key itself. The window starts at 1 on TCP
+        (HELLO and HELLO_ACK used seq 1, spec §1) and at 0 on UDP.
         session_id 0 is reserved for HELLO and is refused (returns False); then
         nothing changes, and a session that was open stays open. Never open the
         same (session_id, key) twice: the window restarts, so every frame of that
@@ -159,14 +169,12 @@ class Receiver:
         """
         if len(rx_key) != KEY_SIZE:
             raise ValueError(f"key must be {KEY_SIZE} bytes")
-        transport = Transport(transport)  # ValueError before anything changes
         if session_id == 0:
             return False
         self._key = bytes(rx_key)
         self._session_id = session_id
-        self._transport = transport
         self._in_session = True
-        self._window.reset(1 if transport is Transport.TCP else 0)
+        self._window.reset(1 if self._transport is Transport.TCP else 0)
         return True
 
     def end_session(self) -> None:
@@ -201,10 +209,14 @@ class Receiver:
         sizes = PAYLOAD_SIZES.get(frame.header.type)
         if sizes is None:
             return self._reject(RxResult.BAD_TYPE)
-        # Both transports use the same session key: without this, a frame
+        # Both transports use the same direction key: without this, a frame
         # captured on TCP could be replayed on UDP, or the other way.
         if transport_of(frame.header.type) is not self._transport:
             return self._reject(RxResult.WRONG_TRANSPORT)
+        # Direction (#152): only what the other side sends. A node's own frame
+        # sent back to it is refused here even if both ends got the keys wrong.
+        if not receives(self._role, frame.header.type):
+            return self._reject(RxResult.WRONG_DIRECTION)
         if not sizes[0] <= len(frame.payload) <= sizes[1]:
             return self._reject(RxResult.BAD_PAYLOAD_SIZE)
         if (
@@ -219,3 +231,61 @@ class Receiver:
             return self._reject(result)
         self.counters.accepted += 1
         return result, frame
+
+
+class HandshakeResult(IntEnum):
+    """Result of receive_handshake (spec §1, v1.3). Only ACCEPTED may be used."""
+
+    ACCEPTED = 0
+    TRUNCATED = 1
+    BAD_MAGIC = 2
+    BAD_VERSION = 3
+    BAD_LENGTH = 4
+    BAD_TAG = 5  # not tagged with the PSK
+    WRONG_DIRECTION = 6  # not the one handshake type this side receives
+    BAD_PAYLOAD_SIZE = 7  # HELLO is 17 bytes, HELLO_ACK 32
+    # HELLO: session_id not 0; HELLO_ACK: 0, or header and payload session_id differ
+    WRONG_SESSION = 8
+    BAD_SEQ = 9  # seq is not 1
+
+
+_HANDSHAKE_FRAME_REJECTS = {
+    RxError.TRUNCATED: HandshakeResult.TRUNCATED,
+    RxError.BAD_MAGIC: HandshakeResult.BAD_MAGIC,
+    RxError.BAD_VERSION: HandshakeResult.BAD_VERSION,
+    RxError.BAD_LENGTH: HandshakeResult.BAD_LENGTH,
+    RxError.BAD_TAG: HandshakeResult.BAD_TAG,
+}
+
+
+def receive_handshake(
+    role: Role, buf: bytes, psk: bytes
+) -> tuple[HandshakeResult, Frame | None]:
+    """Checks one handshake frame for `role` before any session (spec §1, #152).
+
+    The ESP accepts only HELLO (session_id 0) and the ground only HELLO_ACK
+    (header session_id = payload session_id, not 0), both tagged with the PSK
+    and with seq 1, so a reflected or out-of-place handshake frame does nothing.
+    The ESP sends every HELLO here, also during a session. Checked in this
+    order: tag, type, payload size, session_id, seq. Returns (ACCEPTED, frame)
+    or (the reason, None). Not counted: the caller (#102) counts or rate-limits
+    handshake attempts.
+    """
+    role = Role(role)
+    error, frame = decode_frame(buf, psk)
+    if error is not RxError.OK:
+        return _HANDSHAKE_FRAME_REJECTS[error], None
+    expected = MsgType.HELLO if role is Role.ESP else MsgType.HELLO_ACK
+    if frame.header.type != expected:
+        return HandshakeResult.WRONG_DIRECTION, None
+    if len(frame.payload) != (HELLO_SIZE if role is Role.ESP else HELLO_ACK_SIZE):
+        return HandshakeResult.BAD_PAYLOAD_SIZE, None
+    session_id = frame.header.session_id
+    if role is Role.ESP:
+        if session_id != 0:
+            return HandshakeResult.WRONG_SESSION, None
+    elif session_id == 0 or decode_hello_ack(frame.payload).session_id != session_id:
+        return HandshakeResult.WRONG_SESSION, None
+    if frame.header.seq != 1:
+        return HandshakeResult.BAD_SEQ, None
+    return HandshakeResult.ACCEPTED, frame

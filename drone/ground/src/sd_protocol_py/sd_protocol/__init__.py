@@ -2,8 +2,7 @@
 
 from sd_protocol.crypto import (
     DirectionKeys,
-    derive_direction_keys,
-    derive_session_key,
+    derive_keys,
     equal_constant_time,
     hmac_sha256,
 )
@@ -37,6 +36,7 @@ from sd_protocol.messages import (
     EventCode,
     Hello,
     HelloAck,
+    Role,
     State,
     Transport,
     decode_config_ack,
@@ -53,14 +53,17 @@ from sd_protocol.messages import (
     encode_hello_ack,
     encode_state,
     encode_u8_payload,
+    receives,
     transport_of,
 )
 from sd_protocol.receiver import (
     PAYLOAD_SIZES,
+    HandshakeResult,
     Receiver,
     RxCounters,
     RxResult,
     is_accepted,
+    receive_handshake,
 )
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
 from sd_protocol.setpoint import (
@@ -103,11 +106,13 @@ __all__ = [
     "Event",
     "EventCode",
     "Frame",
+    "HandshakeResult",
     "Header",
     "Hello",
     "HelloAck",
     "MsgType",
     "Receiver",
+    "Role",
     "RxCounters",
     "RxError",
     "RxResult",
@@ -126,8 +131,7 @@ __all__ = [
     "decode_setpoint",
     "decode_state",
     "decode_u8_payload",
-    "derive_direction_keys",
-    "derive_session_key",
+    "derive_keys",
     "encode_config_ack",
     "encode_config_kv",
     "encode_event",
@@ -142,6 +146,8 @@ __all__ = [
     "hmac_sha256",
     "is_accepted",
     "protocol_version",
+    "receive_handshake",
+    "receives",
     "setpoint_to_rc",
     "transport_of",
 ]
