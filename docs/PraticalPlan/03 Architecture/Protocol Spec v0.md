@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.2
+version: 1.2.1
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.2.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -186,7 +186,7 @@ Static IPs are set by [[ADR-006 Network|ADR-006]].
 | TCP 5759 | Session | v0 |
 | 5760 | Reserved for a future channel. Until the gateway firmware (#101) replaces it, this is the transparent bridge's port | reserved |
 | TCP 5761–5768 | Betaflight SITL on the PC (UART1–8). Never used | taken |
-| UDP 5770 | Diagnostic builds only: timing test (bridge, `esp_diag_timing`); FC status view (gateway, `esp_gateway`, until #102 sends `STATE`) | test |
+| UDP 5770 | Diagnostic builds only: timing test (bridge, `esp_diag_timing`); FC status view (pre-release gateway env `esp_gateway`, compiled in only with `WITH_STATUS_VIEW=1`, dropped when #102 sends `STATE`) | test |
 | UDP 5771 | Watchdog test, diagnostic build only | test |
 
 - 5759 and not 5760: the transparent bridge forwards every byte on UDP 5760 to the FC. Protocol traffic sent to a drone that still runs the bridge then gets no answer instead of reaching the FC.
@@ -307,6 +307,8 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
+| **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
+| **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
 | **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived. It tags nothing and is wiped after that (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) (§1, #150). |
 | **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1). |

@@ -198,10 +198,11 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 |---|---|---|
 | `FcLink.PollsAtTheAdr009Rates` | One simulated second: 25 ATTITUDE, 5 STATUS, 5 ANALOG requests, every one answered | The rates of ADR-009 |
 | `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the three poll commands are sent | The gateway alone never sends RC |
-| `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout; a late reply is not taken | Requests never collide on the UART |
+| `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout, then 50 ms of drain where nothing is sent and a late reply is dropped | Requests never collide, and a late reply is never taken as the answer to a newer request |
 | `FcLink.ArmedStateAndFreshness` | The armed flag is read, and the status is fresh for 500 ms only | The ADR-024 gate needs a fresh "disarmed" |
 | `FcLink.ErrorAndBadRepliesCounted` | Error replies, bad checksums and undecodable replies are counted, never stored | Bad data never reaches the telemetry |
 | `FcLink.SurvivesTheMillisWrap` | Polling keeps going across the 49-day `millis()` wrap | No stall after a long uptime |
+| `FcLink.OldValuesAreForgotten` | The FC goes silent: after 10 s every value is forgotten, and an old status never looks fresh again, even across the `millis()` wrap | An old "disarmed" can never open the ADR-024 OTA gate |
 | `FcLink.PollRefusesASmallBuffer` | A buffer too small for a request: nothing is sent or counted | A bad call writes nothing |
 
 ## Version: protocol version

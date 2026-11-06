@@ -9,9 +9,10 @@
 // written to the UART. It never sends RC: sessions, SETPOINT -> MSP_SET_RAW_RC
 // and the failsafe are #102.
 //
-// Bench view (diagnostic, read-only): any datagram to UDP 5770 is answered with
-// one text line of the latest FC values and the link counters. Until #102
-// sends STATE, this is how a bench test sees what the gateway reads.
+// Bench view (diagnostic, read-only, WITH_STATUS_VIEW=1 in env esp_gateway):
+// any datagram to UDP 5770 is answered with one text line of the latest FC
+// values and the link counters. Until #102 sends STATE, this is how a bench
+// test sees what the gateway reads; it is dropped then.
 
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
@@ -26,22 +27,26 @@
 #error "Secrets missing: secrets.py did not run (see platformio.ini)"
 #endif
 
+#ifndef WITH_STATUS_VIEW
+#define WITH_STATUS_VIEW 0
+#endif
+
 namespace {
 
-constexpr uint16_t kStatusPort = 5770; // diagnostic builds only (spec §7.1)
-
 sd::FcLink fc;
+
+#if WITH_STATUS_VIEW
+constexpr uint16_t kStatusPort = 5770; // diagnostic builds only (spec §7.1)
 WiFiUDP status_udp;
 
 void answer_status() {
   if (status_udp.parsePacket() <= 0) {
     return;
   }
-  status_udp.flush(); // the request content is ignored
   const uint32_t now = millis();
   const sd::FcTelemetry &t = fc.telemetry();
   const sd::FcCounters &c = fc.counters();
-  char line[256];
+  char line[288];
   const int len = snprintf(
       line, sizeof line,
       "armed=%d arming_flags=0x%08lx status_age_ms=%ld roll=%d pitch=%d "
@@ -68,6 +73,7 @@ void answer_status() {
                                                           : sizeof line - 1);
   status_udp.endPacket();
 }
+#endif
 
 } // namespace
 
@@ -80,7 +86,9 @@ void setup() {
   // OTA is ungated here, as in the bridge; the ADR-024 gate and lock are #102.
   ArduinoOTA.setPassword(OTA_PASS);
   ArduinoOTA.begin();
+#if WITH_STATUS_VIEW
   status_udp.begin(kStatusPort);
+#endif
 }
 
 void loop() {
@@ -96,5 +104,7 @@ void loop() {
     Serial.write(request, n);
   }
 
-  answer_status();
+#if WITH_STATUS_VIEW
+  answer_status(); // the next parsePacket() drops the request's content
+#endif
 }

@@ -7,14 +7,36 @@ FcLink::FcLink()
              {msp::kStatus, kStatusPeriodMs, 0, false},
              {msp::kAnalog, kAnalogPeriodMs, 0, false}} {}
 
+void FcLink::expire(std::uint32_t now_ms) {
+  if (telemetry_.has_attitude &&
+      now_ms - telemetry_.attitude_ms > kMaxValueAgeMs) {
+    telemetry_.has_attitude = false;
+  }
+  if (telemetry_.has_status && now_ms - telemetry_.status_ms > kMaxValueAgeMs) {
+    telemetry_.has_status = false;
+  }
+  if (telemetry_.has_analog && now_ms - telemetry_.analog_ms > kMaxValueAgeMs) {
+    telemetry_.has_analog = false;
+  }
+}
+
 std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
                          std::size_t out_cap) {
+  expire(now_ms);
   if (in_flight_) {
     if (now_ms - in_flight_ms_ < kReplyTimeoutMs) {
       return 0;
     }
     ++counters_.timeouts;
     in_flight_ = false;
+    draining_ = true;
+    drain_ms_ = now_ms;
+  }
+  if (draining_) {
+    if (now_ms - drain_ms_ < kDrainMs) {
+      return 0;
+    }
+    draining_ = false;
   }
   // The most overdue poll goes first, so a slow FC still gets every kind of
   // request in turn. A poll never sent is the most overdue.

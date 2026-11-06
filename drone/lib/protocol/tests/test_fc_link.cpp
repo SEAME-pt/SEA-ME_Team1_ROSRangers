@@ -110,12 +110,18 @@ TEST(FcLink, OneRequestAtATimeAndTimeouts) {
   for (std::uint32_t t = 1; t < sd::kReplyTimeoutMs; ++t) {
     EXPECT_EQ(poll_cmd(fc, t), -1) << t;
   }
-  EXPECT_NE(poll_cmd(fc, sd::kReplyTimeoutMs), -1);
+  // Timeout at 50 ms, then a drain window: nothing is sent, and a late reply
+  // to the timed-out request is dropped, not taken as an answer.
+  EXPECT_EQ(poll_cmd(fc, sd::kReplyTimeoutMs), -1);
   EXPECT_EQ(fc.counters().timeouts, 1U);
-  // A late reply to the timed-out request is not taken as the answer.
   answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), 60);
   EXPECT_FALSE(fc.telemetry().has_attitude);
   EXPECT_EQ(fc.counters().unexpected, 1U);
+  for (std::uint32_t t = sd::kReplyTimeoutMs; t < 2 * sd::kReplyTimeoutMs;
+       ++t) {
+    EXPECT_EQ(poll_cmd(fc, t), -1) << t;
+  }
+  EXPECT_NE(poll_cmd(fc, 2 * sd::kReplyTimeoutMs), -1);
 }
 
 TEST(FcLink, ArmedStateAndFreshness) {
@@ -148,11 +154,15 @@ TEST(FcLink, ErrorAndBadRepliesCounted) {
   bad.back() ^= 1;
   answer(fc, bad, 3);
   EXPECT_EQ(fc.counters().bad_checksum, 1U);
-  // A short (undecodable) reply to the request in flight.
-  ASSERT_NE(poll_cmd(fc, 100), -1);
-  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(2, 0)), 100);
-  answer(fc, reply_frame(sd::msp::kStatus, Bytes(2, 0)), 100);
-  answer(fc, reply_frame(sd::msp::kAnalog, Bytes(2, 0)), 100);
+  // The poll at 100 ms finds the bad-checksum request timed out and starts the
+  // drain window; the next request goes at 150 ms.
+  EXPECT_EQ(poll_cmd(fc, 100), -1);
+  EXPECT_EQ(poll_cmd(fc, 149), -1);
+  // A short (undecodable) reply to the next request in flight.
+  ASSERT_NE(poll_cmd(fc, 150), -1);
+  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(2, 0)), 150);
+  answer(fc, reply_frame(sd::msp::kStatus, Bytes(2, 0)), 150);
+  answer(fc, reply_frame(sd::msp::kAnalog, Bytes(2, 0)), 150);
   EXPECT_GE(fc.counters().unexpected, 1U);
   EXPECT_FALSE(fc.telemetry().has_attitude);
 }
@@ -178,4 +188,32 @@ TEST(FcLink, PollRefusesASmallBuffer) {
   std::uint8_t out[3];
   EXPECT_EQ(fc.poll(0, out, sizeof(out)), 0U);
   EXPECT_EQ(fc.counters().requests, 0U);
+}
+
+// An old status is forgotten after kMaxValueAgeMs, so it never looks fresh
+// again, even across the millis() wrap (ADR-024 gate).
+TEST(FcLink, OldValuesAreForgotten) {
+  sd::FcLink fc;
+  std::uint32_t t = 0xFFFFF000U; // the wrap is 4 s ahead
+  for (int i = 0; i < 300; ++i, ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, status_payload(false)), t);
+    } else if (cmd > 0) {
+      answer(fc, reply_frame(static_cast<std::uint8_t>(cmd), Bytes(9, 0)), t);
+    }
+  }
+  ASSERT_TRUE(fc.telemetry().has_status);
+  const std::uint32_t got = fc.telemetry().status_ms;
+  // The FC goes silent. 10 s later every value is gone.
+  std::uint8_t out[sd::msp::kMaxFrame];
+  for (std::uint32_t dt = 0; dt <= sd::kMaxValueAgeMs + 10; dt += 10) {
+    fc.poll(got + dt, out, sizeof(out));
+  }
+  EXPECT_FALSE(fc.telemetry().has_status);
+  EXPECT_FALSE(fc.telemetry().has_attitude);
+  EXPECT_FALSE(fc.telemetry().has_analog);
+  // 2^32 ms later the old status does not come back as fresh.
+  EXPECT_FALSE(fc.status_fresh(got + 0x100000000ULL - 1, 500));
+  EXPECT_FALSE(fc.status_fresh(got, 500));
 }

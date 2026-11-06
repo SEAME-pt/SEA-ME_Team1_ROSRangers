@@ -22,6 +22,12 @@ constexpr std::uint32_t kAttitudePeriodMs = 40; // 25 Hz
 constexpr std::uint32_t kStatusPeriodMs = 200;  // 5 Hz
 constexpr std::uint32_t kAnalogPeriodMs = 200;  // 5 Hz
 constexpr std::uint32_t kReplyTimeoutMs = 50;
+// After a timeout, nothing is sent for this long and any reply that arrives is
+// dropped: a late reply is never taken as the answer to a newer request.
+constexpr std::uint32_t kDrainMs = kReplyTimeoutMs;
+// A value older than this is forgotten (has_* false), so an old "disarmed"
+// can never look fresh again when millis() wraps after 49.7 days.
+constexpr std::uint32_t kMaxValueAgeMs = 10000;
 
 // The latest value of each poll and when it arrived (`*_ms`). A value never
 // received has `has_*` false.
@@ -76,10 +82,14 @@ private:
   };
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
+  void expire(std::uint32_t now_ms);
 
   Poll polls_[3];
   msp::Parser parser_;
+
   bool in_flight_ = false;
+  bool draining_ = false;
+  std::uint32_t drain_ms_ = 0;
   std::uint8_t in_flight_cmd_ = 0;
   std::uint32_t in_flight_ms_ = 0;
   FcTelemetry telemetry_ = {};

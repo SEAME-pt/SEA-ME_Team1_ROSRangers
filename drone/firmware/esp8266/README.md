@@ -1,6 +1,6 @@
-# ESP8266 firmware: transparent UART↔UDP bridge
+# ESP8266 firmware: transparent UART↔UDP bridge and gateway
 
-Custom Arduino firmware for the drone's ESP-12F (ADR-007). It replaces the Espressif AT 1.7.4 firmware since 2026-10-21. It is still a **transparent** bridge: bytes pass through unchanged, nothing is parsed, there is no allow-list yet (Study Plan §5).
+Custom Arduino firmware for the drone's ESP-12F (ADR-007). It replaces the Espressif AT 1.7.4 firmware since 2026-10-21. The default build (`esp`, `esp_ota`) is still a **transparent** bridge: bytes pass through unchanged, nothing is parsed, there is no allow-list (Study Plan §5). The **gateway** (`esp_gateway`, #101) is the allow-listed replacement; see "Gateway" below.
 
 ```text
 ground PC 192.168.4.2 ──UDP 5760── ESP SoftAP 192.168.4.1 ──UART0 115200── FC UART4 (MSP)
@@ -24,7 +24,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 
 Same as before: SoftAP `seame-drone-0850`, 192.168.4.1, at most 1 client, UDP 5760 both ways, replies go to whoever sent the last packet. Nothing is printed on UART0 except the boot ROM (~731 bytes at 74880 baud at power-up, no MSP headers, ESP-S1-03) and crash dumps.
 
-Not there yet: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. The normal build has no status port; the timestamps on UDP 5770 exist only in the diagnostic env `esp_diag_timing` (see below).
+Not there yet in the bridge: no TCP session (ADR-005), no version query, no counters or status packet, no reboot command. The normal build has no status port; the timestamps on UDP 5770 exist only in the diagnostic env `esp_diag_timing` (see below).
 
 **Env rename (2026-10-22).** The envs were called `d1_mini*`, but the board is an ESP-12F module, not a D1 mini. They are now `esp*` with `board = esp12e`. The binary is the same code: compared with the 2026-10-21 image (`firmware.bin` SHA-256 `836717987db3…`), only 12 bytes differ (the board name string `d1_mini` → `esp12e`, a build stamp and the image checksum).
 
@@ -100,8 +100,9 @@ What it does now (ADR-009):
 - **One scheduler owns the FC UART** (`sd::FcLink` in `drone/lib/protocol`). It polls `MSP_ATTITUDE` at 25 Hz and `MSP_STATUS` / `MSP_ANALOG` at 5 Hz, one request at a time (50 ms reply timeout), and keeps the latest values with their age.
 - **Allow-list:** every MSP frame it sends is built by `sd::msp::encode_request`, which refuses any command not in the MSP Cheat Sheet list (1, 101, 105, 108, 110, 200). Nothing from the network is ever written to the UART. There is no UDP 5760 bridge in this build, so `seame.py msp` over Wi-Fi does not work with it: flash the bridge back for those tools.
 - **Never sends RC.** Sessions, `SETPOINT` → `MSP_SET_RAW_RC`, the failsafe and `STATE` are #102. OTA is still ungated here, as in the bridge (the ADR-024 gate is #102).
+- **Still missing for #102:** an `MSP_API_VERSION` check at boot (the state machine's BOOT → NO_SESSION), reading `override_active` from `MSP_STATUS`, and a separate internal encoder for `MSP_SET_ARMING_DISABLED` (99, ADR-024 lock): `encode_request` refuses it on purpose.
 
-Flash it like any OTA update (props off, battery out, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. To go back to the bridge, flash `-e esp_ota`.
+Flash it like any OTA update (props off, battery out, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
 
 **Bench view (read-only, diagnostic):** any datagram to UDP 5770 gets one text line back:
 
@@ -109,6 +110,8 @@ Flash it like any OTA update (props off, battery out, arm and takeover switches 
 echo | nc -u -w1 192.168.4.1 5770
 # armed=0 arming_flags=0x00000000 status_age_ms=87 roll=-12 pitch=4 heading=271 vbat_cV=1110 att_age_ms=12 req=1520 rep=1520 timeout=0 bad_cksum=0 too_long=0 err=0 unexpected=0
 ```
+
+The bench view is for this pre-release env only: it is compiled in with `WITH_STATUS_VIEW=1` (set in `esp_gateway`) and is dropped when #102 sends `STATE`.
 
 `armed=-1` and `status_age_ms=-1` mean no `MSP_STATUS` has arrived yet. `req` and `rep` should grow together (about 35 per second); `timeout` growing means the FC does not answer (wiring, baud, MSP not enabled on UART4).
 
@@ -184,7 +187,7 @@ The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this 
 
 ## S1-07: TCP and UDP at the same time (`esp_diag_tcp`)
 
-The ESP accepts one TCP client on 5759 (a second one is refused, as in ADR-005) and echoes what it receives. It only moves what the TCP send buffer can take, so a TCP stall can't block the loop. The UDP bridge and the timestamps on 5761 run as usual. Setup as for S1-05: PC next to the drone, props off, PC Wi-Fi power save off.
+The ESP accepts one TCP client on 5759 (a second one is refused, as in ADR-005) and echoes what it receives. It only moves what the TCP send buffer can take, so a TCP stall can't block the loop. The UDP bridge and the timestamps on 5770 run as usual. Setup as for S1-05: PC next to the drone, props off, PC Wi-Fi power save off.
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_tcp -t upload            # OTA, then wait for the network
