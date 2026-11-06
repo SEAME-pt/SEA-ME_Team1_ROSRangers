@@ -136,6 +136,9 @@ Guilherme - Acrescentar blockers nas issues, ajudar nas issues associadas ao Pau
 **Blockers**
 Bruno - Esperar que alguem livre para telemetria do drone live. Esperar por PR's
 
+
+
+
 ---
 
 ## Glossary
