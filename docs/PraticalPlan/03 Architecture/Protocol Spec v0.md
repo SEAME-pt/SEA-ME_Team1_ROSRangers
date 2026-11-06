@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.2.1
+version: 1.3.1
 date: 2026-10-12
 updated: 2026-11-06
 project: SEA autonomous drone
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.2.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.3.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -37,7 +37,9 @@ tags:
 | 20 | n | payload | |
 | 20+n | 8 | tag | HMAC-SHA256(key of this direction, bytes 0..20+n-1), first 8 bytes |
 
-Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped, so a reflected `HELLO` or `HELLO_ACK` does nothing.
+Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped (`reject:wrong_direction`), so a reflected `HELLO` or `HELLO_ACK` does nothing. A `HELLO` must have `session_id` 0; a `HELLO_ACK` must carry the same non-zero `session_id` in its header and payload (`reject:wrong_session` otherwise). Both use seq 1 (`reject:bad_seq` otherwise). Payload sizes are checked as in §3. Checked in this order: tag (with the PSK), type, payload size, `session_id`, seq. `HELLO` and `HELLO_ACK` are TCP types (§2): only frames from the TCP connection go to this check.
+
+Random values: `ground_nonce` comes from the ground's operating-system random source, `esp_nonce` and `session_id` from the ESP8266 hardware random number generator (#101/#102). They must never repeat: a repeated pair of nonces gives the same keys, and a recorded session could then be replayed whole. Every `HELLO` (type 0x01) goes to this check, also during a session: a new `HELLO` replaces the session (§3.1, `BYE` reason 3), and the in-session receiver never accepts it.
 
 Every later message is tagged with the key of its direction (2026-11-05, #150): `ground→ESP key = HMAC-SHA256(session key, "g2e")` and `ESP→ground key = HMAC-SHA256(session key, "e2g")`. Each side seals with its sending key and checks with its receiving key, so a frame sent back to its own sender fails the tag (`reject:bad_tag`). The session key itself tags nothing and is wiped once both keys are derived.
 
@@ -52,6 +54,8 @@ Every later message is tagged with the key of its direction (2026-11-05, #150): 
 | 0x80–0x9F | Telemetry (periodic state) | UDP |
 
 A type that arrives on the other transport is rejected as `reject:wrong_transport`, with its own counter, counted in `rx_rejected`, after the type check and before rule 3. Both transports use the same direction keys and count `seq` apart, so without this check a frame captured on one transport could be replayed on the other (added 2026-11-05, #99).
+
+Each side also accepts only the types the **other** side sends (2026-11-05, #152): the ESP receives `SETPOINT`, `ARM_CONTROL_REQUEST`, `RESUME_REQUEST`, `BYE`, `CONFIG_GET` and `CONFIG_SET`; the ground receives `STATE`, `ARM_CONTROL_ACK`, `RESUME_ACK`, `BYE`, `CONFIG_ACK` and `EVENT`. Any other type is `reject:wrong_direction`, with its own counter, counted in `rx_rejected`, after the transport check. The direction keys (§1) already refuse a node's own frames; this check still does if both ends got the keys wrong, except for `BYE`, which both sides send: a reflected `BYE` can then end the session (never inject control). The direction keys stop it.
 
 ## 3. Messages v0
 
@@ -70,7 +74,7 @@ A type that arrives on the other transport is rejected as `reject:wrong_transpor
 | 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 (reserved in v0: sent as 0, ignored) |
 | 0x80 | STATE | 28 | esp_state u8 (§3.1), override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
 
-Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order type → size → `mode` (§4 rule 4) → `seq`, so they change no state (REQ-COM-001, REQ-COM-004).
+Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order of §4 (type → transport → direction → size → `mode` → `seq`), so they change no state (REQ-COM-001, REQ-COM-004).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
 
@@ -131,7 +135,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 
 ## 4. Receive rules
 
-Order of the checks: rule 1, rule 2, message type, transport (§2), payload size (§3), `mode` (rule 4), then rule 3. A frame refused before rule 3 changes no state.
+Order of the checks: rule 1, rule 2, message type, transport (§2), direction (§2), payload size (§3), `mode` (rule 4), then rule 3. A frame refused before rule 3 changes no state.
 
 1. Check, in this order: the minimum length (header + tag, else truncated), magic, version, then `payload_len` ≤ 256 and the exact length (shorter than header + `payload_len` + tag: truncated; `payload_len` > 256 or extra bytes after the tag: bad length), then the **tag** (constant time). `payload_len` is not trusted before magic and version have passed. On failure: drop and count `rx_rejected` (REQ-COM-001 to 004, old IDs REQ-VAL-01 to 04).
 2. `session_id` must equal the current session.
@@ -166,9 +170,10 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 | 5 Sequence | In order, duplicate, older, gap (accepted, counted), `seq` 0, `seq ≥ 2^31` | Anti-replay ([[ADR-003 Sequence Acceptance\|ADR-003]]) |
 | 6 Clamps and mapping | −1000 / 0 / +1000 → 1000 / 1500 / 2000 µs, out of range clamped, throttle 0..1000, aux always 1500, `mode` 2 rejected (`reject:bad_mode`) and then a valid `SETPOINT` with the same `seq` accepted | The RC channels sent to the FC (§4–5) |
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
-| 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK | The 2026-11-05 decisions (§7.5) |
+| 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK; a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions (§7.5, §2) |
+| 9 Handshake (added 2026-11-05, #152) | The ESP accepts `HELLO`, the ground `HELLO_ACK`; each refuses the other's frame and any other PSK-tagged type; wrong `session_id` and seq ≠ 1 refused | The pre-session rule (§1) |
 
-- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels.
+- A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels; group 9 says which side (`handshake`) checks the frame.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
 - Adding a vector is free. Changing or deleting one changes the protocol and needs a dated entry in §8.
 
@@ -282,7 +287,8 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.1 | Open items decided on GitHub #142 (§7.5): `CONFIG_ACK` (0x22), code lists (§3.1), header and `SETPOINT` flags reserved, `HELLO_ACK` tagged with the PSK, `seq` per transport, range check with `bad_mode` checked before the sequence window, `CONFIG_SET` state check before the per-key checks, and malformed TCP input (§4 rules 3–5), `telemetry_rate_hz` default 25 Hz. Payload sizes per type, `bad_type` and `bad_payload_size` (§3), `HELLO_ACK` header `session_id` (§1), `CONFIG_ACK.value` and `CONFIG_GET.value` (§3). Test vector groups 7 and 8 added, group 3 extended (§6). Wi-Fi re-association left to #101. |
 | 2026-11-05 | 1.1.1 | From the C++ library (#99). New receive check: `reject:wrong_transport` (§2), found by the #99 review, so a frame cannot be replayed on the other transport. Clarifications, no wire change: length rule (§4 rule 1), `seq` 0 never accepted (§4 rule 3, §6 group 5), check order and TCP partial frames (§4 rules 1 and 5), mapping rounding (§4 rule 4), library scope (§5), vectors README (§6). Counter reporting left open in #149 (§7.5). |
 | 2026-11-05 | 1.2 | One key per direction (#150, decided by the team; [[ADR-002 Message Integrity\|ADR-002]] entry): in-session tags use the `"g2e"` / `"e2g"` keys (§1), so a reflected frame is refused. Pre-session rule (§1): the ESP accepts only `HELLO` and the ground only `HELLO_ACK`; **not enforced in code yet** (#152, before #101/#102). **Wire change:** the tag of every in-session frame changes; no firmware had shipped. Group 2: `setpoint_signed_with_session_key` replaced by one vector per direction and one reflected frame per direction (§6). |
-| 2026-11-06 | 1.2.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
+| 2026-11-05 | 1.3 | The rules of v1.2 are enforced in code (#152): each side accepts only the types the other side sends (`reject:wrong_direction`, §2); the pre-session checks of `HELLO` / `HELLO_ACK` (§1: `wrong_direction`, `wrong_session`, `bad_seq`). The C++ library derives only the direction keys (`derive_keys`, the session key is wiped inside). Vector group 9 and one more group 8 vector (§6). Also stated: `HELLO` / `HELLO_ACK` are checked only from TCP, the nonces and `session_id` come from a hardware or OS random source and never repeat (§1), and a reflected `BYE` is the one exception to the direction check (§2). |
+| 2026-11-06 | 1.3.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
 
 ## 9. Glossary
 
@@ -311,5 +317,6 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
 | **Session key** | `HMAC-SHA256(PSK, "sess" \|\| ground_nonce \|\| esp_nonce)`, from which the two direction keys are derived. It tags nothing and is wiped after that (§1, [[ADR-002 Message Integrity\|ADR-002]]). |
 | **Direction key** | The key that tags frames going one way: ground→ESP (`"g2e"`) or ESP→ground (`"e2g"`) (§1, #150). |
-| **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1). |
+| **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key (§1), and each side accepts only what the other sends (§2). |
+| **Role** | Which side a receiver belongs to, ESP or ground. It decides which message types are accepted (§2). |
 | **AETR** | Raw receiver channel order: roll (A), pitch (E), throttle (T), yaw (R), then AUX. |

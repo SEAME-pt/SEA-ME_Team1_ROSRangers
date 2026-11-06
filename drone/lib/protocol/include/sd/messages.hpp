@@ -179,4 +179,16 @@ enum class Transport : std::uint8_t { kUdp = 0, kTcp = 1 };
 // The transport a type belongs to. False for a type outside both ranges.
 bool transport_of(std::uint8_t type, Transport &out);
 
+// Who owns a Receiver (#152). Each side accepts only the types the other side
+// sends (spec §2), so a frame a node sent cannot be fed back to it, whatever
+// the key.
+enum class Role : std::uint8_t { kEsp = 0, kGround = 1 };
+
+// In-session types that `role` receives (spec §2):
+//   ESP:    SETPOINT; ARM_CONTROL_REQUEST, RESUME_REQUEST, BYE, CONFIG_GET,
+//           CONFIG_SET
+//   ground: STATE; ARM_CONTROL_ACK, RESUME_ACK, BYE, CONFIG_ACK, EVENT
+// HELLO and HELLO_ACK always go to receive_handshake(), also during a session.
+bool receives(Role role, std::uint8_t type);
+
 } // namespace sd

@@ -309,3 +309,29 @@ TEST(Transport, MatchesSpecSection2) {
     EXPECT_FALSE(sd::transport_of(static_cast<std::uint8_t>(type), t)) << type;
   }
 }
+
+// #152, spec §2: each side receives only what the other side sends.
+TEST(Role, ReceivesOnlyWhatTheOtherSideSends) {
+  using sd::MsgType;
+  using sd::Role;
+  const auto t = [](MsgType m) { return static_cast<std::uint8_t>(m); };
+  for (const MsgType m :
+       {MsgType::kSetpoint, MsgType::kArmControlRequest,
+        MsgType::kResumeRequest, MsgType::kConfigGet, MsgType::kConfigSet}) {
+    EXPECT_TRUE(sd::receives(Role::kEsp, t(m))) << int(t(m));
+    EXPECT_FALSE(sd::receives(Role::kGround, t(m))) << int(t(m));
+  }
+  for (const MsgType m :
+       {MsgType::kState, MsgType::kArmControlAck, MsgType::kResumeAck,
+        MsgType::kConfigAck, MsgType::kEvent}) {
+    EXPECT_TRUE(sd::receives(Role::kGround, t(m))) << int(t(m));
+    EXPECT_FALSE(sd::receives(Role::kEsp, t(m))) << int(t(m));
+  }
+  EXPECT_TRUE(sd::receives(Role::kEsp, t(MsgType::kBye)));
+  EXPECT_TRUE(sd::receives(Role::kGround, t(MsgType::kBye)));
+  // Handshake frames and unknown types are never accepted in a session.
+  for (const int type : {0x01, 0x02, 0x00, 0x99, 0xFF}) {
+    EXPECT_FALSE(sd::receives(Role::kEsp, static_cast<std::uint8_t>(type)));
+    EXPECT_FALSE(sd::receives(Role::kGround, static_cast<std::uint8_t>(type)));
+  }
+}
