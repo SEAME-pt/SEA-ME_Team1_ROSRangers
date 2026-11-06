@@ -41,7 +41,7 @@ tags:
 
 The ESP takes the **5V pad next to T4** (the UART4 row, [[Wiring and Pinout]] §1). The ELRS receiver moved to **DV5V** (GitHub #41), so that pad is free. The buzzer/LED pad suggested in §2 is not used. The decision is unchanged.
 
-> 2026-11-06 (GitHub #164): on 2026-11-06 the ESP did not run with the FC on USB only, so an OTA update needs the **battery connected** ([[ADR-024 OTA Firmware Updates|ADR-024]] entry of the same date). Older dated runs record the ESP running on "FC on USB, no battery" (for example S1-10 on 2026-10-26), so whether other bench tests need the battery is not proven yet: ESP-S1-08 (current draw) measures it and the bench instructions follow (GitHub #166). The decision is unchanged.
+> 2026-11-06 (GitHub #164, #166): the FC USB alone does **not** power the ESP through this pad (known by the team): the **battery is needed** whenever the ESP must run, for OTA updates ([[ADR-024 OTA Firmware Updates|ADR-024]] entry of the same date) and every bench test. Older dated records that say "FC on USB, no battery" with the ESP running (for example S1-10 on 2026-10-26) do not record the battery and are kept as written. The bench instructions are updated (PR #165). The decision is unchanged.
 
 ## 3. Mounting
 

@@ -136,7 +136,7 @@ A value that has not arrived yet (or is older than 10 s) prints as `-1`: `armed`
 1. The soldered UART4 joints (intermittent contact). This fits the all-or-nothing pattern and the few bad checksums (4 and 2). The ESP_to_FC §10 continuity evidence is still missing (#69).
 2. The FC stops answering on UART4 (reboot, something holding its USB CLI).
 
-**The test.** Three terminals at the same time, props off, no battery, FC on USB. Write down the start time.
+**The test.** Three terminals at the same time, props off, battery connected (the ESP needs it, #164), FC also on USB. Write down the start time.
 
 ```bash
 # 1. the bridge, 10 min at 50 Hz (CSV: s1-05_diag_run4.csv). Request i is sent at start + i × 20 ms
@@ -206,7 +206,7 @@ Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05
 | `HANG` | Answers `HANGING`, then loops without yielding: the software watchdog resets it after about 3 s |
 | `HANG_HW` | Same with the software watchdog off: the hardware watchdog resets it (about 8 s) |
 
-Props off, no battery. FC on USB, so the FC can be watched while the ESP reboots. **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
+Props off, battery connected (the ESP needs it, #164). FC also on USB, so the FC can be watched while the ESP reboots (Safety Rules #16). **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network

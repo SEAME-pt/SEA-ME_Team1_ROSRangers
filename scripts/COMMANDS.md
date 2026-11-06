@@ -449,7 +449,7 @@ ESP-to-FC UART connection.
 
 Commands for the vault's *ESP Bench Test Plan*. Results go to `results/` (bare
 file names, git-ignored: copy the numbers to #30 and the vault results log).
-Props off, no battery and the ESP USB unplugged for every test.
+Props off, battery connected (the FC USB alone does not power the ESP, #164) and the ESP USB unplugged for every test.
 
 ### Stage 2 on the soldered link: `seame.py test`
 

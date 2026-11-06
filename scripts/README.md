@@ -65,7 +65,7 @@ pytest tests/scripts                # unit tests, no hardware needed
 
 ## Safety rules
 
-- **Props off. No battery** unless a step says so. Everything here runs on USB power.
+- **Props off.** With the ESP soldered to the FC, connect the battery for anything that uses the ESP: the FC USB alone does not power it (#164). Tools that only talk to the FC over its USB work without the battery.
 - **Never connect the ESP USB and the FC to the ESP TX/RX at the same time.** The USB-serial chip shares those pins.
 - **The bridge has no authentication.** In the test scenario anybody on SEAME can send packets to it:
   bench only, props off. Flights only in the production scenario, and the long-term answer is ADR-007 (HMAC, sessions).
@@ -105,7 +105,7 @@ Before: instructor OK for soldering on the lab drone, `ESP_to_FC` §10 checks do
 1. ESP on USB: `python3 scripts/setup_test.py` (refreshes the PC address).
 2. `python3 scripts/fc_cli.py --write enable-esp-uart` (UART4 = MSP 115200).
 3. Unplug the ESP USB. Wire FC **T4 → RX**, **R4 → TX**, **5V → 5V**, **GND → G**.
-4. Power the FC by USB (no battery). The ESP boots straight into the bridge.
+4. Connect the battery (props off): the FC USB alone does not power the ESP (#164). The ESP boots straight into the bridge.
 5. `python3 scripts/msp_check.py info` → API 1.46, BTFL 4.5.1.
 6. `python3 scripts/msp_check.py ping -n 1000 --csv cycle1b_test.csv`
 7. `python3 scripts/msp_check.py attitude` and tilt the drone by hand.

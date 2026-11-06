@@ -53,6 +53,7 @@ tags:
 - FC powered **by USB only**. **No battery, no props**: the motors cannot spin.
 - ESP connected to the FC with **temporary** wires (pogo pins, or wires held by tape and a clip). UART4 (T4/R4), or UART1 (T1/R1) if easier to reach ([[ADR-011 FC UART Allocation|ADR-011]]).
 - **The ESP's USB is never connected while the FC wires are attached** ([[ADR-012 ESP UART Pins|ADR-012]]). Power it from a USB power bank or the 5V pin. Logs go over Wi-Fi.
+- 2026-11-06 (#164): on the drone the ESP is soldered and fed from the FC's 5 V pad, which the FC USB alone does not power: **connect the battery** (props off) for every test where the ESP must run.
 - MSP enabled on the chosen UART at 115200, with the pre-change `diff all` saved ([[Betaflight Setup]]).
 
 | ID | Test | What it proves | Pass criterion | Links |

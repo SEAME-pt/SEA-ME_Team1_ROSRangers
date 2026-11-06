@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""One entry point for the SEA:ME drone bench scripts. Props off, no battery.
+"""One entry point for the SEA:ME drone bench scripts. Props off; battery connected
+whenever the ESP must run (the FC USB alone does not power it, #164).
 
 The ESP is soldered to the FC (UART4). This PC reaches the FC in two ways:
   - through the ESP, over the drone Wi-Fi (the default for `msp`)
@@ -324,8 +325,10 @@ def test_s2_04_read() -> int:
 def test_s2_04_write() -> int:
     if not confirm(
         "S2-04 (write) sends MSP_SET_RAW_RC: roll 1200, pitch 1400, throttle 1000,\n"
-        "yaw 1600, AUX1-4 low. Only with props off, no battery, and MSP Override\n"
-        "configured and approved (ESP_to_FC §10.5)."
+        "yaw 1600, AUX1-4 low. Props off, battery connected (the ESP needs it),\n"
+        "MSP Override configured and approved (ESP_to_FC §10.5). The motors can\n"
+        "spin: two people, a finger on the kill switch (SA), nobody touches the\n"
+        "drone (Safety Rules #18)."
     ):
         return 1
     if not check_drone_network():
@@ -519,7 +522,7 @@ def menu_fc_usb() -> int | None:
 
 def menu_tests() -> int | None:
     return pick(
-        "Bench tests on the soldered link. Props off, no battery, ESP USB unplugged:",
+        "Bench tests on the soldered link. Props off, battery connected, ESP USB unplugged:",
         [(label, func) for label, func in TESTS.values()],
     )
 
