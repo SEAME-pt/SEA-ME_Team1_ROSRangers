@@ -88,7 +88,7 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
    pio run -d drone/firmware/esp8266 -e esp_ota -t upload
    ```
 5. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
-6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (unplug its USB).
+6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 

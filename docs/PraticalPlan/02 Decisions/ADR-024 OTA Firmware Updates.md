@@ -73,7 +73,7 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 
 **D5. Written procedure** (accepted 2026-11-05, #145). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
 - **Every update:** OTA, [[Safety Rules]] apply.
-  - Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.
+  - ~~Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.~~
   - 2026-11-06, #164 (see the dated entry in §5): **the battery must be connected**, because the FC USB cannot power the ESP; "battery out" above no longer applies.
   - No ground session during the upload: the ground node is stopped (after #102 the ESP also blocks it, D2).
   - Note the image SHA-256 when you flash.
