@@ -14,7 +14,11 @@ def hmac_sha256(key: bytes, data: bytes) -> bytes:
 
 
 def derive_session_key(psk: bytes, ground_nonce: bytes, esp_nonce: bytes) -> bytes:
-    """session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)."""
+    """session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce).
+
+    Internal step of derive_keys() (C++: sd::detail, #152): the session key tags
+    nothing, so callers use derive_keys(). Not exported by the package.
+    """
     if len(psk) != KEY_SIZE:
         raise ValueError(f"PSK must be {KEY_SIZE} bytes")
     if len(ground_nonce) != NONCE_SIZE or len(esp_nonce) != NONCE_SIZE:
@@ -33,6 +37,9 @@ class DirectionKeys:
 def derive_direction_keys(session_key: bytes) -> DirectionKeys:
     """ground_to_esp = HMAC-SHA256(session key, "g2e"), esp_to_ground = ... "e2g".
 
+    Internal step of derive_keys() (C++: sd::detail, #152). Not exported by the
+    package.
+
     Each side seals with its sending key and checks with its receiving key, so a
     frame sent back to its own sender (reflection) fails the tag. HELLO and
     HELLO_ACK stay tagged with the PSK; the session key itself tags nothing.
@@ -44,6 +51,16 @@ def derive_direction_keys(session_key: bytes) -> DirectionKeys:
     return DirectionKeys(
         hmac_sha256(session_key, b"g2e"), hmac_sha256(session_key, b"e2g")
     )
+
+
+def derive_keys(psk: bytes, ground_nonce: bytes, esp_nonce: bytes) -> DirectionKeys:
+    """The two direction keys of a session (spec §1, #152); the only key API.
+
+    The session key stays inside this function, so a caller cannot use it on
+    both ends by mistake: the ESP's Receivers take ground_to_esp, the ground's
+    take esp_to_ground. Python cannot wipe it from memory (the C++ library does).
+    """
+    return derive_direction_keys(derive_session_key(psk, ground_nonce, esp_nonce))
 
 
 def equal_constant_time(a: bytes, b: bytes) -> bool:

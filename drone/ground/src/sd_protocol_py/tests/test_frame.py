@@ -134,3 +134,13 @@ def test_frame_size_cuts_a_tcp_stream_into_frames():
     first_len = frame_size(stream)
     assert stream[:first_len] == SETPOINT_BASIC
     assert stream[first_len : first_len + frame_size(stream[first_len:])] == second
+
+
+def test_decode_needs_a_32_byte_key():
+    # Same contract as encode_frame: a wrong key length is a caller bug.
+    for key in (b"", TEST_KEY[:31], TEST_KEY + b"\x00"):
+        with pytest.raises(ValueError):
+            decode_frame(SETPOINT_BASIC, key)
+    # The key is checked before the frame: even an empty buffer raises.
+    with pytest.raises(ValueError):
+        decode_frame(b"", b"")

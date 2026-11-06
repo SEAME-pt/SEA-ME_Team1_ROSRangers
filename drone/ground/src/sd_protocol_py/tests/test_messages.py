@@ -21,6 +21,8 @@ from sd_protocol import (
     EventCode,
     Hello,
     HelloAck,
+    MsgType,
+    Role,
     State,
     Transport,
     decode_config_ack,
@@ -37,6 +39,7 @@ from sd_protocol import (
     encode_hello_ack,
     encode_state,
     encode_u8_payload,
+    receives,
     transport_of,
 )
 
@@ -169,3 +172,43 @@ def test_wrong_sizes_refused(d):
 def test_transport_of_follows_spec_section_2(msg_type, transport):
     assert transport_of(msg_type) is transport
     assert [int(t) for t in Transport] == [0, 1]
+
+
+# #152, spec §2: each side receives only what the other side sends
+# (Role.ReceivesOnlyWhatTheOtherSideSends in test_messages.cpp).
+_ESP_RECEIVES = (
+    MsgType.SETPOINT,
+    MsgType.ARM_CONTROL_REQUEST,
+    MsgType.RESUME_REQUEST,
+    MsgType.CONFIG_GET,
+    MsgType.CONFIG_SET,
+)
+_GROUND_RECEIVES = (
+    MsgType.STATE,
+    MsgType.ARM_CONTROL_ACK,
+    MsgType.RESUME_ACK,
+    MsgType.CONFIG_ACK,
+    MsgType.EVENT,
+)
+
+
+def test_receives_only_what_the_other_side_sends():
+    for t in _ESP_RECEIVES:
+        assert receives(Role.ESP, t) and not receives(Role.GROUND, t), t
+    for t in _GROUND_RECEIVES:
+        assert receives(Role.GROUND, t) and not receives(Role.ESP, t), t
+    assert receives(Role.ESP, MsgType.BYE) and receives(Role.GROUND, MsgType.BYE)
+    # Handshake frames and unknown types are never accepted in a session.
+    for t in (0x01, 0x02, 0x00, 0x99, 0xFF):
+        assert not receives(Role.ESP, t) and not receives(Role.GROUND, t), t
+
+
+def test_every_type_has_a_receiving_side_except_the_handshake():
+    for t in MsgType:
+        handshake = t in (MsgType.HELLO, MsgType.HELLO_ACK)
+        assert (receives(Role.ESP, t) or receives(Role.GROUND, t)) is not handshake
+
+
+def test_unknown_role_refused():
+    with pytest.raises(ValueError):
+        receives(2, MsgType.BYE)

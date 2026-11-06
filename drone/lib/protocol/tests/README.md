@@ -75,6 +75,7 @@ HMAC mixes a secret key into SHA-256. These are the official examples from RFC 4
 |---|---|---|
 | `DirectionKeys.AreHmacOfTheSessionKeyWithG2eAndE2g` | The ground→ESP and ESP→ground keys equal HMAC(session key, "g2e") and HMAC(session key, "e2g") (values from Python), and differ from each other and from the session key | A frame sent back to its own sender fails the seal (#150) |
 | `SecureZero.ClearsEveryByteAndNothingElse` | Zeroes exactly the bytes asked for, including a whole key | The session key can really be wiped: a plain memset can be dropped by the compiler |
+| `DirectionKeys.DeriveKeysEqualsTheTwoSteps` | `derive_keys()` gives the same two keys as the session key then the direction keys | The one public function gives the right keys without handing out the session key (#152) |
 | `SessionKey.IsHmacOfSessAndBothNonces` | The session key equals HMAC(PSK, "sess" + ground nonce + ESP nonce). Swapping the two nonces gives a different key | Both sides must compute the same key, and the order matters |
 
 ## ConstantTime: comparing seals safely
@@ -103,6 +104,10 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.FrameFromTheOtherTransportRejected` | A sealed ARM_CONTROL_REQUEST accepted on TCP is refused when replayed on UDP, and a SETPOINT sent on TCP is refused; neither window moves | Both transports share the direction keys: without this check a captured frame could be replayed on the other one |
 | `Receiver.RefusedStartKeepsTheOpenSession` | `start_session` with ID 0 is refused, and the session that was open keeps its ID, window and key | A bad new session never silently drops or changes the current one |
 | `Receiver.FrameSealedForTheOtherDirectionRejected` | ESP and ground Receivers opened with their direction keys accept the real traffic; each side's own frame sent back to it (seq 1000) is a bad tag and moves nothing | A reflection never reaches either side (#150) |
+| `Receiver.OwnFramesRejectedEvenWithTheSameKey` | With the same key everywhere, the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT and an ARM_CONTROL_REQUEST (`wrong_direction`), no window moves; BYE is accepted by both; the real traffic still goes through | Even if both ends got the keys wrong, a node's own frame is never accepted (#152) |
+| `Receiver.KeepsItsRoleAndTransport` | A Receiver created for the ground on TCP reports exactly that | The role and transport are fixed for its whole life |
+| `Handshake.EachSideAcceptsOnlyItsOwnHandshakeFrame` | The ESP accepts HELLO, the ground HELLO_ACK; each refuses the other's and a PSK-tagged SETPOINT; wrong session ID, seq 2, short payload, bad tag and a cut frame refused; the output is written only on accept | Before a session only the right handshake frame gets through (#152) |
+| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–16), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
@@ -116,6 +121,7 @@ Each message type is turned into bytes and back (a "round trip"). The bytes are 
 | `ConfigKv.BytesAndRoundTrip` | Config key 0x80 with value −2 → `80 FE FF FF FF` and back | Negative numbers are stored correctly |
 | `ConfigAck.BytesAndRoundTrip` | Reply for Safety key 0x40, result "safety parameter, firmware only" (3), value 250 → `40 03 FA 00 00 00` | The ESP's answer to a config change |
 | `Transport.MatchesSpecSection2` | Types 0x01–0x5F are TCP, 0x60–0x9F UDP, anything else neither | Each Receiver knows which types it may accept |
+| `Role.ReceivesOnlyWhatTheOtherSideSends` | The ESP receives SETPOINT and the requests, the ground STATE, the ACKs and EVENT, both BYE; nobody HELLO/HELLO_ACK or unknown types in a session | Each Receiver knows which types it may accept (spec §2) |
 | `Codes.MatchSpecSection31` | Every result, reason, state and event number, and `CONFIG_ACK` = 0x22, equals spec §3.1 | A renumbered code would silently break the ground |
 | `Event.EmptyAndFullText` | EVENT code 0x0101 (setpoint stale) with no text, then with the longest text allowed; both read back the same | Variable-length content works at both ends |
 | `Event.TooLongRefused` | Text one character too long is refused when building and when reading; a too-small space is refused | No memory overflow from long text |
@@ -163,7 +169,7 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 
 | Test | What it does | Why it matters |
 |---|---|---|
-| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 60 vectors, no name used twice | A missing file or a reused name would silently skip checks |
+| `Vectors.FilesLoadedAndNamesUnique` | Loads every vector file: at least 69 vectors, no name used twice | A missing file or a reused name would silently skip checks |
 | `1_valid_frames` | One message of each type: fields → bytes → fields | Both sides build and read every message the same way |
 | `2_hmac` | Seals made with the PSK and with each direction key; a reflected frame; one changed bit | The seal is computed over the right bytes with the right key, and a reflection is refused |
 | `3_header` | Broken envelopes (magic, version, length, truncated), then sealed frames with an unknown type or a wrong size | Garbage is refused before it is read, and a malformed frame does not use up its seq |
@@ -171,7 +177,8 @@ Fixed examples in `drone/tests/vectors/*.json`, made by `generate.py` in that fo
 | `5_sequence` | Several frames in a row, the result after each one | A copied or late message never acts |
 | `6_clamps` | Setpoints to the 8 RC channels; a SETPOINT with mode 2 is refused and the same seq is then still accepted | The FC gets the right channels and never a value out of range, and an unknown mode never reaches it |
 | `7_config` | One CONFIG_ACK per result 0–5 (spec §3.1) | Both sides agree on every config answer |
-| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport refused | The 2026-11-05 decisions hold on both sides |
+| `8_reserved_and_transports` | Reserved flags ignored, HELLO_ACK tagged with the PSK, TCP and UDP seq counted apart, a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions hold on both sides |
+| `9_handshake` | HELLO accepted only by the ESP, HELLO_ACK only by the ground; reflected ones, other PSK-tagged types, a wrong session ID or seq ≠ 1 refused | Before a session nothing but the right handshake frame gets through (#152) |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |

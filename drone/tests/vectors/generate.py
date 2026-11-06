@@ -201,6 +201,10 @@ def setpoint(seq: int, t_send_us: int = 0, session_id: int = SESSION, **values) 
     }
 
 
+STATE_ZERO = {k: 0 for k in ("esp_state", "override_active", "last_ctrl_seq", "last_ctrl_t_send_us", "roll", "pitch",
+                             "heading", "vbat", "flow_x", "flow_y", "flow_quality", "flow_status", "rx_rejected",
+                             "msp_errors")}  # fmt: skip
+
 REFERENCE = setpoint(7, 1000, roll=100, pitch=-200, throttle=500)
 
 
@@ -542,6 +546,67 @@ def group8() -> list[dict]:
             ],
             "final": {"last_ctrl_seq": 1, "last_tcp_seq": 2, "rx_rejected": 2, "gaps": 0},
         },
+        {
+            "name": "frame_from_the_wrong_side",
+            "description": "Each side accepts only what the other side sends (spec §2, #152), even with the same key: "
+                           "the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT; BYE goes both ways",
+            "key": TEST_KEY.hex(),
+            "state": {"current_session": SESSION, "last_ctrl_seq": 0, "last_tcp_seq": 1},
+            "steps": [
+                {"role": "esp", "transport": "udp", "bytes": encode(msg("STATE", 5, t_send_us=0, **STATE_ZERO)).hex(),
+                 "expect": "reject:wrong_direction"},
+                {"role": "esp", "transport": "tcp", "bytes": encode(msg("ARM_CONTROL_ACK", 2, result=0)).hex(),
+                 "expect": "reject:wrong_direction"},
+                {"role": "ground", "transport": "udp", "bytes": neutral(5), "expect": "reject:wrong_direction"},
+                {"role": "esp", "transport": "udp", "bytes": neutral(1), "expect": "accept"},
+                {"role": "esp", "transport": "tcp", "bytes": encode(msg("BYE", 2, reason=0)).hex(), "expect": "accept"},
+                {"role": "ground", "transport": "tcp", "bytes": encode(msg("BYE", 2, reason=0)).hex(), "expect": "accept"},
+            ],
+            "final": {"last_ctrl_seq": 1, "last_tcp_seq": 2, "rx_rejected": 3, "gaps": 0},
+        },
+    ]  # fmt: skip
+
+
+def group9() -> list[dict]:
+    """Before a session (spec §1, #152): the ESP accepts only HELLO (session 0,
+    seq 1, 17 bytes), the ground only HELLO_ACK (seq 1, header session_id =
+    payload session_id, not 0). Both tagged with the PSK (here the test key)."""
+    ground_nonce = bytes(range(0xA0, 0xB0)).hex()
+    esp_nonce = bytes(range(0xB0, 0xC0)).hex()
+    hello = msg("HELLO", 1, 0, t_send_us=0, proto=1, ground_nonce=ground_nonce)
+    ack = msg(
+        "HELLO_ACK",
+        1,
+        t_send_us=0,
+        new_session_id=SESSION,
+        esp_nonce=esp_nonce,
+        fw_version="v0.1.0",
+    )
+
+    def accepted(name: str, description: str, fields: dict, side: str) -> dict:
+        return valid(name, description, fields, handshake=side)
+
+    def refused(
+        name: str, description: str, fields: dict, side: str, reason: str
+    ) -> dict:
+        return rejected(name, description, encode(fields), reason, handshake=side)
+
+    return [
+        accepted("hello_accepted_by_esp", "The ESP accepts a HELLO: session 0, seq 1, tagged with the PSK", hello, "esp"),
+        accepted("hello_ack_accepted_by_ground", "The ground accepts a HELLO_ACK: the new session_id in the header and the payload, seq 1",
+                 ack, "ground"),
+        refused("hello_at_ground_rejected", "A HELLO sent back to the ground (reflected): the ground only accepts HELLO_ACK",
+                hello, "ground", "wrong_direction"),
+        refused("hello_ack_at_esp_rejected", "A HELLO_ACK sent back to the ESP (reflected): the ESP only accepts HELLO",
+                ack, "esp", "wrong_direction"),
+        refused("setpoint_before_session_rejected", "A SETPOINT tagged with the PSK before any session: not a handshake frame",
+                setpoint(1, session_id=0), "esp", "wrong_direction"),
+        refused("hello_with_session_id_rejected", "A HELLO with session_id 5: HELLO always has session_id 0",
+                dict(hello, session_id=5), "esp", "wrong_session"),
+        refused("hello_ack_session_id_mismatch_rejected", "A HELLO_ACK whose header session_id differs from the payload's",
+                dict(ack, session_id=SESSION + 1), "ground", "wrong_session"),
+        refused("hello_seq_2_rejected", "A HELLO with seq 2: HELLO and HELLO_ACK use seq 1",
+                dict(hello, seq=2), "esp", "bad_seq"),
     ]  # fmt: skip
 
 
@@ -554,6 +619,7 @@ FILES = {
     "6_clamps.json": group6,
     "7_config.json": group7,
     "8_reserved_and_transports.json": group8,
+    "9_handshake.json": group9,
 }
 
 

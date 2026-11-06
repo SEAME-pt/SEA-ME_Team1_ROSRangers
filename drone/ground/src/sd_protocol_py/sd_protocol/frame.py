@@ -95,8 +95,11 @@ def decode_frame(buf: bytes, key: bytes) -> tuple[RxError, Frame | None]:
     """Checks one complete frame (a UDP datagram, or a TCP frame cut with frame_size()).
 
     Order of checks follows spec §4 rule 1: length, magic, version, then the tag.
-    Returns (RxError.OK, frame) or (the reason, None).
+    Returns (RxError.OK, frame) or (the reason, None). A key that is not 32
+    bytes raises ValueError, as in encode_frame (a caller bug, not a bad frame).
     """
+    if len(key) != KEY_SIZE:
+        raise ValueError(f"key must be {KEY_SIZE} bytes")
     if len(buf) < HEADER_SIZE + TAG_SIZE:
         return RxError.TRUNCATED, None
     magic, version, msg_type, flags, _, payload_len, session_id, seq, t_send_us = (
