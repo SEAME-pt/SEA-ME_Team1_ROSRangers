@@ -301,7 +301,7 @@ jobs:
       - run: pip install platformio
       - name: Build ESP8266 firmware
         # the diagnostic envs too, so a broken diag build fails the PR (same cache)
-        run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
+        run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart -e esp_gateway
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass

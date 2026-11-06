@@ -3,6 +3,7 @@ title: ESP Bench Test Plan
 type: test-plan
 status: active
 date: 2026-10-12
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - ESP8266 Bench Tests
@@ -62,6 +63,7 @@ tags:
 | ESP-S2-04 | `MSP_SET_RAW_RC` with distinct values → `MSP_RC` readback | Channel order (AETR) | Each value lands on the expected channel | Phase 3 of [[ESP_to_FC]] §11 |
 | ESP-S2-05 | ELRS receiver bound, Wi-Fi streaming next to it | Wi-Fi ↔ ELRS coexistence | ELRS link quality recorded on channels 1, 6, 11 | [[Study Plan v2]] week 2 |
 | ESP-S2-06 | Unplug a jumper wire mid-stream | The ESP detects the lost FC | Error reported to the ground within 500 ms | F2 in [[ESP_to_FC]] |
+| ESP-S2-07 | Gateway FC link (`esp_gateway`, #101): read the bench view (`echo \| nc -u -w1 192.168.4.1 5770`) while arming, disarming and tilting, props off | The gateway polls the FC on its own, only with allow-listed MSP, and reads the values right | `req` = `rep` (± the one in flight), 0 timeouts / bad checksums / errors; `armed` follows the radio; attitude follows the tilt; `vbat` plausible | [[ADR-009 ESP to FC Link\|ADR-009]], [[MSP Cheat Sheet]] |
 
 MSP Override tests (Phases 4–5 of [[ESP_to_FC]] §11) need ELRS bound and the mode configured. Run them in this same setup before soldering.
 
@@ -86,6 +88,7 @@ Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and
 - **2026-10-23:** as 2026-10-19, but the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`, replaces AT 1.7.4 since 2026-10-21). PC next to the drone, PC Wi-Fi power save off, props off, no battery. `msp_check.py` `--stream`, 50 Hz, 10 min, 30,000 requests per run.
 - **2026-10-26 (S1-07):** PC next to the drone, battery on, props off, no USB. ESP on `esp_diag_tcp` (TCP echo server on 5762 plus the timestamps). Per run: `esp_timing.py listen`, `tcp_load.py --duration 600` (20 kbit/s, new connection every 30 s) and `seame.py msp ping --stream --duration 600`, 50 Hz. Between run 2 and run 3 the ESP's solder pins were removed and the ESP was soldered directly to the FC pads.
 - **2026-10-23 (S1-09):** drone in the cage, PC in the coding room, radio on and bound, PC Wi-Fi power save off, props off. ESP on the `esp_diag_timing` build (four timestamps per request on UDP 5761, read by `scripts/esp_timing.py`; the bridge itself is unchanged). `seame.py msp ping --stream --duration 600`, 50 Hz, 30,000 requests per run.
+- **2026-11-06 (S2-07):** ESP soldered to the FC, ESP on `esp_gateway` (commit 1bb0583, flashed over OTA), props off, radio bound, the whole team present (Safety Rules #15). Battery connected (about 15.8 V) for the whole session, **including the OTA flash**: a deviation from ADR-024 D5 and the firmware README, which say battery out for a flash (no effect seen; incident #164). The drone was armed and turned by hand while armed (props off); Safety Rules #18 as written then said hands only after disarm, so this is a deviation too (incident #163; props-off exception decided on #161). PC next to the drone on the production AP. The bench view (UDP 5770) was read 7 times while arming, disarming and turning the drone.
 
 | Test ID | Date | Who | Result (pass/fail + numbers) | Notes / issue # |
 |---|---|---|---|---|
@@ -116,6 +119,7 @@ Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and
 | ESP-S2-05 |  |  | Not run. | Only the current AP channel (6) is possible with the ESP USB unplugged |
 | ESP-S2-06 | 2026-10-16 | ptorrao-git (comment on #30) | PASS (rehearsal through a PC USB relay). Relay stopped twice: loss detected after 302 ms both times (limit 500 ms). Outages 8.2 s and 4.7 s. | #30. Not run on the soldered link: a soldered wire cannot be unplugged, so the FC would be rebooted over USB, which is closer to F6 than F2 |
 | ESP-S2-06 | after 2026-10-26 (date not recorded) | ThiagoTEP (comment on #69, 2026-11-04; corrected 2026-11-05) | **Not a valid S2-06 run.** The link to the FC was not cut on purpose. It was lost twice by accident: once when an unstable ESP firmware build was flashed (an ESP fault, not a lost FC), and once when a solder joint broke (re-soldered). What the ESP reported to the ground was not recorded. | #69. **S2-06 stays open** on the direct solder. The only recorded numbers are the 2026-10-16 relay rehearsal above (loss detected after 302 ms) |
+| ESP-S2-07 | 2026-11-06 | ptorrao-git (session, whole team present; output in PR #160) | **PASS.** 7 reads, requests 1,922 → 3,114: `rep` = `req` or one behind (one request in flight), **0** timeouts, bad checksums, oversize frames, error replies and unexpected replies. `status_age_ms` 32–188 (5 Hz), `att_age_ms` 2–42 (25 Hz). `armed` followed the radio 1 → 0 → 1 → 0. Attitude followed the hand: roll −9.6° to 7.5°, pitch up to 54.7°, heading 2–37°. `vbat` 15.70–15.85 V. Arming-disable flags read and decoded: 0 while armed; `0x20000020` = RUNAWAY_TAKEOFF + ARM_SWITCH after the drone was turned 90° while armed (Betaflight's runaway-takeoff prevention disarmed it: props off, motors cannot move the drone; expected on the bench); `0x20000120` adds ANGLE (tilted beyond the arming angle). | #101. The gateway's own polling replaces the bridge's PC-driven reads for this check. Raw output not saved to a file; the 7 lines are in the #101 PR |
 
 ### Decision threshold (proposal, dropped 2026-10-23)
 

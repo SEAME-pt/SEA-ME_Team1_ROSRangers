@@ -31,7 +31,7 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── backup/        # factory AT firmware backup notes (flash images are kept out of the repo)
 │   ├── lib/
 │   │   └── protocol/          # portable C++17 library (ADR-007): framing, HMAC, seq window, receive rules,
-│   │       ├── include/sd/    #   message codecs (done); failsafe timers, MSP, ThoneFlow parser (planned)
+│   │       ├── include/sd/    #   message codecs, MSP v1 codec + FC link scheduler (done); failsafe timers, ThoneFlow parser (planned)
 │   │       ├── src/
 │   │       ├── tests/         # GoogleTest unit tests (run by the protocol-cpp CI job)
 │   │       ├── library.json   # lets PlatformIO use it
