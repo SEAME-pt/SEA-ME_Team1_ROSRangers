@@ -60,7 +60,7 @@ Full list: [Hardware Inventory](./docs/PraticalPlan/05%20Hardware/Hardware%20Inv
 | [`scripts/`](./scripts) | Bench tools for the FC, the ESP and the Wi-Fi bridge |
 | [`firmware/esp8266/`](./firmware/esp8266) | Backup of the stock ESP8266 AT firmware |
 | [`drone/firmware/esp8266/`](./drone/firmware/esp8266) | Custom ESP firmware (PlatformIO, `esp`) |
-| [`drone/lib/protocol/`](./drone/lib/protocol) | C++ ground ↔ drone protocol library, shared with the firmware |
+| [`drone/lib/protocol/`](./drone/lib/protocol) | C++ ground ↔ drone protocol library and ESP ↔ FC MSP link, shared with the firmware |
 | [`drone/ground/src/`](./drone/ground/src) | ROS 2 packages: `flight_interface`, `gesture_node`, `sd_protocol_py` |
 | [`drone/config/betaflight/`](./drone/config/betaflight) | Betaflight `diff all` / `status` baselines per version |
 | [`drone/simulation/`](./drone/simulation), [`simulation/px4/`](./simulation/px4) | PX4 SITL / Gazebo setup |
