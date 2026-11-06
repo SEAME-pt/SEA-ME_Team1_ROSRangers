@@ -165,10 +165,18 @@ class Receiver:
         session_id 0 is reserved for HELLO and is refused (returns False); then
         nothing changes, and a session that was open stays open. Never open the
         same (session_id, key) twice: the window restarts, so every frame of that
-        session would be accepted again.
+        session would be accepted again. A session_id that is not an int in
+        0..0xFFFFFFFF (the u32 of the header) raises ValueError, also with
+        nothing changed.
         """
         if len(rx_key) != KEY_SIZE:
             raise ValueError(f"key must be {KEY_SIZE} bytes")
+        if (
+            isinstance(session_id, bool)
+            or not isinstance(session_id, int)
+            or not 0 <= session_id <= 0xFFFFFFFF
+        ):
+            raise ValueError(f"session_id must be a u32, got {session_id!r}")
         if session_id == 0:
             return False
         self._key = bytes(rx_key)
@@ -214,7 +222,8 @@ class Receiver:
         if transport_of(frame.header.type) is not self._transport:
             return self._reject(RxResult.WRONG_TRANSPORT)
         # Direction (#152): only what the other side sends. A node's own frame
-        # sent back to it is refused here even if both ends got the keys wrong.
+        # sent back to it is refused here even if both ends got the keys wrong,
+        # except BYE, which both sides send (the direction keys stop a reflected BYE).
         if not receives(self._role, frame.header.type):
             return self._reject(RxResult.WRONG_DIRECTION)
         if not sizes[0] <= len(frame.payload) <= sizes[1]:

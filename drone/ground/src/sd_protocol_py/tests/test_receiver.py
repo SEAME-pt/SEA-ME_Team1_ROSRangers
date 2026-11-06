@@ -496,3 +496,20 @@ def test_frame_sealed_for_the_other_direction_rejected():
 
     assert (esp.last_seq, ground.last_seq) == (1, 1)
     assert (esp.counters.bad_tag, ground.counters.bad_tag) == (1, 1)
+
+
+@pytest.mark.parametrize("bad", [-1, 2**32, 1.5, "1", None, True])
+def test_session_id_outside_u32_refused_and_nothing_changes(bad):
+    rx = open_receiver()
+    with pytest.raises(ValueError):
+        rx.start_session(bad, TEST_KEY)
+    assert (rx.in_session, rx.session_id) == (True, SESSION)
+    assert rx.receive(SEQ1)[0] is RxResult.ACCEPTED
+
+
+def test_session_id_u32_bounds_accepted():
+    rx = Receiver(Role.ESP, Transport.UDP)
+    assert not rx.start_session(0, TEST_KEY)  # reserved for HELLO
+    assert rx.start_session(1, TEST_KEY)
+    assert rx.start_session(0xFFFFFFFF, TEST_KEY)
+    assert rx.session_id == 0xFFFFFFFF
