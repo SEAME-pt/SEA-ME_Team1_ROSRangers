@@ -3,7 +3,7 @@ title: ADR-006 — Wi-Fi Network Topology and Security
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-26
+updated: 2026-11-03
 project: SEA autonomous drone
 aliases:
   - D06
@@ -37,6 +37,10 @@ tags:
 ### Update 2026-10-23: port numbers
 
 Port numbers are **not fixed yet**. They are still open in [[Protocol Spec v0]] §7 (OD-04) and are set at the protocol freeze in Study Plan week 3 (2026-11-02 to 2026-11-06). The rest of the decision is unchanged.
+
+### Update 2026-11-03: port numbers set
+
+The decision is unchanged. The protocol review of 2026-11-03 (#97) set the ports in [[Protocol Spec v0]] §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session, 5760 reserved (the transparent bridge's port until the gateway firmware replaces it). OD-04 is resolved.
 
 ## 3. Consequences
 

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "wrong_session_id",
+    "description": "The reference frame for session 0x12345679 with a valid tag; the ESP is in 0x12345678",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896
+    },
+    "bytes": "5344016000000a007956341207000000e803000001640038ff0000f40100b6785492183eae61",
+    "expect": "reject:wrong_session"
+  },
+  {
+    "name": "session_id_zero_outside_hello",
+    "description": "A SETPOINT with session_id 0 (reserved for HELLO) and a valid tag",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896
+    },
+    "bytes": "5344016000000a000000000007000000e803000001640038ff0000f4010000fa7e7e6925462b",
+    "expect": "reject:wrong_session"
+  }
+]

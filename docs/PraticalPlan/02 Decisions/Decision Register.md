@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-10-27
+updated: 2026-11-05
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -28,7 +28,7 @@ tags:
 | [[ADR-003 Sequence Acceptance\|ADR-003]] | 32-bit seq + random session ID, newer-only | ✅ Accepted | OD-08, OD-09, P3 |
 | [[ADR-004 ESP Failsafe\|ADR-004]] | 250 ms link failsafe, explicit resume | ✅ Accepted (values to confirm) | OD-06/07 (initial), OD-12 (partly), OD-13, P4 |
 | [[ADR-005 TCP Session\|ADR-005]] | Session over TCP; UDP decides liveness | ✅ Accepted | OD-14, P5 |
-| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted | OD-17, OD-04 (partly), P6 |
+| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted (ports set in [[Protocol Spec v0]] §7.1, 2026-11-03) | OD-17, OD-04, P6 |
 | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] | Custom firmware + portable C++ lib + Python twin | ✅ Accepted | OD-01, OD-19, FC-07, P7 |
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
@@ -43,9 +43,10 @@ tags:
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner. HIL target = spare ESP, FC in SITL; Wi-Fi tests by time-slicing, no dongle (2026-10-26) | ✅ Accepted (updated 2026-10-26, #61, #48) | n/a |
-| [[ADR-021 Removable ESP Connector\|ADR-021]] | Removable connector for the ESP | ✅ Accepted (team, 2026-10-20). Connector not fitted yet | n/a |
+| [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
+| [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
 
 ## 2. What changed on 2026-10-12
 
@@ -84,11 +85,24 @@ tags:
 - Dated update, no decision changed: [[ADR-015 Gesture Input Source|ADR-015]]. Gestures still come from the ground webcam; `gesture_node` now reads two hands with MediaPipe Holistic and only counts a raised arm (wrist above elbow), #81.
 - Not an ADR: `mission_node` no longer asks for a landing when the operator or the recogniser is gone; it hovers. Recorded in [[04 Mission Node]] §10, `safety-critical`, waiting for a team review.
 
-## 7. Still open
+## 7. What changed on 2026-11-03
+
+- Not an ADR: [[Protocol Spec v0]] is **accepted** (v1.0) at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97).
+  - **OD-04** resolved: UDP 5759 control and telemetry, TCP 5759 session, 5760 reserved (spec §7.1). Completes [[ADR-006 Network|ADR-006]].
+  - **OD-06** resolved: `T_fresh` = 150 ms, separate from `T_loss` (spec §7.2). [[ADR-004 ESP Failsafe|ADR-004]] is unchanged: `T_loss` stays 250 ms.
+  - Configuration key ranges and the v0 keys (spec §7.3), and the test vector list (spec §6).
+  - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
+- 2026-11-05, decision **extended**: [[ADR-002 Message Integrity|ADR-002]] uses one key per direction (`"g2e"` / `"e2g"`, derived from the session key), so a node refuses its own frames sent back to it (#150, spec v1.2).
+
+## 8. What changed on 2026-11-04 and 2026-11-05
+
+- New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
+
+## 9. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 8. Glossary
+## 10. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -117,7 +131,11 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **WPA2-PSK** | Wi-Fi security mode where every client uses the same pre-shared key (the ESP SoftAP, ADR-006). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **Binding phrase** | The secret that pairs an ELRS radio with the receiver. Kept by the team outside GitHub (ADR-023). |
-| **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `d1_mini_ota`). |
+| **OTA** | Over-the-air: flashing the ESP firmware over Wi-Fi instead of USB (env `esp_ota`, ADR-024). |
+| **STREAMING** | Link state in which the ground sends setpoints in an open session ([[ESP Link State Machine]]). |
+| **HELLO** | The first message of a ground session ([[Protocol Spec v0]] §3). |
+| **MSP_STATUS** | MSP message from the FC that includes the arming flags. |
+| **MSP_SET_ARMING_DISABLED** | MSP 99: value 1 stops the FC from arming, value 0 allows it again (ADR-024). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |

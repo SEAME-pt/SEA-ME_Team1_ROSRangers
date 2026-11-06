@@ -1,0 +1,74 @@
+[
+  {
+    "name": "wrong_magic",
+    "description": "Magic 'SE' instead of 'SD'; the tag is recomputed so the magic is the only fault",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5345016000000a007856341207000000e803000001640038ff0000f40100de307f06c4dd38a3",
+    "expect": "reject:bad_magic"
+  },
+  {
+    "name": "wrong_version",
+    "description": "Version 2 instead of 1; the tag is recomputed so the version is the only fault",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344026000000a007856341207000000e803000001640038ff0000f40100253620badaed0ff0",
+    "expect": "reject:bad_version"
+  },
+  {
+    "name": "payload_len_over_256",
+    "description": "SETPOINT with payload_len 257, 257 payload bytes and a valid tag: only the 256 limit is broken",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "53440160000001017856341207000000e80300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000cd5a84fb5995dedc",
+    "expect": "reject:bad_length"
+  },
+  {
+    "name": "payload_len_mismatch",
+    "description": "The reference frame with one extra byte after the tag",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344016000000a007856341207000000e803000001640038ff0000f40100fb703d824f5b589e00",
+    "expect": "reject:bad_length"
+  },
+  {
+    "name": "truncated_frame",
+    "description": "The reference frame without its last byte",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344016000000a007856341207000000e803000001640038ff0000f40100fb703d824f5b58",
+    "expect": "reject:truncated"
+  },
+  {
+    "name": "truncated_header",
+    "description": "Only the 20-byte header: shorter than header + tag (28 bytes)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bytes": "5344016000000a007856341207000000e8030000",
+    "expect": "reject:truncated"
+  },
+  {
+    "name": "unknown_type",
+    "description": "Type 0x99 with a valid tag and session: not a §3 message type",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896
+    },
+    "bytes": "5344019900000a007856341207000000e803000001640038ff0000f40100fa35a4114f75c4f4",
+    "expect": "reject:bad_type"
+  },
+  {
+    "name": "setpoint_payload_9_bytes",
+    "description": "SETPOINT with a 9-byte payload (needs 10), valid tag",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896
+    },
+    "bytes": "53440160000009007856341207000000e803000001640038ff0000f40167218dbb43de6955",
+    "expect": "reject:bad_payload_size"
+  },
+  {
+    "name": "event_text_65",
+    "description": "EVENT with 65 text bytes (2 + 65 = 67 > 66), valid tag",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896
+    },
+    "bytes": "53440140000043007856341207000000e80300000201787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787861418395856a8e0a",
+    "expect": "reject:bad_payload_size"
+  }
+]

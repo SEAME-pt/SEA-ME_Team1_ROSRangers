@@ -33,7 +33,7 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
 | Env | Upload | Use |
 |---|---|---|
 | `esp` (default) | USB, 460800 baud | First flash and recovery. CI builds this one |
-| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | Every later update. `hil.yaml` uses it |
+| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | Every later update of the flight ESP (ADR-024). The HIL runner flashes its spare ESP over USB with `esp` (`hil.yaml`) |
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
 | `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5761 (`WITH_TIMING=1`), see below |
@@ -49,27 +49,27 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
    ```
 2. **Secrets.** `secrets.py` runs before every build and compiles in `AP_SSID`, `AP_PASS`, `OTA_PASS` and `AP_CHANNEL`. Nothing secret is in the repo. It reads, in order:
    - environment variables `SEAME_AP_SSID`, `SEAME_AP_PASS`, `SEAME_OTA_PASS`;
-   - otherwise `~/.config/seame-drone/bridge.json` (SSID, channel, default 6) and `secrets.json` (`wifi:<ssid>` and `ota`), as written by `scripts/setup_production.py`.
+   - otherwise `~/.config/seame-drone/bridge.json` (SSID, channel, default 6) and `secrets.json` (`wifi:<ssid>`, written by `scripts/setup_production.py`, and `ota`, which you add by hand: no script writes it yet).
 
-   Both passwords must be at least 8 characters, or the build stops. The build also stops if `bridge.json` is the TEST scenario: run `setup_production.py` first. The current AP password is still the tutorial example and must be changed.
+   Both passwords must be at least 8 characters and different from each other, or the build stops (ADR-024 D3). The build also stops if `bridge.json` is the TEST scenario: run `setup_production.py` first. The current AP password is still the tutorial example and must be changed.
 3. **Build:**
    ```bash
    pio run -d drone/firmware/esp8266 -e esp
    ```
    Build-only check without the config folder (what CI does):
    ```bash
-   SEAME_AP_PASS=ci-dummy-pass SEAME_OTA_PASS=ci-dummy-pass pio run -d drone/firmware/esp8266 -e esp
+   SEAME_AP_SSID=ci-dummy-ssid SEAME_AP_PASS=ci-dummy-ap-pass SEAME_OTA_PASS=ci-dummy-ota-pass pio run -d drone/firmware/esp8266 -e esp
    ```
-   The image is `.pio/build/<env>/firmware.bin`. Note its SHA-256 (`sha256sum`) in #30 or in `backup/README.md` when you flash it: the firmware cannot report its version.
+   The image is `.pio/build/<env>/firmware.bin`.
 
 ## Flash
 
-Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off, no battery.
+This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off, no battery. After every flash, note the image SHA-256 (`sha256sum .pio/build/<env>/firmware.bin`) in #30 or in `backup/README.md`: the firmware cannot report its version.
 
 ### First flash or recovery (USB)
 
 > [!warning] Never plug in the ESP USB while the ESP is wired to the FC
-> Its USB chip and the FC T4 pin would both drive the ESP RX line (ADR-012). Take the ESP off the FC first, or follow a written, reviewed procedure.
+> Its USB chip and the FC T4 pin would both drive the ESP RX line (ADR-012). Take the ESP off the FC first. There is no exception (ADR-024 D5).
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp -t upload
@@ -79,14 +79,15 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 ### Every later update (OTA)
 
-1. Drone powered from the FC USB, no battery, props off.
-2. Join the drone network: `python3 scripts/seame.py network connect`.
-3. Upload (the OTA password comes from `secrets.py`):
+1. Drone powered from the FC USB, no battery, props off, **arm switch and takeover (MSP Override) switch off**: the ESP sends no neutral frames while it updates and reboots.
+2. No ground session: stop the ground node (`flight_interface`).
+3. Join the drone network: `python3 scripts/seame.py network connect`.
+4. Upload (the OTA password comes from `secrets.py`). The current firmware does **not** check the arm state or the session yet: steps 1 and 2 are the only protection until #102 adds the ADR-024 gate and lock.
    ```bash
    pio run -d drone/firmware/esp8266 -e esp_ota -t upload
    ```
-4. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
-5. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46).
+5. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
+6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (unplug its USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
