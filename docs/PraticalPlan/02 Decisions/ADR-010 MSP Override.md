@@ -3,7 +3,7 @@ title: ADR-010 — MSP Override for Setpoints
 type: adr
 status: accepted-with-conditions
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - D10
@@ -55,6 +55,20 @@ The radio has two separate safety switches. The conditions above are unchanged.
 
 - **Kill switch:** SA, which is also the ARM switch. Releasing SA disarms and stops the motors. Tested on the bench on 2026-10-22 ([[Radio Link Tests]] RL-12, GitHub #22).
 - **Takeover switch:** the MSP Override switch (the "override switch" in condition 3). Turning it off ends ground control: from that moment until it is turned on again, the drone takes commands only from the radio. Its AUX channel is not mapped yet ([[Betaflight Setup]] §1). It stays out of the mask (condition 1).
+
+### Update 2026-11-06: throttle-only stage proposed, on hold
+
+On 2026-10-30 the team proposed a first stage before 8 → 11 → 15: **mask 4 (throttle only) with ALTHOLD on**. With ALTHOLD, the throttle channel becomes a vertical-speed command (centre holds the height), so the ground could do "take off, hold a height, land" while the pilot keeps roll, pitch and yaw.
+
+It is **on hold**, because it assumes the drone already holds its height, and it does not:
+
+- The blackbox of 2026-10-29 shows the DPS310 barometer, uncovered under the props, jumping when the props blow on it; ALTHOLD engaged during a climb kept climbing twice; the drone drifts sideways with no position sensor ([[ADR-014 Betaflight Version|ADR-014]], GitHub #134 "Known limits").
+- A height limit "enforced in the ground program" cannot work while the only height reading is the same barometer.
+
+Conditions 1–6 above are unchanged, and [[Safety Rules]] #14 stays bench-only. The stage can be proposed again when both hold:
+
+1. Stable hover and ALTHOLD within ±30 cm in the flight area (GitHub #134).
+2. A reliable height source. The proposal is a ToF height and optical-flow sensor that Betaflight 2026.6.2 already supports ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06, [[Height Sensor Study]]).
 
 ## 3. Consequences
 

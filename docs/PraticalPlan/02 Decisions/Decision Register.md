@@ -38,7 +38,7 @@ tags:
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro (2026-11-06: ToF height sensor proposed) | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
@@ -95,11 +95,11 @@ tags:
   - Items left open by the review: decided on 2026-11-05 (#142, spec §7.5, v1.1). Wi-Fi re-association is still open, to be settled with the gateway firmware (#101).
 - 2026-11-05, decision **extended**: [[ADR-002 Message Integrity|ADR-002]] uses one key per direction (`"g2e"` / `"e2g"`, derived from the session key), so a node refuses its own frames sent back to it (#150, spec v1.2).
 
-## 8. What changed on 2026-11-04 and 2026-11-05
+## 8. What changed on 2026-11-04 to 2026-11-06
 
 - New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
 
-- 2026-11-06, #164, PR #165: [[ADR-024 OTA Firmware Updates|ADR-024]] D5 corrected: an OTA update needs the battery connected (the FC USB does not power the ESP); the D2 gate does not refuse an update because of the battery.
+- 2026-11-06, decision **extended**: [[ADR-005 TCP Session|ADR-005]]: a new `HELLO` does not end the current session; the new session is pending until its first valid frame (#156). No wire change.
 
 ## 9. Still open
 

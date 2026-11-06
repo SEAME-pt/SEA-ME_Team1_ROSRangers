@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-03
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - ci
@@ -49,6 +49,10 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
 │   ├── simulation/
 │   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
+│   │       ├── sim_smoke.sh       # one command: PX4 SITL headless + intent/mission nodes + bridge (#86)
+│   │       └── ros/px4_offboard_bridge/  # SIM ONLY stand-in for the PX4 backend of flight_interface (#86):
+│   │                                     # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
+│   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
 │   └── tests/
