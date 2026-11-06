@@ -64,7 +64,7 @@ Not there yet: no TCP session (ADR-005), no version query, no counters or status
 
 ## Flash
 
-This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off, no battery. After every flash, note the image SHA-256 (`sha256sum .pio/build/<env>/firmware.bin`) in #30 or in `backup/README.md`: the firmware cannot report its version.
+This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safety Rules.md`: props off. An OTA update needs the battery connected: the ESP is powered from the FC's 5 V pad, and the FC USB does not give it enough power (ADR-024 entry of 2026-11-06, #164). After every flash, note the image SHA-256 (`sha256sum .pio/build/<env>/firmware.bin`) in #30 or in `backup/README.md`: the firmware cannot report its version.
 
 ### First flash or recovery (USB)
 
@@ -79,7 +79,7 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 ### Every later update (OTA)
 
-1. Drone powered from the FC USB, no battery, props off, **arm switch and takeover (MSP Override) switch off**: the ESP sends no neutral frames while it updates and reboots.
+1. **Battery connected** (the ESP needs it), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**: the ESP sends no neutral frames while it updates and reboots.
 2. No ground session: stop the ground node (`flight_interface`).
 3. Join the drone network: `python3 scripts/seame.py network connect`.
 4. Upload (the OTA password comes from `secrets.py`). The current firmware does **not** check the arm state or the session yet: steps 1 and 2 are the only protection until #102 adds the ADR-024 gate and lock.

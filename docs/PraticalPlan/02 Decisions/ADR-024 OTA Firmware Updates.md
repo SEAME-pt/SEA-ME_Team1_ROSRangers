@@ -3,7 +3,7 @@ title: ADR-024 — OTA Firmware Updates on the Flight ESP
 type: adr
 status: accepted
 date: 2026-11-04
-updated: 2026-11-05
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - adr
@@ -74,6 +74,7 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 **D5. Written procedure** (accepted 2026-11-05, #145). This is the procedure in `drone/firmware/esp8266/README.md` ("Flash"):
 - **Every update:** OTA, [[Safety Rules]] apply.
   - Props off, battery out, powered from the FC USB, arm switch and takeover (MSP Override) switch off.
+  - 2026-11-06, #164 (see the dated entry in §5): **the battery must be connected**, because the FC USB cannot power the ESP; "battery out" above no longer applies.
   - No ground session during the upload: the ground node is stopped (after #102 the ESP also blocks it, D2).
   - Note the image SHA-256 when you flash.
 - **First flash or recovery:** USB, only with the ESP taken off the FC wires (ADR-012).
@@ -101,6 +102,8 @@ Both come from `secrets.py` (`~/.config/seame-drone/` or the `SEAME_*` environme
 ## 5. Related pages
 
 - [[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]] · [[ADR-012 ESP UART Pins|ADR-012]] · [[ADR-020 HIL Runner|ADR-020]] · [[ADR-021 Removable ESP Connector|ADR-021]] · [[Safety Rules]] · [[Decision Register]]
+
+> 2026-11-06 (incident GitHub #164): **D5 corrected: an OTA update needs the battery connected.** The ESP is powered from the FC's 5 V pad ([[ADR-013 Wiring and Power|ADR-013]]), and the FC USB does not give enough power to run it, so "battery out, powered from the FC USB" in D5 could not work. Every update is now: **battery connected, props off, FC disarmed, arm and takeover switches off**, [[Safety Rules]] apply. The D2 gate (#102) does **not** refuse an update because a battery is connected; it refuses only when the FC is armed or its state is unknown or stale, or a ground session is open. USB on the ESP itself stays for the first flash and recovery only, with the ESP off the FC (ADR-012). The rest of D5 is unchanged.
 
 ## 6. Glossary
 
