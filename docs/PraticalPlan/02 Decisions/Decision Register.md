@@ -80,10 +80,11 @@ tags:
   - [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]: the UIDs shown are the pre-update values.
 - [[ADR-010 MSP Override|ADR-010]] names two radio switches (team decision): the **kill switch** (SA, disarms) and the **takeover switch** (MSP Override off, radio only).
 
-## 6. What changed on 2026-10-27
+## 6. What changed on 2026-10-27 and 2026-10-30
 
 - Dated update, no decision changed: [[ADR-015 Gesture Input Source|ADR-015]]. Gestures still come from the ground webcam; `gesture_node` now reads two hands with MediaPipe Holistic and only counts a raised arm (wrist above elbow), #81.
 - Not an ADR: `mission_node` no longer asks for a landing when the operator or the recogniser is gone; it hovers. Recorded in [[04 Mission Node]] §10, `safety-critical`, waiting for a team review.
+- 2026-10-30, dated update, no decision changed: [[ADR-014 Betaflight Version|ADR-014]]. The FC runs 2026.6.2 since 2026-10-28. The 4.5.1 hover baseline was not recorded (incident #126), so #23 is redone on 2026.6.2. MSP Override flight conditions: [[Safety Rules]] #14.
 
 ## 7. What changed on 2026-11-03
 
@@ -98,15 +99,11 @@ tags:
 
 - New [[ADR-024 OTA Firmware Updates|ADR-024]] (accepted 2026-11-05, #62, PR #145). The team decided to keep OTA, to allow it only while the drone is not flying (powered on is fine), and to require credentials. On 2026-11-05 the team added the upload lock: when an upload starts the ESP re-checks a fresh `MSP_STATUS`, sends `MSP_SET_ARMING_DISABLED` so the FC cannot arm, and refuses `HELLO` until the update ends. Flight builds keep OTA (D4) and the written procedure (D5) were accepted by the approving review of PR #145; its follow-ups (the lock is released at every boot, ArduinoOTA keeps the bridge sockets open, more bench cases) were applied in PR #153.
 
-## 9. What changed on 2026-10-30
-
-- Dated update, no decision changed: [[ADR-014 Betaflight Version|ADR-014]]. The FC runs 2026.6.2 since 2026-10-28. The 4.5.1 hover baseline was not recorded (incident #126), so #23 is redone on 2026.6.2. MSP Override flight conditions: [[Safety Rules]] #14.
-
-## 10. Still open
+## 9. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 11. Glossary
+## 10. Glossary
 
 | Term | Meaning |
 | --- | --- |
