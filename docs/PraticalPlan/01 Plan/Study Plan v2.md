@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-10-29
+updated: 2026-11-06
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -103,7 +103,7 @@ tags: [plan]
 
 | Track | Practice |
 |---|---|
-| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). |
+| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). *Changed 2026-10-30: the upgrade was done on 2026-10-28 without the 4.5.1 hover (incident #126); the baseline hover (#23) is redone on 2026.6.2 ([[ADR-014 Betaflight Version|ADR-014]]).* |
 | B | *Changed 2026-10-20: the ESP is already soldered (incident #69), and the soldered link loses 0.7–3.7 % against 0 % before (#30). 2026-10-23: these figures came from runs with hardware problems and are being measured again (#30).* **Find the cause of the loss, cheapest check first** (10 min each, near): FC on USB with the radio off → radio on and bound → ESP antenna turned away from the frame. Finish S2-02, S2-06 and S1-08 (ESP current) on the soldered link. Post the [[ESP_to_FC]] §10 joint evidence (#69). Agree the pass threshold (OD-22, #63). Props off ([[Safety Rules]] #13). |
 | C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. Decide the telemetry set (FC-12, #63) by 2026-10-23. Develop against the FC USB link or a recorded log, so C does not wait for B's fix. |
 | D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `esp`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |

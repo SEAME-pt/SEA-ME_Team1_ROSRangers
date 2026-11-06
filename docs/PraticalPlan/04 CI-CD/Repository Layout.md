@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-03
+updated: 2026-11-05
 project: SEA autonomous drone
 tags:
   - ci
@@ -31,7 +31,7 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── backup/        # factory AT firmware backup notes (flash images are kept out of the repo)
 │   ├── lib/
 │   │   └── protocol/          # portable C++17 library (ADR-007): framing, HMAC, seq window, receive rules,
-│   │       ├── include/sd/    #   message codecs (done); failsafe timers, MSP, ThoneFlow parser (planned)
+│   │       ├── include/sd/    #   message codecs, MSP v1 codec + FC link scheduler (done); failsafe timers, ThoneFlow parser (planned)
 │   │       ├── src/
 │   │       ├── tests/         # GoogleTest unit tests (run by the protocol-cpp CI job)
 │   │       ├── library.json   # lets PlatformIO use it
@@ -49,6 +49,10 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
 │   ├── simulation/
 │   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
+│   │       ├── sim_smoke.sh       # one command: PX4 SITL headless + intent/mission nodes + bridge (#86)
+│   │       └── ros/px4_offboard_bridge/  # SIM ONLY stand-in for the PX4 backend of flight_interface (#86):
+│   │                                     # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
+│   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
 │   └── tests/
@@ -58,7 +62,7 @@ SEA-ME_Team1_ROSRangers/
 │       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
 │       └── tools/             # (target, #60) unit tests of the bench tools, now in tests/scripts/
 ├── docs/                      # Obsidian vault (plan, ADRs, architecture, hardware, process)
-├── scripts/                   # repo tooling only: sync-labels.sh
+├── scripts/                   # repo tooling: sync-labels.sh
 │                              #   (the bench tools there move to drone/tools/bench, #60)
 ├── .github/
 │   ├── workflows/             # ci.yaml, hil.yaml, close-linked-issues.yaml

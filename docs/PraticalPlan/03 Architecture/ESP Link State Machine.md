@@ -3,6 +3,7 @@ title: ESP Link State Machine
 type: architecture
 status: draft
 date: 2026-10-12
+updated: 2026-11-06
 project: SEA autonomous drone
 tags:
   - architecture
@@ -28,9 +29,22 @@ stateDiagram-v2
     STREAMING --> LINK_FAILSAFE: no accepted control for 250 ms
     LINK_FAILSAFE --> STREAMING: RESUME_REQUEST + 500 ms neutral stream
     SESSION_IDLE --> NO_SESSION: BYE / TCP closed and no UDP
-    STREAMING --> NO_SESSION: new HELLO (new session)
-    LINK_FAILSAFE --> NO_SESSION: new HELLO
+    STREAMING --> SESSION_IDLE: new session confirmed (first valid frame under its keys)
+    LINK_FAILSAFE --> SESSION_IDLE: new session confirmed
 ```
+
+**A new `HELLO` does not end the current session** (2026-11-06, #156, [[ADR-005 TCP Session|ADR-005]] entry). In any state the ESP answers a valid `HELLO` with `HELLO_ACK` and keeps its current state and session. The new session is *pending*: it takes over only when its first valid frame under the new keys arrives; then the ESP sends `BYE` reason 3 to the old session and continues in SESSION_IDLE with the new one. A pending session with no valid frame within 2 s is dropped. `HELLO` is rate-limited (at most one per 500 ms). A replayed `HELLO` therefore never ends a live session.
+
+Details of the pending session:
+- **TCP:** a new TCP connection by itself changes nothing. While a session holds the one TCP slot, the ESP accepts one extra connection only to carry a `HELLO`, for at most 2 s; TCP keep-alive (seconds) frees a dead connection's slot ([[ADR-005 TCP Session|ADR-005]] entry). UDP and the failsafe are not affected.
+- **No current session (NO_SESSION):** there is nothing to protect, so a valid `HELLO` opens the session at once (SESSION_IDLE).
+- **First valid frame:** the first frame accepted by a Receiver holding the new session's receiving key, on UDP or TCP.
+- **Another `HELLO` while one is pending:** the later one replaces the pending one. At most one accepted `HELLO` per 500 ms; a refused one does not restart the window. Known limit: replaying a `HELLO` every 500 ms can keep a real ground from reconnecting, but never ends the live session ([[ADR-005 TCP Session|ADR-005]] entry).
+- **`HELLO` on the current TCP connection:** `BYE` reason 3 for the old session goes out on that same connection, which stays open for the new session.
+- **After the switch:** the new session starts in SESSION_IDLE. From LINK_FAILSAFE this is not a resume: control needs a new `ARM_CONTROL_REQUEST` and valid setpoints (REQ-COM-020).
+- **Open for #102, safety:** SESSION_IDLE sends neutral frames at once (throttle 1000 from mask 15, [[ADR-010 MSP Override|ADR-010]]), so a switch during STREAMING would be a hard throttle cut in flight, without the [[ADR-004 ESP Failsafe|ADR-004]] path; from LINK_FAILSAFE on 2026.6 (neutral 1 s, then stop) it would start sending neutral override frames again. Not new with #156, and only the real ground can confirm a session. #102 decides what the ESP sends at a switch; proposal: the same output as a link loss (ADR-004) until the new session's `ARM_CONTROL_REQUEST`.
+- **On the wire:** a pending session is not visible in `STATE.esp_state` (no wire change). #102 may report an expired pending session or a rate-limited `HELLO` with an `EVENT` link code (`0x01xx`).
+- **OTA ([[ADR-024 OTA Firmware Updates|ADR-024]]):** a pending session counts as an open session for the D2 gate; a `HELLO` that arrives during an upload is dropped, not kept for later.
 
 ## 2. Behaviour per state
 
@@ -58,6 +72,7 @@ stateDiagram-v2
 | ------------- | ------------------------------------------------------------------------------------------ |
 | **ADR**       | Architecture Decision Record: a documented decision and its rationale.                     |
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
+| **BYE**       | Message that ends a session; reason 3 = replaced by a confirmed new session ([[Protocol Spec v0]] §3.1). |
 | **Failsafe**  | An automatic safe response when control, communication, or a sensor fails.                 |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Mermaid**   | A text-based diagram syntax rendered by compatible Markdown tools.                         |
@@ -67,6 +82,7 @@ stateDiagram-v2
 | **UDP**       | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
 | **UART**      | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface.             |
 | **API**       | Application Programming Interface: a defined way for software components to communicate.   |
+| **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (#156). |
 | **REQ** | Requirement ID of the form `REQ-<SYS, NAV, SEN, COM, CTL, SAF, PWR, SW or HW>-NNN`, used for traceability. |
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

@@ -24,7 +24,7 @@ tags:
 4. **Safety pilot** with the RadioMaster at the cage, line of sight, with the kill switch (SA) and the takeover switch under a finger (§3). The radio always wins over code.
 5. **Gestures never arm or disarm.** The gesture operator is in the coding room and may not see the drone ([[ADR-015 Gesture Input Source|ADR-015]]).
 6. Switch MSP Override on only when telemetry shows the ESP is `STREAMING` ([[ADR-010 MSP Override|ADR-010]]).
-7. Pre-arm checklist: battery charged and inspected, props tight and in the right direction, failsafe tested today, ESP wires or connector inspected ([[ADR-021 Removable ESP Connector|ADR-021]]), zone clear, nobody in the cage.
+7. Pre-arm checklist: battery charged and inspected, props tight and in the right direction, failsafe tested today, ESP solder joints and wires inspected ([[ADR-021 Removable ESP Connector|ADR-021]], soldered directly since 2026-10-26), zone clear, nobody in the cage.
 8. LiPo: charge only at the lab station/bags, never unattended, land at 3.5 V/cell.
 9. ESP8266 GPIOs are 3.3 V. Feed 5 V only to the ESP **5V** pin. Never connect USB and the FC to the ESP at the same time ([[ADR-012 ESP UART Pins|ADR-012]]).
 10. HIL bench: **no LiPo** connected, ever.
@@ -32,22 +32,25 @@ tags:
 12. Every crash, incident or fault goes in GitHub Issues with cause and fix (program rule; spares are limited).
 13. **Transparent UART↔UDP bridge: props off only** (added 2026-10-20). A battery is allowed, because the drone needs it to power the FC and the ESP. The existing LiPo rules still apply (#2, #3, #8). Network isolation is **not a rule yet**: see §2.
 14. **MSP Override is bench-only (props off) until GitHub #123 and #104 pass** (added 2026-10-20, updated 2026-10-30). The rule first said "until Betaflight 2026.6.2" ([[ADR-010 MSP Override|ADR-010]] condition 6). 2026.6.2 is installed since 2026-10-28, but the MSP budget spike (#123) and the props-off override bench test (#104) must still pass before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30).
+    - **2026-11-06:** a throttle-only flight stage (mask 4 with ALTHOLD) was proposed on 2026-10-30 and is **on hold**. The drone does not hold its height yet (blackbox of 2026-10-29, GitHub #134), so this rule is unchanged: bench only, props off ([[ADR-010 MSP Override|ADR-010]] update 2026-11-06).
 15. **Nobody flies alone** (added 2026-10-20). Nobody powers up, arms, test-runs or flies the drone alone. A pilot and at least one other person are always present ([[Team Tracks]] §2).
 16. **Battery and USB together are allowed with props off** (added 2026-10-23, team decision). Some bench work needs both, for example the Betaflight Motors tab and the motor-direction tool ([[Radio Link Tests]] §3.1). Props off (#1) is the primary rule; this replaces the "never battery and USB together" warning in [[2.5Drone]].
 17. **The HIL bench may run unattended only with no FC, no LiPo and no motors** (added 2026-10-26, team decision, GitHub #61). The bench is the Pi 4 runner with the spare ESP on USB ([[HIL Runner]] §3.1). The flight unit is never connected to it. Every other bench or flight session is attended. Rule #15 covers the drone, not this bench, but #10 still applies.
-18. **Hands off an armed drone** (added 2026-10-29, incident GitHub #131). Nobody touches, catches, pushes or guards an armed drone by hand, even close to the ground. Everyone except the pilot stays outside the flight area while it is armed. If the drone moves towards someone, the pilot disarms with the kill switch (SA) and the person steps back. Hands only after disarm and the props have stopped. **Updated 2026-11-06 (team decision, GitHub #161, revised after the safety pilot's review on PR #162):** with **no props on**, a second person may handle the drone while one person holds the radio with a finger on the kill switch (SA). Rule #15 still applies: at least two people watch every session, props or not. **Default stays: disarm before handling.**
-    - **Disarmed:** the second person may touch and move the drone **only if nothing on a PC can drive the motors**: no Betaflight Motors tab or motor-direction tool open, no ground node or MSP tool sending through the bridge (it forwards `MSP_SET_MOTOR`, which spins motors even when disarmed, #13). Otherwise the battery must be out. Hands on the frame and away from the motor bells, nothing loose (wires, cable ties, hair, sleeves) near the motors, props removed and stored before the battery goes in.
-    - **Armed:** only with **airmode off and throttle at zero**, so the motors stay at idle; otherwise disarm before handling. With airmode on, Betaflight drives the motors when the frame is tilted, even at zero throttle, and a bare motor bell at full speed cuts. **Airmode is off on our drone** ([[Betaflight Setup]] §1.1, 2026-11-06), so an armed drone may be handled with the **throttle at zero**; the motors still spin at idle, so hands stay away from the bells. If airmode is ever turned on, disarm before handling. A test that needs the drone armed reads its values without touching it.
-    - **Who arms:** only the person holding the radio, with SA (the kill switch, §3.1), and only after the second person has taken their hands off the drone. The person at the radio may be any team member: everyone did the safety induction (GitHub #13); a props-off bench session does not need the trained safety pilot (§3), **except** for tests where a PC drives the motors (next bullet). Code and gestures never arm (#5).
-    - **Tests where a PC drives the motors** (MSP Override #104, the Motors tab, the motor-direction tool, `MSP_SET_MOTOR` through the bridge): the **trained safety pilot** (§3) is at the radio and watches only the drone, with a finger on the kill switch and the takeover switch (#4), and a second person runs the laptop. Nobody touches the drone during the test. MSP Override motor tests wait until the takeover switch is mapped and bench-tested (§3.1, #104).
-    - **Why the cause of incident #131 does not apply (2026-11-06):** #131 was a hand guarding a drone with **props spinning**, which produce thrust and cut. With props off there is no thrust, and the motor-bell risk is covered by the disarmed / airmode-off conditions above. With props on, this rule is unchanged.
+18. **Hands off an armed drone** (added 2026-10-29, incident GitHub #131). Nobody touches, catches, pushes or guards an armed drone by hand, even close to the ground. Everyone except the pilot stays outside the flight area while it is armed. If the drone moves towards someone, the pilot disarms with the kill switch (SA) and the person steps back. Hands only after disarm and the props have stopped.
+19. **Height limit: 1 m above take-off for the first flights, then 1.5 m** (added 2026-11-06; team decision of 2026-10-29, after incident GitHub #131, recorded on #131 on 2026-11-06; see also #126). The limit moves to 1.5 m only after the team approves it. Nothing on the drone measures height reliably today (the barometer drifts, [[Height Sensor Study]] §1), and no one on the team has the piloting experience to hold a height by hand reliably, so the pilot's eye alone is **not enough**. Until a height sensor is fitted, every flight also needs all of these:
+    - a **visible 1 m marker** (pole or tape) next to the flight area;
+    - the **second person** (#15) calls the height out loud and calls "**disarm**" when the drone reaches the marker; the pilot then disarms with SA;
+    - **ALTHOLD only from a steady hover** (as in GitHub #134), never engaged during a climb;
+    - the **60 % throttle limit** stays in the Betaflight config (`throttle_limit_percent = 60`, `drone/config/betaflight/2026.6.2/`).
+
+    Fly low, short and away from anything overhead. A height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06).
 
 ---
 
 ## 2. Open items (not rules yet)
 
 - **Network isolation for the bridge (open, 2026-10-20).** Whether bridge tests need an isolated network is still being tested. The shared SEAME Wi-Fi is under evaluation. Tracked in [[Open Questions]]. Until the team decides, treat the bridge as props-off only (#13).
-- **Height limit and overhead clearance (open, 2026-10-29).** The flight area has no roof; on 2026-10-28 the drone climbed into a steel ceiling beam at about 2 m (incident #126). The team decides a maximum flight height and keeps flights away from beams and anything else overhead.
+- ~~**Height limit and overhead clearance (open, 2026-10-29).**~~ **Closed 2026-11-06:** the team decided the limit on 2026-10-29 (rule #19). The flight area has no roof; on 2026-10-28 the drone climbed into a steel ceiling beam at about 2 m (incident #126). Flights stay away from beams and anything else overhead.
 - ~~**Conflict between #13 and #10 (open, 2026-10-20).**~~ **Closed 2026-10-26.** The HIL scope decision (GitHub #61, [[ADR-020 HIL Runner|ADR-020]]) keeps the flight unit off the HIL bench, so bridge tests with a battery (#13) never run there. #10 stands unchanged: no battery on the HIL bench.
 
 ## 3. Safety roles
@@ -64,7 +67,7 @@ tags:
 
 ## 4. Related pages
 
-- [[Radio Link Tests]] · [[Battery Log]] · [[ADR-004 ESP Failsafe|ADR-004]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]
+- [[Radio Link Tests]] · [[Battery Log]] · [[ADR-004 ESP Failsafe|ADR-004]] · [[ADR-010 MSP Override|ADR-010]] · [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]] · [[ADR-024 OTA Firmware Updates|ADR-024]]
 
 ---
 

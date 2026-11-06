@@ -3,7 +3,7 @@ title: SEA:ME Drone — Practical Plan Home
 type: moc
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - Home
@@ -16,7 +16,7 @@ tags:
 # SEA:ME Drone — Practical Plan Home
 
 > [!summary] In one sentence
-> This folder turns the project's documentation into a **dated, team-of-5 plan** with **accepted decisions (ADRs)**, an **architecture**, and a **CI/CD + HIL setup** that meets the Module 1 deliverables.
+> This folder turns the project's documentation into a **dated, team-of-4 plan** with **accepted decisions (ADRs)**, an **architecture**, and a **CI/CD + HIL setup** that meets the Module 1 deliverables.
 
 > [!info] Where we are (2026-10-23)
 > - SEA:ME started on **7 Oct 2026**. Sprint 0 ran **7–18 Oct**. **Module 1 started 19 Oct**: we are in week 1 of Sprint 1.
@@ -26,6 +26,10 @@ tags:
 > - All decisions are **accepted** as ADRs (ADR-001 to ADR-024). See [[Decision Register]].
 > - Project: **gesture control** with MediaPipe, accepted by instructors as our Module 2 "edge inference in the loop".
 
+> [!info] Since then (2026-11-06)
+> - Since 2026-10-28 the FC runs Betaflight **2026.6.2** ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30).
+> - The 4.5.1 hover was not recorded (incident #126), so #23 is now the baseline hover on 2026.6.2.
+
 ---
 
 ## 1. Map of this folder
@@ -33,10 +37,10 @@ tags:
 | Area | Notes |
 |---|---|
 | Plan | [[Study Plan v2]] · [[Roadmap to April 2027]] · [[Team Tracks]] · [[Requirements]] · [[Weekly Rituals]] · [[Dailys]] |
-| Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted) |
+| Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted; ADR-010 and ADR-012 with conditions) |
 | Architecture | [[Architecture Document]] · [[System Overview]] · [[Protocol Spec v0]] · [[Protocol Library Messages]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
-| Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] |
+| Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] · [[Height Sensor Study]] |
 | Gestures | [[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[02 Gesture Node]] · [[03 Intent Node]] · [[04 Mission Node]] · [[05 Future Nodes]] |
 | Reference | [[Verified Facts and Sources]] · [[Open Questions]] |
 
@@ -53,7 +57,7 @@ tags:
 
 ## 3. The five things to remember
 
-1. On Betaflight **4.5.1**, MSP Override **holds the last values** if the ESP stops. Never flip the override switch before the ESP is streaming. We upgrade to **2026.6.2** ([[ADR-014 Betaflight Version|ADR-014]]).
+1. On Betaflight 4.5.1, MSP Override **held the last values** if the ESP stopped. The FC runs **2026.6.2** since 2026-10-28 ([[ADR-014 Betaflight Version|ADR-014]]); override flight conditions are in [[Safety Rules]] #14. Never flip the override switch before the ESP is streaming.
 2. The **ELRS radio and the safety pilot always win**. Gestures never arm the drone.
 3. ESP on **UART4 (T4/R4)**. ELRS stays on **UART2**, the VTX on **UART3** ([[ADR-011 FC UART Allocation|ADR-011]]).
 4. Gestures come from a **ground webcam** in the coding room ([[ADR-015 Gesture Input Source|ADR-015]]).

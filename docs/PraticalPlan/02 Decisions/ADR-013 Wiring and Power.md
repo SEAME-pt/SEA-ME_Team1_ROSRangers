@@ -3,7 +3,7 @@ title: ADR-013 — ESP ↔ FC Wiring and Power
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-06
 project: SEA autonomous drone
 aliases:
   - D13
@@ -40,6 +40,8 @@ tags:
 ### Update 2026-10-23: which 5V pad
 
 The ESP takes the **5V pad next to T4** (the UART4 row, [[Wiring and Pinout]] §1). The ELRS receiver moved to **DV5V** (GitHub #41), so that pad is free. The buzzer/LED pad suggested in §2 is not used. The decision is unchanged.
+
+> 2026-11-06 (GitHub #164, #166): the FC USB alone does **not** power the ESP through this pad (known by the team): the **battery is needed** whenever the ESP must run, for OTA updates ([[ADR-024 OTA Firmware Updates|ADR-024]] entry of the same date) and every bench test. Older dated records (the 2026-10-23 session, S1-10 on 2026-10-26) say the ESP ran with no battery; they conflict with this and are kept as written. The bench instructions are updated (PR #165). The decision is unchanged.
 
 ## 3. Mounting
 

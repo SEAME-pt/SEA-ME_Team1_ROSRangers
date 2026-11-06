@@ -71,12 +71,27 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
   - Fields: Sprint (2-week iterations: Sprint 0 = 7–18 Oct 2026, Sprint 1 from 19 Oct, … Sprint 4 ends 13 Dec), Phase (Development Plan 1–6), Requirement (text).
   - Automations: auto-add from the repo, item added → Backlog, PR linked → In Review, closed → Done, auto-archive.
   - New sprint: add the next iterations to the Sprint field (Module 2 starts 14 Dec), then turn the next Study Plan weeks into issues with the issue forms.
+- When you create an issue, also do this in the same step:
+  1. Find what it depends on and what depends on it (`gh issue list`, the Study Plan week). Set the GitHub relations with `gh api graphql -f query='mutation{addBlockedBy(input:{issueId:"<blocked node id>",blockingIssueId:"<blocker node id>"}){issue{number}}}'` (node id: `gh issue view N --json id -q .id`). One call per pair; GitHub shows it on both issues.
+  2. Add the `blocked` label while any blocker is open (and to an existing issue the new one blocks).
+  3. End the description with this block, and add the matching `Blocked by #new` / `Blocks #new` line to each existing issue you linked (`gh issue edit N --body-file`):
+     ```
+     ### Planning
+
+     - Sprint: Sprint 2 (2–15 Nov 2026)
+     - Phase: 2
+     - Requirement: REQ-COM-001
+     - Blocked by: #102, #104
+     - Blocks: #109
+     ```
+     Write `none` for an empty line.
+  4. Set the same Sprint, Phase and Requirement fields on the board item.
 - `close-linked-issues.yaml` closes linked issues when a PR merges into `dev`. GitHub only does this by itself for `main`.
 
 ## CI
 
 - `ci.yaml`: `lint` (pre-commit) always runs. `check-components` turns each job on only when its component exists:
-  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `tests/scripts/test_*.py` → `scripts-python` (bench tool unit tests), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `gesture_node` + `intent_node` `package.xml` → `ground-ros2` (colcon test + 90 % coverage gate; it also builds and tests `mission_node` once its `package.xml` exists, via the `ros_pkgs` output), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test). Skips print a `::notice`.
+  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `tests/scripts/test_*.py` → `scripts-python` (bench tool unit tests), `drone/simulation/px4/ros/px4_offboard_bridge/setup.py` → `sim-bridge-python` (logic tests of the sim-only PX4 bridge, no ROS), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `gesture_node` + `intent_node` `package.xml` → `ground-ros2` (colcon test + 90 % coverage gate; it also builds and tests `mission_node` once its `package.xml` exists, via the `ros_pkgs` output), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test). Skips print a `::notice`.
 - `ground-ros2` and `ground-docker` also have a PR path filter: they run only when the PR changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`; pushes to `dev`/`main` always run them. Keep filters inside `check-components` (`if:`), never in `on: paths`: a workflow that never starts leaves required checks pending.
 - Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
