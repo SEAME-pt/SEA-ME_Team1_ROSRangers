@@ -14,11 +14,13 @@ from sd_protocol import (
     ConfigAck,
     ConfigKv,
     Event,
+    HandshakeResult,
     Header,
     Hello,
     HelloAck,
     MsgType,
     Receiver,
+    Role,
     RxError,
     Setpoint,
     State,
@@ -32,8 +34,7 @@ from sd_protocol import (
     decode_setpoint,
     decode_state,
     decode_u8_payload,
-    derive_direction_keys,
-    derive_session_key,
+    derive_keys,
     encode_config_ack,
     encode_config_kv,
     encode_event,
@@ -44,6 +45,8 @@ from sd_protocol import (
     encode_state,
     encode_u8_payload,
     is_accepted,
+    receive_handshake,
+    receives,
     setpoint_to_rc,
     transport_of,
 )
@@ -149,32 +152,42 @@ def result_name(key: bytes, buf: bytes, rx: Receiver | None) -> str:
     return "accept" if is_accepted(result) else f"reject:{result.name.lower()}"
 
 
-def receivers_for(vector: dict, key: bytes) -> dict[Transport, Receiver] | None:
-    """One Receiver per transport with the vector's session open (README `state`)."""
+Receivers = dict[tuple[Role, Transport], Receiver]
+
+
+def receivers_for(vector: dict, key: bytes) -> Receivers | None:
+    """One Receiver per side and transport with the vector's session open (README `state`)."""
     state = vector.get("state")
     if state is None:
         return None
     assert state.get("last_ctrl_seq", 0) == 0, "vectors start from a fresh session"
     assert state.get("last_tcp_seq", 1) == 1, "the TCP window starts after HELLO"
-    rxs = {t: Receiver() for t in Transport}
-    for t, rx in rxs.items():
-        assert rx.start_session(state["current_session"], key, t)
+    rxs = {(r, t): Receiver(r, t) for r in Role for t in Transport}
+    for rx in rxs.values():
+        assert rx.start_session(state["current_session"], key)
     return rxs
 
 
-def receiver_of(rxs: dict[Transport, Receiver] | None, buf: bytes) -> Receiver | None:
-    """A single frame goes to the Receiver of its type (README); unknown types to UDP."""
+def receiver_of(rxs: Receivers | None, buf: bytes) -> Receiver | None:
+    """A single frame goes to the Receiver of the side and transport of its type
+    (README): the ground for what only the ESP sends, else the ESP (also BYE and
+    unknown types); unknown types to UDP."""
     if rxs is None:
         return None
-    return (
-        rxs[transport_of(buf[3]) or Transport.UDP]
-        if len(buf) > 3
-        else rxs[Transport.UDP]
+    if len(buf) <= 3:
+        return rxs[Role.ESP, Transport.UDP]
+    t = buf[3]
+    role = (
+        Role.GROUND
+        if receives(Role.GROUND, t) and not receives(Role.ESP, t)
+        else Role.ESP
     )
+    return rxs[role, transport_of(t) or Transport.UDP]
 
 
 def test_names_are_unique():
     names = [v["name"] for v in VECTORS]
+    assert len(names) >= 69  # an empty or moved folder must not pass quietly
     assert len(names) == len(set(names))
 
 
@@ -186,22 +199,48 @@ def test_vector(vector):
     if "steps" in vector:
         for i, step in enumerate(vector["steps"]):
             buf = bytes.fromhex(step["bytes"])
-            rx = rxs[Transport[step.get("transport", "udp").upper()]]
-            assert result_name(key, buf, rx) == step["expect"], f"step {i}"
-        udp, tcp = rxs[Transport.UDP], rxs[Transport.TCP]
+            role = Role[step.get("role", "esp").upper()]
+            transport = Transport[step.get("transport", "udp").upper()]
+            assert (
+                result_name(key, buf, rxs[role, transport]) == step["expect"]
+            ), f"step {i} ({role.name}, {transport.name})"
         final = vector.get("final", {})
         if "last_ctrl_seq" in final:
-            assert udp.last_seq == final["last_ctrl_seq"]
+            assert rxs[Role.ESP, Transport.UDP].last_seq == final["last_ctrl_seq"]
         if "last_tcp_seq" in final:
-            assert tcp.last_seq == final["last_tcp_seq"]
-        if "rx_rejected" in final:  # totals over both transports
-            assert udp.counters.rejected + tcp.counters.rejected == final["rx_rejected"]
+            assert rxs[Role.ESP, Transport.TCP].last_seq == final["last_tcp_seq"]
+        if "rx_rejected" in final:  # totals over every Receiver
+            assert (
+                sum(rx.counters.rejected for rx in rxs.values()) == final["rx_rejected"]
+            )
         if "gaps" in final:
-            assert udp.seq_counters.gaps + tcp.seq_counters.gaps == final["gaps"]
+            assert sum(rx.seq_counters.gaps for rx in rxs.values()) == final["gaps"]
         return
 
     buf = bytes.fromhex(vector["bytes"])
-    assert result_name(key, buf, receiver_of(rxs, buf)) == vector["expect"]
+    if "handshake" in vector:  # group 9: one side checks a frame before any session
+        result, frame = receive_handshake(Role[vector["handshake"].upper()], buf, key)
+        got = (
+            "accept"
+            if result is HandshakeResult.ACCEPTED
+            else f"reject:{result.name.lower()}"
+        )
+        assert got == vector["expect"]
+        assert (frame is None) is (result is not HandshakeResult.ACCEPTED)
+    else:
+        own = receiver_of(rxs, buf)
+        got = result_name(key, buf, own)
+        assert got == vector["expect"]
+        # A rejected frame is also refused by the Receiver of its side and
+        # transport, and counted there (as in test_vectors.cpp).
+        if got != "accept":
+            if own is None:
+                own = receiver_of(
+                    {(r, t): Receiver(r, t) for r in Role for t in Transport}, buf
+                )
+                assert own.start_session(0x12345678, key)
+                assert result_name(key, buf, own) == got
+            assert (own.counters.rejected, own.counters.accepted) == (1, 0)
 
     fields = vector.get("fields")
     if fields is None:
@@ -232,17 +271,15 @@ def test_vector(vector):
     "vector", [v for v in VECTORS if "psk" in v], ids=lambda v: v["name"]
 )
 def test_session_key_derivation(vector):
-    """Group 2: the vector's key is the session key from the PSK and the nonces,
-    then the key of `direction` ("g2e" or "e2g") when the vector has one (#150)."""
-    key = derive_session_key(
+    """Group 2: the vector's key is the direction key ("g2e" or "e2g") that
+    derive_keys() gives for the PSK and the nonces (#150, #152)."""
+    assert vector["direction"] in ("g2e", "e2g"), vector["direction"]
+    keys = derive_keys(
         bytes.fromhex(vector["psk"]),
         bytes.fromhex(vector["ground_nonce"]),
         bytes.fromhex(vector["esp_nonce"]),
     )
-    direction = vector.get("direction")
-    if direction is not None:
-        keys = derive_direction_keys(key)
-        key = {"g2e": keys.ground_to_esp, "e2g": keys.esp_to_ground}[direction]
+    key = {"g2e": keys.ground_to_esp, "e2g": keys.esp_to_ground}[vector["direction"]]
     assert key.hex() == vector["key"]
 
 

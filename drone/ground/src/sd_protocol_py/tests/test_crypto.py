@@ -3,12 +3,9 @@ import hmac
 
 import pytest
 
-from sd_protocol import (
-    derive_direction_keys,
-    derive_session_key,
-    equal_constant_time,
-    hmac_sha256,
-)
+import sd_protocol
+from sd_protocol import derive_keys, equal_constant_time, hmac_sha256
+from sd_protocol.crypto import derive_direction_keys, derive_session_key
 
 TEST_KEY = bytes(range(32))  # spec §6 test key, never the real PSK
 
@@ -68,6 +65,21 @@ def test_direction_keys_are_hmac_of_the_session_key_with_g2e_and_e2g():
     )
     # Three different keys: a frame sealed for one direction never passes the other.
     assert len({keys.ground_to_esp, keys.esp_to_ground, session}) == 3
+
+
+def test_derive_keys_equals_the_two_steps():
+    # Same as DirectionKeys.DeriveKeysEqualsTheTwoSteps in test_hmac.cpp (#152).
+    ground, esp = b"\x11" * 16, b"\x22" * 16
+    keys = derive_keys(TEST_KEY, ground, esp)
+    assert keys == derive_direction_keys(derive_session_key(TEST_KEY, ground, esp))
+    assert keys.esp_to_ground.hex() == (
+        "7353101a8458bfe9911c7269d2ec7aa4f94d13c0b2cfad27bd454e078f96b33d"
+    )
+
+
+def test_internal_steps_are_not_exported():
+    assert not hasattr(sd_protocol, "derive_session_key")
+    assert not hasattr(sd_protocol, "derive_direction_keys")
 
 
 def test_direction_keys_need_a_32_byte_session_key():

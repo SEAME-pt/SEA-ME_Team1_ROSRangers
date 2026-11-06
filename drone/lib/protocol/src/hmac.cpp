@@ -162,6 +162,8 @@ void hmac_sha256(const std::uint8_t *key, std::size_t key_len,
   secure_zero(inner, sizeof(inner));
 }
 
+namespace detail {
+
 Key derive_session_key(const Key &psk,
                        const std::uint8_t ground_nonce[kNonceSize],
                        const std::uint8_t esp_nonce[kNonceSize]) {
@@ -183,6 +185,17 @@ DirectionKeys derive_direction_keys(const Key &session_key) {
   hmac_sha256(session_key.bytes, kKeySize, kEspToGround, sizeof(kEspToGround),
               out.esp_to_ground.bytes);
   return out;
+}
+
+} // namespace detail
+
+DirectionKeys derive_keys(const Key &psk,
+                          const std::uint8_t ground_nonce[kNonceSize],
+                          const std::uint8_t esp_nonce[kNonceSize]) {
+  Key session = detail::derive_session_key(psk, ground_nonce, esp_nonce);
+  const DirectionKeys keys = detail::derive_direction_keys(session);
+  secure_zero(&session, sizeof(session));
+  return keys;
 }
 
 bool equal_constant_time(const std::uint8_t *a, const std::uint8_t *b,

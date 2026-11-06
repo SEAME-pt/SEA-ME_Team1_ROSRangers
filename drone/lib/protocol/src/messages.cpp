@@ -221,6 +221,27 @@ PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
   return PayloadCheck::kOk;
 }
 
+bool receives(Role role, std::uint8_t type) {
+  switch (static_cast<MsgType>(type)) {
+  case MsgType::kSetpoint:
+  case MsgType::kArmControlRequest:
+  case MsgType::kResumeRequest:
+  case MsgType::kConfigGet:
+  case MsgType::kConfigSet:
+    return role == Role::kEsp;
+  case MsgType::kState:
+  case MsgType::kArmControlAck:
+  case MsgType::kResumeAck:
+  case MsgType::kConfigAck:
+  case MsgType::kEvent:
+    return role == Role::kGround;
+  case MsgType::kBye: // either side may end the session
+    return true;
+  default: // HELLO, HELLO_ACK (pre-session) and unknown types
+    return false;
+  }
+}
+
 bool transport_of(std::uint8_t type, Transport &out) {
   if (type >= 0x01 && type <= 0x5F) {
     out = Transport::kTcp;

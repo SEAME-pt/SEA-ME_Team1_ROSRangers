@@ -14,7 +14,7 @@ tags:
 
 # Protocol Library Messages
 
-> [!info] Status: DRAFT, follows Protocol Spec v0 v1.2
+> [!info] Status: DRAFT, follows Protocol Spec v0 v1.3
 > Payload codecs of the C++ protocol library (`drone/lib/protocol`, #99, PR #143) for the messages in [[Protocol Spec v0]] §3. The code values in §5 are the ones decided on #142 (spec §3.1, 2026-11-05). For firmware (#101, #102) and for keeping the Python twin (#100) in sync.
 
 ---
@@ -26,12 +26,14 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Layer | Files | Does |
 |---|---|---|
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
-| Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
+| Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), the side it comes from (§2, `wrong_direction`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
 
-Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they arrive before a session exists, so #102 checks them with `decode_frame` and the PSK (spec §1: both are tagged with the PSK, and `HELLO_ACK` carries the new `session_id` in its header), not with the Receiver.
+Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they are tagged with the PSK, so #102 checks them with `receive_handshake(role, buf, len, psk, out)` (spec §1): the ESP accepts only `HELLO`, the ground only `HELLO_ACK`, with the `session_id` and seq 1 rules. The ESP routes every `HELLO` (type 0x01) there, also during a session, because a new `HELLO` replaces the session; a Receiver never accepts it.
 
-Then it derives the session key (`derive_session_key`) and the two direction keys (`derive_direction_keys`, spec §1, #150), and wipes the session key: the ESP seals with `esp_to_ground` and gives `ground_to_esp` to its Receivers; the ground does the opposite. Then it opens one Receiver per transport: `start_session(id, key, Transport::kUdp)` and `start_session(id, key, Transport::kTcp)`. Each accepts only its own types (spec §2), and the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it.
+Then it calls `derive_keys(psk, ground_nonce, esp_nonce)` (spec §1, #150, #152). It returns only the two direction keys; the session key never leaves the function and is wiped there. The ESP seals with `esp_to_ground` and gives `ground_to_esp` to its Receivers; the ground does the opposite.
+
+Each side has one Receiver per transport, created with its role: `Receiver(Role::kEsp, Transport::kUdp)` and `Receiver(Role::kEsp, Transport::kTcp)` on the ESP, `Role::kGround` on the ground. `start_session(id, rx_key)` opens the session. A Receiver accepts only its transport's types and only what the other side sends (spec §2), the TCP one starts at seq 1 because `HELLO` and `HELLO_ACK` already used it, and it wipes its key when it is destroyed or the session ends.
 
 ## 2. API contract (all codecs)
 
@@ -112,7 +114,7 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 |---|---|
 | Frame, session and sequence checks | `Receiver` (spec §4 rules 1–3) |
 | Known `type`, payload size, `SETPOINT.mode` 0 or 1 | `Receiver`, via `check_payload()` in `messages.hpp`, before the sequence window (REQ-COM-001, REQ-COM-002 for `mode`) |
-| `type` allowed on this transport (TCP vs UDP, spec §2) | `Receiver` (`wrong_transport`); #102 opens one per transport |
+| `type` allowed on this transport (TCP vs UDP, spec §2) and from this side | `Receiver` (`wrong_transport`, `wrong_direction`); #102 opens one per transport |
 | Unknown codes, value ranges | #102 (spec §4 rule 4) |
 | Config key exists, access (Info / Safety / Tunable), write range, no write while control is enabled, in the order of spec §3.1 | #102, answers with `CONFIG_ACK` |
 | `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: open in #149) |

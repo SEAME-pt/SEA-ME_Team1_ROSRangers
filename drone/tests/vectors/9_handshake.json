@@ -1,0 +1,85 @@
+[
+  {
+    "name": "hello_accepted_by_esp",
+    "description": "The ESP accepts a HELLO: session 0, seq 1, tagged with the PSK",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO",
+      "flags": 0,
+      "session_id": 0,
+      "seq": 1,
+      "t_send_us": 0,
+      "proto": 1,
+      "ground_nonce": "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+    },
+    "bytes": "534401010000110000000000010000000000000001a0a1a2a3a4a5a6a7a8a9aaabacadaeaf406d4e192faa5dfe",
+    "expect": "accept",
+    "handshake": "esp"
+  },
+  {
+    "name": "hello_ack_accepted_by_ground",
+    "description": "The ground accepts a HELLO_ACK: the new session_id in the header and the payload, seq 1",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "HELLO_ACK",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 1,
+      "t_send_us": 0,
+      "new_session_id": 305419896,
+      "esp_nonce": "b0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "fw_version": "v0.1.0"
+    },
+    "bytes": "534401020000200078563412010000000000000078563412b0b1b2b3b4b5b6b7b8b9babbbcbdbebf76302e312e30000000000000e73abe7818650cbe",
+    "expect": "accept",
+    "handshake": "ground"
+  },
+  {
+    "name": "hello_at_ground_rejected",
+    "description": "A HELLO sent back to the ground (reflected): the ground only accepts HELLO_ACK",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "ground",
+    "bytes": "534401010000110000000000010000000000000001a0a1a2a3a4a5a6a7a8a9aaabacadaeaf406d4e192faa5dfe",
+    "expect": "reject:wrong_direction"
+  },
+  {
+    "name": "hello_ack_at_esp_rejected",
+    "description": "A HELLO_ACK sent back to the ESP (reflected): the ESP only accepts HELLO",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "esp",
+    "bytes": "534401020000200078563412010000000000000078563412b0b1b2b3b4b5b6b7b8b9babbbcbdbebf76302e312e30000000000000e73abe7818650cbe",
+    "expect": "reject:wrong_direction"
+  },
+  {
+    "name": "setpoint_before_session_rejected",
+    "description": "A SETPOINT tagged with the PSK before any session: not a handshake frame",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "esp",
+    "bytes": "5344016000000a00000000000100000000000000010000000000000000002358cf3e4b2185be",
+    "expect": "reject:wrong_direction"
+  },
+  {
+    "name": "hello_with_session_id_rejected",
+    "description": "A HELLO with session_id 5: HELLO always has session_id 0",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "esp",
+    "bytes": "534401010000110005000000010000000000000001a0a1a2a3a4a5a6a7a8a9aaabacadaeafb293dad3667fedc0",
+    "expect": "reject:wrong_session"
+  },
+  {
+    "name": "hello_ack_session_id_mismatch_rejected",
+    "description": "A HELLO_ACK whose header session_id differs from the payload's",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "ground",
+    "bytes": "534401020000200079563412010000000000000078563412b0b1b2b3b4b5b6b7b8b9babbbcbdbebf76302e312e30000000000000e50a92ae32e9a7f8",
+    "expect": "reject:wrong_session"
+  },
+  {
+    "name": "hello_seq_2_rejected",
+    "description": "A HELLO with seq 2: HELLO and HELLO_ACK use seq 1",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "handshake": "esp",
+    "bytes": "534401010000110000000000020000000000000001a0a1a2a3a4a5a6a7a8a9aaabacadaeaf2743503c1e4e2519",
+    "expect": "reject:bad_seq"
+  }
+]

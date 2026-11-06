@@ -32,7 +32,7 @@ What the tests do with one vector:
 | Decode | `bytes` → exactly `fields` |
 | Reject | broken `bytes` → dropped for the reason in `expect`, and counted (`rx_rejected`) |
 
-Behaviour vectors (sequence, clamps) use `steps` or `channels` instead of a single `expect` (see groups 5, 6 and 8).
+Behaviour vectors (sequence, clamps) use `steps` or `channels` instead of a single `expect` (see groups 5, 6 and 8). Group 9 vectors say which side checks them (`handshake`).
 
 Optional fields:
 
@@ -41,8 +41,9 @@ Optional fields:
 | `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
 | `note` | Extra context, e.g. which decision a vector comes from |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
-| `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` (UDP), `last_tcp_seq`, `rx_rejected` and `gaps` (totals over both transports) at the end. A step may say `"transport": "tcp"`; the default is `udp`. Each transport has its own Receiver (spec §4 rule 3). A single frame goes to the Receiver of its type |
+| `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` and `last_tcp_seq` (the ESP's UDP and TCP Receivers), `rx_rejected` and `gaps` (totals over all Receivers: both sides, both transports) at the end. A step may say `"transport": "tcp"` (default `udp`) and `"role": "ground"` (default `esp`). Each side and transport has its own Receiver (spec §2, §4 rule 3). A single frame goes to the ground only for a type only the ground receives; otherwise (also BYE, HELLO, HELLO_ACK and unknown types) to the ESP, on its type's transport (UDP if none) |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
+| `handshake` | Group 9: `esp` or `ground`, the side that checks this frame before any session (`receive_handshake`, spec §1). `key` is the PSK |
 | `psk`, `ground_nonce`, `esp_nonce`, `direction` | Group 2: `key` is derived from these: the session key, then the key of `direction` (`g2e` ground→ESP or `e2g` ESP→ground, spec §1) |
 
 ## 1a. The files and how they are made
@@ -56,7 +57,8 @@ Optional fields:
 | `5_sequence.json` | 5 Sequence | 6 |
 | `6_clamps.json` | 6 Clamps and mapping | 9 |
 | `7_config.json` | 7 Configuration | 6 |
-| `8_reserved_and_transports.json` | 8 Reserved bits and transports | 6 |
+| `8_reserved_and_transports.json` | 8 Reserved bits and transports | 7 |
+| `9_handshake.json` | 9 Handshake | 8 |
 
 - **Made by `generate.py`** in this folder. It uses only the Python standard library and is written from the spec, so it is independent of both implementations (rule 4 below).
 - **To add a vector:** add it to `generate.py`, run `python3 drone/tests/vectors/generate.py`, and commit both.
@@ -270,6 +272,8 @@ The `reject:<reason>` names, and the C++ values they map to:
 | `wrong_session` | `session_id` is not the current session (§4 rule 2) | `RxResult::kWrongSession` |
 | `bad_type` | Not a spec §3 message type | `RxResult::kBadType` |
 | `wrong_transport` | A TCP type (0x01–0x5F) on UDP, or a UDP type (0x60–0x9F) on TCP (spec §2) | `RxResult::kWrongTransport` |
+| `wrong_direction` | A type this side never receives: its own frame sent back, or before a session anything but the expected `HELLO` / `HELLO_ACK` (spec §1, §2) | `RxResult::kWrongDirection`, `HandshakeResult::kWrongDirection` |
+| `bad_seq` | A `HELLO` or `HELLO_ACK` whose seq is not 1 (spec §1) | `HandshakeResult::kBadSeq` |
 | `bad_payload_size` | `payload_len` is not the §3 size of the type (EVENT: 2..66) | `RxResult::kBadPayloadSize` |
 | `bad_mode` | `SETPOINT.mode` is not 0 or 1 (§4 rule 4, decided in #142) | `RxResult::kBadMode` |
 | `duplicate_seq` | Same seq as the last accepted one | `RxResult::kDuplicateSeq` |
@@ -277,7 +281,7 @@ The `reject:<reason>` names, and the C++ values they map to:
 | `seq_too_high` | `seq ≥ 2^31`: a new session is needed | `RxResult::kSeqTooHigh` |
 | `no_session` | No session is open (no vector yet) | `RxResult::kNoSession` |
 
-## 6. Groups 7 and 8 (added 2026-11-05, spec v1.1)
+## 6. Groups 7 to 9 (added 2026-11-05, spec v1.1 to v1.3)
 
 ### Group 7: Configuration (6 vectors)
 
@@ -285,14 +289,22 @@ One `CONFIG_ACK` encoding per result of spec §3.1: `config_ack_result_0_ok` (`G
 
 Proves: both sides put the same number in `result` and the same `value` (current or unchanged; 0 when there is none). The check order (state first) is not here: it needs the ESP state and key table, so the link state machine (#102) tests it.
 
-### Group 8: Reserved bits and transports (6 vectors)
+### Group 8: Reserved bits and transports (7 vectors)
 
 - `header_flags_bit0_ignored`, `setpoint_flags_nonzero_ignored`: the reserved bits are accepted and ignored.
 - `hello_ack_signed_with_psk` (accept with the PSK) and `hello_ack_signed_with_session_key` (`reject:bad_tag` when checked with the PSK).
 - `tcp_and_udp_seq_apart` (steps): UDP 1, TCP 2, UDP 2, TCP 3 accepted, then TCP 2 again `reject:old_seq`. The TCP Receiver starts at 1 because `HELLO` used seq 1.
 - `frame_on_the_wrong_transport` (steps): an ARM_CONTROL_REQUEST accepted on TCP is `reject:wrong_transport` when replayed on UDP, and so is a SETPOINT sent on TCP. Both transports share the direction keys, so each Receiver accepts only its own types (spec §2).
 
-Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key and `seq` per transport.
+- `frame_from_the_wrong_side` (steps with `role`): the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT (`reject:wrong_direction`), even with the same key; BYE is accepted by both (#152).
+
+Proves: the 2026-11-05 decisions on reserved bits, the `HELLO_ACK` key, `seq` per transport, and that each side accepts only what the other sends.
+
+### Group 9: Handshake (8 vectors, #152)
+
+Before a session (spec §1), checked with the PSK by one side (`handshake`): `hello_accepted_by_esp`, `hello_ack_accepted_by_ground`; refused: `hello_at_ground_rejected` and `hello_ack_at_esp_rejected` (reflected, `wrong_direction`), `setpoint_before_session_rejected` (`wrong_direction`), `hello_with_session_id_rejected` and `hello_ack_session_id_mismatch_rejected` (`wrong_session`), `hello_seq_2_rejected` (`bad_seq`).
+
+Proves: a handshake frame is only accepted by the side it is meant for, with the right `session_id` and seq.
 
 ---
 
