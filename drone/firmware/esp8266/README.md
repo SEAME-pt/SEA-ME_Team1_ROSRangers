@@ -113,7 +113,7 @@ echo | nc -u -w1 192.168.4.1 5770
 
 The bench view is for this pre-release env only: it is compiled in with `WITH_STATUS_VIEW=1` (set in `esp_gateway`) and is dropped when #102 sends `STATE`.
 
-`armed=-1` and `status_age_ms=-1` mean no `MSP_STATUS` has arrived yet. `req` and `rep` should grow together (about 35 per second); `timeout` growing means the FC does not answer (wiring, baud, MSP not enabled on UART4).
+A value that has not arrived yet (or is older than 10 s) prints as `-1`: `armed`, `arming_flags` and `status_age_ms` for `MSP_STATUS`, `roll` / `pitch` / `heading` / `att_age_ms` for `MSP_ATTITUDE`, `vbat_cV` for `MSP_ANALOG`. `req` and `rep` should grow together (about 35 per second); `timeout` growing means the FC does not answer (wiring, baud, MSP not enabled on UART4).
 
 ## Diagnosis test: link dead periods (2026-10-22)
 

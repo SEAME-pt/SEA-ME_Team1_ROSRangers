@@ -23,7 +23,9 @@ constexpr std::uint32_t kStatusPeriodMs = 200;  // 5 Hz
 constexpr std::uint32_t kAnalogPeriodMs = 200;  // 5 Hz
 constexpr std::uint32_t kReplyTimeoutMs = 50;
 // After a timeout, nothing is sent for this long and any reply that arrives is
-// dropped: a late reply is never taken as the answer to a newer request.
+// dropped, so a late reply that comes within the drain window is never taken as
+// the answer to a newer request. Replies are matched by command ID only: one
+// more than 100 ms late (the FC answers in ~3 ms) could still be.
 constexpr std::uint32_t kDrainMs = kReplyTimeoutMs;
 // A value older than this is forgotten (has_* false), so an old "disarmed"
 // can never look fresh again when millis() wraps after 49.7 days.

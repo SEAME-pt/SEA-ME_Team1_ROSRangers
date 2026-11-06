@@ -21,12 +21,15 @@ bool allowed(std::uint8_t cmd) {
   }
 }
 
-std::size_t encode_request(std::uint8_t cmd, const std::uint8_t *payload,
-                           std::size_t len, std::uint8_t *out,
-                           std::size_t out_cap) {
+namespace {
+
+// Writes one '$M<' frame. Only called with an allow-listed command.
+std::size_t encode_frame(std::uint8_t cmd, const std::uint8_t *payload,
+                         std::size_t len, std::uint8_t *out,
+                         std::size_t out_cap) {
   const std::size_t size = kHeaderSize + len + 1;
-  if (!allowed(cmd) || out == nullptr || (payload == nullptr && len > 0) ||
-      len > kMaxPayload || out_cap < size) {
+  if (out == nullptr || (payload == nullptr && len > 0) || len > kMaxPayload ||
+      out_cap < size) {
     return 0;
   }
   out[0] = '$';
@@ -43,6 +46,17 @@ std::size_t encode_request(std::uint8_t cmd, const std::uint8_t *payload,
   return size;
 }
 
+} // namespace
+
+std::size_t encode_request(std::uint8_t cmd, const std::uint8_t *payload,
+                           std::size_t len, std::uint8_t *out,
+                           std::size_t out_cap) {
+  if (!allowed(cmd) || cmd == kSetRawRc) {
+    return 0;
+  }
+  return encode_frame(cmd, payload, len, out, out_cap);
+}
+
 std::size_t encode_set_raw_rc(const std::uint16_t channels[kRcChannels],
                               std::uint8_t *out, std::size_t out_cap) {
   if (channels == nullptr) {
@@ -52,7 +66,7 @@ std::size_t encode_set_raw_rc(const std::uint16_t channels[kRcChannels],
   for (std::size_t i = 0; i < kRcChannels; ++i) {
     put_u16(payload + 2 * i, channels[i]);
   }
-  return encode_request(kSetRawRc, payload, sizeof(payload), out, out_cap);
+  return encode_frame(kSetRawRc, payload, sizeof(payload), out, out_cap);
 }
 
 Parser::Event Parser::feed(std::uint8_t byte) {

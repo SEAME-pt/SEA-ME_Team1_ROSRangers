@@ -33,14 +33,16 @@ constexpr std::size_t kRcChannels = 8;
 // MSP_SET_RAW_RC. Every other command is refused, every MSP_SET_* but 200 too.
 bool allowed(std::uint8_t cmd);
 
-// Builds a request into `out`. Returns its size, or 0 if `cmd` is not allowed,
-// a pointer is null (payload may be null only when len is 0), len is over
-// kMaxPayload, or out_cap is too small.
+// Builds a read request into `out`. Returns its size, or 0 if `cmd` is not
+// allowed, `cmd` is MSP_SET_RAW_RC (the one write: only encode_set_raw_rc()
+// builds it, always with exactly 8 channels), a pointer is null (payload may be
+// null only when len is 0), len is over kMaxPayload, or out_cap is too small.
 std::size_t encode_request(std::uint8_t cmd, const std::uint8_t *payload,
                            std::size_t len, std::uint8_t *out,
                            std::size_t out_cap);
 
-// MSP_SET_RAW_RC with 8 channels in AETR order (spec §5), 16-byte payload.
+// MSP_SET_RAW_RC with 8 channels in AETR order (spec §5), 16-byte payload. The
+// only way to build the one write command on the allow-list (#160 review).
 std::size_t encode_set_raw_rc(const std::uint16_t channels[kRcChannels],
                               std::uint8_t *out, std::size_t out_cap);
 

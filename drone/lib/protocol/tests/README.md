@@ -186,8 +186,9 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | Test | What it does | Why it matters |
 |---|---|---|
 | `Msp.KnownRequestBytes` | MSP_API_VERSION and MSP_STATUS requests are exactly `$M< 00 01 01` and `$M< 00 65 65` | The bytes match what Betaflight expects |
-| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108, 110 and 200 can be built; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
+| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108 and 110 can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
 | `Msp.EncodeRefusesBadArguments` | Null buffers, a too-small buffer, a too-long payload are refused | A bad call writes nothing |
+| `Msp.SetRawRcOnlyThroughTheTypedEncoder` | `encode_request` refuses MSP_SET_RAW_RC with every payload length 0–64; only `encode_set_raw_rc` builds it, always with 8 channels | The one write command on the allow-list cannot be built with an arbitrary payload |
 | `Msp.SetRawRcBytes` | 8 channels become a 16-byte little-endian payload with the right checksum | The RC frame #102 will send is right |
 
 ## MspParser and MspDecode: reading the FC's replies

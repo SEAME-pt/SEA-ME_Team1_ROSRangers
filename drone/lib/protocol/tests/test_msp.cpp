@@ -76,7 +76,8 @@ TEST(Msp, AllowListRefusesEverythingElse) {
     EXPECT_EQ(sd::msp::allowed(static_cast<std::uint8_t>(cmd)), ok) << cmd;
     const std::size_t n = sd::msp::encode_request(
         static_cast<std::uint8_t>(cmd), nullptr, 0, out, sizeof(out));
-    EXPECT_EQ(n != 0, ok) << cmd;
+    // 200 is allowed, but only through encode_set_raw_rc().
+    EXPECT_EQ(n != 0, ok && cmd != sd::msp::kSetRawRc) << cmd;
   }
   // The dangerous ones by name (MSP Cheat Sheet): motors, EEPROM, reboot,
   // arming disable (ESP-only, ADR-024, not on this list yet).
@@ -218,4 +219,22 @@ TEST(MspDecode, AnalogTakesTheCentivoltField) {
   EXPECT_FALSE(sd::msp::decode_analog(p.reply(), a));
   feed(p, reply_frame(sd::msp::kAttitude, Bytes(9, 0)));
   EXPECT_FALSE(sd::msp::decode_analog(p.reply(), a));
+}
+
+// #160 review: the one write command can only be built typed, with exactly 8
+// channels; encode_request() refuses it with any payload.
+TEST(Msp, SetRawRcOnlyThroughTheTypedEncoder) {
+  std::uint8_t out[sd::msp::kMaxFrame];
+  const std::uint8_t payload[sd::msp::kMaxPayload] = {};
+  for (std::size_t len = 0; len <= sd::msp::kMaxPayload; ++len) {
+    EXPECT_EQ(sd::msp::encode_request(sd::msp::kSetRawRc, payload, len, out,
+                                      sizeof(out)),
+              0U)
+        << len;
+  }
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  EXPECT_EQ(sd::msp::encode_set_raw_rc(ch, out, sizeof(out)), 22U);
+  EXPECT_EQ(sd::msp::encode_set_raw_rc(ch, out, 21), 0U);
+  EXPECT_EQ(sd::msp::encode_set_raw_rc(ch, nullptr, sizeof(out)), 0U);
 }

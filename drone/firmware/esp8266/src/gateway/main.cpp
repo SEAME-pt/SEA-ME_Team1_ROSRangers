@@ -47,15 +47,24 @@ void answer_status() {
   const sd::FcTelemetry &t = fc.telemetry();
   const sd::FcCounters &c = fc.counters();
   char line[288];
+  // A value never received (or forgotten after 10 s) prints as -1, so a dead
+  // FC never shows numbers that look like readings.
+  char flags[12] = "-1";
+  if (t.has_status) {
+    snprintf(flags, sizeof flags, "0x%08lx",
+             static_cast<unsigned long>(t.status.arming_disable_flags));
+  }
   const int len = snprintf(
       line, sizeof line,
-      "armed=%d arming_flags=0x%08lx status_age_ms=%ld roll=%d pitch=%d "
-      "heading=%u vbat_cV=%u att_age_ms=%ld req=%lu rep=%lu timeout=%lu "
+      "armed=%d arming_flags=%s status_age_ms=%ld roll=%ld pitch=%ld "
+      "heading=%ld vbat_cV=%ld att_age_ms=%ld req=%lu rep=%lu timeout=%lu "
       "bad_cksum=%lu too_long=%lu err=%lu unexpected=%lu\n",
-      t.has_status ? static_cast<int>(t.status.armed) : -1,
-      static_cast<unsigned long>(t.status.arming_disable_flags),
+      t.has_status ? static_cast<int>(t.status.armed) : -1, flags,
       t.has_status ? static_cast<long>(now - t.status_ms) : -1L,
-      t.attitude.roll, t.attitude.pitch, t.attitude.heading, t.analog.vbat,
+      t.has_attitude ? static_cast<long>(t.attitude.roll) : -1L,
+      t.has_attitude ? static_cast<long>(t.attitude.pitch) : -1L,
+      t.has_attitude ? static_cast<long>(t.attitude.heading) : -1L,
+      t.has_analog ? static_cast<long>(t.analog.vbat) : -1L,
       t.has_attitude ? static_cast<long>(now - t.attitude_ms) : -1L,
       static_cast<unsigned long>(c.requests),
       static_cast<unsigned long>(c.replies),
