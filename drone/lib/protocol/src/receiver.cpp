@@ -126,7 +126,8 @@ RxResult Receiver::receive(const std::uint8_t *buf, std::size_t len,
     return reject(RxResult::kWrongTransport);
   }
   // Direction (#152): only what the other side sends. A node's own frame sent
-  // back to it is refused here even if both ends got the keys wrong.
+  // back to it is refused here even if both ends got the keys wrong, except
+  // BYE, which both sides send (the direction keys stop a reflected BYE).
   if (!receives(role_, frame.header.type)) {
     return reject(RxResult::kWrongDirection);
   }

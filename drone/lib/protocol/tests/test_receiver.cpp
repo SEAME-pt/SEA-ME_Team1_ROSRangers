@@ -487,6 +487,30 @@ TEST(Handshake, EachSideAcceptsOnlyItsOwnHandshakeFrame) {
   EXPECT_EQ(f.header.session_id, kSession);
 }
 
+// The numbers equal the Python twin's RxResult (sd_protocol/receiver.py), so a
+// number in a log or a message means the same reason on both sides. Values
+// are only ever appended.
+TEST(Receiver, ResultNumbersMatchThePythonTwin) {
+  using R = sd::RxResult;
+  const struct {
+    R r;
+    int n;
+  } expected[] = {
+      {R::kAccepted, 0},        {R::kAcceptedGap, 1},     {R::kNoSession, 2},
+      {R::kTruncated, 3},       {R::kBadMagic, 4},        {R::kBadVersion, 5},
+      {R::kBadLength, 6},       {R::kBadTag, 7},          {R::kWrongSession, 8},
+      {R::kDuplicateSeq, 9},    {R::kOldSeq, 10},         {R::kSeqTooHigh, 11},
+      {R::kBadType, 12},        {R::kBadPayloadSize, 13}, {R::kBadMode, 14},
+      {R::kWrongTransport, 15}, {R::kWrongDirection, 16}};
+  for (const auto &e : expected) {
+    EXPECT_EQ(static_cast<int>(e.r), e.n);
+  }
+  using H = sd::HandshakeResult;
+  EXPECT_EQ(static_cast<int>(H::kAccepted), 0);
+  EXPECT_EQ(static_cast<int>(H::kWrongDirection), 6);
+  EXPECT_EQ(static_cast<int>(H::kBadSeq), 9);
+}
+
 TEST(Receiver, IsAccepted) {
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAccepted));
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAcceptedGap));

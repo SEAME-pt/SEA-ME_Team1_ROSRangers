@@ -11,25 +11,29 @@
 namespace sd {
 
 // Result of Receiver::receive. Only kAccepted and kAcceptedGap may be used.
+// Values match the Python twin's RxResult (receiver.py). New values are only
+// ever appended, never inserted or renumbered, so a number in a log or a
+// message means the same reason on both sides.
 enum class RxResult : std::uint8_t {
   kAccepted = 0,
-  kAcceptedGap, // accepted; some seq numbers were skipped (counted, not an
-                // error)
-  kNoSession,   // no session is open
-  kTruncated,
-  kBadMagic,
-  kBadVersion,
-  kBadLength,
-  kBadTag,
-  kWrongSession,   // session_id is not the current session (spec §4 rule 2)
-  kBadType,        // not a spec §3 message type
-  kWrongTransport, // a TCP type on the UDP Receiver or the other way (§2)
-  kWrongDirection, // a type this side never receives: its own, sent back (§2)
-  kBadPayloadSize, // payload_len is not the spec §3 size of the type
-  kBadMode,        // SETPOINT.mode is not 0 or 1
-  kDuplicateSeq,
-  kOldSeq,
-  kSeqTooHigh, // seq >= 2^31: the sender must open a new session
+  kAcceptedGap = 1, // accepted; some seq numbers were skipped (counted, not an
+                    // error)
+  kNoSession = 2,   // no session is open
+  kTruncated = 3,
+  kBadMagic = 4,
+  kBadVersion = 5,
+  kBadLength = 6,
+  kBadTag = 7,
+  kWrongSession = 8, // session_id is not the current session (spec §4 rule 2)
+  kDuplicateSeq = 9,
+  kOldSeq = 10,
+  kSeqTooHigh = 11,     // seq >= 2^31: the sender must open a new session
+  kBadType = 12,        // not a spec §3 message type
+  kBadPayloadSize = 13, // payload_len is not the spec §3 size of the type
+  kBadMode = 14,        // SETPOINT.mode is not 0 or 1
+  kWrongTransport = 15, // a TCP type on the UDP Receiver or the other way (§2)
+  kWrongDirection = 16, // a type this side never receives: its own, sent back
+                        // (§2)
 };
 
 inline bool is_accepted(RxResult r) {
@@ -111,8 +115,9 @@ private:
 // The handshake (spec §1, #152): the ESP accepts only HELLO and the ground only
 // HELLO_ACK, both tagged with the PSK, so a reflected or out-of-place handshake
 // frame does nothing. The ESP sends every HELLO (type 0x01) here, also during a
-// session (a new HELLO replaces it); a Receiver never accepts HELLO. Checked in
-// this order: tag, type, payload size, session_id, seq.
+// session (a new HELLO replaces it); a Receiver never accepts HELLO. Only
+// frames from the TCP connection come here (HELLO and HELLO_ACK are TCP types).
+// Checked in this order: tag, type, payload size, session_id, seq.
 enum class HandshakeResult : std::uint8_t {
   kAccepted = 0,
   kTruncated,

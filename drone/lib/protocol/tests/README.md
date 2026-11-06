@@ -107,6 +107,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.OwnFramesRejectedEvenWithTheSameKey` | With the same key everywhere, the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT and an ARM_CONTROL_REQUEST (`wrong_direction`), no window moves; BYE is accepted by both; the real traffic still goes through | Even if both ends got the keys wrong, a node's own frame is never accepted (#152) |
 | `Receiver.KeepsItsRoleAndTransport` | A Receiver created for the ground on TCP reports exactly that | The role and transport are fixed for its whole life |
 | `Handshake.EachSideAcceptsOnlyItsOwnHandshakeFrame` | The ESP accepts HELLO, the ground HELLO_ACK; each refuses the other's and a PSK-tagged SETPOINT; wrong session ID, seq 2, short payload, bad tag and a cut frame refused; the output is written only on accept | Before a session only the right handshake frame gets through (#152) |
+| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–16), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
 
 ## Messages: the content of each message type
