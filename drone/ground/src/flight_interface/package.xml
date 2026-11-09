@@ -3,13 +3,16 @@
 <package format="3">
   <name>flight_interface</name>
   <version>0.1.0</version>
-  <description>Ground link to the flight controller. For now: polls the FC over MSP (USB, or UDP through the ESP bridge) and publishes /fc/attitude and /fc/battery. The lifecycle node (#103) comes later.</description>
+  <description>Ground link to the flight controller. For now: polls the FC over MSP (USB, or UDP through the ESP bridge) and publishes /fc/attitude and /fc/battery. Lifecycle node flight_interface (#103): /mission/velocity_target to the drone, /flight/state back, with a watchdog and an E-stop.</description>
   <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>lifecycle_msgs</depend>
 
   <exec_depend>python3-serial</exec_depend>  <!-- msp.py SerialTransport -->
 
