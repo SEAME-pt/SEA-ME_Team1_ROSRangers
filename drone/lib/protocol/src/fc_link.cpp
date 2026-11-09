@@ -1,5 +1,8 @@
 #include "sd/fc_link.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 namespace sd {
 
 FcLink::FcLink()
@@ -39,12 +42,10 @@ void FcLink::expire(std::uint32_t now_ms) {
 }
 
 bool FcLink::any_poll_due(std::uint32_t now_ms) const {
-  for (const Poll &p : polls_) {
-    if (!p.sent_once || now_ms - p.last_sent_ms >= p.period_ms) {
-      return true;
-    }
-  }
-  return false;
+  return std::any_of(
+      std::begin(polls_), std::end(polls_), [now_ms](const Poll &p) {
+        return !p.sent_once || now_ms - p.last_sent_ms >= p.period_ms;
+      });
 }
 
 std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
