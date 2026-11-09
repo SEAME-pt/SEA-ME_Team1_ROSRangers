@@ -9,15 +9,16 @@ Without the board the hardware test is skipped, unless HIL_REQUIRED=1 (set in
 hil.yaml) turns the skip into a failure.
 """
 
-import os
-import re
-import time
+from bench import (
+    APP_BAUD,
+    ROM_BAUD,
+    boot_mode,
+    crash_markers,
+    open_esp,
+    pulse_reset,
+    read_for,
+)
 
-import pytest
-
-PORT = os.environ.get("HIL_ESP_PORT", "/dev/hil-esp")
-ROM_BAUD = 74880
-APP_BAUD = 115200
 ROM_WINDOW_S = 2.0
 SILENT_WINDOW_S = 10.0
 BOOT_RESETS = 3
@@ -26,36 +27,10 @@ BOOT_WINDOW_S = 3.0
 # starts with one of these, so no parser is needed to find one
 MSP_HEADERS = (b"$M<", b"$M>", b"$M!", b"$X<", b"$X>", b"$X!")
 
-BOOT_MODE = re.compile(rb"boot mode:\((\d+),")
-CRASH_MARKERS = (
-    b"Exception (",
-    b"CUT HERE FOR EXCEPTION DECODER",
-    b"Soft WDT reset",
-    b"rst cause:4",
-)
-
-
-def boot_mode(rom_output: bytes) -> int | None:
-    """First `boot mode:(N,...)` in the ROM banner. 3 = normal boot from flash."""
-    match = BOOT_MODE.search(rom_output)
-    return int(match.group(1)) if match else None
-
-
-def crash_markers(output: bytes) -> list[bytes]:
-    return [marker for marker in CRASH_MARKERS if marker in output]
-
 
 def msp_like(output: bytes) -> list[bytes]:
     """MSP frame starts in `output`: what Betaflight's MSP parser would act on."""
     return [h for h in MSP_HEADERS if h in output]
-
-
-def read_for(port, seconds: float) -> bytes:
-    data = bytearray()
-    deadline = time.monotonic() + seconds
-    while time.monotonic() < deadline:
-        data += port.read(port.in_waiting or 1)
-    return bytes(data)
 
 
 def test_boot_mode_parses_rom_banner():
@@ -74,39 +49,6 @@ def test_msp_like_finds_headers_and_frames():
     assert msp_like(b"\r\n ets Jan  8 2013,rst cause:2, boot mode:(3,6)\r\n") == []
     assert msp_like(b"noise$M<\x00\x01\x01noise") == [b"$M<"]  # MSP_API_VERSION
     assert msp_like(b"$X>") == [b"$X>"]
-
-
-def skip_or_fail(reason: str):
-    if os.environ.get("HIL_REQUIRED") == "1":
-        pytest.fail(f"{reason} and HIL_REQUIRED=1")
-    pytest.skip(reason)
-
-
-def open_esp():
-    try:
-        import serial
-    except ImportError:
-        skip_or_fail("pyserial not installed")
-    if not os.path.exists(PORT):
-        skip_or_fail(f"{PORT} not found (no HIL bench)")
-    port = serial.Serial()
-    port.port = PORT
-    port.baudrate = ROM_BAUD
-    port.timeout = 0.1
-    # Released DTR and RTS = run mode. Asserting one of them alone would hold
-    # the ESP in reset or put it in the bootloader.
-    port.dtr = False
-    port.rts = False
-    port.open()
-    return port
-
-
-def pulse_reset(port):
-    """Pulse EN through RTS, like esptool's hard reset."""
-    port.reset_input_buffer()
-    port.rts = True
-    time.sleep(0.1)
-    port.rts = False
 
 
 def test_esp_boots_from_flash_and_stays_up():

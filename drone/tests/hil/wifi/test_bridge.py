@@ -13,10 +13,9 @@ import socket
 import time
 
 import pytest
+from bench import APP_BAUD, open_esp
 
-PORT = os.environ.get("HIL_ESP_PORT", "/dev/hil-esp")
 ESP_ADDR = (os.environ.get("HIL_ESP_IP", "192.168.4.1"), 5760)
-BAUD = 115200
 DEADLINE_S = 15.0  # covers an ESP reset when the serial port opens
 
 
@@ -24,17 +23,7 @@ DEADLINE_S = 15.0  # covers an ESP reset when the serial port opens
 # so open it once per window, not once per test
 @pytest.fixture(scope="module")
 def uart():
-    import serial  # an error, not a skip: this test runs only on the bench
-
-    if not os.path.exists(PORT):
-        pytest.fail(f"{PORT} not found: is the spare ESP plugged into the Pi?")
-    port = serial.Serial()
-    port.port = PORT
-    port.baudrate = BAUD
-    port.timeout = 0.2
-    port.dtr = False  # released DTR and RTS = run mode, as in test_smoke.py
-    port.rts = False
-    port.open()
+    port = open_esp(APP_BAUD)  # HIL_REQUIRED=1 in the window: no skip
     yield port
     port.close()
 
