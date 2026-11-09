@@ -337,7 +337,7 @@ Keys while it runs (type, then Enter):
 | Key | Fault or action | Expected (ESP-S2-08) |
 |---|---|---|
 | `a` | ARM_CONTROL_REQUEST (operator only, REQ-SAF-023) | `ARM_CONTROL_ACK 0`, STREAMING |
-| `m R` / `n` | Mode 1 with roll R / neutral sticks | `last_ctrl_seq` grows |
+| `m R` / `n` | Mode 1 with roll R (−1000..1000) / neutral sticks | `last_ctrl_seq` grows; a bad value is refused with `bad command`, and the tool keeps running |
 | `g` | Garbage: bad tag, replay, old seq, bad mode, random bytes | still STREAMING, `rx_rejected` +5 |
 | `h` | Replay the recorded HELLO on a second connection | that connection closed after 2 s, session unchanged |
 | `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |

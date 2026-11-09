@@ -37,6 +37,7 @@ import re
 import secrets
 import select
 import socket
+import struct
 import sys
 import time
 
@@ -328,6 +329,24 @@ def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: floa
     return None
 
 
+def parse_roll(words: list[str]) -> int:
+    """`m R`: roll -1000..1000, 300 when R is left out."""
+    roll = int(words[1]) if len(words) > 1 else 300
+    if not -1000 <= roll <= 1000:
+        raise ValueError("roll must be -1000..1000")
+    return roll
+
+
+def parse_key(words: list[str]) -> int:
+    """`c KEY`: one configuration key in hex, 00..ff."""
+    if len(words) < 2:
+        raise ValueError("c needs a key in hex, e.g. c 40")
+    key = int(words[1], 16)
+    if not 0 <= key <= 0xFF:
+        raise ValueError("the key is one byte, 00..ff")
+    return key
+
+
 class Stdin:
     """Lines from stdin without blocking; works for a terminal and a pipe."""
 
@@ -492,67 +511,74 @@ def run(args) -> None:
                     log(t0, link.describe_tcp(frame))
                 mode, roll = 0, 0
                 stopped_at = None
+                last_state = None  # never show the dead session's STATE
                 last_state_t = time.monotonic()
                 log(t0, "new session: sticks neutral; type a to ARM again")
         if stdin.open and stdin.fd in ready:
             for line in stdin.lines():
-                words = line.split()
-                if not words:
-                    continue
-                cmd = words[0]
-                if cmd == "a":
-                    send_tcp(
-                        link.arm(args.mask), f"ARM_CONTROL_REQUEST mask {args.mask}"
-                    )
-                elif cmd == "r":
-                    send_tcp(link.tcp(MsgType.RESUME_REQUEST), "RESUME_REQUEST")
-                elif cmd == "n":
-                    mode, roll = 0, 0
-                    log(t0, "neutral sticks")
-                elif cmd == "m":
-                    mode, roll = 1, int(words[1]) if len(words) > 1 else 300
-                    log(t0, f"mode 1, roll {roll}")
-                elif cmd == "s":
-                    udp_on = False
-                    stopped_at = last_sent
-                    log(t0, "UDP stopped (link loss)")
-                elif cmd == "u":
-                    udp_on = True
-                    stopped_at = None
-                    next_sp = time.monotonic()
-                    log(t0, "UDP on")
-                elif cmd == "g":
-                    for name, frame in link.garbage():
-                        udp.sendto(frame, dest)
-                        log(t0, f"sent garbage: {name}")
-                elif cmd == "h":
-                    if replay is not None:
-                        replay.close()
-                    try:
-                        replay = socket.create_connection(
-                            (args.host, args.port), timeout=3
+                try:
+                    words = line.split()
+                    if not words:
+                        continue
+                    cmd = words[0]
+                    if cmd == "a":
+                        send_tcp(
+                            link.arm(args.mask), f"ARM_CONTROL_REQUEST mask {args.mask}"
                         )
-                        replay.sendall(link.recorded_hello)
-                        replay.setblocking(False)
-                        replay_reader = TcpReader()
-                        log(t0, "replayed the recorded HELLO on a second connection")
-                    except OSError as e:
-                        replay = None
-                        log(t0, f"replay connection refused: {e}")
-                elif cmd == "c" and len(words) > 1:
-                    key = int(words[1], 16)
-                    frame = link.tcp(
-                        MsgType.CONFIG_GET, encode_config_kv(ConfigKv(key, 0))
-                    )
-                    send_tcp(frame, f"CONFIG_GET 0x{key:02x}")
-                elif cmd == "k":
-                    log(t0, "killed: sockets closed without BYE")
-                    os._exit(0)
-                elif cmd in ("b", "q"):
-                    send_tcp(link.tcp(MsgType.BYE, encode_u8_payload(0)), "BYE")
-                    return
-                else:
-                    log(t0, f"unknown command {cmd!r}")
+                    elif cmd == "r":
+                        send_tcp(link.tcp(MsgType.RESUME_REQUEST), "RESUME_REQUEST")
+                    elif cmd == "n":
+                        mode, roll = 0, 0
+                        log(t0, "neutral sticks")
+                    elif cmd == "m":
+                        mode, roll = 1, parse_roll(words)
+                        log(t0, f"mode 1, roll {roll}")
+                    elif cmd == "s":
+                        udp_on = False
+                        stopped_at = last_sent
+                        log(t0, "UDP stopped (link loss)")
+                    elif cmd == "u":
+                        udp_on = True
+                        stopped_at = None
+                        next_sp = time.monotonic()
+                        log(t0, "UDP on")
+                    elif cmd == "g":
+                        for name, frame in link.garbage():
+                            udp.sendto(frame, dest)
+                            log(t0, f"sent garbage: {name}")
+                    elif cmd == "h":
+                        if replay is not None:
+                            replay.close()
+                        try:
+                            replay = socket.create_connection(
+                                (args.host, args.port), timeout=3
+                            )
+                            replay.sendall(link.recorded_hello)
+                            replay.setblocking(False)
+                            replay_reader = TcpReader()
+                            log(
+                                t0, "replayed the recorded HELLO on a second connection"
+                            )
+                        except OSError as e:
+                            replay = None
+                            log(t0, f"replay connection refused: {e}")
+                    elif cmd == "c":
+                        key = parse_key(words)
+                        frame = link.tcp(
+                            MsgType.CONFIG_GET, encode_config_kv(ConfigKv(key, 0))
+                        )
+                        send_tcp(frame, f"CONFIG_GET 0x{key:02x}")
+                    elif cmd == "k":
+                        log(t0, "killed: sockets closed without BYE")
+                        os._exit(0)
+                    elif cmd in ("b", "q"):
+                        send_tcp(link.tcp(MsgType.BYE, encode_u8_payload(0)), "BYE")
+                        return
+                    else:
+                        log(t0, f"unknown command {cmd!r}")
+                except (ValueError, struct.error) as e:
+                    # A typo must never end the tool: the ESP would see a link loss.
+                    log(t0, f"bad command {line.strip()!r}: {e}")
 
 
 def main() -> None:

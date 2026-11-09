@@ -191,3 +191,22 @@ def test_when_a_new_session_is_needed():
     assert new(0.2, False, EspState.SESSION_IDLE)  # cannot ARM without TCP
     assert not new(0.2, False, EspState.STREAMING)  # ADR-005: keep flying on UDP
     assert not new(0.2, False, None)  # no STATE yet
+
+
+def test_typos_are_refused_not_crashing():
+    # Each would have ended the tool mid-demo (Dot99, review of #174).
+    for words in (["m", "abc"], ["m", "40000"], ["m", "-1001"]):
+        try:
+            ground_link.parse_roll(words)
+            raise AssertionError(words)
+        except ValueError:
+            pass
+    assert ground_link.parse_roll(["m"]) == 300
+    assert ground_link.parse_roll(["m", "-1000"]) == -1000
+    for words in (["c"], ["c", "zz"], ["c", "100"]):
+        try:
+            ground_link.parse_key(words)
+            raise AssertionError(words)
+        except ValueError:
+            pass
+    assert ground_link.parse_key(["c", "40"]) == 0x40
