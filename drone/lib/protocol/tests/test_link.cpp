@@ -81,8 +81,8 @@ struct Ground {
     std::memcpy(h.ground_nonce, nonce, sd::kNonceSize);
     std::uint8_t p[sd::kHelloSize];
     const std::size_t n = sd::encode_hello(h, p, sizeof p);
-    const sd::Header hd{static_cast<std::uint8_t>(MsgType::kHello), 0, 0, 0, 1,
-                        0};
+    const sd::Header hd{
+        static_cast<std::uint8_t>(MsgType::kHello), 0, 0, 0, 1, 0};
     Bytes out(sd::kMaxFrame);
     out.resize(sd::encode_frame(hd, p, n, psk(), out.data(), out.size()));
     return out;
@@ -119,8 +119,7 @@ struct Ground {
   }
 
   Bytes seal(MsgType type, const Bytes &payload, std::uint32_t seq) const {
-    const sd::Header hd{static_cast<std::uint8_t>(type), 0, 0, session, seq,
-                        0};
+    const sd::Header hd{static_cast<std::uint8_t>(type), 0, 0, session, seq, 0};
     Bytes out(sd::kMaxFrame);
     out.resize(sd::encode_frame(hd, payload.data(), payload.size(),
                                 keys.ground_to_esp, out.data(), out.size()));
@@ -238,7 +237,8 @@ bool is_neutral(const std::uint16_t ch[sd::kRcChannels]) {
          ch[4] == 1500 && ch[5] == 1500 && ch[6] == 1500 && ch[7] == 1500;
 }
 
-// --- BOOT and NO_SESSION ------------------------------------------------------
+// --- BOOT and NO_SESSION
+// ------------------------------------------------------
 
 TEST_F(LinkTest, BootSendsNothingAndDropsEverything) {
   EXPECT_EQ(link.state(), EspState::kBoot);
@@ -297,7 +297,7 @@ TEST_F(LinkTest, ABadHelloDoesNotUseTheRateLimitWindow) {
   Bytes bad_tag = g.hello();
   bad_tag.back() ^= 1;
   tcp(0, bad_tag, 0);
-  tcp(0, g.hello(2), 100); // valid tag, unknown proto
+  tcp(0, g.hello(2), 100);           // valid tag, unknown proto
   EXPECT_TRUE(handshake(g, 0, 200)); // within 500 ms of both
   EXPECT_EQ(link.counters().hello_rate_limited, 0U);
 }
@@ -429,7 +429,8 @@ TEST_F(LinkTest, ArmWithoutSetpointsFailsAfterTLoss) {
   EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
 }
 
-// --- T_fresh and T_loss -------------------------------------------------------
+// --- T_fresh and T_loss
+// -------------------------------------------------------
 
 TEST_F(LinkTest, StaleSetpointBecomesNeutralAfterTFresh) {
   Ground g;
@@ -489,7 +490,8 @@ TEST_F(LinkTest, RejectedFramesDoNotResetTheLossTimer) {
   EXPECT_EQ(link.rx_rejected(), 3U);
 }
 
-// --- LINK_FAILSAFE output (ADR-004) -------------------------------------------
+// --- LINK_FAILSAFE output (ADR-004)
+// -------------------------------------------
 
 TEST_F(LinkTest, FailsafeOn2026SendsNeutralForOneSecondThenStops) {
   Ground g;
@@ -535,7 +537,8 @@ TEST_F(LinkTest, PacketsComingBackDoNotResumeControl) {
   }
 }
 
-// --- RESUME --------------------------------------------------------------------
+// --- RESUME
+// --------------------------------------------------------------------
 
 TEST_F(LinkTest, ResumeNeedsFiveHundredMsOfNeutralStream) {
   Ground g;
@@ -615,7 +618,8 @@ TEST_F(LinkTest, ResumeOutsideFailsafeIsWrongState) {
   EXPECT_EQ(link.state(), EspState::kSessionIdle);
 }
 
-// --- Pending session (#156) ----------------------------------------------------
+// --- Pending session (#156)
+// ----------------------------------------------------
 
 TEST_F(LinkTest, NewHelloDuringStreamingOpensAPendingSessionOnly) {
   Ground g;
@@ -828,7 +832,8 @@ TEST_F(LinkTest, PendingSessionIsDroppedWhenItsConnectionCloses) {
   EXPECT_EQ(link.state(), EspState::kStreaming);
 }
 
-// --- TCP drops and BYE (ADR-005) -------------------------------------------------
+// --- TCP drops and BYE (ADR-005)
+// -------------------------------------------------
 
 TEST_F(LinkTest, TcpDropWhileStreamingChangesNothingWhileUdpFlows) {
   Ground g;
@@ -971,7 +976,8 @@ TEST_F(LinkTest, ByeWhileStreamingKeepsTheFailsafeOutput) {
   EXPECT_FALSE(link.fc_output(2000, ch));
 }
 
-// --- CONFIG (spec §3.1, §7.3) ------------------------------------------------------
+// --- CONFIG (spec §3.1, §7.3)
+// ------------------------------------------------------
 
 TEST_F(LinkTest, ConfigGetAnswersKnownAndUnknownKeys) {
   link.boot_done(0);
@@ -982,9 +988,9 @@ TEST_F(LinkTest, ConfigGetAnswersKnownAndUnknownKeys) {
     std::uint8_t result;
     std::int32_t value;
   };
-  const Case cases[] = {{0x01, 0, 1},    {0x02, 0, 1},  {0x40, 0, 250},
-                        {0x41, 0, 150},  {0x42, 0, 1000}, {0x80, 0, 25},
-                        {0x81, 0, 1},    {0x03, 1, 0},  {0xF0, 1, 0},
+  const Case cases[] = {{0x01, 0, 1},   {0x02, 0, 1},    {0x40, 0, 250},
+                        {0x41, 0, 150}, {0x42, 0, 1000}, {0x80, 0, 25},
+                        {0x81, 0, 1},   {0x03, 1, 0},    {0xF0, 1, 0},
                         {0x00, 1, 0}};
   std::uint32_t t = 10;
   for (const Case &c : cases) {
@@ -1014,9 +1020,9 @@ TEST_F(LinkTest, ConfigSetChecksStateFirstThenTheKey) {
   EXPECT_EQ(set(0x80, 30, 20).result, 5);
   EXPECT_EQ(set(0x03, 30, 30).result, 5);
   EXPECT_EQ(link.telemetry_rate_hz(), 25);
-  link.tick(300); // LINK_FAILSAFE: writes allowed again
-  EXPECT_EQ(set(0x03, 1, 310).result, 1);  // unknown
-  EXPECT_EQ(set(0x01, 2, 320).result, 2);  // read-only
+  link.tick(300);                         // LINK_FAILSAFE: writes allowed again
+  EXPECT_EQ(set(0x03, 1, 310).result, 1); // unknown
+  EXPECT_EQ(set(0x01, 2, 320).result, 2); // read-only
   EXPECT_EQ(set(0x40, 300, 330).result, 3); // safety
   const sd::ConfigAck out = set(0x80, 51, 340);
   EXPECT_EQ(out.result, 4); // out of range, never clamped
@@ -1030,7 +1036,8 @@ TEST_F(LinkTest, ConfigSetChecksStateFirstThenTheKey) {
   EXPECT_EQ(link.event_level(), 3);
 }
 
-// --- STATE ---------------------------------------------------------------------------
+// --- STATE
+// ---------------------------------------------------------------------------
 
 TEST_F(LinkTest, StateCarriesTheLinkFieldsAndTheFcView) {
   Ground g;
@@ -1072,8 +1079,8 @@ TEST_F(LinkTest, EspFramesAreAcceptedByTheGroundReceiver) {
   // Every in-session TCP frame the ESP sent (skip the PSK-tagged HELLO_ACK).
   for (std::size_t i = 1; i < io.tcp.size(); ++i) {
     sd::Frame f{};
-    EXPECT_TRUE(sd::is_accepted(rx.receive(io.tcp[i].second.data(),
-                                           io.tcp[i].second.size(), f)));
+    EXPECT_TRUE(sd::is_accepted(
+        rx.receive(io.tcp[i].second.data(), io.tcp[i].second.size(), f)));
   }
 }
 

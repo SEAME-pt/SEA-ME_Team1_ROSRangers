@@ -238,8 +238,8 @@ void Link::send_state(std::uint32_t now_ms, const FcView &fc) {
   st.flow_y = fc.flow_y;
   st.flow_quality = fc.flow_quality;
   st.flow_status = fc.flow_status;
-  st.rx_rejected = rejected > 0xFFFFU ? 0xFFFFU
-                                      : static_cast<std::uint16_t>(rejected);
+  st.rx_rejected =
+      rejected > 0xFFFFU ? 0xFFFFU : static_cast<std::uint16_t>(rejected);
   st.msp_errors = fc.msp_errors;
   std::uint8_t payload[kStateSize];
   const std::size_t n = encode_state(st, payload, sizeof payload);
@@ -282,8 +282,8 @@ void Link::on_hello(ConnId conn, const Frame &f, std::uint32_t now_ms) {
   ack.session_id = id;
   config_.random(ack.esp_nonce, kNonceSize);
   std::memcpy(ack.fw_version, config_.fw_version, kFwVersionSize);
-  DirectionKeys keys = derive_keys(config_.psk, hello.ground_nonce,
-                                   ack.esp_nonce);
+  DirectionKeys keys =
+      derive_keys(config_.psk, hello.ground_nonce, ack.esp_nonce);
 
   if (!cur().open) {
     // NO_SESSION: nothing to protect, the session opens at once.
@@ -328,9 +328,8 @@ bool Link::new_session_id(std::uint32_t &out) const {
   return false;
 }
 
-void Link::open_session(Session &s, std::uint32_t id,
-                        const DirectionKeys &keys, ConnId conn,
-                        std::uint32_t now_ms) {
+void Link::open_session(Session &s, std::uint32_t id, const DirectionKeys &keys,
+                        ConnId conn, std::uint32_t now_ms) {
   // start_session() fails only for id 0, which new_session_id() never gives.
   (void)s.udp.start_session(id, keys.ground_to_esp);
   (void)s.tcp.start_session(id, keys.ground_to_esp);
@@ -613,10 +612,15 @@ void Link::send_tcp_in(Session &s, MsgType type, const std::uint8_t *payload,
   if (!s.open || s.conn == kNoConn) {
     return;
   }
-  const Header h{static_cast<std::uint8_t>(type), 0, 0, s.id, s.tx_seq_tcp++,
+  const Header h{static_cast<std::uint8_t>(type),
+                 0,
+                 0,
+                 s.id,
+                 s.tx_seq_tcp++,
                  t_send_us(now_ms)};
   std::uint8_t out[kMaxFrame];
-  const std::size_t n = encode_frame(h, payload, len, s.tx_key, out, sizeof out);
+  const std::size_t n =
+      encode_frame(h, payload, len, s.tx_key, out, sizeof out);
   if (n > 0) {
     io_.send_tcp(s.conn, out, n);
   }

@@ -102,8 +102,8 @@ struct LinkCounters {
   std::uint32_t hello_rejected;     // failed receive_handshake() or bad proto
   std::uint32_t hello_rate_limited; // valid, but within 500 ms of the last one
   std::uint32_t pending_expired;
-  std::uint32_t sessions_switched;  // pending confirmed while a session ran
-  std::uint32_t unrouted;           // no session to check the frame against
+  std::uint32_t sessions_switched; // pending confirmed while a session ran
+  std::uint32_t unrouted;          // no session to check the frame against
   std::uint32_t failsafe_entered;
 };
 
@@ -128,8 +128,8 @@ public:
   // connection plus one HELLO-only connection. A connection that is neither
   // session_conn() nor pending_conn() 2 s after it opened must be closed (a
   // refused HELLO keeps it open here, and no pending timer covers it).
-  TcpVerdict on_tcp_frame(ConnId conn, const std::uint8_t *buf,
-                          std::size_t len, std::uint32_t now_ms);
+  TcpVerdict on_tcp_frame(ConnId conn, const std::uint8_t *buf, std::size_t len,
+                          std::uint32_t now_ms);
 
   // The connection is gone (closed by the peer, keep-alive, or close_tcp()).
   // A TCP connection by itself never starts or ends a session (ADR-005).
