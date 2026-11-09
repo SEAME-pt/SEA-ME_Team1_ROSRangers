@@ -9,6 +9,7 @@ from flight_interface.guard import (
     CEILING_LINEAR_MPS,
     CEILING_YAW_RPS,
     LINK_TIMEOUT,
+    MASK_AXES,
     MAX_TARGET_TIMEOUT,
     ZERO,
     Guard,
@@ -65,6 +66,9 @@ def test_timeouts_never_above_the_requirement_and_bad_values_fall_back():
     assert Guard(target_timeout=math.nan).target_timeout == MAX_TARGET_TIMEOUT
     assert Guard(target_timeout=0.1).target_timeout == 0.1
     assert Guard(link_timeout=-1).link_timeout == LINK_TIMEOUT
+    assert Guard(link_timeout=5.0).link_timeout == LINK_TIMEOUT  # watchdog stays on
+    assert Guard(link_timeout=math.inf).link_timeout == LINK_TIMEOUT
+    assert Guard(link_timeout=0.3).link_timeout == 0.3
     with pytest.raises(ValueError):
         Guard(tick_period=0)
 
@@ -258,6 +262,8 @@ def test_base_backend_is_only_an_interface():
         {**STREAMING, "override_active": "true"},
         {**STREAMING, "mask": 4},
         {**STREAMING, "mask": None},
+        {**STREAMING, "mask": 8.0},
+        {**STREAMING, "mask": True},
         {"esp_state": "STREAMING"},
     ],
 )
@@ -286,3 +292,22 @@ def test_mask_before_ceilings_so_an_unowned_axis_never_slows_an_owned_one():
     g = ready(0.0)
     g.on_target(0.4, 0.0, 5.0, 0.0, now=0.0)
     assert g.command(0.0) == approx((0.4, 0.0, 0.0, 0.0))
+
+
+def test_a_long_link_timeout_cannot_switch_the_watchdog_off():
+    g = Guard(link_timeout=60.0)
+    g.activate()
+    g.on_drone_state(STREAMING, 0.0)
+    g.on_target(0.3, 0, 0, 0, now=30.0)
+    assert g.command(30.0) == ZERO
+    assert g.flight_state(30.0)["link_ok"] is False
+
+
+def test_masks_and_ceilings_match_mission_node():
+    # Three copies (mission_node, this guard, the PX4 bridge) must not drift apart.
+    mission_logic = pytest.importorskip("mission_node.mission_logic")
+    assert {m: set(a) for m, a in MASK_AXES.items()} == {
+        m: set(a) for m, a in mission_logic.MASK_AXES.items()
+    }
+    assert CEILING_LINEAR_MPS == mission_logic.CEILING_LINEAR_MPS
+    assert CEILING_YAW_RPS == pytest.approx(math.radians(mission_logic.CEILING_YAW_DPS))

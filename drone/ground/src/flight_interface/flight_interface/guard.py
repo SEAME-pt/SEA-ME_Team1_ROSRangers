@@ -14,10 +14,11 @@ Rules:
     within link_timeout. Then the setpoint is zero and link_ok is false, so
     mission_node goes IDLE (REQ-SAF-012).
   * A target older than target_timeout by the next tick gives zero
-    (REQ-SAF-017), the same rule as mission_node and the PX4 bridge.
+    (the rule of mission_node's REQ-SAF-017, applied again here), as in the
+    PX4 bridge.
   * A non-zero setpoint needs the drone itself to say control is possible:
     esp_state STREAMING, override_active true and a known mask, the same gate
-    as mission_node. Axes outside the mask are zero (REQ-SAF-018), as in the
+    as mission_node. Axes outside the mask are zero (mission_node's REQ-SAF-018, applied again here), as in the
     PX4 bridge.
   * Same hard ceilings as mission_node, applied again here: the horizontal
     speed as a whole (so a diagonal is not faster), the vertical speed and the
@@ -36,7 +37,8 @@ ZERO = (0.0, 0.0, 0.0, 0.0)
 CEILING_LINEAR_MPS = 0.5
 CEILING_YAW_RPS = math.radians(45.0)
 
-# REQ-SAF-017: the zero must be out no later than this after the last target.
+# The zero must be out no later than this after the last target (the rule of
+# mission_node's REQ-SAF-017).
 MAX_TARGET_TIMEOUT = 0.25
 # The ESP sends STATE at 25 Hz (Protocol Spec v0 §3); mission_node calls a
 # /flight/state older than 0.5 s lost, so the watchdog uses the same 0.5 s.
@@ -59,6 +61,11 @@ def _finite(value):
         and not isinstance(value, bool)
         and math.isfinite(value)
     )
+
+
+def _is_mask(mask):
+    """8, 11 or 15 as a real int, as mission_node checks it (8.0 or True is not)."""
+    return isinstance(mask, int) and not isinstance(mask, bool) and mask in MASK_AXES
 
 
 def apply_mask(vx, vy, vz, wz, mask):
@@ -97,10 +104,12 @@ class Guard:
         link_timeout=LINK_TIMEOUT,
         tick_period=0.02,
     ):
-        # Never longer than REQ-SAF-017 allows; NaN or <= 0 also gives the maximum.
+        # Never longer than the 0.25 s rule allows; NaN or <= 0 also gives the maximum.
         if not _finite(target_timeout) or not 0 < target_timeout <= MAX_TARGET_TIMEOUT:
             target_timeout = MAX_TARGET_TIMEOUT
-        if not _finite(link_timeout) or link_timeout <= 0:
+        # Never longer than LINK_TIMEOUT either: a longer one would let a silent
+        # drone look alive and switch the watchdog off (REQ-SAF-012).
+        if not _finite(link_timeout) or not 0 < link_timeout <= LINK_TIMEOUT:
             link_timeout = LINK_TIMEOUT
         if not _finite(tick_period) or tick_period <= 0:
             raise ValueError(f"tick_period must be > 0, got {tick_period!r}")
@@ -202,7 +211,7 @@ class Guard:
         return (
             drone.get("esp_state") == "STREAMING"
             and drone.get("override_active") is True
-            and drone.get("mask") in MASK_AXES
+            and _is_mask(drone.get("mask"))
         )
 
     def flight_state(self, now):
