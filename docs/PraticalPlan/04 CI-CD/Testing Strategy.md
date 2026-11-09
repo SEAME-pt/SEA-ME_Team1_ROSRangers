@@ -97,7 +97,7 @@ Level 1 and 2 above, added with #96 (PR #169). They run without the drone: a fak
 | `test_fc_telemetry_process.py` | Start and stop: Ctrl+C and SIGTERM exit 0; unknown transport, missing serial device and UDP port in use exit 1 |
 | `test_msp.py` | MSP v1 parser and `decode()`, moved from `tests/scripts/` with `msp.py` |
 
-Run locally: `colcon test --packages-select flight_interface` (51 tests on 2026-11-09). The bench tools' own tests (`msp_check`, `esp_at`) stay in `tests/scripts/`.
+Run locally: `colcon test --packages-select flight_interface`. The bench tools' own tests (`msp_check`, `esp_at`) stay in `tests/scripts/`.
 
 ## 6. Glossary
 
