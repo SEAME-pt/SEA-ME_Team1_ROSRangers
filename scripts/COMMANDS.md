@@ -350,6 +350,8 @@ Keys while it runs (type, then Enter):
 - **No old values:** the tool never reprints old values. After 1 s without STATE it prints `no STATE for N s`.
 - **One error line:** a send error is printed once, not 50 times a second.
 - **Session ended by the drone:** if nothing arrives for 3 s, the session is gone. This happens, for example, in SESSION_IDLE once the drone's TCP keep-alive has closed the connection. The tool then opens a **new session by itself** with neutral sticks. It never ARMs again by itself: type `a` (REQ-SAF-023).
+- **TCP closed and not STREAMING:** the tool also opens a new session as soon as STATE shows LINK_FAILSAFE or SESSION_IDLE without TCP, because ARM and RESUME need TCP. The drone's keep-alive closes a dead TCP connection after a Wi-Fi drop, and when STATE comes back after a gap the tool checks TCP with a `CONFIG_GET 0x01`.
+- **Unreachable:** a failed attempt is reported once, as `drone not reachable yet`, while the laptop is on another network.
 - **Link loss while armed:** the drone stays in LINK_FAILSAFE (the ADR-004 output) until that new session's ARM.
 - **TCP drops but STATE keeps coming:** nothing changes, and the session keeps running on UDP (ADR-005).
 

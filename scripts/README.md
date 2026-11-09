@@ -124,7 +124,7 @@ python3 scripts/ground_link.py             # session, 50 Hz SETPOINT, STATE twic
 
 Then type a key and Enter: `a` ARM, `m 300` move (roll 300), `n` neutral, `g` garbage, `h` replayed HELLO, `s` stop UDP (link loss, prints the failsafe time), `u` UDP on, `r` RESUME, `c 40` CONFIG_GET, `k` kill without BYE, `q` BYE and quit.
 
-If the Wi-Fi drops, the tool shows `no STATE for N s`, and after 3 s it opens a new session by itself with neutral sticks; type `a` to ARM again.
+If the Wi-Fi drops, the tool shows `no STATE for N s`. Once the drone is reachable again, it opens a new session by itself with neutral sticks (also when STATE is back but TCP is gone and the drone is not STREAMING); type `a` to ARM again.
 
 Two people, props off, a finger on SA (Safety Rules #15, #18). The tool sends ARM only when you type `a` (REQ-SAF-023). The override mask is 8 (yaw only) until #104.
 

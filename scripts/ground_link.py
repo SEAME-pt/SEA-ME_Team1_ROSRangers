@@ -288,6 +288,17 @@ RECONNECT_AFTER_S = 3.0  # no STATE for this long: the session is gone, open a n
 RECONNECT_EVERY_S = 2.0
 
 
+def needs_new_session(stale_s: float, tcp_open: bool, esp_state: int | None) -> bool:
+    """When the tool must open a new session (bench test ESP-S2-08):
+    - no STATE for RECONNECT_AFTER_S: the session is gone or unreachable;
+    - no TCP while the drone is not STREAMING: ARM and RESUME need TCP, so
+      nothing could leave LINK_FAILSAFE or SESSION_IDLE (State Machine §1.1).
+    In STREAMING without TCP the session keeps flying on UDP (ADR-005)."""
+    if stale_s > RECONNECT_AFTER_S:
+        return True
+    return not tcp_open and esp_state is not None and esp_state != EspState.STREAMING
+
+
 def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: float = 3):
     """Opens a session: (tcp, reader, frames that came after HELLO_ACK). On
     failure it exits, or returns None when `fatal` is False (reconnect)."""
@@ -354,6 +365,7 @@ def run(args) -> None:
     last_state_t = time.monotonic()  # grace period right after the handshake
     udp_error = ""  # logged once per change, not 50 times a second
     next_reconnect = 0.0
+    unreachable_logged = False
     replay, replay_reader = None, TcpReader()
     print(__doc__.split("\n\n")[2], flush=True)
 
@@ -395,6 +407,15 @@ def run(args) -> None:
                 while True:
                     st = link.state(udp.recv(512))
                     if st is not None:
+                        if time.monotonic() - last_state_t > STATE_STALE_S and tcp:
+                            # Back after an outage: is TCP still alive? A dead
+                            # connection answers this with a reset.
+                            send_tcp(
+                                link.tcp(
+                                    MsgType.CONFIG_GET, encode_config_kv(ConfigKv(1, 0))
+                                ),
+                                "CONFIG_GET 0x01 (checking TCP after the outage)",
+                            )
                         last_state = st
                         last_state_t = time.monotonic()
             except (BlockingIOError, ConnectionRefusedError):
@@ -446,11 +467,23 @@ def run(args) -> None:
         # The session is gone (for example the Wi-Fi dropped and the ESP ended
         # it): open a new one. Sticks go back to neutral, and ARM stays the
         # operator's action (REQ-SAF-023). Not during `s`, which is on purpose.
-        if udp_on and now - last_state_t > RECONNECT_AFTER_S and now >= next_reconnect:
+        esp_state = last_state.esp_state if last_state is not None else None
+        if (
+            udp_on
+            and needs_new_session(now - last_state_t, tcp is not None, esp_state)
+            and now >= next_reconnect
+        ):
             next_reconnect = now + RECONNECT_EVERY_S
             fresh = GroundLink(link.psk)
             opened = connect(args, fresh, t0, fatal=False, timeout=1)
+            if opened is None and not unreachable_logged:
+                log(
+                    t0,
+                    "opening a new session: drone not reachable yet, retrying every 2 s",
+                )
+                unreachable_logged = True
             if opened is not None:
+                unreachable_logged = False
                 if tcp is not None:
                     tcp.close()
                 link = fresh

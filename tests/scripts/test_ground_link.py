@@ -177,3 +177,17 @@ def test_bad_psks_are_refused(tmp_path, monkeypatch):
     assert ground_link.parse_psk(" " + "AB" * 32 + "\n") == bytes([0xAB] * 32)
     monkeypatch.setenv("SEAME_PSK", "cd" * 32)
     assert ground_link.load_psk(tmp_path / "none.json") == bytes([0xCD] * 32)
+
+
+def test_when_a_new_session_is_needed():
+    from sd_protocol.messages import EspState
+
+    new = ground_link.needs_new_session
+    assert new(3.5, True, EspState.STREAMING)  # no STATE: session gone
+    assert not new(0.2, True, EspState.LINK_FAILSAFE)  # TCP alive: RESUME works
+    # Bench 2026-11-09: back from a Wi-Fi drop, STATE flows, TCP was closed by
+    # the drone's keep-alive -> only a new session can leave LINK_FAILSAFE.
+    assert new(0.2, False, EspState.LINK_FAILSAFE)
+    assert new(0.2, False, EspState.SESSION_IDLE)  # cannot ARM without TCP
+    assert not new(0.2, False, EspState.STREAMING)  # ADR-005: keep flying on UDP
+    assert not new(0.2, False, None)  # no STATE yet
