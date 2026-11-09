@@ -189,6 +189,23 @@ class FcTelemetryRosTests(unittest.TestCase):
         self.assertEqual(self.attitudes, [])
         self.assertEqual(self.node._missed["attitude"], 1)
 
+    def test_unplugged_usb_recv_error_publishes_nothing(self):
+        # pyserial's read() raises SerialException (an OSError) once the FC
+        # is unplugged; the drain before each request hits it first
+        self.start({})
+
+        def broken_recv():
+            raise OSError("device disconnected")
+
+        self.fc.recv = broken_recv
+        self.node._attitude_tick()
+        self.node._battery_tick()
+        self.deliver()
+        self.assertEqual(self.attitudes, [])
+        self.assertEqual(self.batteries, [])
+        self.assertEqual(self.node._missed["attitude"], 1)
+        self.assertEqual(self.node._missed["battery"], 1)
+
     def test_no_battery_publishes_not_present(self):
         self.start({msp.MSP_ANALOG: [analog_payload(0.0)]})
         self.node._battery_tick()

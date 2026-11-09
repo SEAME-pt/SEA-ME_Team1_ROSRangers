@@ -6,8 +6,13 @@ transparent bridge. Both go through msp.Client, read-only.
 
 Single-threaded: two timers poll the FC, one at a time, so a request and its
 reply never interleave with another. Each sample is stamped halfway between
-request and reply (ROS clock). A missing or bad reply publishes nothing: an
-old value is never sent again with a new stamp.
+request and reply (ROS clock). A missing or bad reply publishes nothing.
+Late replies are dropped if they arrived before the next request (MSP v1 has
+no sequence number, so one that arrives later can still be taken).
+
+A transport error while running (USB unplugged, network down) is a warning
+and nothing is published; the node keeps running but does not reopen the
+port, so restart it after plugging the FC back in.
 
 Ctrl+C and SIGTERM are a normal stop: exit code 0. A transport that cannot be
 opened (no FC on the serial port, UDP port in use) or an unknown transport:
@@ -124,7 +129,9 @@ class FcTelemetry(Node):
 
         msp.Client takes the first reply with the right command, so a reply
         that came after its timeout would otherwise answer the next request:
-        old data with a new stamp.
+        old data with a new stamp. This only drops replies that arrived before
+        the next request: MSP v1 has no sequence number, so a timed-out reply
+        that arrives after the drain is still taken as the next answer.
         """
         for _ in range(MAX_DRAIN_READS):
             data = self._client.t.recv()
@@ -134,9 +141,9 @@ class FcTelemetry(Node):
 
     def _poll(self, name, cmd):
         """One MSP request. Returns (decoded dict, stamp in ns) or None."""
-        self._drain()
-        t0 = self.get_clock().now().nanoseconds
         try:
+            self._drain()  # recv() raises too when the USB is unplugged
+            t0 = self.get_clock().now().nanoseconds
             frame, _ = self._client.request(cmd, timeout=self._timeout)
         except OSError as exc:  # USB unplugged, network down
             frame = None
