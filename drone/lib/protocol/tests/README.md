@@ -213,6 +213,67 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.OldValuesAreForgotten` | The FC goes silent: after 10 s every value is forgotten, and an old status never looks fresh again, even across the `millis()` wrap | An old "disarmed" can never open the ADR-024 OTA gate |
 | `FcLink.PollRefusesASmallBuffer` | A buffer too small for a request: nothing is sent or counted | A bad call writes nothing |
 
+## Link: the ESP link state machine (#102)
+
+`sd::Link` with a fake ground that does the real handshake. Times are in ms; each test checks one rule of the ESP Link State Machine note.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `LinkTest.BootSendsNothingAndDropsEverything` | Before `boot_done()`: nothing goes to the FC, a HELLO closes its connection, UDP is dropped | Safe at power-up and after a watchdog reset (REQ-SAF-016) |
+| `LinkTest.NoSessionSendsNeutralFrames` | After boot with no session: neutral sticks (throttle 1000) and no STATE | An early override switch-on never sees empty channels |
+| `LinkTest.HelloInNoSessionOpensTheSessionAtOnce` | A valid HELLO with no session answers HELLO_ACK on the same connection and opens SESSION_IDLE; the ground's keys work | Nothing to protect yet, so no pending step |
+| `LinkTest.BadHelloIsCountedAndKeepsOrClosesTheConnection` | A bad tag or unknown `proto` is counted and the connection stays; a bad magic closes it | Spec §4 rule 5: close only when the framing is broken |
+| `LinkTest.ABadHelloDoesNotUseTheRateLimitWindow` | A bad HELLO and an unknown-proto HELLO, then a valid one 200 ms later: accepted | Garbage cannot block a real ground from connecting |
+| `LinkTest.BadFramesOnTheSessionConnection` | On the session's connection, a bad tag is dropped and the connection stays; a bad version closes it; no failsafe | Spec §4 rule 5 for session frames |
+| `LinkTest.NonHelloOnAConnectionWithoutSessionClosesIt` | A valid session frame sent on another connection closes that connection | A connection with no session carries HELLO only (ADR-005) |
+| `LinkTest.UdpWithoutASessionIsDroppedAndCounted` | UDP with no session open: dropped as `no session` and counted | Nothing reaches control without a session |
+| `LinkTest.SessionIdsComeFromTheRngAndAreNeverZero` | An RNG that gives only zeros: the HELLO is refused, no session opens | `session_id` 0 is reserved for HELLO |
+| `LinkTest.ArmWithTheWrongMaskIsRefused` | ARM with mask 15 on a drone set to 8: result 2, state unchanged | The ground must not fly with the wrong override mask |
+| `LinkTest.ArmOkEntersStreamingAndForwardsFreshSetpoints` | ARM OK → STREAMING; a mode-1 setpoint becomes RC values, a mode-0 one neutral | The basic control path |
+| `LinkTest.SetpointsSentBeforeArmNeverReachTheFc` | Roll 800 / throttle 700 sent before ARM: neutral right after ARM; the next setpoint is used | Sticks sent while control was off are never applied when it turns on |
+| `LinkTest.ArmIsRefusedOutsideSessionIdle` | ARM in STREAMING or LINK_FAILSAFE: result 1 (wrong state) | Leaving the failsafe needs RESUME, not ARM |
+| `LinkTest.ArmWithoutSetpointsFailsAfterTLoss` | ARM OK and no setpoint: still STREAMING at 249 ms, LINK_FAILSAFE at 250 ms | ARM alone never keeps control alive |
+| `LinkTest.StaleSetpointBecomesNeutralAfterTFresh` | A setpoint is used until 149 ms, neutral at 150 ms, one stale EVENT; the next setpoint is used at once | `T_fresh` of spec §7.2 |
+| `LinkTest.LossAfterTLossEntersFailsafe` | No setpoint: STREAMING at 249 ms, LINK_FAILSAFE at 250 ms, with an EVENT | `T_loss` of ADR-004 |
+| `LinkTest.ALateSetpointDoesNotRescueStreaming` | A setpoint that arrives 300 ms after the last one: the failsafe is entered first | Expired timers are applied before any input |
+| `LinkTest.RejectedFramesDoNotResetTheLossTimer` | A replay, a bad tag and a stranger's frame during the gap: the failsafe still comes at 250 ms | REQ-SAF-011: only accepted frames count |
+| `LinkTest.FailsafeOn2026SendsNeutralForOneSecondThenStops` | In LINK_FAILSAFE: neutral for 1 s, then nothing | ADR-004 on Betaflight 2026.6: the FC falls back to the radio sticks |
+| `LinkTest.FailsafeOn451SendsNeutralForever` | With the 4.5.1 setting: neutral frames forever | ADR-004 on 4.5.1, where overrides are held |
+| `LinkTest.FailsafeStopSurvivesAClockWrap` | Once the output has stopped, a 2^32 ms clock wrap does not restart the neutral | No surprise output after a long uptime |
+| `LinkTest.PacketsComingBackDoNotResumeControl` | Mode-1 setpoints arrive again for 1 s after the loss: still LINK_FAILSAFE, only the ADR-004 output | Control never comes back by itself |
+| `LinkTest.ResumeNeedsFiveHundredMsOfNeutralStream` | RESUME after 460 ms of neutral: result 3; after 500 ms: OK, STREAMING, EVENT | The resume rule of ADR-004 |
+| `LinkTest.AGapOrANonNeutralSetpointRestartsTheNeutralStream` | A mode-1 setpoint or a 150 ms gap restarts the 500 ms | The neutral stream must be continuous |
+| `LinkTest.ResumeNeedsAFreshSetpoint` | RESUME when the last neutral setpoint is 150 ms old: result 3 | The link must be alive right now |
+| `LinkTest.ResumeOutsideFailsafeIsWrongState` | RESUME in SESSION_IDLE: result 1 | RESUME only leaves LINK_FAILSAFE |
+| `LinkTest.NewHelloDuringStreamingOpensAPendingSessionOnly` | A second HELLO while streaming: HELLO_ACK, pending session, the old session keeps flying | #156: a HELLO never ends a live session |
+| `LinkTest.ReplayedHelloNeverEndsTheLiveSession` | A recorded HELLO replayed 5 times on another socket: never confirmed, expires, its connection closes; streaming goes on | A replay without the PSK can do nothing to the live session |
+| `LinkTest.PendingSessionExpiresAfterTwoSeconds` | A pending session is still there at 1,999 ms and gone at 2,000 ms; its keys no longer work | ADR-005: pending for at most 2 s |
+| `LinkTest.FirstValidFrameUnderTheNewKeysConfirmsTheSwitch` | The new session's first setpoint switches: BYE reason 3 to the old session, its connection closed, old frames refused | How a real reconnect takes over |
+| `LinkTest.SwitchFromStreamingKeepsTheFailsafeOutputUntilArm` | A switch while streaming: the ADR-004 output until the new session's ARM OK | No throttle cut at a session switch (§1.1 of the state machine note) |
+| `LinkTest.SwitchFromFailsafeKeepsItsTimeline` | A switch in LINK_FAILSAFE: the 1 s of neutral is not restarted, and RESUME is refused in the new session | A new session is not a resume (REQ-COM-020) |
+| `LinkTest.SwitchFromSessionIdleSendsNeutralAtOnce` | A switch when control was off: plain neutral frames | Nothing to protect when control was off |
+| `LinkTest.RehandshakeOnTheSameConnectionKeepsIt` | HELLO on the session's own connection: BYE 3 goes out on it, and it stays open for the new session | ADR-005 entry 2026-11-06 |
+| `LinkTest.OldSessionFramesStillWorkOnASharedConnection` | While pending on the same connection, the old session's frames are still answered | The old session runs until the switch |
+| `LinkTest.HelloIsRateLimitedAndARefusedOneDoesNotRestartTheWindow` | A HELLO 300 ms after the last one is refused; one at 500 ms is accepted | At most one HELLO per 500 ms, and a refused one does not extend the wait |
+| `LinkTest.ALaterHelloReplacesThePendingOne` | A third HELLO replaces the pending one: its connection closes and its keys no longer work | Only the newest pending session can take over |
+| `LinkTest.PendingSessionIsDroppedWhenItsConnectionCloses` | The pending session's connection closes: the pending session is gone | It could not answer anyway |
+| `LinkTest.ForeignFrameOnThePendingConnectionIsRejected` | The current session's frame sent on the pending connection: refused, nothing switches | Frames count only on their own connection |
+| `LinkTest.TcpDropWhileStreamingChangesNothingWhileUdpFlows` | TCP closes while streaming: still STREAMING for 2 s of setpoints, STATE still sent | ADR-005: TCP never decides link loss |
+| `LinkTest.ReconnectAfterATcpDropNeverInterruptsControlOutput` | TCP drops, a new HELLO, then ARM as the first new-key frame: STREAMING continues under the new session | The reconnect bench case of #102 |
+| `LinkTest.SessionIdleWithNoTcpAndNoUdpEndsTheSession` | SESSION_IDLE, TCP closed, no UDP: still open at 249 ms, NO_SESSION at 250 ms | "TCP closed and no UDP" of the state machine |
+| `LinkTest.SessionIdleWithNoTcpButUdpKeepsTheSession` | SESSION_IDLE, TCP closed, setpoints keep coming: the session stays | UDP alone keeps a session alive |
+| `LinkTest.ByeInSessionIdleEndsTheSession` | BYE in SESSION_IDLE: NO_SESSION, no reply, connection closed, neutral frames | BYE ends a session |
+| `LinkTest.ByeInFailsafeEndsTheSessionAndKeepsItsTimeline` | BYE in LINK_FAILSAFE: NO_SESSION, the ADR-004 output keeps its 1 s timeline | Ending the session never restarts the output |
+| `LinkTest.ByeAsTheFirstFrameOfAPendingSession` | The pending session's first frame is a BYE: switch (BYE 3 to the old one), then NO_SESSION with the ADR-004 output | Edge case of the switch, covered |
+| `LinkTest.APendingSessionOutlivesAByeOfTheCurrentOne` | The current session says BYE while another is pending: the pending one can still take over, with no BYE 3 | No old session left to tell |
+| `LinkTest.ByeOfTheOldSessionKeepsASharedConnectionOpen` | A pending session on the current session's connection, then BYE of the old session: the connection stays open and the pending session takes over on it | A BYE never closes the connection another session needs |
+| `LinkTest.ReplacingASharedPendingSessionKeepsTheConnection` | A pending session on the current connection is replaced by a HELLO on another connection: the current connection stays open | Dropping a pending session never cuts the live one |
+| `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
+| `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
+| `LinkTest.ConfigSetChecksStateFirstThenTheKey` | CONFIG_SET while streaming: result 5 for any key; then unknown 1, read-only 2, safety 3, out of range 4 (never clamped), OK | The check order of spec §3.1 |
+| `LinkTest.StateCarriesTheLinkFieldsAndTheFcView` | STATE has the link state, last control seq, rejected count and the FC values; seq counts up | What the ground sees |
+| `LinkTest.EspFramesAreAcceptedByTheGroundReceiver` | Every TCP frame the ESP sent passes a ground-side Receiver | Both ends agree on keys, seq and direction |
+
 ## Version: protocol version
 | Test | What it does | Why it matters |
 |---|---|---|

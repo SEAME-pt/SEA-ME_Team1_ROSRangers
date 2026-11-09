@@ -12,6 +12,7 @@ add_library(sd_protocol
   src/frame.cpp
   src/receiver.cpp
   src/hmac.cpp
+  src/link.cpp
   src/messages.cpp
   src/msp.cpp
   src/seq_window.cpp
@@ -50,6 +51,7 @@ add_executable(sd_protocol_tests
   tests/test_fc_link.cpp
   tests/test_frame.cpp
   tests/test_hmac.cpp
+  tests/test_link.cpp
   tests/test_receiver.cpp
   tests/test_messages.cpp
   tests/test_msp.cpp
