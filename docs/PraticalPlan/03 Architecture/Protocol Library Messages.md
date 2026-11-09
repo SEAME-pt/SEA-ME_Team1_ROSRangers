@@ -3,7 +3,7 @@ title: Protocol Library Messages
 type: architecture
 status: draft
 date: 2026-11-03
-updated: 2026-11-05
+updated: 2026-11-09
 project: SEA autonomous drone
 tags:
   - architecture
@@ -28,6 +28,7 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
 | Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), the side it comes from (§2, `wrong_direction`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
+| Link (2026-11-09, #102) | `sd/link.hpp` | The ESP side of the [[ESP Link State Machine]]: owns the Receivers of the current and the pending session, does the handshake and the replies, the timers (`T_fresh`, `T_loss`, pending 2 s, `HELLO` 500 ms) and decides what goes to the FC every 20 ms. Pure logic with an injected clock; the firmware gives it frames and sends what it asks for through `LinkIo` |
 
 Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they are tagged with the PSK, so #102 checks them with `receive_handshake(role, buf, len, psk, out)` (spec §1): the ESP accepts only `HELLO`, the ground only `HELLO_ACK`, with the `session_id` and seq 1 rules. The ESP routes every `HELLO` (type 0x01) there, also during a session, because a new `HELLO` opens a pending session that replaces the current one once confirmed (#156); a Receiver never accepts it.
 
