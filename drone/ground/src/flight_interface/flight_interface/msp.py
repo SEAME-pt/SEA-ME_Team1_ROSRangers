@@ -145,6 +145,9 @@ def decode(cmd: int, p: bytes) -> dict:
         out = {"vbat_v": p[0] / 10}
         if len(p) >= 5:
             out["rssi"] = struct.unpack_from("<H", p, 3)[0]  # 0..1023
+        # Betaflight 4.x: amperage i16 (0.01 A) at 5, voltage u16 (0.01 V) at 7
+        if len(p) >= 9:
+            out["voltage_v"] = struct.unpack_from("<H", p, 7)[0] / 100
         return out
     return {"raw": p.hex()}
 

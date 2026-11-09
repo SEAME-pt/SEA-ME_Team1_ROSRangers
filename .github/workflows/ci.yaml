@@ -124,13 +124,16 @@ jobs:
           fi
 
           # Packages ground-ros2 builds and tests. gesture_node + intent_node
-          # decide whether the job runs; mission_node joins once it exists.
+          # decide whether the job runs; mission_node and flight_interface
+          # join once they exist.
           ros_pkgs="gesture_node intent_node"
-          if [[ -f drone/ground/src/mission_node/package.xml ]]; then
-            ros_pkgs+=" mission_node"
-          else
-            echo "::notice title=ground-ros2 without mission_node::drone/ground/src/mission_node/package.xml not found"
-          fi
+          for pkg in mission_node flight_interface; do
+            if [[ -f drone/ground/src/$pkg/package.xml ]]; then
+              ros_pkgs+=" $pkg"
+            else
+              echo "::notice title=ground-ros2 without $pkg::drone/ground/src/$pkg/package.xml not found"
+            fi
+          done
           echo "ros_pkgs=$ros_pkgs" >> "$GITHUB_OUTPUT"
 
           if [[ ! -f drone/ground/docker-compose.yml ]]; then
@@ -263,7 +266,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends python3-pip python3-pytest python3-pytest-cov libgl1 libegl1 libglib2.0-0
+          apt-get install -y --no-install-recommends python3-pip python3-pytest python3-pytest-cov python3-serial libgl1 libegl1 libglib2.0-0
           pip3 install -r drone/ground/src/gesture_node/requirements.txt
 
       - name: Build

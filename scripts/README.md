@@ -47,7 +47,8 @@ automatically; `setup` needs the ESP on its own USB, so it was done before solde
 | `msp_check.py` | `info`, `ping`, `attitude`, `rc`, `link-watch`, `status-watch`: to the active scenario, or `--usb`; `cycle1a`, `fake-fc`, `usb-relay` need the ESP on USB | Read-only MSP, except `rc-order --write` |
 | `fc_cli.py` | Betaflight CLI: `dump`, `run`, `reboot`, `compare-diffs`, `enable-esp-uart`, `backup-firmware` | Only with `--write` (a `diff all` is saved first); leaving the CLI reboots the FC |
 | `esp_at.py` | Manual AT work: `query`, `backup`, `exit-bridge`, `restore`, `raw` | `exit-bridge`, `restore`, `raw` |
-| `msp.py`, `bridge_config.py` | Libraries used by the scripts | – |
+| `bridge_config.py` | Library used by the scripts | – |
+| [`msp.py`](../drone/ground/src/flight_interface/flight_interface/msp.py) | MSP library used by the scripts, in the `flight_interface` ROS 2 package (#96) | – |
 
 Local state lives in `~/.config/seame-drone/` (outside Git): `bridge.json` (active scenario, addresses)
 and `secrets.json` (Wi-Fi passwords, mode 600). `msp_check.py` reads the active scenario by itself.

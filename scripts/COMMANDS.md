@@ -575,7 +575,7 @@ troubleshooting and backwards compatibility:
 - [`msp_check.py`](./msp_check.py): MSP checks and bridge cycles.
 - [`esp_at.py`](./esp_at.py): low-level ESP AT operations.
 - [`bridge_config.py`](./bridge_config.py): local profile and secret storage.
-- [`msp.py`](./msp.py): shared MSP protocol and transport library.
+- [`msp.py`](../drone/ground/src/flight_interface/flight_interface/msp.py): shared MSP protocol and transport library, in the `flight_interface` ROS 2 package.
 
 Generated measurements belong outside source directories. Hardware backups and
 Wi-Fi secrets must never be committed.

@@ -8,4 +8,4 @@ ignore = ["E501"]
 
 [lint.isort]
 # Our packages, so they sort after rclpy/std_msgs and third-party imports
-known-first-party = ["gesture_node", "intent_node", "sd_protocol"]
+known-first-party = ["flight_interface", "gesture_node", "intent_node", "sd_protocol"]

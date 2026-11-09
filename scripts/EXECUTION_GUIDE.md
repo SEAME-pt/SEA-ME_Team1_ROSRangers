@@ -416,7 +416,7 @@ msp_check.py
   ├─ msp.py
   └─ fc_cli.py  (only for FC USB-port detection)
 
-msp.py
+msp.py  (drone/ground/src/flight_interface/flight_interface/)
   └─ pyserial
 
 fc_cli.py
