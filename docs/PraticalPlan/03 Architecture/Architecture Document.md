@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: draft
 date: 2026-11-02
-updated: 2026-11-05
+updated: 2026-11-09
 project: SEA autonomous drone
 tags:
   - architecture
@@ -81,7 +81,7 @@ flowchart LR
 | `intent_node` | `/gesture/raw` or UDP `:5005` (parameter `input_source`) | `/gesture/intent` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, CI + Docker |
 | `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
 | `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` |
-| `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | branch `feature/96-fc-telemetry-node`, not in CI yet (#96) |
+| `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06 |
 | `flight_interface` lifecycle node | `/mission/velocity_target` | `/flight/state` | not set | not built (#103) |
 
 **QoS:** every topic uses the rclpy default for a depth of 10: reliable, volatile, keep last 10.
@@ -94,20 +94,47 @@ flowchart LR
 
 ### `/fc/attitude` and `/fc/battery`
 
-What the two FC telemetry topics carry. These are BrunoBMFT's proposals for #96: the code follows them and each one is a constant or a parameter, so the team can still change them in review. The protocol telemetry rate was set to 25 Hz on 2026-11-05 (#142, [[Protocol Spec v0]] §7.3); `attitude_hz` still defaults to 20 Hz until #96 is reviewed.
+What the two FC telemetry topics carry. Proposed by BrunoBMFT for #96 and merged with PR #169 after review (2026-11-09). Each item is a constant or a parameter in the code.
+
+`attitude_hz` stays at 20 Hz (agreed in the PR #169 review). The 25 Hz set on 2026-11-05 (#142, [[Protocol Spec v0]] §7.3) is a different rate: the `STATE` telemetry the gateway firmware sends, and the ESP's own `MSP_ATTITUDE` poll ([[ADR-009 ESP to FC Link|ADR-009]]). `fc_telemetry` polls the FC itself, through the transparent bridge or USB.
 
 | Item | `/fc/attitude` | `/fc/battery` |
 |---|---|---|
 | Type | `geometry_msgs/Vector3Stamped`: x roll, y pitch, z yaw, in rad | `sensor_msgs/BatteryState` |
 | Source | `MSP_ATTITUDE` | `MSP_ANALOG` (0.01 V field, else the legacy 0.1 V byte) |
-| Signs | REP-103: roll + right side down, pitch + nose down, yaw + counter-clockwise seen from above. Yaw sign measured 2026-11-02; roll and pitch signs still to check on the bench (props off) | – |
+| Signs | REP-103: roll + right side down, pitch + nose down, yaw + counter-clockwise seen from above. Measured on the bench (props off, Betaflight 2026.6.2): Betaflight's raw roll and pitch already match REP-103 (2026-11-06), its raw yaw grows clockwise, so the node flips it (2026-11-02) | – |
 | Yaw | relative: zero at the first sample after node start, wrapped to (−π, π]. The drone has no magnetometer, so Betaflight's yaw is only the integrated gyro and drifts | – |
 | Fields | – | only `voltage` is measured. Every other number is NaN, `cell_voltage` holds 4 NaN (4S pack), technology LIPO. With no battery (FC on USB power, below 1.0 V): `present: false` and voltage NaN |
 | `frame_id` | `base_link` | `base_link` |
 | `header.stamp` | halfway between MSP request and reply, ROS clock | same |
-| No or bad reply | nothing is published; an old value is never sent again with a new stamp. Subscribers judge freshness from the stamp age | same |
+| No or bad reply | nothing is published; an old value is never sent again with a new stamp. Subscribers judge freshness from the stamp age. Late replies are dropped if they arrived before the next request; MSP v1 has no sequence number, so one that arrives after that can still be taken (rare: ~0.2 % misses on the bench) | same |
 
-Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/telemetry.py`.
+Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/telemetry.py` (conversions) and `fc_telemetry.py` (node).
+
+### `fc_telemetry` node
+
+Run: `ros2 run flight_interface fc_telemetry --ros-args -p transport:=udp` (or `transport:=usb`). Parameters and their defaults are declared at the top of `FcTelemetry.__init__` in `fc_telemetry.py`: transport, serial device, bridge host and ports, the two rates, `request_timeout_sec` (100 ms), `frame_id` and `cell_count` (4).
+
+| Situation | What the node does |
+|---|---|
+| Ctrl+C or SIGTERM | stops cleanly, exit code 0 |
+| Transport can't be opened (no FC on the serial port, UDP port in use) or unknown `transport` | FATAL log, exit code 1 |
+| Transport error while running (USB unplugged, network down) | warning, nothing published, keeps running. It does not reopen the port: restart it after plugging the FC back in |
+| Every 5 s | logs the MSP round trip (median, max) and the missed replies since start |
+
+Known limits:
+
+- If the FC reboots while the node runs, the yaw zero is wrong until the node restarts.
+- A silent FC makes each poll wait the full `request_timeout_sec`.
+
+**Bench result (2026-11-06, #96):** Betaflight 2026.6.2, props off, battery on, UDP through the ESP bridge.
+
+| Topic | Rate (`ros2 topic hz`) | Delay (receive − `header.stamp`) |
+|---|---|---|
+| `/fc/attitude` | 19.75 Hz (target 20) | avg 11 ms, max 50 ms |
+| `/fc/battery` | 4.98 Hz (target 5) | avg 10 ms, max 45 ms |
+
+MSP round trip median 13.5–14.4 ms (bridge baseline 12–15 ms, #30). Missed replies about 0.2 % over 11.5 min. The rosbag `fc_telemetry_2026-11-06_udp` (MCAP, ~60 s, tilted one axis at a time) is attached to #96. Tests: [[Testing Strategy]] §5.
 
 ## 3. Message contracts
 
@@ -141,6 +168,7 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 | **ESP link failsafe `T_loss`** | **250 ms** without an accepted control packet → neutral | [[ADR-004 ESP Failsafe\|ADR-004]] |
 | Failsafe trips at cage distance | 0–1 per 10 min normally, 11 in the worst run | #30, accepted: a trip is safe by design |
 | `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters `neutral_timeout_sec`, `stale_timeout_sec` |
+| FC attitude → ground topic (`/fc/attitude` delay, `fc_telemetry` over the transparent bridge) | avg 11 ms, max 50 ms; MSP round trip median 13.5–14.4 ms | #96, bench 2026-11-06 |
 | Gesture → motors end to end | **not measured yet** | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
 
 Still to measure: the end-to-end gesture → motors latency and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
@@ -163,6 +191,7 @@ Still to measure: the end-to-end gesture → motors latency and the failsafe-tim
 | **ESP8266** | The Wi-Fi microcontroller on the drone that bridges the ground to the FC over UART4. |
 | **FC** | Flight Controller: the OddityRC F7 AIO running Betaflight. |
 | **HMAC** | Hash-based Message Authentication Code: a keyed tag proving the sender holds the key. |
+| **MCAP** | The default rosbag file format in ROS 2 Jazzy. |
 | **MSP** | MultiWii Serial Protocol, used to talk to Betaflight. |
 | **MSP Override** | Betaflight feature that lets MSP replace selected RC channels while the pilot's switch is on. |
 | **p99** | 99th percentile: 99 % of samples are at or below this value. |
@@ -172,3 +201,5 @@ Still to measure: the end-to-end gesture → motors latency and the failsafe-tim
 | **SoftAP** | The Wi-Fi network the ESP creates itself, which the ground PC joins. |
 | **`T_fresh`** | Maximum age of the last accepted setpoint (150 ms). Older → neutral sticks until the next valid setpoint; no failsafe. |
 | **`T_loss`** | Time without an accepted control packet after which the ESP enters link failsafe (250 ms). |
+| **Transparent bridge** | Today's ESP firmware: it forwards raw MSP between UDP 5760 and the FC unchanged. The gateway firmware (#101) replaces it. |
+| **Yaw zero** | The FC yaw reading taken as 0 at the node's first attitude sample. Needed because the drone has no magnetometer, so Betaflight's yaw only counts from FC power-up and drifts. |

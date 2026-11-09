@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-10-23
+updated: 2026-11-09
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -48,9 +48,9 @@ flowchart LR
 Each job is gated by `check-components` and turns on when its component exists (details in [[GitHub Actions Starter]]). The workflow files are `ci.yaml`, `hil.yaml` and `close-linked-issues.yaml` in `.github/workflows/`.
 
 **Ground ROS 2 jobs.**
-- `ground-ros2` builds `gesture_node` and `intent_node` in the `ros:jazzy-ros-base` container and runs `colcon test`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
+- `ground-ros2` builds `gesture_node` and `intent_node`, plus `mission_node` and `flight_interface` when their `package.xml` exists (the `ros_pkgs` output of `check-components`), in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
 - `ground-docker` runs `drone/ground/docker/smoke_test.sh`.
-- They turn on when both `package.xml` files exist (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
+- They turn on when the `gesture_node` and `intent_node` `package.xml` files exist (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
 - On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why.
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
