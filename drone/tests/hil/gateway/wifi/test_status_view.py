@@ -68,7 +68,11 @@ def status_until(udp, done, deadline_s=DEADLINE_S) -> dict:
 
 
 def test_status_shows_the_fake_fc_values(fake_fc, udp):
-    s = status_until(udp, lambda s: s.get("vbat_cV") not in (None, "-1"))
+    def all_three(s):
+        return all(s.get(k) not in (None, "-1") for k in ("armed", "roll", "vbat_cV"))
+
+    s = status_until(udp, all_three)
+    fake_fc.check()
     assert s, "no status line from UDP 5770: is esp_gateway flashed?"
     assert s["armed"] == "0"
     assert int(s["arming_flags"], 16) == FAKE_ARMING_FLAGS
@@ -83,9 +87,7 @@ def test_status_shows_the_fake_fc_values(fake_fc, udp):
 
 def test_values_forgotten_when_the_fc_goes_silent(fake_fc, udp):
     fake_fc.answering = False
-    s = status_until(
-        udp, lambda s: s.get("roll") == "-1", deadline_s=FORGET_S + 5
-    )
+    s = status_until(udp, lambda s: s.get("roll") == "-1", deadline_s=FORGET_S + 5)
     # A dead FC never shows numbers that look like readings
     assert s.get("roll") == "-1", f"values kept after {FORGET_S + 5:.0f} s: {s}"
     assert s["armed"] == s["vbat_cV"] == s["arming_flags"] == "-1"

@@ -134,6 +134,7 @@ class FakeFc:
         self.raw = bytearray()
         self.frames = []  # (time.monotonic(), msp.Frame)
         self.parser = msp.Parser()
+        self.error = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -146,6 +147,13 @@ class FakeFc:
     def __exit__(self, *exc):
         self._stop.set()
         self._thread.join(timeout=2)
+        self.check()
+
+    def check(self):
+        """Raise what killed the thread, so a dead fake FC is not read as a
+        silent gateway."""
+        if self.error is not None:
+            raise RuntimeError("fake FC thread died") from self.error
 
     def clear(self):
         with self._lock:
@@ -154,10 +162,17 @@ class FakeFc:
             self.parser = msp.Parser()
 
     def snapshot(self):
+        self.check()
         with self._lock:
             return bytes(self.raw), list(self.frames), self.parser.bad_checksums
 
     def _run(self):
+        try:
+            self._serve()
+        except Exception as exc:  # re-raised in the test's thread by check()
+            self.error = exc
+
+    def _serve(self):
         while not self._stop.is_set():
             data = self.port.read(self.port.in_waiting or 1)
             if not data:
@@ -172,6 +187,15 @@ class FakeFc:
                     self.port.write(msp.encode_response(f.cmd, FAKE_ANSWERS[f.cmd]))
 
 
-def frame_bytes(frames) -> int:
-    """Wire size of the parsed frames: '$M<', size, cmd, payload, checksum."""
-    return sum(6 + len(f.payload) for _, f in frames)
+def stray_bytes(raw: bytes, frames) -> int:
+    """Bytes in `raw` that are not the parsed frames back to back.
+
+    The recording can start and end inside a frame, so up to 5 bytes (a poll
+    is 6) at each end don't count. Any byte between two frames does: text, a
+    crash dump, a frame with a bad checksum.
+    """
+    stream = b"".join(msp.encode_request(f.cmd, f.payload) for _, f in frames)
+    start = raw.find(stream)
+    if start < 0:
+        return len(raw)
+    return max(start - 5, 0) + max(len(raw) - start - len(stream) - 5, 0)

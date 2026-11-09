@@ -121,7 +121,7 @@ jobs:
         timeout-minutes: 4
         run: |
           . .venv/bin/activate
-          exec drone/tests/hil/softap_window.sh 40 -- \
+          exec drone/tests/hil/softap_window.sh 50 -- \
             pytest drone/tests/hil/gateway/wifi -v --junitxml=hil-gateway-wifi-report.xml
 
       - uses: actions/upload-artifact@v4

@@ -22,11 +22,11 @@ from bench import (
     FakeFc,
     boot_mode,
     crash_markers,
-    frame_bytes,
     msp,
     open_esp,
     pulse_reset,
     read_for,
+    stray_bytes,
 )
 
 ALLOWED = {msp.MSP_STATUS, msp.MSP_ATTITUDE, msp.MSP_ANALOG}
@@ -59,12 +59,10 @@ def record(esp, answering: bool):
 def check_only_allowed_polls(raw, frames, bad):
     assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
     assert bad == 0, f"{bad} frames with a bad checksum"
-    # Every byte on the FC's UART is part of an MSP frame: no text, no dump,
-    # no half frame. The clear() can cut one frame at the start of the window.
-    assert len(raw) - frame_bytes(frames) <= 6 + 64, (
-        f"{len(raw) - frame_bytes(frames)} bytes outside MSP frames: {raw[:300]!r}"
-    )
     assert frames, "the gateway sent nothing: is esp_gateway flashed?"
+    # Every byte on the FC's UART is part of an MSP frame: no text, no dump
+    stray = stray_bytes(raw, frames)
+    assert stray == 0, f"{stray} bytes outside MSP frames: {raw[:300]!r}"
     assert {f.direction for _, f in frames} == {"<"}, "the gateway only sends requests"
     sent = {f.cmd for _, f in frames}
     assert sent <= ALLOWED, f"commands outside the poll list: {sent - ALLOWED}"
@@ -84,6 +82,19 @@ def test_fake_answers_decode():
     assert attitude["roll_deg"] == FAKE_ROLL / 10
     analog = msp.decode(msp.MSP_ANALOG, FAKE_ANSWERS[msp.MSP_ANALOG])
     assert analog["voltage_v"] == FAKE_VBAT_CV / 100
+
+
+def test_stray_bytes_counts_only_bytes_between_frames():
+    """Host check (no bench)."""
+    att, status = (msp.encode_request(c) for c in (msp.MSP_ATTITUDE, msp.MSP_STATUS))
+    frames = [(0, f) for f in msp.Parser().feed(att + status)]
+    assert stray_bytes(att + status, frames) == 0
+    # A recording that starts and ends inside a frame
+    cut = att[1:] + att + status + att[:5]
+    assert stray_bytes(cut, [(0, f) for f in msp.Parser().feed(cut)]) == 0
+    # Text between two frames, or before the first one
+    assert stray_bytes(att + b"ok\n" + status, frames) > 0
+    assert stray_bytes(b"Exception (28)" + att, frames[:1]) == 14 - 5
 
 
 def test_answered_polls_run_at_their_rates(esp):
