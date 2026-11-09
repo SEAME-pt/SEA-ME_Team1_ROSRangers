@@ -283,16 +283,21 @@ def take_ack(link: GroundLink, frames: list[bytes]) -> list[bytes] | None:
     return None
 
 
-def connect(
-    args, link: GroundLink, t0: float
-) -> tuple[socket.socket, TcpReader, list[bytes]]:
+STATE_STALE_S = 1.0  # no STATE for this long: say so, never reprint old values
+RECONNECT_AFTER_S = 3.0  # no STATE for this long: the session is gone, open a new one
+RECONNECT_EVERY_S = 2.0
+
+
+def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: float = 3):
+    """Opens a session: (tcp, reader, frames that came after HELLO_ACK). On
+    failure it exits, or returns None when `fatal` is False (reconnect)."""
     try:
-        tcp = socket.create_connection((args.host, args.port), timeout=3)
+        tcp = socket.create_connection((args.host, args.port), timeout=timeout)
         tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         hello = link.hello()
         tcp.sendall(hello)
         reader = TcpReader()
-        deadline = time.monotonic() + 3
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             data = tcp.recv(512)
             if not data:
@@ -303,11 +308,13 @@ def connect(
                 tcp.setblocking(False)
                 link.recorded_hello = hello
                 return tcp, reader, rest
+        tcp.close()
+        why = "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
     except (OSError, ValueError) as e:
-        raise SystemExit(
-            f"cannot open a session with {args.host}:{args.port}: {e}"
-        ) from None
-    raise SystemExit("no HELLO_ACK: wrong PSK, or not the gateway firmware?")
+        why = f"cannot open a session with {args.host}:{args.port}: {e}"
+    if fatal:
+        raise SystemExit(why)
+    return None
 
 
 class Stdin:
@@ -344,6 +351,9 @@ def run(args) -> None:
     next_sp = time.monotonic()
     next_print = 0.0
     last_state = None
+    last_state_t = time.monotonic()  # grace period right after the handshake
+    udp_error = ""  # logged once per change, not 50 times a second
+    next_reconnect = 0.0
     replay, replay_reader = None, TcpReader()
     print(__doc__.split("\n\n")[2], flush=True)
 
@@ -365,8 +375,13 @@ def run(args) -> None:
             try:
                 udp.sendto(link.setpoint(mode, roll=roll), dest)
                 last_sent = now
+                if udp_error:
+                    log(t0, "UDP sending again")
+                    udp_error = ""
             except OSError as e:
-                log(t0, f"UDP send failed: {e}")
+                if str(e) != udp_error:
+                    log(t0, f"UDP send failed: {e} (the drone sees a link loss)")
+                    udp_error = str(e)
             next_sp += 1 / args.rate
             if next_sp < now:
                 next_sp = now + 1 / args.rate
@@ -381,6 +396,7 @@ def run(args) -> None:
                     st = link.state(udp.recv(512))
                     if st is not None:
                         last_state = st
+                        last_state_t = time.monotonic()
             except (BlockingIOError, ConnectionRefusedError):
                 pass
         if tcp is not None and tcp in ready:
@@ -420,9 +436,31 @@ def run(args) -> None:
                 log(t0, "replay connection closed by the ESP")
                 replay.close()
                 replay = None
-        if last_state is not None and now >= next_print:
-            log(t0, state_line(last_state))
+        if now >= next_print:
+            age = now - last_state_t
+            if last_state is not None and age < STATE_STALE_S:
+                log(t0, state_line(last_state))
+            elif udp_on:
+                log(t0, f"no STATE for {age:.1f} s: link down or session ended")
             next_print = now + args.print_every
+        # The session is gone (for example the Wi-Fi dropped and the ESP ended
+        # it): open a new one. Sticks go back to neutral, and ARM stays the
+        # operator's action (REQ-SAF-023). Not during `s`, which is on purpose.
+        if udp_on and now - last_state_t > RECONNECT_AFTER_S and now >= next_reconnect:
+            next_reconnect = now + RECONNECT_EVERY_S
+            fresh = GroundLink(link.psk)
+            opened = connect(args, fresh, t0, fatal=False, timeout=1)
+            if opened is not None:
+                if tcp is not None:
+                    tcp.close()
+                link = fresh
+                tcp, reader, early = opened
+                for frame in early:
+                    log(t0, link.describe_tcp(frame))
+                mode, roll = 0, 0
+                stopped_at = None
+                last_state_t = time.monotonic()
+                log(t0, "new session: sticks neutral; type a to ARM again")
         if stdin.open and stdin.fd in ready:
             for line in stdin.lines():
                 words = line.split()

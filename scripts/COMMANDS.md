@@ -346,6 +346,13 @@ Keys while it runs (type, then Enter):
 | `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
 | `b` / `q` | BYE, then quit | – |
 
+**When the Wi-Fi drops** (2026-11-09):
+- **No old values:** the tool never reprints old values. After 1 s without STATE it prints `no STATE for N s`.
+- **One error line:** a send error is printed once, not 50 times a second.
+- **Session ended by the drone:** if nothing arrives for 3 s, the session is gone. This happens, for example, in SESSION_IDLE once the drone's TCP keep-alive has closed the connection. The tool then opens a **new session by itself** with neutral sticks. It never ARMs again by itself: type `a` (REQ-SAF-023).
+- **Link loss while armed:** the drone stays in LINK_FAILSAFE (the ADR-004 output) until that new session's ARM.
+- **TCP drops but STATE keeps coming:** nothing changes, and the session keeps running on UDP (ADR-005).
+
 ### ESP AT commands (ESP on USB)
 
 Every `esp` command needs `--esp-on-usb` first, e.g.
