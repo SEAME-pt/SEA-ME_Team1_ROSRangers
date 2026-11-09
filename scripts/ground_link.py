@@ -440,7 +440,7 @@ def run(args) -> None:
             age = now - last_state_t
             if last_state is not None and age < STATE_STALE_S:
                 log(t0, state_line(last_state))
-            elif udp_on:
+            elif udp_on and age >= STATE_STALE_S:  # not before the first STATE
                 log(t0, f"no STATE for {age:.1f} s: link down or session ended")
             next_print = now + args.print_every
         # The session is gone (for example the Wi-Fi dropped and the ESP ended
