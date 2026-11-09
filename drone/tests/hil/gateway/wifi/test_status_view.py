@@ -9,6 +9,7 @@ fake FC's, and must be forgotten once the FC goes silent.
 import os
 import socket
 import time
+import warnings
 
 import pytest
 from bench import (
@@ -25,6 +26,7 @@ from bench import (
 STATUS_ADDR = (os.environ.get("HIL_ESP_IP", "192.168.4.1"), 5770)
 DEADLINE_S = 15.0  # covers an ESP reset when the serial port opens
 FORGET_S = 10.0  # kMaxValueAgeMs in sd/fc_link.hpp
+STEADY_S = 3.0  # replies (about 35/s) watched for new errors
 
 
 @pytest.fixture(scope="module")
@@ -81,8 +83,18 @@ def test_status_shows_the_fake_fc_values(fake_fc, udp):
     assert int(s["heading"]) == FAKE_HEADING
     assert int(s["vbat_cV"]) == FAKE_VBAT_CV
     assert 0 <= int(s["status_age_ms"]) < 500  # fresh enough for the ADR-024 gate
-    assert int(s["rep"]) > 0
-    assert s["bad_cksum"] == s["too_long"] == s["err"] == "0"
+    # The counters run from the ESP's boot, so they include the serial port
+    # being opened and closed between test steps (a bench artifact: the FC's
+    # UART is never opened on the drone). Show them, then require no new
+    # error while replies keep flowing.
+    errors = ("bad_cksum", "too_long", "err")
+    if any(s[k] != "0" for k in errors):
+        warnings.warn(f"error counters before the check: {s}", stacklevel=1)
+    time.sleep(STEADY_S)
+    after = status_until(udp, lambda a: int(a.get("rep", 0)) > int(s["rep"]))
+    assert int(after["rep"]) > int(s["rep"]), f"no new replies: {s} -> {after}"
+    for k in errors:
+        assert after[k] == s[k], f"{k} rose with a healthy FC: {s} -> {after}"
 
 
 def test_values_forgotten_when_the_fc_goes_silent(fake_fc, udp):
