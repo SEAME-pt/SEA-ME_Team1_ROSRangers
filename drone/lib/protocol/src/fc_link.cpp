@@ -38,6 +38,15 @@ void FcLink::expire(std::uint32_t now_ms) {
   }
 }
 
+bool FcLink::any_poll_due(std::uint32_t now_ms) const {
+  for (const Poll &p : polls_) {
+    if (!p.sent_once || now_ms - p.last_sent_ms >= p.period_ms) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
                          std::size_t out_cap) {
   expire(now_ms);
@@ -46,6 +55,9 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
       return 0;
     }
     ++counters_.timeouts;
+    // A silent FC must not starve the polls: after an RC timeout one due poll
+    // goes before the next RC, so the FC is seen when it answers again.
+    poll_first_ = in_flight_cmd_ == msp::kSetRawRc;
     in_flight_ = false;
     draining_ = true;
     drain_ms_ = now_ms;
@@ -57,7 +69,7 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     draining_ = false;
   }
   // RC goes first: it is the control output (50 Hz), the polls fit around it.
-  if (rc_pending_) {
+  if (rc_pending_ && !(poll_first_ && any_poll_due(now_ms))) {
     const std::size_t n = msp::encode_set_raw_rc(rc_, out, out_cap);
     if (n == 0) {
       return 0;
@@ -95,6 +107,7 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
   }
   next->last_sent_ms = now_ms;
   next->sent_once = true;
+  poll_first_ = false;
   in_flight_ = true;
   in_flight_cmd_ = next->cmd;
   in_flight_ms_ = now_ms;

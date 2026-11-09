@@ -218,6 +218,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.OnlyTheLatestRcIsSent` | Two RC sets while a poll is in flight: the newer one is sent, the older one counted as replaced | Old sticks never reach the FC after newer ones |
 | `FcLink.StopRcSendsNothing` | `stop_rc()` after `set_rc()`: no RC frame | The ADR-004 "stop" really stops |
 | `FcLink.RcAt50HzLeavesTheAdr009Polls` | One simulated second with RC at 50 Hz and an FC that answers at once: 50 RC frames, 25 ATTITUDE, no timeouts | RC and telemetry fit on one UART (the real budget is spike #123) |
+| `FcLink.ASilentFcDoesNotStarveThePolls` | The FC stops answering for 3 s with RC at 50 Hz: polls still go out between the RC timeouts, and when the FC answers again its values come back | A silent FC is seen coming back; RC timeouts never lock out telemetry (safety review of #102 PR 2) |
 
 ## Link: the ESP link state machine (#102)
 

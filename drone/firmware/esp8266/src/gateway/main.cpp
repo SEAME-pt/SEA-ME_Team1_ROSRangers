@@ -46,8 +46,14 @@ constexpr uint8_t kFlowNoData = 4;      // ThoneFlow §8.1 order: NO_DATA
 constexpr int kKeepAliveIdleS = 5;      // ADR-005 entry 2026-11-06
 constexpr int kKeepAliveIntervalS = 1;
 constexpr int kKeepAliveCount = 3;
-constexpr int kMaxUdpPerLoop = 8;    // never starve the UART and timers
-constexpr uint8_t kStateRetries = 3; // Wi-Fi send queue full (#30)
+constexpr int kMaxUdpPerLoop = 8;     // never starve the UART and timers
+constexpr uint8_t kStateRetries = 3;  // Wi-Fi send queue full (#30)
+constexpr uint32_t kStateRetryMs = 3; // let the queue drain between tries
+// The loop must never wait on the network (it would stop RC and the timers):
+// the core's WiFiClient waits up to 5 s for a full send queue and stop()
+// up to 300 ms for ACKs by default (firmware review of #102 PR 2).
+constexpr unsigned long kTcpWriteTimeoutMs = 1;
+constexpr unsigned int kTcpStopWaitMs = 1;
 constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0 ";
 
 sd::FcLink fc;
@@ -72,6 +78,7 @@ uint16_t peer_port = 0;
 uint8_t retry_buf[sd::kMaxFrame];
 size_t retry_len = 0;
 uint8_t retry_left = 0;
+uint32_t retry_at_ms = 0;
 uint32_t state_dropped = 0;
 
 bool udp_send(const uint8_t *buf, size_t len) {
@@ -85,7 +92,7 @@ bool udp_send(const uint8_t *buf, size_t len) {
 void close_slot(sd::ConnId i) {
   Slot &s = slots[i];
   if (s.used) {
-    s.client.stop();
+    s.client.stop(kTcpStopWaitMs);
     s.used = false;
     s.len = 0;
     s.report_closed = true;
@@ -118,6 +125,7 @@ public:
       memcpy(retry_buf, buf, len);
       retry_len = len;
       retry_left = kStateRetries;
+      retry_at_ms = millis() + kStateRetryMs;
     } else {
       retry_len = 0;
     }
@@ -140,6 +148,17 @@ void hardware_random(uint8_t *out, size_t n) {
     }
   }
 }
+
+// secrets.py checks the PSK (64 lowercase hex). These catch a value that
+// reached the build another way (for example build_flags).
+static_assert(sizeof(SD_PSK_HEX) == 2 * sd::kKeySize + 1,
+              "SD_PSK_HEX must be 64 hex characters");
+constexpr bool is_hex(const char *p, size_t n) {
+  return n == 0 || ((('0' <= *p && *p <= '9') || ('a' <= *p && *p <= 'f')) &&
+                    is_hex(p + 1, n - 1));
+}
+static_assert(is_hex(SD_PSK_HEX, 2 * sd::kKeySize),
+              "SD_PSK_HEX must be lowercase hex");
 
 uint8_t hex_nibble(char c) {
   return static_cast<uint8_t>(c <= '9' ? c - '0' : c - 'a' + 10);
@@ -171,6 +190,7 @@ void accept_tcp(WiFiServer &server, uint32_t now) {
     if (!s.used && !s.report_closed) {
       s.client = incoming;
       s.client.setNoDelay(true);
+      s.client.setTimeout(kTcpWriteTimeoutMs); // never block in write()
       s.client.keepAlive(kKeepAliveIdleS, kKeepAliveIntervalS, kKeepAliveCount);
       s.used = true;
       s.opened_ms = now;
@@ -178,7 +198,7 @@ void accept_tcp(WiFiServer &server, uint32_t now) {
       return;
     }
   }
-  incoming.stop(); // both slots taken
+  incoming.stop(kTcpStopWaitMs); // both slots taken
 }
 
 void service_tcp(sd::Link &link, uint32_t now) {
@@ -329,7 +349,9 @@ void loop() {
   // 50 Hz: what goes to the FC. Nothing in BOOT or once the ADR-004 output
   // has stopped.
   if (now - last_rc_ms >= kRcPeriodMs) {
-    last_rc_ms = now;
+    // Fixed 20 ms grid; after a long stall (OTA) start again from now.
+    last_rc_ms =
+        now - last_rc_ms >= 2 * kRcPeriodMs ? now : last_rc_ms + kRcPeriodMs;
     uint16_t channels[sd::kRcChannels];
     if (link.fc_output(now, channels)) {
       fc.set_rc(channels);
@@ -347,7 +369,9 @@ void loop() {
   if (now - last_state_ms >= 1000U / link.telemetry_rate_hz()) {
     last_state_ms = now;
     link.send_state(now, fc_view());
-  } else if (retry_len > 0 && have_peer) {
+  } else if (retry_len > 0 && have_peer &&
+             static_cast<int32_t>(now - retry_at_ms) >= 0) {
+    retry_at_ms = now + kStateRetryMs;
     if (udp_send(retry_buf, retry_len)) {
       retry_len = 0;
     } else if (--retry_left == 0) {

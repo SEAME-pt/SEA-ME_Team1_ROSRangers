@@ -104,9 +104,11 @@ private:
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
   void expire(std::uint32_t now_ms);
+  bool any_poll_due(std::uint32_t now_ms) const;
 
   Poll polls_[4];
   bool rc_pending_ = false;
+  bool poll_first_ = false; // an RC timed out: let one due poll go next
   std::uint16_t rc_[msp::kRcChannels] = {};
   msp::Parser parser_;
 

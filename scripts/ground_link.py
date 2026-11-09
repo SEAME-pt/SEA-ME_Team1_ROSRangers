@@ -33,6 +33,7 @@ import argparse
 import json
 import os
 import pathlib
+import re
 import secrets
 import select
 import socket
@@ -83,29 +84,45 @@ def now_us() -> int:
     return time.monotonic_ns() // 1000 & 0xFFFFFFFF
 
 
-def load_psk() -> bytes:
-    text = os.environ.get("SEAME_PSK", "")
-    if not text:
-        try:
-            text = json.loads(SECRETS.read_text()).get("psk", "")
-        except FileNotFoundError:
-            text = ""
+PSK_RE = re.compile(r"[0-9a-f]{64}")
+
+
+def parse_psk(text: str) -> bytes:
     text = text.strip().lower()
-    if len(text) != 64:
+    if not PSK_RE.fullmatch(text):
         raise SystemExit(
-            "No PSK: set SEAME_PSK or run `ground_link.py --gen-psk` (64 hex characters)."
+            "No valid PSK: set SEAME_PSK or run `ground_link.py --gen-psk` (64 hex characters)."
         )
     return bytes.fromhex(text)
 
 
-def gen_psk() -> str:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    data = json.loads(SECRETS.read_text()) if SECRETS.exists() else {}
+def read_secrets(path: pathlib.Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError as e:
+        raise SystemExit(f"{path} is not valid JSON: {e}") from None
+
+
+def load_psk(path: pathlib.Path = SECRETS) -> bytes:
+    return parse_psk(os.environ.get("SEAME_PSK") or read_secrets(path).get("psk", ""))
+
+
+def gen_psk(path: pathlib.Path = SECRETS) -> str:
+    """Adds a new PSK to secrets.json, never replacing one. The file keeps the
+    Wi-Fi and OTA secrets too, so it is rewritten atomically, mode 600."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o700)
+    data = read_secrets(path)
     if data.get("psk"):
-        raise SystemExit(f"{SECRETS} already has a PSK; delete it first to replace it.")
+        raise SystemExit(f"{path} already has a PSK; delete it first to replace it.")
     data["psk"] = secrets.token_hex(32)
-    SECRETS.write_text(json.dumps(data, indent=2) + "\n")
-    SECRETS.chmod(0o600)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        fh.write(json.dumps(data, indent=2) + "\n")
+    os.replace(tmp, path)
     return data["psk"]
 
 
@@ -269,20 +286,45 @@ def take_ack(link: GroundLink, frames: list[bytes]) -> list[bytes] | None:
 def connect(
     args, link: GroundLink, t0: float
 ) -> tuple[socket.socket, TcpReader, list[bytes]]:
-    tcp = socket.create_connection((args.host, args.port), timeout=3)
-    tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    hello = link.hello()
-    tcp.sendall(hello)
-    reader = TcpReader()
-    deadline = time.monotonic() + 3
-    while time.monotonic() < deadline:
-        rest = take_ack(link, reader.feed(tcp.recv(512)))
-        if rest is not None:
-            log(t0, f"session 0x{link.session_id:08x} open")
-            tcp.setblocking(False)
-            link.recorded_hello = hello
-            return tcp, reader, rest
+    try:
+        tcp = socket.create_connection((args.host, args.port), timeout=3)
+        tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        hello = link.hello()
+        tcp.sendall(hello)
+        reader = TcpReader()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            data = tcp.recv(512)
+            if not data:
+                break
+            rest = take_ack(link, reader.feed(data))
+            if rest is not None:
+                log(t0, f"session 0x{link.session_id:08x} open")
+                tcp.setblocking(False)
+                link.recorded_hello = hello
+                return tcp, reader, rest
+    except (OSError, ValueError) as e:
+        raise SystemExit(
+            f"cannot open a session with {args.host}:{args.port}: {e}"
+        ) from None
     raise SystemExit("no HELLO_ACK: wrong PSK, or not the gateway firmware?")
+
+
+class Stdin:
+    """Lines from stdin without blocking; works for a terminal and a pipe."""
+
+    def __init__(self) -> None:
+        self.fd = sys.stdin.fileno()
+        self.buf = b""
+        self.open = True
+
+    def lines(self) -> list[str]:
+        data = os.read(self.fd, 4096)
+        if not data:
+            self.open = False  # the pipe ended: stop watching it
+        self.buf += data
+        *done, self.buf = self.buf.split(b"\n")
+        return [line.decode(errors="replace") for line in done]
 
 
 def run(args) -> None:
@@ -294,106 +336,152 @@ def run(args) -> None:
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udp.setblocking(False)
     dest = (args.host, args.port)
+    stdin = Stdin()
     mode, roll = 0, 0
     udp_on = True
-    stopped_at = None
+    last_sent = None  # time of the last SETPOINT sent
+    stopped_at = None  # the last SETPOINT before `s`
     next_sp = time.monotonic()
     next_print = 0.0
     last_state = None
-    replay = None
+    replay, replay_reader = None, TcpReader()
     print(__doc__.split("\n\n")[2], flush=True)
+
+    def send_tcp(frame: bytes, what: str) -> None:
+        if tcp is None:
+            log(
+                t0, f"not sent ({what}): no TCP; the session runs on UDP only (ADR-005)"
+            )
+            return
+        try:
+            tcp.sendall(frame)
+            log(t0, f"sent {what}")
+        except OSError as e:
+            log(t0, f"TCP send failed ({what}): {e}")
+
     while True:
         now = time.monotonic()
         if udp_on and now >= next_sp:
-            udp.sendto(link.setpoint(mode, roll=roll), dest)
+            try:
+                udp.sendto(link.setpoint(mode, roll=roll), dest)
+                last_sent = now
+            except OSError as e:
+                log(t0, f"UDP send failed: {e}")
             next_sp += 1 / args.rate
             if next_sp < now:
                 next_sp = now + 1 / args.rate
-        socks = [tcp, udp, sys.stdin] + ([replay] if replay else [])
-        ready, _, _ = select.select(
-            socks, [], [], max(0.0, min(next_sp - time.monotonic(), 0.02))
-        )
+        socks = [udp] + [x for x in (tcp, replay) if x is not None]
+        if stdin.open:
+            socks.append(stdin.fd)
+        wait = 0.02 if not udp_on else max(0.0, min(next_sp - time.monotonic(), 0.02))
+        ready, _, _ = select.select(socks, [], [], wait)
         if udp in ready:
             try:
                 while True:
                     st = link.state(udp.recv(512))
                     if st is not None:
                         last_state = st
-            except BlockingIOError:
+            except (BlockingIOError, ConnectionRefusedError):
                 pass
-        if tcp in ready:
+        if tcp is not None and tcp in ready:
             try:
                 data = tcp.recv(4096)
+                frames = reader.feed(data)
             except BlockingIOError:
-                data = None
+                data, frames = None, []
+            except (OSError, ValueError) as e:
+                data, frames = b"", []
+                log(t0, f"TCP error: {e}")
             if data == b"":
-                log(t0, "TCP closed by the ESP")
-                return
-            for frame in reader.feed(data or b""):
+                # ADR-005: a TCP drop does not end the session; UDP goes on.
+                log(t0, "TCP closed: the session continues on UDP only (ADR-005)")
+                tcp.close()
+                tcp = None
+            for frame in frames:
                 text = link.describe_tcp(frame)
                 if stopped_at is not None and "LINK_FAILSAFE_ENTERED" in text:
-                    text += f"  ({(time.monotonic() - stopped_at) * 1000:.0f} ms after the last SETPOINT)"
+                    ms = (time.monotonic() - stopped_at) * 1000
+                    text += f"  ({ms:.0f} ms after the last SETPOINT)"
                     stopped_at = None
                 log(t0, text)
-        if replay and replay in ready:
-            if replay.recv(512) == b"":
+        if replay is not None and replay in ready:
+            try:
+                data = replay.recv(512)
+            except OSError:
+                data = b""
+            if data:
+                for frame in replay_reader.feed(data):
+                    if frame[3] == MsgType.HELLO_ACK:
+                        log(
+                            t0,
+                            "replay got a HELLO_ACK: a pending session nobody can confirm (expected)",
+                        )
+            else:
                 log(t0, "replay connection closed by the ESP")
                 replay.close()
                 replay = None
         if last_state is not None and now >= next_print:
             log(t0, state_line(last_state))
             next_print = now + args.print_every
-        if sys.stdin in ready:
-            words = sys.stdin.readline().split()
-            if not words:
-                continue
-            cmd = words[0]
-            if cmd == "a":
-                tcp.sendall(link.arm(args.mask))
-                log(t0, f"sent ARM_CONTROL_REQUEST mask {args.mask}")
-            elif cmd == "r":
-                tcp.sendall(link.tcp(MsgType.RESUME_REQUEST))
-                log(t0, "sent RESUME_REQUEST")
-            elif cmd == "n":
-                mode, roll = 0, 0
-                log(t0, "neutral sticks")
-            elif cmd == "m":
-                mode, roll = 1, int(words[1]) if len(words) > 1 else 300
-                log(t0, f"mode 1, roll {roll}")
-            elif cmd == "s":
-                udp_on = False
-                stopped_at = time.monotonic()
-                log(t0, "UDP stopped (link loss)")
-            elif cmd == "u":
-                udp_on = True
-                next_sp = time.monotonic()
-                log(t0, "UDP on")
-            elif cmd == "g":
-                for name, frame in link.garbage():
-                    udp.sendto(frame, dest)
-                    log(t0, f"sent garbage: {name}")
-            elif cmd == "h":
-                if replay:
-                    replay.close()
-                replay = socket.create_connection((args.host, args.port), timeout=3)
-                replay.sendall(link.recorded_hello)
-                replay.setblocking(False)
-                log(t0, "replayed the recorded HELLO on a second connection")
-            elif cmd == "c" and len(words) > 1:
-                key = int(words[1], 16)
-                tcp.sendall(
-                    link.tcp(MsgType.CONFIG_GET, encode_config_kv(ConfigKv(key, 0)))
-                )
-                log(t0, f"sent CONFIG_GET 0x{key:02x}")
-            elif cmd == "k":
-                log(t0, "killed: sockets closed without BYE")
-                os._exit(0)
-            elif cmd in ("b", "q"):
-                tcp.sendall(link.tcp(MsgType.BYE, encode_u8_payload(0)))
-                log(t0, "sent BYE")
-                return
-            else:
-                log(t0, f"unknown command {cmd!r}")
+        if stdin.open and stdin.fd in ready:
+            for line in stdin.lines():
+                words = line.split()
+                if not words:
+                    continue
+                cmd = words[0]
+                if cmd == "a":
+                    send_tcp(
+                        link.arm(args.mask), f"ARM_CONTROL_REQUEST mask {args.mask}"
+                    )
+                elif cmd == "r":
+                    send_tcp(link.tcp(MsgType.RESUME_REQUEST), "RESUME_REQUEST")
+                elif cmd == "n":
+                    mode, roll = 0, 0
+                    log(t0, "neutral sticks")
+                elif cmd == "m":
+                    mode, roll = 1, int(words[1]) if len(words) > 1 else 300
+                    log(t0, f"mode 1, roll {roll}")
+                elif cmd == "s":
+                    udp_on = False
+                    stopped_at = last_sent
+                    log(t0, "UDP stopped (link loss)")
+                elif cmd == "u":
+                    udp_on = True
+                    stopped_at = None
+                    next_sp = time.monotonic()
+                    log(t0, "UDP on")
+                elif cmd == "g":
+                    for name, frame in link.garbage():
+                        udp.sendto(frame, dest)
+                        log(t0, f"sent garbage: {name}")
+                elif cmd == "h":
+                    if replay is not None:
+                        replay.close()
+                    try:
+                        replay = socket.create_connection(
+                            (args.host, args.port), timeout=3
+                        )
+                        replay.sendall(link.recorded_hello)
+                        replay.setblocking(False)
+                        replay_reader = TcpReader()
+                        log(t0, "replayed the recorded HELLO on a second connection")
+                    except OSError as e:
+                        replay = None
+                        log(t0, f"replay connection refused: {e}")
+                elif cmd == "c" and len(words) > 1:
+                    key = int(words[1], 16)
+                    frame = link.tcp(
+                        MsgType.CONFIG_GET, encode_config_kv(ConfigKv(key, 0))
+                    )
+                    send_tcp(frame, f"CONFIG_GET 0x{key:02x}")
+                elif cmd == "k":
+                    log(t0, "killed: sockets closed without BYE")
+                    os._exit(0)
+                elif cmd in ("b", "q"):
+                    send_tcp(link.tcp(MsgType.BYE, encode_u8_payload(0)), "BYE")
+                    return
+                else:
+                    log(t0, f"unknown command {cmd!r}")
 
 
 def main() -> None:

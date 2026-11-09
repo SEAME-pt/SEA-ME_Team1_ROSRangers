@@ -76,7 +76,7 @@ Each side also accepts only the types the **other** side sends (2026-11-05, #152
 
 Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order of §4 (type → transport → direction → size → `mode` → `seq`), so they change no state (REQ-COM-001, REQ-COM-004).
 
-`flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01).
+`flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
 
 Every TCP request has its own reply: `HELLO` → `HELLO_ACK`, `ARM_CONTROL_REQUEST` → `ARM_CONTROL_ACK`, `RESUME_REQUEST` → `RESUME_ACK`, `CONFIG_GET` / `CONFIG_SET` → `CONFIG_ACK`. `BYE` ends the session and gets no reply. `EVENT` is sent by the ESP on its own.
 
@@ -290,7 +290,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.3 | The rules of v1.2 are enforced in code (#152): each side accepts only the types the other side sends (`reject:wrong_direction`, §2); the pre-session checks of `HELLO` / `HELLO_ACK` (§1: `wrong_direction`, `wrong_session`, `bad_seq`). The C++ library derives only the direction keys (`derive_keys`, the session key is wiped inside). Vector group 9 and one more group 8 vector (§6). Also stated: `HELLO` / `HELLO_ACK` are checked only from TCP, the nonces and `session_id` come from a hardware or OS random source and never repeat (§1), and a reflected `BYE` is the one exception to the direction check (§2). |
 | 2026-11-06 | 1.3.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
 | 2026-11-06 | 1.3.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
-| 2026-11-09 | 1.3.3 | `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
+| 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 
 ## 9. Glossary
 

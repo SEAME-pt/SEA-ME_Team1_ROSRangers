@@ -146,3 +146,34 @@ def test_frames_after_the_ack_in_the_same_read_are_kept():
     assert rest == [event]
     assert link.describe_tcp(rest[0]) == "EVENT FAILSAFE_OUTPUT_ACTIVE"
     assert ground_link.take_ack(ground_link.GroundLink(PSK), [event]) is None
+
+
+def test_gen_psk_creates_a_private_file_and_never_replaces(tmp_path):
+    path = tmp_path / "seame-drone" / "secrets.json"
+    path.parent.mkdir()
+    path.write_text('{"ota": "keep-me-ota"}')
+    psk = ground_link.gen_psk(path)
+    assert len(psk) == 64
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+    assert oct(path.parent.stat().st_mode & 0o777) == "0o700"
+    data = __import__("json").loads(path.read_text())
+    assert data == {"ota": "keep-me-ota", "psk": psk}  # other secrets kept
+    try:
+        ground_link.gen_psk(path)
+        raise AssertionError("replaced an existing PSK")
+    except SystemExit:
+        pass
+    assert ground_link.load_psk(path) == bytes.fromhex(psk)
+
+
+def test_bad_psks_are_refused(tmp_path, monkeypatch):
+    monkeypatch.delenv("SEAME_PSK", raising=False)
+    for text in ("ab" * 31, "ab" * 33, "zz" * 32, " ab" * 21 + "a"):
+        try:
+            ground_link.parse_psk(text)
+            raise AssertionError(f"accepted {text!r}")
+        except SystemExit:
+            pass
+    assert ground_link.parse_psk(" " + "AB" * 32 + "\n") == bytes([0xAB] * 32)
+    monkeypatch.setenv("SEAME_PSK", "cd" * 32)
+    assert ground_link.load_psk(tmp_path / "none.json") == bytes([0xCD] * 32)

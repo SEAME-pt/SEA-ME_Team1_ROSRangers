@@ -69,6 +69,13 @@ void run_ideal_fc(sd::FcLink &fc, std::uint32_t until,
   }
 }
 
+// The command of any request written by poll() (RC included), or -1.
+int poll_cmd_any(sd::FcLink &fc, std::uint32_t now) {
+  std::uint8_t out[sd::msp::kMaxFrame];
+  const std::size_t n = fc.poll(now, out, sizeof(out));
+  return n == 0 ? -1 : out[4];
+}
+
 // One request written by poll(): its command and its whole frame.
 int poll_frame(sd::FcLink &fc, std::uint32_t now, Bytes &frame) {
   std::uint8_t out[sd::msp::kMaxFrame];
@@ -338,4 +345,43 @@ TEST(FcLink, RcAt50HzLeavesTheAdr009Polls) {
   EXPECT_EQ(fc.counters().rc_replaced, 0U);
   EXPECT_EQ(attitude, 25);
   EXPECT_EQ(fc.counters().timeouts, 0U);
+}
+
+TEST(FcLink, ASilentFcDoesNotStarveThePolls) {
+  // The FC stops answering: RC keeps timing out, but polls still go out, so
+  // the FC is seen again as soon as it answers (safety review of #102 PR 2).
+  sd::FcLink fc;
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  int polls = 0;
+  int rc = 0;
+  for (std::uint32_t t = 0; t < 3000; ++t) {
+    if (t % 20 == 0) {
+      fc.set_rc(ch);
+    }
+    const int cmd = poll_cmd_any(fc, t);
+    polls += cmd > 0 && cmd != sd::msp::kSetRawRc;
+    rc += cmd == sd::msp::kSetRawRc;
+  }
+  EXPECT_GE(polls, 10); // at least every other cycle of 100 ms
+  EXPECT_GE(rc, 10);    // RC still goes out between them
+  // The FC answers again: its values come back.
+  for (std::uint32_t t = 3000; t < 3500; ++t) {
+    if (t % 20 == 0) {
+      fc.set_rc(ch);
+    }
+    const int cmd = poll_cmd_any(fc, t);
+    if (cmd == sd::msp::kApiVersion) {
+      answer(fc, reply_frame(sd::msp::kApiVersion, {0, 1, 47}), t);
+    } else if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, status_payload(false)), t);
+    } else if (cmd > 0) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         cmd == sd::msp::kSetRawRc ? Bytes{} : Bytes(9, 0)),
+             t);
+    }
+  }
+  EXPECT_TRUE(fc.telemetry().has_status);
+  EXPECT_TRUE(fc.telemetry().has_attitude);
 }
