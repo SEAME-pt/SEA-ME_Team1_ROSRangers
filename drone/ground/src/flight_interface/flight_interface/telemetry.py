@@ -1,6 +1,7 @@
 """MSP replies -> /fc/attitude and /fc/battery fields. Pure functions, no ROS.
 
-The protocol choices (MINE/Decisions.md, pending team confirmation):
+The protocol choices (docs/PraticalPlan/03 Architecture/Architecture Document.md,
+"/fc/attitude and /fc/battery", pending team confirmation):
 - angles in radians, REP-103 signs: roll + right side down, pitch + nose down,
   yaw + counter-clockwise seen from above;
 - yaw relative to the first sample after start, wrapped to (-pi, pi];
