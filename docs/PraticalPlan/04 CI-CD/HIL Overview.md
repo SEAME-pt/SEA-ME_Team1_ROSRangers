@@ -3,6 +3,7 @@ title: HIL Overview
 type: ci-cd
 status: draft
 date: 2026-10-28
+updated: 2026-11-09
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -83,10 +84,10 @@ Trigger: push to `dev` or `main`, or manual (`workflow_dispatch`). **Never on pu
 1. `check-hil` (GitHub-hosted) skips the job unless `drone/firmware/esp8266/platformio.ini` and a test in `drone/tests/hil/` exist.
 2. `hil` (on the Pi, one job at a time, `concurrency: hil-bench`):
    - checks that `/dev/hil-esp` exists and that the SoftAP SSID secret is set
-   - builds the `esp` firmware environment
-   - flashes it to `/dev/hil-esp` over USB
-   - runs `pytest drone/tests/hil` with `HIL_REQUIRED=1`, so a missing board is a failure, not a skip
-   - uploads `hil-report.xml` (JUnit) as an artifact
+   - builds the `esp` firmware environment (bridge) and flashes it to `/dev/hil-esp` over USB
+   - runs `pytest drone/tests/hil` with `HIL_REQUIRED=1`, so a missing board is a failure, not a skip, then the bridge's Wi-Fi tests in a SoftAP window
+   - builds and flashes `esp_gateway_usb` (the gateway, #101) and runs `drone/tests/hil/gateway`, then its Wi-Fi tests in a second window
+   - uploads the JUnit reports (`hil-*report.xml`) as an artifact. Timeout 30 min.
 
 > [!note] First real run
 > Until #116 (2026-10-28) added `platformio.ini`, every `hil` run was skipped by `check-hil`. Those green runs did not touch hardware. The first run with the real job is the one triggered by #116.
@@ -103,7 +104,11 @@ After the flash, the ESP is reset over RTS. The test then checks:
 
 Off the bench (no board), the hardware test is skipped and only the parser tests run.
 
-### 7.2 Planned (GitHub #106, Module 1)
+### 7.2 Today: gateway tests (PR #173)
+
+The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends only its three allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates or below, and nothing outside MSP frames. In a SoftAP window, its UDP 5770 bench view shows the fake FC's values, no error counter rises, and the values are forgotten 10 s after the FC goes silent. Details in [[HIL Runner]] §4.
+
+### 7.3 Planned (GitHub #106, Module 1)
 
 | Test | Checks | Depends on |
 |---|---|---|
@@ -112,7 +117,7 @@ Off the bench (no board), the hardware test is skipped and only the parser tests
 
 Listed in [[HIL Runner]] §4 but not in an issue yet: security (bad tag or stale sequence increases the counters) and latency (RTT histogram as an artifact).
 
-Wi-Fi tests will **time-slice** the Pi's only radio: leave the lab Wi-Fi, join the spare ESP's SoftAP, test, re-join. Each window stays under 2 minutes. A watchdog outside the job re-joins the lab Wi-Fi if the job dies ([[ADR-020 HIL Runner|ADR-020]], 2026-10-26).
+Wi-Fi tests **time-slice** the Pi's only radio: leave the lab Wi-Fi, join the spare ESP's SoftAP, test, re-join. Each window stays under 2 minutes. A watchdog outside the job re-joins the lab Wi-Fi if the job dies ([[ADR-020 HIL Runner|ADR-020]], 2026-10-26).
 
 ## 8. Role in the pipeline
 
@@ -149,6 +154,7 @@ A self-hosted runner executes whatever code the workflow gives it, and the repo 
 | **OTA** | Over-the-air update: flashing firmware through Wi-Fi instead of USB. |
 | **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |
 | **SITL** | Software-in-the-loop: the real flight firmware running as a program on a PC. |
+| **Fake FC** | The Pi playing the flight controller on the spare ESP's serial port (`FakeFc` in `drone/tests/hil/bench.py`), since the HIL bench has no FC. |
 | **SoftAP** | Software access point: the ESP creates its own Wi-Fi network. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **udev** | The Linux device manager. A udev rule gives a USB device a fixed name such as `/dev/hil-esp`. |

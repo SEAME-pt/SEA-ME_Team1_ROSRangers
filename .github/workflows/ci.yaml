@@ -240,7 +240,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "pytest==9.2.*" "pyserial==3.5"
-      - run: pytest drone/tests/hil --ignore=drone/tests/hil/wifi -v
+      - run: pytest drone/tests/hil --ignore=drone/tests/hil/wifi --ignore=drone/tests/hil/gateway/wifi -v
 
   # gesture_node + intent_node, plus mission_node and flight_interface once
   # their package.xml exists (list in check-components ros_pkgs): unit, node,
