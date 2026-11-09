@@ -343,6 +343,8 @@ Keys while it runs (type, then Enter):
 | `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |
 | `r` | RESUME_REQUEST (after `u`, `n` and 1 s) | `RESUME_ACK 0`, `LINK_RESUMED` |
 | `c KEY` | CONFIG_GET (hex key, e.g. `c 40`) | `CONFIG_ACK` with the value |
+| `t` | Drop only TCP (no BYE) | still STREAMING on UDP, `last_ctrl_seq` grows (ADR-005) |
+| `R` | Reconnect: new TCP + HELLO, then ARM as the first frame under the new keys (operator action) | `ARM_CONTROL_ACK 0` on the new session, STREAMING throughout (one 20 ms neutral tick at the switch) |
 | `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
 | `b` / `q` | BYE, then quit | – |
 

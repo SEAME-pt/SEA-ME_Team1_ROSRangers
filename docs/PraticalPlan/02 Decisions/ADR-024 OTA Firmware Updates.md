@@ -3,7 +3,7 @@ title: ADR-024 — OTA Firmware Updates on the Flight ESP
 type: adr
 status: accepted
 date: 2026-11-04
-updated: 2026-11-06
+updated: 2026-11-09
 project: SEA autonomous drone
 tags:
   - adr
@@ -62,6 +62,19 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
  Value 0 only clears the lock set from the ESP's own UART: Betaflight keeps a lock set from another port (for example the Configurator on USB). Until the release, the FC refuses to arm, which is the safe side; an FC power cycle (disconnect the battery and the FC USB) also clears it.
 
 **Today:** the firmware is still the transparent bridge. It calls `handle()` without any gate and has neither the lock nor sessions. #102 implements D2; until then the D5 procedure is the only protection.
+
+> 2026-11-09 (#102 part 3): **D2 and the upload lock are implemented in the gateway firmware** (`esp_gateway`). The decision is unchanged; the "Today" line above describes the bridge (`esp`), which stays ungated until the gateway becomes the default (#106).
+> - **Gate:** `ArduinoOTA.handle()` runs only while `sd::ota_gate_open()` is true (`drone/lib/protocol/include/sd/ota_lock.hpp`): NO_SESSION, no pending session, and the FC disarmed per an `MSP_STATUS` under 500 ms old.
+> - **Lock:** `sd::ota_lock()` in the start callback does steps 1 and 2 as written above. Anything but "locked" calls `ESP.restart()`. Value 1 is built only by `sd::msp::encode_set_arming_disabled()`, which is not on the allow-list.
+> - **Release:** value 0 once at every boot, when the FC first answers `MSP_API_VERSION`, before the link leaves BOOT; and after a failed upload, from the main loop, only if the lock was taken. The error callback only marks the release as due.
+> - **Tests:** unit tests against a fake FC (`tests/test_ota_lock.cpp`), including "never value 1 to an armed FC" and "never without a fresh status".
+> - **Bench:** the §4 cases are bench test ESP-S2-09.
+>
+> 2026-11-09 (#102 part 3, review of the core 3.1.2 source): **how the gate is enforced changes; the decision does not.**
+> - **Port closed with the gate:** instead of not calling `handle()`, the firmware keeps the OTA port (UDP 8266) open only while the gate is open. `ArduinoOTA.begin(false)` runs when the gate opens, and `ArduinoOTA.end()` when it closes. So **no request can stay pending** and run later. With the old mechanism, a stale request ran the start callback (taking and releasing the lock) and blocked the loop for up to about 5 s on the connect-back.
+> - **The "pending request" description in D2 above no longer applies to the gateway.** Two corrections to it: the password is accepted on the ESP, but `espota` reports "No Answer to our Authentication" (the "OK" comes from `handle()`, not from the callback); and the error callback can run twice for one failed upload (the core falls through after a failed connect-back). Both remain true for the ungated bridge.
+> - **No mDNS:** `espota` uses the IP (`upload_port = 192.168.4.1`), and mDNS is only served from `handle()`.
+> - **Release retried:** value 0 is retried every 500 ms until the FC acknowledges it, at boot and after a failed upload. One missed exchange no longer leaves arming locked until the next reboot.
 
 **D3. Credentials are required** (team, 2026-11-04). Two separate secrets protect a flash:
 - the SoftAP Wi-Fi password (WPA2, one client at a time, [[ADR-006 Network|ADR-006]]);

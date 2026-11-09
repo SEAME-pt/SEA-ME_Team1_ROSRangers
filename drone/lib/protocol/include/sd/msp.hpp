@@ -22,6 +22,9 @@ constexpr std::uint8_t kRc = 105;
 constexpr std::uint8_t kAttitude = 108;
 constexpr std::uint8_t kAnalog = 110;
 constexpr std::uint8_t kSetRawRc = 200;
+// ESP-originated only (ADR-024 upload lock): never allowed(), never built
+// from network data. Only encode_set_arming_disabled() builds it.
+constexpr std::uint8_t kSetArmingDisabled = 99;
 
 constexpr std::size_t kHeaderSize = 5;  // '$' 'M' dir len cmd
 constexpr std::size_t kMaxPayload = 64; // the largest reply read (MSP_STATUS)
@@ -45,6 +48,13 @@ std::size_t encode_request(std::uint8_t cmd, const std::uint8_t *payload,
 // only way to build the one write command on the allow-list (#160 review).
 std::size_t encode_set_raw_rc(const std::uint16_t channels[kRcChannels],
                               std::uint8_t *out, std::size_t out_cap);
+
+// MSP_SET_ARMING_DISABLED (99) with value 1 (lock) or 0 (release), 1-byte
+// payload. Internal to the ESP: only the ADR-024 OTA lock and release call it
+// (sd/ota_lock.hpp). Betaflight disarms an armed FC when it gets value 1, so
+// the lock sends it only after a fresh MSP_STATUS said disarmed.
+std::size_t encode_set_arming_disabled(bool disable, std::uint8_t *out,
+                                       std::size_t out_cap);
 
 // One reply from the FC.
 struct Reply {
