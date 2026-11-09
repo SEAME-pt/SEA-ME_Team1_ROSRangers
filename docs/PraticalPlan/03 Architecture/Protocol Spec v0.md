@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.3.2
+version: 1.3.3
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-09
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.3.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.3.3. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -130,7 +130,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 | Range | Subsystem | v0 codes |
 |---|---|---|
 | `0x00xx` | System (boot, watchdog, memory) | defined with the gateway firmware (#101) |
-| `0x01xx` | Link | `0x0101` setpoint stale (`T_fresh` expired, neutral sticks), `0x0102` `LINK_FAILSAFE` entered, `0x0103` resumed |
+| `0x01xx` | Link | `0x0101` setpoint stale (`T_fresh` expired, neutral sticks), `0x0102` `LINK_FAILSAFE` entered, `0x0103` resumed, `0x0104` failsafe output active (a new session starts while the [[ADR-004 ESP Failsafe\|ADR-004]] output still runs; added 2026-11-09, #102) |
 | `0x02xx` | FC / MSP | defined with the gateway firmware (#101) |
 
 ## 4. Receive rules
@@ -191,7 +191,7 @@ Static IPs are set by [[ADR-006 Network|ADR-006]].
 | TCP 5759 | Session | v0 |
 | 5760 | Reserved for a future channel. Until the gateway firmware (#101) replaces it, this is the transparent bridge's port | reserved |
 | TCP 5761–5768 | Betaflight SITL on the PC (UART1–8). Never used | taken |
-| UDP 5770 | Diagnostic builds only: timing test (bridge, `esp_diag_timing`); FC status view (pre-release gateway env `esp_gateway`, compiled in only with `WITH_STATUS_VIEW=1`, dropped when #102 sends `STATE`) | test |
+| UDP 5770 | Diagnostic builds only: timing test (bridge, `esp_diag_timing`); ~~FC status view (pre-release gateway env `esp_gateway`, compiled in only with `WITH_STATUS_VIEW=1`, dropped when #102 sends `STATE`)~~ dropped 2026-11-09: the gateway sends `STATE` (#102) | test |
 | UDP 5771 | Watchdog test, diagnostic build only | test |
 
 - 5759 and not 5760: the transparent bridge forwards every byte on UDP 5760 to the FC. Protocol traffic sent to a drone that still runs the bridge then gets no answer instead of reaching the FC.
@@ -290,6 +290,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-05 | 1.3 | The rules of v1.2 are enforced in code (#152): each side accepts only the types the other side sends (`reject:wrong_direction`, §2); the pre-session checks of `HELLO` / `HELLO_ACK` (§1: `wrong_direction`, `wrong_session`, `bad_seq`). The C++ library derives only the direction keys (`derive_keys`, the session key is wiped inside). Vector group 9 and one more group 8 vector (§6). Also stated: `HELLO` / `HELLO_ACK` are checked only from TCP, the nonces and `session_id` come from a hardware or OS random source and never repeat (§1), and a reflected `BYE` is the one exception to the direction check (§2). |
 | 2026-11-06 | 1.3.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
 | 2026-11-06 | 1.3.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
+| 2026-11-09 | 1.3.3 | `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 
 ## 9. Glossary
 

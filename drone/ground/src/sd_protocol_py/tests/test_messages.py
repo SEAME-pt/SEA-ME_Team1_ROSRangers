@@ -55,7 +55,7 @@ def test_code_values_match_the_cpp():
     assert ConfigResult.OUT_OF_RANGE == 4
     assert ConfigResult.CONTROL_ENABLED == 5
     assert [int(v) for v in EspState] == [0, 1, 2, 3, 4]
-    assert [int(v) for v in EventCode] == [0x0101, 0x0102, 0x0103]
+    assert [int(v) for v in EventCode] == [0x0101, 0x0102, 0x0103, 0x0104]
 
 
 def test_sizes_match_the_spec():

@@ -3,7 +3,7 @@ title: ESP Bench Test Plan
 type: test-plan
 status: active
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-09
 project: SEA autonomous drone
 aliases:
   - ESP8266 Bench Tests
@@ -65,6 +65,7 @@ tags:
 | ESP-S2-05 | ELRS receiver bound, Wi-Fi streaming next to it | Wi-Fi ↔ ELRS coexistence | ELRS link quality recorded on channels 1, 6, 11 | [[Study Plan v2]] week 2 |
 | ESP-S2-06 | Unplug a jumper wire mid-stream | The ESP detects the lost FC | Error reported to the ground within 500 ms | F2 in [[ESP_to_FC]] |
 | ESP-S2-07 | Gateway FC link (`esp_gateway`, #101): read the bench view (`echo \| nc -u -w1 192.168.4.1 5770`) while arming, disarming and tilting, props off | The gateway polls the FC on its own, only with allow-listed MSP, and reads the values right | `req` = `rep` (± the one in flight), 0 timeouts / bad checksums / errors; `armed` follows the radio; attitude follows the tilt; `vbat` plausible | [[ADR-009 ESP to FC Link\|ADR-009]], [[MSP Cheat Sheet]] |
+| ESP-S2-08 | Link state machine on the gateway (`esp_gateway`, #102): `python3 scripts/ground_link.py`, props off, battery connected (#164), two people, finger on SA. ARM (`a`), stream, then each fault: garbage (`g`), replayed HELLO (`h`), link loss (`s`), resume (`u`, `n`, wait 1 s, `r`), killed ground (`k`, then start the tool again) | Every fault ends in the defined safe state, and the failsafe fires on time | Garbage: state stays STREAMING, `rx_rejected` +5. Replayed HELLO: the extra connection is closed after 2 s, the session is unchanged. Link loss: `LINK_FAILSAFE_ENTERED` within **250 ms + Wi-Fi latency** of the last SETPOINT (the tool prints it; record 10 runs: min, median, max). Resume: `RESUME_ACK 0`, `LINK_RESUMED`. Killed ground: a new session gets `FAILSAFE_OUTPUT_ACTIVE` | [[ESP Link State Machine]], [[ADR-004 ESP Failsafe\|ADR-004]], [[ADR-005 TCP Session\|ADR-005]] |
 
 MSP Override tests (Phases 4–5 of [[ESP_to_FC]] §11) need ELRS bound and the mode configured. Run them in this same setup before soldering.
 
@@ -89,6 +90,7 @@ Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and
 - **2026-10-23:** as 2026-10-19, but the ESP runs the custom UART↔UDP bridge firmware (`drone/firmware/esp8266`, replaces AT 1.7.4 since 2026-10-21). PC next to the drone, PC Wi-Fi power save off, props off, no battery. `msp_check.py` `--stream`, 50 Hz, 10 min, 30,000 requests per run.
 - **2026-10-26 (S1-07):** PC next to the drone, battery on, props off, no USB. ESP on `esp_diag_tcp` (TCP echo server on 5762 plus the timestamps). Per run: `esp_timing.py listen`, `tcp_load.py --duration 600` (20 kbit/s, new connection every 30 s) and `seame.py msp ping --stream --duration 600`, 50 Hz. Between run 2 and run 3 the ESP's solder pins were removed and the ESP was soldered directly to the FC pads.
 - **2026-10-23 (S1-09):** drone in the cage, PC in the coding room, radio on and bound, PC Wi-Fi power save off, props off. ESP on the `esp_diag_timing` build (four timestamps per request on UDP 5761, read by `scripts/esp_timing.py`; the bridge itself is unchanged). `seame.py msp ping --stream --duration 600`, 50 Hz, 30,000 requests per run.
+- **2026-11-09:** the 5770 bench view used by S2-07 is dropped in #102 (spec §7.1); repeat S2-07 with `ground_link.py`, which shows the same FC values from STATE.
 - **2026-11-06 (S2-07):** ESP soldered to the FC, ESP on `esp_gateway` (commit 1bb0583, flashed over OTA), props off, radio bound, the whole team present (Safety Rules #15). Battery connected (about 15.8 V) for the whole session, **including the OTA flash**: a deviation from ADR-024 D5 and the firmware README, which say battery out for a flash (no effect seen; incident #164). 2026-11-06: D5 corrected, battery required for OTA (#164, PR #165). The drone was armed and turned by hand while armed (props off); Safety Rules #18 as written then said hands only after disarm, so this is a deviation too (incident #163; props-off exception decided on #161). PC next to the drone on the production AP. The bench view (UDP 5770) was read 7 times while arming, disarming and turning the drone.
 
 | Test ID | Date | Who | Result (pass/fail + numbers) | Notes / issue # |

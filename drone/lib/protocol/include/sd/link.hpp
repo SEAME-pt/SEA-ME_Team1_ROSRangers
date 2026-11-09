@@ -186,6 +186,7 @@ private:
   void end_current(std::uint32_t now_ms);
   void enter_failsafe(std::uint32_t now_ms);
   void start_failsafe_output(std::uint32_t now_ms);
+  void tell_failsafe_output(std::uint32_t now_ms);
   void handle(const Frame &f, std::uint32_t now_ms);
   void handle_setpoint(const Frame &f, std::uint32_t now_ms);
   void handle_arm(const Frame &f, std::uint32_t now_ms);

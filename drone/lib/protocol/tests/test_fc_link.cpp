@@ -63,8 +63,18 @@ void run_ideal_fc(sd::FcLink &fc, std::uint32_t until,
       answer(fc, reply_frame(sd::msp::kStatus, status_payload(false)), t);
     } else if (cmd == sd::msp::kAnalog) {
       answer(fc, reply_frame(sd::msp::kAnalog, Bytes(9, 0)), t);
+    } else if (cmd == sd::msp::kApiVersion) {
+      answer(fc, reply_frame(sd::msp::kApiVersion, {0, 1, 47}), t);
     }
   }
+}
+
+// One request written by poll(): its command and its whole frame.
+int poll_frame(sd::FcLink &fc, std::uint32_t now, Bytes &frame) {
+  std::uint8_t out[sd::msp::kMaxFrame];
+  const std::size_t n = fc.poll(now, out, sizeof(out));
+  frame.assign(out, out + n);
+  return n == 0 ? -1 : out[4];
 }
 
 } // namespace
@@ -98,7 +108,7 @@ TEST(FcLink, OnlyPollRequestsEverLeave) {
   run_ideal_fc(fc, 5000, &sent);
   for (const int c : sent) {
     EXPECT_TRUE(c == sd::msp::kAttitude || c == sd::msp::kStatus ||
-                c == sd::msp::kAnalog)
+                c == sd::msp::kAnalog || c == sd::msp::kApiVersion)
         << c;
   }
 }
@@ -216,4 +226,116 @@ TEST(FcLink, OldValuesAreForgotten) {
   // 2^32 ms later the old status does not come back as fresh.
   EXPECT_FALSE(fc.status_fresh(got + 0x100000000ULL - 1, 500));
   EXPECT_FALSE(fc.status_fresh(got, 500));
+}
+
+// BOOT -> NO_SESSION waits for this (#102): the FC answered MSP_API_VERSION.
+TEST(FcLink, ReadyOnlyAfterTheFcAnswersApiVersion) {
+  sd::FcLink fc;
+  std::vector<int> sent;
+  EXPECT_FALSE(fc.fc_ready());
+  run_ideal_fc(fc, 999, &sent);
+  int api = 0;
+  for (const int c : sent) {
+    api += c == sd::msp::kApiVersion;
+  }
+  EXPECT_EQ(api, 1); // 1 Hz
+  ASSERT_TRUE(fc.fc_ready());
+  EXPECT_EQ(fc.telemetry().api_major, 1);
+  EXPECT_EQ(fc.telemetry().api_minor, 47);
+  // The FC goes silent: after kMaxValueAgeMs it is no longer ready.
+  const std::uint32_t got = fc.telemetry().api_version_ms;
+  std::uint8_t out[sd::msp::kMaxFrame];
+  for (std::uint32_t dt = 0; dt <= sd::kMaxValueAgeMs + 10; dt += 10) {
+    fc.poll(got + dt, out, sizeof(out));
+  }
+  EXPECT_FALSE(fc.fc_ready());
+}
+
+TEST(FcLink, ErrorReplyToApiVersionIsNotReady) {
+  sd::FcLink fc;
+  std::uint32_t t = 0;
+  for (; t < 2000; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kApiVersion) {
+      answer(fc, reply_frame(sd::msp::kApiVersion, {}, '!'), t);
+    } else if (cmd > 0) {
+      answer(fc, reply_frame(static_cast<std::uint8_t>(cmd), Bytes(9, 0)), t);
+    }
+  }
+  EXPECT_FALSE(fc.fc_ready());
+  EXPECT_GE(fc.counters().error_replies, 1U);
+}
+
+TEST(FcLink, RcGoesFirstAndIsAcknowledged) {
+  sd::FcLink fc;
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1100, 1200, 1300, 1400,
+                                                  1500, 1600, 1700, 1800};
+  fc.set_rc(ch);
+  Bytes frame;
+  ASSERT_EQ(poll_frame(fc, 0, frame), sd::msp::kSetRawRc);
+  ASSERT_EQ(frame.size(), 6U + 16U);
+  EXPECT_EQ(frame[3], 16); // 8 channels, u16 little-endian
+  EXPECT_EQ(frame[5] | frame[6] << 8, 1100);
+  EXPECT_EQ(frame[19] | frame[20] << 8, 1800);
+  EXPECT_EQ(poll_cmd(fc, 1), -1); // one request at a time
+  answer(fc, reply_frame(sd::msp::kSetRawRc, {}), 2);
+  EXPECT_EQ(fc.counters().replies, 1U);
+  EXPECT_EQ(fc.counters().rc_sent, 1U);
+  EXPECT_EQ(fc.counters().unexpected, 0U);
+  // Sent once: the next request is a poll.
+  EXPECT_EQ(poll_cmd(fc, 3), sd::msp::kAttitude);
+}
+
+TEST(FcLink, OnlyTheLatestRcIsSent) {
+  sd::FcLink fc;
+  ASSERT_EQ(poll_cmd(fc, 0), sd::msp::kAttitude); // in flight, no reply yet
+  std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                            1500, 1500, 1500, 1500};
+  fc.set_rc(ch);
+  ch[0] = 1900;
+  fc.set_rc(ch); // replaces the one not sent yet
+  EXPECT_EQ(fc.counters().rc_replaced, 1U);
+  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), 5);
+  Bytes frame;
+  ASSERT_EQ(poll_frame(fc, 6, frame), sd::msp::kSetRawRc);
+  EXPECT_EQ(frame[5] | frame[6] << 8, 1900);
+}
+
+TEST(FcLink, StopRcSendsNothing) {
+  sd::FcLink fc;
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  fc.set_rc(ch);
+  fc.stop_rc();
+  EXPECT_EQ(poll_cmd(fc, 0), sd::msp::kAttitude);
+  EXPECT_EQ(fc.counters().rc_sent, 0U);
+}
+
+TEST(FcLink, RcAt50HzLeavesTheAdr009Polls) {
+  // An FC that answers at once: 50 RC frames a second and every poll on time.
+  sd::FcLink fc;
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  int attitude = 0;
+  for (std::uint32_t t = 0; t < 1000; ++t) {
+    if (t % 20 == 0) {
+      fc.set_rc(ch);
+    }
+    for (int i = 0; i < 2; ++i) { // RC and a poll may both be due this ms
+      Bytes frame;
+      const int cmd = poll_frame(fc, t, frame);
+      if (cmd < 0) {
+        break;
+      }
+      attitude += cmd == sd::msp::kAttitude;
+      const Bytes reply = cmd == sd::msp::kSetRawRc ? Bytes{}
+                          : cmd == sd::msp::kStatus ? status_payload(false)
+                                                    : Bytes(9, 0);
+      answer(fc, reply_frame(static_cast<std::uint8_t>(cmd), reply), t);
+    }
+  }
+  EXPECT_EQ(fc.counters().rc_sent, 50U);
+  EXPECT_EQ(fc.counters().rc_replaced, 0U);
+  EXPECT_EQ(attitude, 25);
+  EXPECT_EQ(fc.counters().timeouts, 0U);
 }

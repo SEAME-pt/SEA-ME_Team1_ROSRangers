@@ -5,7 +5,21 @@ namespace sd {
 FcLink::FcLink()
     : polls_{{msp::kAttitude, kAttitudePeriodMs, 0, false},
              {msp::kStatus, kStatusPeriodMs, 0, false},
-             {msp::kAnalog, kAnalogPeriodMs, 0, false}} {}
+             {msp::kAnalog, kAnalogPeriodMs, 0, false},
+             // Last: at start-up the polls above go first, as before.
+             {msp::kApiVersion, kApiVersionPeriodMs, 0, false}} {}
+
+void FcLink::set_rc(const std::uint16_t channels[msp::kRcChannels]) {
+  if (rc_pending_) {
+    ++counters_.rc_replaced;
+  }
+  for (std::size_t i = 0; i < msp::kRcChannels; ++i) {
+    rc_[i] = channels[i];
+  }
+  rc_pending_ = true;
+}
+
+void FcLink::stop_rc() { rc_pending_ = false; }
 
 void FcLink::expire(std::uint32_t now_ms) {
   if (telemetry_.has_attitude &&
@@ -17,6 +31,10 @@ void FcLink::expire(std::uint32_t now_ms) {
   }
   if (telemetry_.has_analog && now_ms - telemetry_.analog_ms > kMaxValueAgeMs) {
     telemetry_.has_analog = false;
+  }
+  if (telemetry_.has_api_version &&
+      now_ms - telemetry_.api_version_ms > kMaxValueAgeMs) {
+    telemetry_.has_api_version = false;
   }
 }
 
@@ -37,6 +55,20 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
       return 0;
     }
     draining_ = false;
+  }
+  // RC goes first: it is the control output (50 Hz), the polls fit around it.
+  if (rc_pending_) {
+    const std::size_t n = msp::encode_set_raw_rc(rc_, out, out_cap);
+    if (n == 0) {
+      return 0;
+    }
+    rc_pending_ = false;
+    in_flight_ = true;
+    in_flight_cmd_ = msp::kSetRawRc;
+    in_flight_ms_ = now_ms;
+    ++counters_.requests;
+    ++counters_.rc_sent;
+    return n;
   }
   // The most overdue poll goes first, so a slow FC still gets every kind of
   // request in turn. A poll never sent is the most overdue.
@@ -119,6 +151,19 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
       telemetry_.has_analog = true;
       telemetry_.analog_ms = now_ms;
     }
+    break;
+  case msp::kApiVersion:
+    // [MSP protocol version, API major, API minor]
+    ok = reply.len >= 3;
+    if (ok) {
+      telemetry_.api_major = reply.payload[1];
+      telemetry_.api_minor = reply.payload[2];
+      telemetry_.has_api_version = true;
+      telemetry_.api_version_ms = now_ms;
+    }
+    break;
+  case msp::kSetRawRc:
+    ok = true; // empty acknowledgement
     break;
   default:
     break;

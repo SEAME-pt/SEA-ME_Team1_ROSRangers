@@ -336,6 +336,7 @@ jobs:
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass
           SEAME_OTA_PASS: ci-dummy-ota-pass
+          SEAME_PSK: "0000000000000000000000000000000000000000000000000000000000000000"
       - uses: actions/upload-artifact@v4
         with:
           name: esp-firmware

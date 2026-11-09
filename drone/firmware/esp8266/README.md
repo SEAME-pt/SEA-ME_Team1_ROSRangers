@@ -39,7 +39,7 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
 | `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5770 (`WITH_TIMING=1`), see below |
 | `esp_diag_tcp` | Wi-Fi (OTA) | S1-07: TCP echo server on TCP 5759 next to the bridge, plus the timestamps (`WITH_TCP_ECHO=1 WITH_TIMING=1`) |
 | `esp_diag_wdt` | Wi-Fi (OTA) | S1-10: hangs on command (UDP 5771) so the watchdog resets the ESP (`WITH_WDT_TEST=1`) |
-| `esp_gateway` | Wi-Fi (OTA) | **Gateway firmware (#101)**, not the default yet: allow-listed FC link, no bridge. Bench view on UDP 5770, see "Gateway" below |
+| `esp_gateway` | Wi-Fi (OTA) | **Gateway firmware (#101, #102)**, not the default yet: allow-listed FC link and the link state machine on 5759, no bridge. Needs the PSK; see "Gateway" below |
 
 ## Build
 
@@ -92,28 +92,28 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
-## Gateway (#101, env `esp_gateway`)
+## Gateway (#101, #102, env `esp_gateway`)
 
-The gateway replaces the transparent bridge step by step. Until it has passed its bench tests, `esp` stays the bridge and the gateway is its own env.
+The gateway replaces the transparent bridge step by step. Until it has passed its bench tests, `esp` stays the bridge and the gateway is its own env (the default switch is #106).
 
-What it does now (ADR-009):
-- **One scheduler owns the FC UART** (`sd::FcLink` in `drone/lib/protocol`). It polls `MSP_ATTITUDE` at 25 Hz and `MSP_STATUS` / `MSP_ANALOG` at 5 Hz, one request at a time (50 ms reply timeout), and keeps the latest values with their age.
-- **Allow-list:** every MSP frame it sends is built by `sd::msp::encode_request`, which refuses any command not in the MSP Cheat Sheet list (1, 101, 105, 108, 110, 200). Nothing from the network is ever written to the UART. There is no UDP 5760 bridge in this build, so `seame.py msp` over Wi-Fi does not work with it: flash the bridge back for those tools.
-- **Never sends RC.** Sessions, `SETPOINT` → `MSP_SET_RAW_RC`, the failsafe and `STATE` are #102. OTA is still ungated here, as in the bridge (the ADR-024 gate is #102).
-- **Still missing for #102:** an `MSP_API_VERSION` check at boot (the state machine's BOOT → NO_SESSION), reading `override_active` from `MSP_STATUS`, and a separate internal encoder for `MSP_SET_ARMING_DISABLED` (99, ADR-024 lock): `encode_request` refuses it on purpose.
+What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine.md`):
+- **One scheduler owns the FC UART** (`sd::FcLink` in `drone/lib/protocol`). It polls `MSP_ATTITUDE` at 25 Hz, `MSP_STATUS` / `MSP_ANALOG` at 5 Hz and `MSP_API_VERSION` at 1 Hz, one request at a time (50 ms reply timeout), and keeps the latest values with their age. `MSP_SET_RAW_RC` goes ahead of the polls; only the newest RC frame is ever sent.
+- **Allow-list:** every MSP frame it sends is built by `sd::msp`, which refuses any command not in the MSP Cheat Sheet list (1, 101, 105, 108, 110, 200). Nothing from the network is ever written to the UART. There is no UDP 5760 bridge in this build, so `seame.py msp` over Wi-Fi does not work with it: flash the bridge back for those tools.
+- **Ground link (#102):** the ESP Link State Machine (`sd::Link`) on TCP and UDP **5759** (Protocol Spec v0). One session connection plus one HELLO-only connection for 2 s, TCP keep-alive 5 s / 1 s × 3 (ADR-005). STATE goes back at `telemetry_rate_hz` (25 Hz) to the address of the last accepted SETPOINT, with up to 3 retries when the Wi-Fi send queue is full.
+- **What goes to the FC, every 20 ms:**
+  - nothing until the FC answers `MSP_API_VERSION` (BOOT);
+  - neutral sticks without control;
+  - the ground's setpoint while STREAMING;
+  - the ADR-004 output on link loss: neutral for 1 s, then nothing.
+- **Not yet (#102 PR 3 and later):**
+  - the ADR-024 OTA gate and lock (OTA is still ungated, as in the bridge);
+  - `STATE.override_active` (needs the MSP box IDs);
+  - reading the override mask from the FC: it is fixed at **8** (yaw) in `main.cpp`.
+- **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows the same values from STATE.
 
-Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge): check with the bench view below instead. To go back to the bridge, flash `-e esp_ota`.
+**PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 scripts/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
 
-**Bench view (read-only, diagnostic):** any datagram to UDP 5770 gets one text line back:
-
-```bash
-echo | nc -u -w1 192.168.4.1 5770
-# armed=0 arming_flags=0x00000000 status_age_ms=87 roll=-12 pitch=4 heading=271 vbat_cV=1110 att_age_ms=12 req=1520 rep=1520 timeout=0 bad_cksum=0 too_long=0 err=0 unexpected=0
-```
-
-The bench view is for this pre-release env only: it is compiled in with `WITH_STATUS_VIEW=1` (set in `esp_gateway`) and is dropped when #102 sends `STATE`.
-
-A value that has not arrived yet (or is older than 10 s) prints as `-1`: `armed`, `arming_flags` and `status_age_ms` for `MSP_STATUS`, `roll` / `pitch` / `heading` / `att_age_ms` for `MSP_ATTITUDE`, `vbat_cV` for `MSP_ANALOG`. `req` and `rep` should grow together (about 35 per second); `timeout` growing means the FC does not answer (wiring, baud, MSP not enabled on UART4).
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_ota`.
 
 ## Diagnosis test: link dead periods (2026-10-22)
 

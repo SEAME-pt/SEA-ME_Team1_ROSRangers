@@ -212,6 +212,12 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.SurvivesTheMillisWrap` | Polling keeps going across the 49-day `millis()` wrap | No stall after a long uptime |
 | `FcLink.OldValuesAreForgotten` | The FC goes silent: after 10 s every value is forgotten, and an old status never looks fresh again, even across the `millis()` wrap | An old "disarmed" can never open the ADR-024 OTA gate |
 | `FcLink.PollRefusesASmallBuffer` | A buffer too small for a request: nothing is sent or counted | A bad call writes nothing |
+| `FcLink.ReadyOnlyAfterTheFcAnswersApiVersion` | `fc_ready()` is false until MSP_API_VERSION is answered (polled at 1 Hz, version stored), and false again 10 s after the FC goes silent | The ESP leaves BOOT only when the FC link works (#102) |
+| `FcLink.ErrorReplyToApiVersionIsNotReady` | An error reply to MSP_API_VERSION never makes the link ready | A refusing FC is not a working link |
+| `FcLink.RcGoesFirstAndIsAcknowledged` | `set_rc()`: the next request is MSP_SET_RAW_RC with the 8 channels in order, its empty reply is counted, then the polls go on | The control output always goes first |
+| `FcLink.OnlyTheLatestRcIsSent` | Two RC sets while a poll is in flight: the newer one is sent, the older one counted as replaced | Old sticks never reach the FC after newer ones |
+| `FcLink.StopRcSendsNothing` | `stop_rc()` after `set_rc()`: no RC frame | The ADR-004 "stop" really stops |
+| `FcLink.RcAt50HzLeavesTheAdr009Polls` | One simulated second with RC at 50 Hz and an FC that answers at once: 50 RC frames, 25 ATTITUDE, no timeouts | RC and telemetry fit on one UART (the real budget is spike #123) |
 
 ## Link: the ESP link state machine (#102)
 
@@ -268,6 +274,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.APendingSessionOutlivesAByeOfTheCurrentOne` | The current session says BYE while another is pending: the pending one can still take over, with no BYE 3 | No old session left to tell |
 | `LinkTest.ByeOfTheOldSessionKeepsASharedConnectionOpen` | A pending session on the current session's connection, then BYE of the old session: the connection stays open and the pending session takes over on it | A BYE never closes the connection another session needs |
 | `LinkTest.ReplacingASharedPendingSessionKeepsTheConnection` | A pending session on the current connection is replaced by a HELLO on another connection: the current connection stays open | Dropping a pending session never cuts the live one |
+| `LinkTest.NewSessionIsToldTheFailsafeOutputStillRuns` | A new session opened after a BYE from control, or confirmed by a switch from STREAMING, gets EVENT 0x0104; a session with no ADR-004 output running gets none | The ground never shows SESSION_IDLE as if the output were neutral (safety pilot, review of #170) |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
 | `LinkTest.ConfigSetChecksStateFirstThenTheKey` | CONFIG_SET while streaming: result 5 for any key; then unknown 1, read-only 2, safety 3, out of range 4 (never clamped), OK | The check order of spec §3.1 |

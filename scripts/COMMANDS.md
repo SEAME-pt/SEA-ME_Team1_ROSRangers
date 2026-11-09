@@ -319,6 +319,33 @@ python3 scripts/seame.py msp cycle1a \
   -n 500 --rate 50 --max-loss 1 --wait 20 --csv cycle1a.csv
 ```
 
+### Gateway session: `ground_link.py` (#102)
+
+Bench ground for the gateway firmware (`esp_gateway`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
+
+| Command | What it does |
+|---|---|
+| `python3 scripts/ground_link.py --gen-psk` | Creates the 32-byte PSK in `~/.config/seame-drone/secrets.json` (mode 600). The gateway build reads the same file |
+| `python3 scripts/ground_link.py` | Session with the drone at 192.168.4.1 |
+| `python3 scripts/ground_link.py --host 127.0.0.1` | Any other address (for example a host test harness) |
+| `--mask 8` | Override mask sent with ARM (ADR-010; 8 = yaw) |
+| `--rate 50` | SETPOINT rate in Hz |
+| `--print-every 0.5` | STATE print period in seconds |
+
+Keys while it runs (type, then Enter):
+
+| Key | Fault or action | Expected (ESP-S2-08) |
+|---|---|---|
+| `a` | ARM_CONTROL_REQUEST (operator only, REQ-SAF-023) | `ARM_CONTROL_ACK 0`, STREAMING |
+| `m R` / `n` | Mode 1 with roll R / neutral sticks | `last_ctrl_seq` grows |
+| `g` | Garbage: bad tag, replay, old seq, bad mode, random bytes | still STREAMING, `rx_rejected` +5 |
+| `h` | Replay the recorded HELLO on a second connection | that connection closed after 2 s, session unchanged |
+| `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |
+| `r` | RESUME_REQUEST (after `u`, `n` and 1 s) | `RESUME_ACK 0`, `LINK_RESUMED` |
+| `c KEY` | CONFIG_GET (hex key, e.g. `c 40`) | `CONFIG_ACK` with the value |
+| `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
+| `b` / `q` | BYE, then quit | – |
+
 ### ESP AT commands (ESP on USB)
 
 Every `esp` command needs `--esp-on-usb` first, e.g.

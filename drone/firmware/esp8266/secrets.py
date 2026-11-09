@@ -3,6 +3,11 @@
 
 Same files as scripts/bridge_config.py, so nothing secret lives in the repo.
 Without that folder (CI), set SEAME_AP_SSID, SEAME_AP_PASS and SEAME_OTA_PASS.
+
+The protocol PSK (ADR-002, 64 hex characters = 32 bytes) comes from
+SEAME_PSK or "psk" in secrets.json, the file scripts/ground_link.py reads
+too. Only the gateway env needs it: src/gateway/main.cpp stops the build
+without it, so the bridge and HIL builds are unchanged.
 """
 
 import json
@@ -39,6 +44,12 @@ if values["AP_PASS"] == values["OTA_PASS"]:
     # Two separate secrets (ADR-024 D3): knowing the Wi-Fi password alone
     # must not be enough to flash the ESP.
     env.Exit("ERROR: OTA_PASS must differ from AP_PASS (ADR-024 D3).")
+
+psk = (os.environ.get("SEAME_PSK") or secrets.get("psk", "")).strip().lower()
+if psk:
+    if len(psk) != 64 or any(c not in "0123456789abcdef" for c in psk):
+        env.Exit("ERROR: the PSK must be 64 hex characters (32 bytes).")
+    env.Append(CPPDEFINES=[("SD_PSK_HEX", env.StringifyMacro(psk))])
 
 env.Append(
     CPPDEFINES=[(k, env.StringifyMacro(v)) for k, v in values.items()]
