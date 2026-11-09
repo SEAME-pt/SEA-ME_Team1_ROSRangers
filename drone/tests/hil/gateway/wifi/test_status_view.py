@@ -87,20 +87,25 @@ def test_status_shows_the_fake_fc_values(fake_fc, udp):
     # being opened and closed between test steps (a bench artifact: the FC's
     # UART is never opened on the drone). Show them, then require no new
     # error while replies keep flowing.
-    errors = ("bad_cksum", "too_long", "err")
+    errors = ("bad_cksum", "too_long", "err", "unexpected")
     if any(s[k] != "0" for k in errors):
         warnings.warn(f"error counters before the check: {s}", stacklevel=1)
     time.sleep(STEADY_S)
-    after = status_until(udp, lambda a: int(a.get("rep", 0)) > int(s["rep"]))
-    assert int(after["rep"]) > int(s["rep"]), f"no new replies: {s} -> {after}"
+    # Replies come at about 35/s, so one line is enough: a short deadline
+    # keeps the whole module well inside the 50 s window
+    after = status_until(
+        udp, lambda a: int(a.get("rep", 0)) > int(s["rep"]), deadline_s=3.0
+    )
+    assert int(after.get("rep", 0)) > int(s["rep"]), f"no new replies: {s} -> {after}"
     for k in errors:
-        assert after[k] == s[k], f"{k} rose with a healthy FC: {s} -> {after}"
+        assert after.get(k) == s[k], f"{k} rose with a healthy FC: {s} -> {after}"
 
 
 def test_values_forgotten_when_the_fc_goes_silent(fake_fc, udp):
     fake_fc.answering = False
-    s = status_until(udp, lambda s: s.get("roll") == "-1", deadline_s=FORGET_S + 5)
+    # Attitude replies stop within one 40 ms poll, so 2 s of margin is plenty
+    s = status_until(udp, lambda s: s.get("roll") == "-1", deadline_s=FORGET_S + 2)
     # A dead FC never shows numbers that look like readings
-    assert s.get("roll") == "-1", f"values kept after {FORGET_S + 5:.0f} s: {s}"
+    assert s.get("roll") == "-1", f"values kept after {FORGET_S + 2:.0f} s: {s}"
     assert s["armed"] == s["vbat_cV"] == s["arming_flags"] == "-1"
     assert int(s["timeout"]) > 0

@@ -60,10 +60,10 @@ def check_only_allowed_polls(raw, frames, bad):
     assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
     assert bad == 0, f"{bad} frames with a bad checksum"
     assert frames, "the gateway sent nothing: is esp_gateway flashed?"
+    assert {f.direction for _, f in frames} == {"<"}, "the gateway only sends requests"
     # Every byte on the FC's UART is part of an MSP frame: no text, no dump
     stray = stray_bytes(raw, frames)
     assert stray == 0, f"{stray} bytes outside MSP frames: {raw[:300]!r}"
-    assert {f.direction for _, f in frames} == {"<"}, "the gateway only sends requests"
     sent = {f.cmd for _, f in frames}
     assert sent <= ALLOWED, f"commands outside the poll list: {sent - ALLOWED}"
     assert all(f.payload == b"" for _, f in frames), "polls carry no payload"
