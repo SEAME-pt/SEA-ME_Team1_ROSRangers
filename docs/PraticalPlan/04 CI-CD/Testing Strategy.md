@@ -3,7 +3,7 @@ title: Testing Strategy
 type: test-plan
 status: draft
 date: 2026-10-21
-updated: 2026-10-27
+updated: 2026-11-09
 project: SEA autonomous drone
 aliases:
   - Communication Test Plan
@@ -27,7 +27,7 @@ tags:
 |---|---|---|---|
 | 1 Unit (C++) | framing, MAC, sequence window, failsafe timers, AETR mapping, MSP encode/decode, ThoneFlow parser | GitHub runner, GoogleTest | stale seq rejected; 251 ms without control → failsafe; tag flip → reject; false `0xFE` header resync |
 | 1 Unit (Python) | same spec in `sd_protocol_py`, controller, gesture filter | GitHub runner, pytest | |
-| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`, `mission_node`: unit, node, process, launch, contract and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent → mission over real topics; zero velocity within 0.25 s of losing `/gesture/intent` |
+| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`, `mission_node`, `flight_interface`: unit, node, process, launch, contract and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent → mission over real topics; zero velocity within 0.25 s of losing `/gesture/intent`; `fc_telemetry` replaying a real MSP capture (§5) |
 | 2 Docker images | the ground images build; package tests inside each image; gesture container → intent container → mission container; clean stops; node logs | GitHub runner (job `ground-docker`, `drone/ground/docker/smoke_test.sh`) | `L:INDEX_RIGHT+R:NONE` → `MOVE_RIGHT`, mission never engages without `ENGAGE` (stays `WAITING`); gesture container stopped → `NEUTRAL` (`no_packets`), mission stays `WAITING`, no land request (since #81, 2026-10-27) |
 | 2 Cross-language | golden vectors (`drone/tests/vectors/*.json`) | both | C++ encoder and Python decoder agree byte for byte |
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
@@ -83,7 +83,23 @@ pkill -f betaflight_SITL.elf
 > - Outside an MSP frame Betaflight acts on `#` (enters the CLI) and `R` (default `reboot_character`, reboot to bootloader). Test noise must contain neither.
 > - When the job fails, CI uploads `sitl.log` as the `betaflight-sitl-log` artifact.
 
-## 5. Glossary
+## 5. FC telemetry tests (`flight_interface`)
+
+Level 1 and 2 above, added with #96 (PR #169). They run without the drone: a fake FC replays recorded MSP replies through the real `msp.Client`. Code in `drone/ground/src/flight_interface/test/`, run by `ground-ros2`.
+
+| File | What |
+|---|---|
+| `data/msp_trace_bench_udp.txt` | Real `msp_check info --trace` capture through the ESP bridge (2026-11-06, Betaflight 2026.6.2, drone level, then tilted) |
+| `data/msp_trace_synthetic.txt` | Hand-built trace for the no-reply (timeout) case |
+| `fake_fc.py` | Fake FC that answers each request from a trace |
+| `test_telemetry.py` | Conversions: radians, REP-103 signs, yaw zero and wrap, battery fields, with a replay of the real trace |
+| `test_fc_telemetry_ros.py` | The real node on real topics over the fake FC: stamps between request and reply, nothing published on a missing, bad, short or late reply, transport errors (including an unplugged USB), no battery |
+| `test_fc_telemetry_process.py` | Start and stop: Ctrl+C and SIGTERM exit 0; unknown transport, missing serial device and UDP port in use exit 1 |
+| `test_msp.py` | MSP v1 parser and `decode()`, moved from `tests/scripts/` with `msp.py` |
+
+Run locally: `colcon test --packages-select flight_interface` (51 tests on 2026-11-09). The bench tools' own tests (`msp_check`, `esp_at`) stay in `tests/scripts/`.
+
+## 6. Glossary
 
 | Term | Meaning |
 | --- | --- |
@@ -107,6 +123,7 @@ pkill -f betaflight_SITL.elf
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **colcon** | The build tool for ROS 2 workspaces; `colcon test` runs each package's tests. |
 | **Node** | A single ROS 2 process that does one job and talks to others through topics. |
+| **Trace (MSP)** | A text recording of MSP requests and replies (`msp_check --trace`), replayed by the tests instead of a real FC. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages. |
 | **Docker** | Tool that runs software in containers: isolated environments built from an image (Dockerfile). |
 | **Smoke test** | A quick end-to-end check that the built thing starts and does its basic job. |

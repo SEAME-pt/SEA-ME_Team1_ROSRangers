@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-05
+updated: 2026-11-09
 project: SEA autonomous drone
 tags:
   - ci
@@ -43,7 +43,8 @@ SEA-ME_Team1_ROSRangers/
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/
 │   │       ├── sd_protocol_py/   # Python twin of lib/protocol
-│   │       ├── flight_interface/ # lifecycle node (real + PX4 backends), only info.md so far
+│   │       ├── flight_interface/ # fc_telemetry: FC over MSP -> /fc/attitude, /fc/battery (#96);
+│   │       │                     #   msp.py (MSP client, shared with the bench tools); lifecycle node later (#103)
 │   │       ├── gesture_node/     # webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
 │   │       ├── intent_node/      # /gesture/raw -> safety filter -> /gesture/intent
 │   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
@@ -54,7 +55,7 @@ SEA-ME_Team1_ROSRangers/
 │   │                                     # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
 │   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python
 │   ├── tools/
-│   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp, fc_cli, seame ...
+│   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp_check, fc_cli, seame ...
 │   └── tests/
 │       ├── vectors/           # golden vectors (generate.py + *.json) shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
@@ -77,7 +78,7 @@ SEA-ME_Team1_ROSRangers/
 ```
 
 > [!note] Until #60 lands
-> The bench tools sit in `scripts/` and their tests in `tests/scripts/`.
+> The bench tools sit in `scripts/` and their tests in `tests/scripts/`. Their MSP library, `msp.py`, moved into the `flight_interface` package with #96 (`drone/ground/src/flight_interface/flight_interface/msp.py`), so the ROS 2 node can import it. `msp_check.py` and `esp_at.py` add that folder to `sys.path` and still run without ROS. #60 has to keep that import working when the tools move.
 
 > [!note] Generated, not committed
 > `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §4).

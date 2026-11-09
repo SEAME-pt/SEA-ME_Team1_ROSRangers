@@ -3,7 +3,7 @@ title: SEA:ME Drone — Practical Plan Home
 type: moc
 status: active
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-09
 project: SEA autonomous drone
 aliases:
   - Home
@@ -26,9 +26,10 @@ tags:
 > - All decisions are **accepted** as ADRs (ADR-001 to ADR-024). See [[Decision Register]].
 > - Project: **gesture control** with MediaPipe, accepted by instructors as our Module 2 "edge inference in the loop".
 
-> [!info] Since then (2026-11-06)
+> [!info] Since then (2026-11-09)
 > - Since 2026-10-28 the FC runs Betaflight **2026.6.2** ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30).
 > - The 4.5.1 hover was not recorded (incident #126), so #23 is now the baseline hover on 2026.6.2.
+> - `fc_telemetry` in `dev` (#96, PR #169): FC attitude and battery on `/fc/attitude` and `/fc/battery`, about 11 ms average delay through the ESP bridge ([[Architecture Document]] §2).
 
 ---
 
