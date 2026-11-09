@@ -959,6 +959,36 @@ TEST_F(LinkTest, FailsafeStopSurvivesAClockWrap) {
   EXPECT_FALSE(link.fc_output(500, ch));
 }
 
+TEST_F(LinkTest, ByeOfTheOldSessionKeepsASharedConnectionOpen) {
+  Ground g;
+  stream(g);
+  feed(g, 20, 600);
+  Ground g2(0x33);
+  ASSERT_TRUE(handshake(g2, 0, 600)); // pending on the session's connection
+  tcp(0, g.tcp(MsgType::kBye, u8(0)), 610);
+  EXPECT_EQ(link.state(), EspState::kNoSession);
+  EXPECT_FALSE(io.was_closed(0)); // the pending session still needs it
+  EXPECT_EQ(link.pending_conn(), 0);
+  tcp(0, g2.tcp(MsgType::kConfigGet, config_kv(0x01, 0)), 620);
+  EXPECT_EQ(link.session_id(), g2.session);
+  EXPECT_EQ(link.session_conn(), 0);
+  EXPECT_EQ(last_ack(g2, MsgType::kConfigAck), 0x01);
+}
+
+TEST_F(LinkTest, ReplacingASharedPendingSessionKeepsTheConnection) {
+  Ground g;
+  stream(g);
+  feed(g, 20, 600);
+  Ground g2(0x33);
+  ASSERT_TRUE(handshake(g2, 0, 600)); // pending on the session's connection
+  feed(g, 600, 1100);
+  Ground g3(0x77);
+  ASSERT_TRUE(handshake(g3, 1, 1100)); // replaces it from another one
+  EXPECT_EQ(link.pending_conn(), 1);
+  EXPECT_FALSE(io.was_closed(0)); // still the current session's connection
+  EXPECT_EQ(link.session_conn(), 0);
+}
+
 TEST_F(LinkTest, ByeWhileStreamingKeepsTheFailsafeOutput) {
   Ground g;
   stream(g);

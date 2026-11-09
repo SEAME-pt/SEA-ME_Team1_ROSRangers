@@ -3,7 +3,7 @@ title: Requirements
 type: plan
 status: active
 date: 2026-10-21
-updated: 2026-11-05
+updated: 2026-11-09
 project: SEA autonomous drone
 tags:
   - plan
@@ -97,6 +97,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-020 | `intent_node` changes the intent only for a known gesture seen in 5 consecutive packets; no gesture maps to arm, disarm or the override switch. Since 2026-10-27 (#81, two-hand gestures): the hand left when one hand of a two-hand gesture drops never maps to a command. | [[03 Intent Node]] §9 | test + inspection | unit + ROS node | draft |
 | REQ-SAF-021 | E-stop: when a fault is detected (the list in [[Testing Strategy]] §2), the system brings the drone to a safe stop, in the air or on the ground. Time to the safe state is measured per fault. | [[Safety Rules]] §3 · [[Study Plan v2]] §11 | test + demo | SITL + HIL, then cage | draft |
 | REQ-SAF-022 | Kill switch: releasing SA on the radio disarms the FC and stops the motors, whatever the ESP and the ground send. | [[ADR-010 MSP Override\|ADR-010]] (update 2026-10-23) · [[Radio Link Tests]] RL-12 | test | bench props off (done 2026-10-22, #22), then cage | verified (bench, #22) |
+| REQ-SAF-023 | The ground never sends `ARM_CONTROL_REQUEST` on its own, also not after a reconnect or a session switch: ARM is always an operator action. Added 2026-11-09 (safety pilot's condition, review of PR #170). | [[ESP Link State Machine]] §1.1 | test | unit + ROS node (#103) | accepted |
 
 ### Navigation (`REQ-NAV`)
 

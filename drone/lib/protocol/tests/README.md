@@ -266,6 +266,8 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.ByeInFailsafeEndsTheSessionAndKeepsItsTimeline` | BYE in LINK_FAILSAFE: NO_SESSION, the ADR-004 output keeps its 1 s timeline | Ending the session never restarts the output |
 | `LinkTest.ByeAsTheFirstFrameOfAPendingSession` | The pending session's first frame is a BYE: switch (BYE 3 to the old one), then NO_SESSION with the ADR-004 output | Edge case of the switch, covered |
 | `LinkTest.APendingSessionOutlivesAByeOfTheCurrentOne` | The current session says BYE while another is pending: the pending one can still take over, with no BYE 3 | No old session left to tell |
+| `LinkTest.ByeOfTheOldSessionKeepsASharedConnectionOpen` | A pending session on the current session's connection, then BYE of the old session: the connection stays open and the pending session takes over on it | A BYE never closes the connection another session needs |
+| `LinkTest.ReplacingASharedPendingSessionKeepsTheConnection` | A pending session on the current connection is replaced by a HELLO on another connection: the current connection stays open | Dropping a pending session never cuts the live one |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
 | `LinkTest.ConfigSetChecksStateFirstThenTheKey` | CONFIG_SET while streaming: result 5 for any key; then unknown 1, read-only 2, safety 3, out of range 4 (never clamped), OK | The check order of spec §3.1 |
