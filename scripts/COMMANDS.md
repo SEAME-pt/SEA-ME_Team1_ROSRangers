@@ -319,6 +319,42 @@ python3 scripts/seame.py msp cycle1a \
   -n 500 --rate 50 --max-loss 1 --wait 20 --csv cycle1a.csv
 ```
 
+### Gateway session: `ground_link.py` (#102)
+
+Bench ground for the gateway firmware (`esp_gateway`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
+
+| Command | What it does |
+|---|---|
+| `python3 scripts/ground_link.py --gen-psk` | Creates the 32-byte PSK in `~/.config/seame-drone/secrets.json` (mode 600). The gateway build reads the same file |
+| `python3 scripts/ground_link.py` | Session with the drone at 192.168.4.1 |
+| `python3 scripts/ground_link.py --host 127.0.0.1` | Any other address (for example a host test harness) |
+| `--mask 8` | Override mask sent with ARM (ADR-010; 8 = yaw) |
+| `--rate 50` | SETPOINT rate in Hz |
+| `--print-every 0.5` | STATE print period in seconds |
+
+Keys while it runs (type, then Enter):
+
+| Key | Fault or action | Expected (ESP-S2-08) |
+|---|---|---|
+| `a` | ARM_CONTROL_REQUEST (operator only, REQ-SAF-023) | `ARM_CONTROL_ACK 0`, STREAMING |
+| `m R` / `n` | Mode 1 with roll R (−1000..1000) / neutral sticks | `last_ctrl_seq` grows; a bad value is refused with `bad command`, and the tool keeps running |
+| `g` | Garbage: bad tag, replay, old seq, bad mode, random bytes | still STREAMING, `rx_rejected` +5 |
+| `h` | Replay the recorded HELLO on a second connection | that connection closed after 2 s, session unchanged |
+| `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |
+| `r` | RESUME_REQUEST (after `u`, `n` and 1 s) | `RESUME_ACK 0`, `LINK_RESUMED` |
+| `c KEY` | CONFIG_GET (hex key, e.g. `c 40`) | `CONFIG_ACK` with the value |
+| `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
+| `b` / `q` | BYE, then quit | – |
+
+**When the Wi-Fi drops** (2026-11-09):
+- **No old values:** the tool never reprints old values. After 1 s without STATE it prints `no STATE for N s`.
+- **One error line:** a send error is printed once, not 50 times a second.
+- **Session ended by the drone:** if nothing arrives for 3 s, the session is gone. This happens, for example, in SESSION_IDLE once the drone's TCP keep-alive has closed the connection. The tool then opens a **new session by itself** with neutral sticks. It never ARMs again by itself: type `a` (REQ-SAF-023).
+- **TCP closed and not STREAMING:** the tool also opens a new session as soon as STATE shows LINK_FAILSAFE or SESSION_IDLE without TCP, because ARM and RESUME need TCP. The drone's keep-alive closes a dead TCP connection after a Wi-Fi drop, and when STATE comes back after a gap the tool checks TCP with a `CONFIG_GET 0x01`.
+- **Unreachable:** a failed attempt is reported once, as `drone not reachable yet`, while the laptop is on another network.
+- **Link loss while armed:** the drone stays in LINK_FAILSAFE (the ADR-004 output) until that new session's ARM.
+- **TCP drops but STATE keeps coming:** nothing changes, and the session keeps running on UDP (ADR-005).
+
 ### ESP AT commands (ESP on USB)
 
 Every `esp` command needs `--esp-on-usb` first, e.g.

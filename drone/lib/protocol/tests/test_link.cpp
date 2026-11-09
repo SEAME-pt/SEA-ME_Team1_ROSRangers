@@ -771,11 +771,9 @@ TEST_F(LinkTest, RehandshakeOnTheSameConnectionKeepsIt) {
   EXPECT_EQ(link.session_id(), g2.session);
   EXPECT_EQ(link.session_conn(), 0);
   EXPECT_FALSE(io.was_closed(0));
-  // BYE 3 went out on connection 0 under the old keys, before the reply.
-  ASSERT_GE(io.tcp.size(), 2U);
-  sd::Frame f{};
-  ASSERT_TRUE(g.open(io.tcp[io.tcp.size() - 2].second, f));
-  EXPECT_EQ(f.header.type, static_cast<std::uint8_t>(MsgType::kBye));
+  // BYE 3 went out on connection 0 under the old keys.
+  EXPECT_EQ(last_ack(g, MsgType::kBye),
+            static_cast<std::uint8_t>(sd::ByeReason::kReplaced));
   EXPECT_EQ(last_ack(g2, MsgType::kConfigAck), 0x02);
 }
 
@@ -946,7 +944,11 @@ TEST_F(LinkTest, APendingSessionOutlivesAByeOfTheCurrentOne) {
   ASSERT_EQ(udp(g2.setpoint(0), 620), sd::RxResult::kAccepted);
   EXPECT_EQ(link.state(), EspState::kSessionIdle);
   EXPECT_EQ(link.session_id(), g2.session);
-  EXPECT_EQ(io.tcp.size(), sent); // no old session left: no BYE reason 3
+  // No old session left: no BYE reason 3, only EVENT 0x0104 to the new one.
+  ASSERT_EQ(io.tcp.size(), sent + 1);
+  sd::Frame f{};
+  ASSERT_TRUE(g2.open(io.tcp.back().second, f));
+  EXPECT_EQ(f.header.type, static_cast<std::uint8_t>(MsgType::kEvent));
   EXPECT_TRUE(link.failsafe_active());
 }
 
@@ -987,6 +989,29 @@ TEST_F(LinkTest, ReplacingASharedPendingSessionKeepsTheConnection) {
   EXPECT_EQ(link.pending_conn(), 1);
   EXPECT_FALSE(io.was_closed(0)); // still the current session's connection
   EXPECT_EQ(link.session_conn(), 0);
+}
+
+TEST_F(LinkTest, NewSessionIsToldTheFailsafeOutputStillRuns) {
+  Ground g;
+  stream(g);
+  tcp(0, g.tcp(MsgType::kBye, u8(0)), 30); // ADR-004 output from now
+  Ground g2(0x33);
+  ASSERT_TRUE(handshake(g2, 1, 600)); // NO_SESSION: opens at once
+  EXPECT_EQ(events(g2, sd::EventCode::kFailsafeOutputActive), 1);
+  // A switch from STREAMING tells the new session too.
+  Ground g3(0x55);
+  tcp(1, g2.tcp(MsgType::kArmControlRequest, u8(kMask)), 610);
+  feed(g2, 620, 1200);
+  ASSERT_TRUE(handshake(g3, 2, 1200));
+  ASSERT_EQ(udp(g3.setpoint(0), 1210), sd::RxResult::kAccepted);
+  EXPECT_EQ(events(g3, sd::EventCode::kFailsafeOutputActive), 1);
+  // Without the ADR-004 output, a new session is not told anything.
+  Io io2;
+  sd::Link quiet(make_config(sd::FailsafeOutput::kNeutralThenStop), io2);
+  quiet.boot_done(0);
+  const Bytes hello = g.hello();
+  quiet.on_tcp_frame(0, hello.data(), hello.size(), 0);
+  EXPECT_EQ(io2.tcp.size(), 1U); // only the HELLO_ACK
 }
 
 TEST_F(LinkTest, ByeWhileStreamingKeepsTheFailsafeOutput) {

@@ -111,6 +111,23 @@ Before: instructor OK for soldering on the lab drone, `ESP_to_FC` §10 checks do
 6. `python3 scripts/msp_check.py ping -n 1000 --csv cycle1b_test.csv`
 7. `python3 scripts/msp_check.py attitude` and tilt the drone by hand.
 
+### Cycle 2 · Gateway session and fault injection (#102, props off, battery connected)
+
+The gateway firmware (`esp_gateway`) has no 5760 bridge: it speaks Protocol Spec v0 on 5759. `ground_link.py` is the bench ground for it, and the tool for the Sprint 2 demo (ESP-S2-08).
+
+```bash
+python3 scripts/ground_link.py --gen-psk   # once: PSK in ~/.config/seame-drone/secrets.json
+# build and flash esp_gateway with that PSK (drone/firmware/esp8266/README.md, "Gateway")
+python3 scripts/seame.py network connect   # join the drone's network
+python3 scripts/ground_link.py             # session, 50 Hz SETPOINT, STATE twice a second
+```
+
+Then type a key and Enter: `a` ARM, `m 300` move (roll 300), `n` neutral, `g` garbage, `h` replayed HELLO, `s` stop UDP (link loss, prints the failsafe time), `u` UDP on, `r` RESUME, `c 40` CONFIG_GET, `k` kill without BYE, `q` BYE and quit.
+
+If the Wi-Fi drops, the tool shows `no STATE for N s`. Once the drone is reachable again, it opens a new session by itself with neutral sticks (also when STATE is back but TCP is gone and the drone is not STREAMING); type `a` to ARM again.
+
+Two people, props off, a finger on SA (Safety Rules #15, #18). The tool sends ARM only when you type `a` (REQ-SAF-023). The override mask is 8 (yaw only) until #104.
+
 ### When something does not answer
 
 | Symptom | Check |

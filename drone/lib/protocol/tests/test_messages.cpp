@@ -292,6 +292,7 @@ TEST(Codes, MatchSpecSection31) {
   EXPECT_EQ(static_cast<int>(sd::EventCode::kSetpointStale), 0x0101);
   EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkFailsafeEntered), 0x0102);
   EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkResumed), 0x0103);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kFailsafeOutputActive), 0x0104);
   EXPECT_EQ(static_cast<int>(sd::MsgType::kConfigAck), 0x22);
 }
 

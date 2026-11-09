@@ -60,6 +60,7 @@ class EventCode(IntEnum):
     SETPOINT_STALE = 0x0101
     LINK_FAILSAFE_ENTERED = 0x0102
     LINK_RESUMED = 0x0103
+    FAILSAFE_OUTPUT_ACTIVE = 0x0104  # new session while the ADR-004 output runs
 
 
 class Transport(IntEnum):

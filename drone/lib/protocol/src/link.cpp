@@ -285,7 +285,8 @@ void Link::on_hello(ConnId conn, const Frame &f, std::uint32_t now_ms) {
   DirectionKeys keys =
       derive_keys(config_.psk, hello.ground_nonce, ack.esp_nonce);
 
-  if (!cur().open) {
+  const bool opened_now = !cur().open;
+  if (opened_now) {
     // NO_SESSION: nothing to protect, the session opens at once.
     drop_pending(conn);
     open_session(cur(), id, keys, conn, now_ms);
@@ -312,6 +313,9 @@ void Link::on_hello(ConnId conn, const Frame &f, std::uint32_t now_ms) {
     io_.send_tcp(conn, out, len);
   }
   ++counters_.hello_accepted;
+  if (opened_now) {
+    tell_failsafe_output(now_ms); // after HELLO_ACK: the ground has the keys
+  }
 }
 
 bool Link::new_session_id(std::uint32_t &out) const {
@@ -400,6 +404,15 @@ void Link::confirm_pending(std::uint32_t now_ms) {
   last_udp_ms_ = now_ms;
   last_ctrl_seq_ = 0;
   last_ctrl_t_send_us_ = 0;
+  tell_failsafe_output(now_ms);
+}
+
+// The ground must see that the ADR-004 output still runs although the new
+// session is not in LINK_FAILSAFE (safety pilot, review of PR #170).
+void Link::tell_failsafe_output(std::uint32_t now_ms) {
+  if (fs_active_) {
+    send_event(EventCode::kFailsafeOutputActive, now_ms);
+  }
 }
 
 // BYE from the ground, or SESSION_IDLE with no TCP and no UDP.

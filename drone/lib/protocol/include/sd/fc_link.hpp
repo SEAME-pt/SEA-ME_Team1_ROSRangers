@@ -21,6 +21,9 @@ namespace sd {
 constexpr std::uint32_t kAttitudePeriodMs = 40; // 25 Hz
 constexpr std::uint32_t kStatusPeriodMs = 200;  // 5 Hz
 constexpr std::uint32_t kAnalogPeriodMs = 200;  // 5 Hz
+// MSP_API_VERSION: the FC answers, so the link works (BOOT -> NO_SESSION of
+// the ESP Link State Machine, #102). Kept at 1 Hz to notice a silent FC.
+constexpr std::uint32_t kApiVersionPeriodMs = 1000;
 constexpr std::uint32_t kReplyTimeoutMs = 50;
 // After a timeout, nothing is sent for this long and any reply that arrives is
 // dropped, so a late reply that comes within the drain window is never taken as
@@ -43,6 +46,10 @@ struct FcTelemetry {
   bool has_analog;
   std::uint32_t analog_ms;
   msp::Analog analog;
+  bool has_api_version; // an MSP_API_VERSION reply arrived
+  std::uint32_t api_version_ms;
+  std::uint8_t api_major; // 1.46 on 4.5.1
+  std::uint8_t api_minor;
 };
 
 struct FcCounters {
@@ -53,6 +60,8 @@ struct FcCounters {
   std::uint32_t too_long;
   std::uint32_t error_replies; // '!' from the FC
   std::uint32_t unexpected;    // a reply nobody asked for, or undecodable
+  std::uint32_t rc_sent;       // MSP_SET_RAW_RC frames written
+  std::uint32_t rc_replaced;   // RC replaced by a newer one before it was sent
 };
 
 class FcLink {
@@ -64,6 +73,16 @@ public:
   // every loop and write the bytes to the UART.
   std::size_t poll(std::uint32_t now_ms, std::uint8_t *out,
                    std::size_t out_cap);
+
+  // The RC channels (AETR) to send as MSP_SET_RAW_RC, ahead of every poll.
+  // Only the latest set is kept: one not sent yet is replaced (rc_replaced).
+  // The firmware calls it at 50 Hz with what sd::Link::fc_output() returns.
+  void set_rc(const std::uint16_t channels[msp::kRcChannels]);
+  // Nothing to send (sd::Link::fc_output() returned false).
+  void stop_rc();
+
+  // The FC answered MSP_API_VERSION within kMaxValueAgeMs.
+  bool fc_ready() const { return telemetry_.has_api_version; }
 
   // Feed every byte read from the UART.
   void on_byte(std::uint8_t byte, std::uint32_t now_ms);
@@ -85,8 +104,12 @@ private:
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
   void expire(std::uint32_t now_ms);
+  bool any_poll_due(std::uint32_t now_ms) const;
 
-  Poll polls_[3];
+  Poll polls_[4];
+  bool rc_pending_ = false;
+  bool poll_first_ = false; // an RC timed out: let one due poll go next
+  std::uint16_t rc_[msp::kRcChannels] = {};
   msp::Parser parser_;
 
   bool in_flight_ = false;

@@ -57,6 +57,8 @@ enum class EventCode : std::uint16_t {
   kSetpointStale = 0x0101,
   kLinkFailsafeEntered = 0x0102,
   kLinkResumed = 0x0103,
+  // A new session starts while the ADR-004 output still runs (#102 PR 2).
+  kFailsafeOutputActive = 0x0104,
 };
 
 // --- Payloads.
