@@ -196,12 +196,16 @@ class GroundLink:
     def garbage(self) -> list[tuple[str, bytes]]:
         """Frames the ESP must drop and count, none of which may reset T_loss."""
         out = []
-        sent = self.last_setpoint  # already accepted by the ESP
-        fresh = self.setpoint(0)  # never sent with a valid tag
-        out.append(("bad tag", fresh[:-1] + bytes([fresh[-1] ^ 1])))
-        if sent:
-            out.append(("replay (duplicate seq)", sent))
-        old = self._seal(MsgType.SETPOINT, encode_setpoint(Setpoint(0, 0, 0, 0, 0)), 1)
+        neutral = encode_setpoint(Setpoint(0, 0, 0, 0, 0))
+        # A new seq with a broken tag. Never stored as last_setpoint: the
+        # replay below must only ever repeat a frame that was really sent
+        # (BrunoBMFT, review of #174: a second `g` sent a valid frame).
+        self.seq_udp += 1
+        good = self._seal(MsgType.SETPOINT, neutral, self.seq_udp)
+        out.append(("bad tag", good[:-1] + bytes([good[-1] ^ 1])))
+        if self.last_setpoint:  # sent by the stream, already accepted
+            out.append(("replay (duplicate seq)", self.last_setpoint))
+        old = self._seal(MsgType.SETPOINT, neutral, 1)
         out.append(("old seq", old))
         bad_mode = bytearray(encode_setpoint(Setpoint(0, 0, 0, 0, 0)))
         bad_mode[0] = 7
@@ -544,8 +548,11 @@ def run(args) -> None:
                         log(t0, "UDP on")
                     elif cmd == "g":
                         for name, frame in link.garbage():
-                            udp.sendto(frame, dest)
-                            log(t0, f"sent garbage: {name}")
+                            try:
+                                udp.sendto(frame, dest)
+                                log(t0, f"sent garbage: {name}")
+                            except OSError as e:  # Wi-Fi down: never end the tool
+                                log(t0, f"garbage not sent ({name}): {e}")
                     elif cmd == "h":
                         if replay is not None:
                             replay.close()

@@ -109,7 +109,7 @@ What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine
   - the ADR-024 OTA gate and lock (OTA is still ungated, as in the bridge);
   - `STATE.override_active` (needs the MSP box IDs);
   - reading the override mask from the FC: it is fixed at **8** (yaw) in `main.cpp`.
-- **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows the same values from STATE.
+- **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows what STATE carries. STATE carries roll, pitch, battery voltage and `msp_errors`, but **not** the armed flag, the arming-disable flags, the request/reply counts or the age of each value (and `ground_link.py` does not print the heading), so part of ESP-S2-07 cannot be repeated with the gateway until the FC link health reaches the ground (see the ESP Bench Test Plan note of 2026-11-09).
 
 **PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 scripts/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
 

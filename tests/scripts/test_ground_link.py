@@ -210,3 +210,17 @@ def test_typos_are_refused_not_crashing():
         except ValueError:
             pass
     assert ground_link.parse_key(["c", "40"]) == 0x40
+
+
+def test_garbage_twice_in_a_row_never_sends_a_valid_frame():
+    # BrunoBMFT, review of #174: with no SETPOINT between two `g` (during `s`),
+    # the second replay was a frame the ESP had never seen, so it was accepted.
+    link = open_link()
+    udp = Receiver(Role.ESP, Transport.UDP)
+    udp.start_session(SESSION, link.keys.ground_to_esp)
+    assert is_accepted(udp.receive(link.setpoint(0))[0])  # the stream
+    for _ in range(3):  # `s`, then `g` three times: no stream in between
+        for name, frame in link.garbage():
+            result, _ = udp.receive(frame)
+            assert not is_accepted(result), name
+    assert is_accepted(udp.receive(link.setpoint(0))[0])  # `u`: back on
