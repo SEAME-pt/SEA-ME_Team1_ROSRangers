@@ -12,19 +12,33 @@ Lifecycle (ros2 lifecycle set /flight_interface <transition>):
   * deactivate: one last zero setpoint, then nothing more.
   * cleanup / shutdown: closes the backend.
 
-E-stop: service ~/estop (std_srvs/Trigger) sends one zero setpoint and then
-nothing more, at once; the ESP then enters its own 250 ms link failsafe
-(ADR-004). It is latched on the node: deactivate, cleanup and configure keep
-it, only ~/reset_estop clears it, and a NEW target is needed afterwards. A
-process restart starts without it.
+E-stop (decision A1): service ~/estop (std_srvs/Trigger) sends one neutral
+setpoint (mode 0) and then BYE, so the ESP ends the session and starts its
+ADR-004 output at once. Nothing more is sent. It is latched on the node:
+deactivate, cleanup and configure keep it, only ~/reset_estop clears it, and
+afterwards control needs a new session (the ESP backend opens one by itself,
+decision A5), an operator ARM and a NEW target. A process restart starts
+without the latch (decision A6): the launch file has no respawn, and after a
+restart nothing is sent before configure, activate and an operator ARM.
 
-The node never sends ARM_CONTROL_REQUEST (REQ-SAF-023): in this first part the
-backends have no way to send it, and arming is always an operator action.
+Link loss (decision A2): zero setpoints and link_ok false, no latch. The way
+back after the ESP's link failsafe is the operator's ~/resume (decision A3):
+it is refused unless the node is active, not in E-stop, the link is fresh and
+the ESP reports LINK_FAILSAFE; then RESUME_REQUEST goes out after 0.6 s of
+neutral setpoints. The node never resumes by itself.
+
+ARM (decision A4): only the operator's ~/arm_control sends ARM_CONTROL_REQUEST,
+with the `mask` parameter (8, 11 or 15, checked at configure). It is refused
+unless the node is active, not in E-stop, the link is fresh, the ESP reports
+SESSION_IDLE and the FC link is not reported lost. The node never sends ARM on
+its own, also not after a reconnect, a session switch or a reset
+(REQ-SAF-023).
 
 Freshness uses time.monotonic(). Logic: guard.py (no ROS). Backends: backends.py.
 """
 
 import json
+import math
 import signal
 import sys
 import threading
@@ -60,7 +74,13 @@ class FlightInterface(Node):
         self.declare_parameter("link_timeout_sec", LINK_TIMEOUT)
         self.declare_parameter("velocity_topic", "/mission/velocity_target")
         self.declare_parameter("state_topic", "/flight/state")
+        # backend:=esp only. The PSK is never a parameter: SEAME_PSK or
+        # ~/.config/seame-drone/secrets.json (esp_backend.load_psk).
+        self.declare_parameter("mask", 8)  # ARM mask (ADR-010: 8 yaw, 11, 15)
+        self.declare_parameter("esp_host", "192.168.4.1")
+        self.declare_parameter("esp_port", 5759)
         self._injected_backend = backend
+        self._mask = 8
         self.backend = None
         self.guard = None
         self._entities = []
@@ -77,48 +97,70 @@ class FlightInterface(Node):
             state_rate = float(self.get_parameter("state_rate_hz").value)
             target_timeout = float(self.get_parameter("target_timeout_sec").value)
             link_timeout = float(self.get_parameter("link_timeout_sec").value)
+            mask = self.get_parameter("mask").value
+            if isinstance(mask, bool) or mask not in (8, 11, 15):
+                raise ValueError(f"mask must be 8, 11 or 15, got {mask!r}")
             backend = self._injected_backend or make_backend(
-                str(self.get_parameter("backend").value)
+                str(self.get_parameter("backend").value),
+                esp_host=str(self.get_parameter("esp_host").value),
+                esp_port=int(self.get_parameter("esp_port").value),
             )
-        except (TypeError, ValueError) as error:
+        except (TypeError, ValueError, ImportError) as error:
+            # ImportError: backend:=esp without sd_protocol installed.
             self.get_logger().error(f"configure failed: {error}")
             return TransitionCallbackReturn.FAILURE
         rate = min(MAX_RATE_HZ, max(MIN_RATE_HZ, rate))
         state_rate = min(rate, max(MIN_STATE_RATE_HZ, state_rate))
         self.backend = backend
+        self._mask = mask
         self.guard = Guard(target_timeout, link_timeout, tick_period=1.0 / rate)
         if self._estop_reason:
             self.guard.trigger_estop(self._estop_reason)  # still latched
         self._link_was_fresh = False
-        self._state_pub = self.create_publisher(
-            String, str(self.get_parameter("state_topic").value), 10
+        # (destroy function, entity), undone in _release(). Each entity is
+        # added as soon as it exists, so a failure half-way releases what was
+        # already created (on_error -> _release).
+        self._entities = []
+
+        def keep(destroy, entity):
+            self._entities.append((destroy, entity))
+            return entity
+
+        self._state_pub = keep(
+            self.destroy_publisher,
+            self.create_publisher(
+                String, str(self.get_parameter("state_topic").value), 10
+            ),
         )
-        # (destroy function, entity), undone in _release()
-        self._entities = [
-            (self.destroy_publisher, self._state_pub),
-            (
-                self.destroy_subscription,
-                self.create_subscription(
-                    TwistStamped,
-                    str(self.get_parameter("velocity_topic").value),
-                    self._on_target,
-                    10,
-                ),
+        keep(
+            self.destroy_subscription,
+            self.create_subscription(
+                TwistStamped,
+                str(self.get_parameter("velocity_topic").value),
+                self._on_target,
+                10,
             ),
-            (self.destroy_timer, self.create_timer(1.0 / rate, self._tick)),
-            (
-                self.destroy_timer,
-                self.create_timer(1.0 / state_rate, self._publish_state),
-            ),
-            (
-                self.destroy_service,
-                self.create_service(Trigger, "~/estop", self._on_estop),
-            ),
-            (
-                self.destroy_service,
-                self.create_service(Trigger, "~/reset_estop", self._on_reset_estop),
-            ),
-        ]
+        )
+        keep(self.destroy_timer, self.create_timer(1.0 / rate, self._tick))
+        keep(
+            self.destroy_timer, self.create_timer(1.0 / state_rate, self._publish_state)
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/estop", self._on_estop),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/reset_estop", self._on_reset_estop),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/resume", self._on_resume),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/arm_control", self._on_arm_control),
+        )
         self.get_logger().info(
             f"configured: backend {backend.name}, {rate:.0f} Hz, zero after "
             f"{self.guard.target_timeout:.2f} s, link lost after {self.guard.link_timeout:.2f} s"
@@ -181,7 +223,10 @@ class FlightInterface(Node):
     def _tick(self):
         now = time.monotonic()
         for drone_state in self.backend.poll(now):
-            self.guard.on_drone_state(drone_state, now)
+            # The backend's receive time when it gives one (never in the future).
+            rx = drone_state.get("rx_time") if isinstance(drone_state, dict) else None
+            valid_rx = isinstance(rx, (int, float)) and math.isfinite(rx) and rx <= now
+            self.guard.on_drone_state(drone_state, rx if valid_rx else now)
         fresh = self.guard.link_fresh(now)
         if fresh != self._link_was_fresh:
             # One call site per severity: rclpy refuses to change it between calls.
@@ -195,21 +240,63 @@ class FlightInterface(Node):
         command = self.guard.command(now)
         if command is not None:
             self.backend.send_setpoint(command, now)
+            self.guard.note_sent(command, now)
+        if self.guard.resume_due(now):
+            if self.backend.request_resume(now):
+                self.get_logger().warning("RESUME_REQUEST sent (operator request)")
+            else:
+                self.get_logger().error(
+                    "RESUME_REQUEST not sent: no TCP to the ESP; ask again"
+                )
 
     def _publish_state(self):
         state = self.guard.flight_state(time.monotonic())
         self._state_pub.publish(String(data=json.dumps(state, separators=(",", ":"))))
 
     def _on_estop(self, request, response):
+        """A1: latch first, then one neutral (if setpoints were going out) and
+        BYE. A backend error cannot undo the latch."""
         was_sending = self.guard.active and not self.guard.estop
         self._estop_reason = "service"
         self.guard.trigger_estop(self._estop_reason)
-        if was_sending:
-            self.backend.send_setpoint(ZERO, time.monotonic())  # one zero, then silence
+        now = time.monotonic()
+        try:
+            if was_sending:
+                self.backend.send_neutral(now)  # one neutral, then nothing
+            self.backend.end_session(now)  # BYE: the ESP's failsafe output at once
+        except Exception as error:  # the latch holds whatever the backend does
+            self.get_logger().error(f"E-STOP: backend error after the latch: {error}")
         self._publish_state()
-        self.get_logger().error("E-STOP: setpoints stopped; ~/reset_estop to clear")
+        self.get_logger().error(
+            "E-STOP: neutral + BYE sent, setpoints stopped; ~/reset_estop to clear"
+        )
         response.success = True
         response.message = "estop latched"
+        return response
+
+    def _on_arm_control(self, request, response):
+        """A4: the operator's ARM. The ONLY place that calls arm_control()."""
+        now = time.monotonic()
+        ok, why = self.guard.arm_allowed(self._mask, now)
+        if ok:
+            ok = self.backend.arm_control(self._mask, now)
+            why = f"{why} sent" if ok else f"{why} not sent: no TCP to the ESP"
+        response.success, response.message = ok, why
+        # One call site per severity: rclpy refuses to change it between calls.
+        if ok:
+            self.get_logger().warning(f"ARM (operator): {why}")
+        else:
+            self.get_logger().info(f"ARM refused: {why}")
+        return response
+
+    def _on_resume(self, request, response):
+        """A3: the operator asks to resume after the ESP's link failsafe."""
+        response.success, response.message = self.guard.request_resume(time.monotonic())
+        # One call site per severity: rclpy refuses to change it between calls.
+        if response.success:
+            self.get_logger().warning(f"resume requested: {response.message}")
+        else:
+            self.get_logger().info(f"resume refused: {response.message}")
         return response
 
     def _on_reset_estop(self, request, response):
