@@ -130,6 +130,12 @@ public:
     if (!have_peer || len > sizeof retry_buf) {
       return;
     }
+    // Only STATE is retried (it carries the link state). FC_HEALTH (5 Hz) is
+    // sent once: it must never cancel or replace a pending STATE retry.
+    if (len > 3 && buf[3] != static_cast<uint8_t>(sd::MsgType::kState)) {
+      udp_send(buf, len);
+      return;
+    }
     if (!udp_send(buf, len)) { // keep the newest STATE and retry it
       if (retry_len > 0) {
         ++state_dropped;
@@ -387,7 +393,8 @@ sd::FcHealth fc_health(uint32_t now) {
   // unknown
   const bool fresh = fc.status_fresh(now, sd::kOtaStatusMaxAgeMs);
   h.armed = fresh ? (t.status.armed ? 1 : 0) : sd::kArmedUnknown;
-  h.arming_disable_flags = t.has_status ? t.status.arming_disable_flags : 0;
+  // The flags follow the same freshness as armed: never old ones (0 = unknown)
+  h.arming_disable_flags = fresh ? t.status.arming_disable_flags : 0;
   h.status_age_ms = age_ms(t.has_status, t.status_ms, now);
   h.attitude_age_ms = age_ms(t.has_attitude, t.attitude_ms, now);
   h.analog_age_ms = age_ms(t.has_analog, t.analog_ms, now);

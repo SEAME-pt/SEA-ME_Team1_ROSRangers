@@ -284,6 +284,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.WrongStateAndMaskAreCheckedBeforeTheFc` | FC silent and the wrong mask: result 2, not 4 | One fixed check order, as for CONFIG (spec §3.1) |
 | `LinkTest.TheSessionIsToldWhenTheFcIsLostAndRestored` | While streaming, FC lost: EVENT 0x0201 once, state kept; FC back: EVENT 0x0202; no event without a change | #179 D1 (ESP-S2-06: the ground hears it within 500 ms) |
 | `LinkTest.FcHealthGoesToTheSessionAndSharesTheUdpSeq` | FC_HEALTH: nothing without a session; with one it is sealed for the ground, takes the next UDP seq after STATE, and the ground's Receiver accepts it | #179 D3, spec v1.4 |
+| `LinkTest.ResumeIsRefusedWhileTheFcIsSilent` | In LINK_FAILSAFE with 500 ms of neutral, FC silent: RESUME gets result 4 and the failsafe stays; FC back: RESUME OK | Control never comes back while nothing would apply it (D2 extended to RESUME, to confirm) |
 | `LinkTest.ANewLinkStartsWithTheFcNotAlive` | A new Link counts the FC as not alive until told otherwise | No ARM before the FC has been seen |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |

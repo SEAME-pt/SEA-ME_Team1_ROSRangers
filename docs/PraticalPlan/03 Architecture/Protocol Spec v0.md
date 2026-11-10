@@ -79,7 +79,7 @@ Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of 
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
 
-`FC_HEALTH` (2026-11-10, v1.4, #179, team decision D3) is the ESP↔FC link as the ESP sees it. `fc_alive` is 1 while an FC reply to one of the ESP's requests came less than 250 ms ago (an error reply counts; a reply nobody asked for does not). `armed` is 0 or 1 from an `MSP_STATUS` under 500 ms old, else `0xFF`. Ages are ms since the value arrived, saturated at `0xFFFE`; `0xFFFF` means never received or expired (10 s), so an unknown value never looks like a reading. The counters are the ESP's own since boot; the u16 ones saturate at 65535. `rc_replaced` counts RC frames overwritten by a newer one before they were sent (the UART budget, #123). It shares the UDP `seq` with `STATE` (one counter per transport, §1).
+`FC_HEALTH` (2026-11-10, v1.4, #179, team decision D3) is the ESP↔FC link as the ESP sees it. `fc_alive` is 1 while an FC reply to one of the ESP's requests came less than 250 ms ago (an error reply counts; a reply nobody asked for does not). `armed` is 0 or 1 from an `MSP_STATUS` under 500 ms old, else `0xFF`; `arming_disable_flags` come from the same fresh status, else 0. `rc_sent` counts the `MSP_SET_RAW_RC` frames written to the FC UART since boot. Ages are ms since the value arrived, saturated at `0xFFFE`; `0xFFFF` means never received or expired (10 s), so an unknown value never looks like a reading. The counters are the ESP's own since boot; the u16 ones saturate at 65535. `rc_replaced` counts RC frames overwritten by a newer one before they were sent (the UART budget, #123). It shares the UDP `seq` with `STATE` (one counter per transport, §1).
 
 Every TCP request has its own reply: `HELLO` → `HELLO_ACK`, `ARM_CONTROL_REQUEST` → `ARM_CONTROL_ACK`, `RESUME_REQUEST` → `RESUME_ACK`, `CONFIG_GET` / `CONFIG_SET` → `CONFIG_ACK`. `BYE` ends the session and gets no reply. `EVENT` is sent by the ESP on its own.
 
@@ -105,7 +105,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 1 | wrong state | both | `ARM_CONTROL_REQUEST` while `STREAMING` or in `LINK_FAILSAFE` (which needs `RESUME_REQUEST`); `RESUME_REQUEST` outside `LINK_FAILSAFE` |
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
-| 4 | FC not answering | `ARM_CONTROL_ACK` | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). Checked after codes 1 and 2 |
+| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, to be confirmed by the safety pilot on the #179 PR) |
 
 `CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 
@@ -302,6 +302,8 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **FC_HEALTH** | Telemetry message 0x81 (v1.4, #179): the ESP↔FC link as the ESP sees it, at 5 Hz: FC alive, armed, arming flags, value ages, request/reply counts, RC frames sent and replaced. |
+| **FC alive** | An FC reply to one of the ESP's requests came less than 250 ms ago; otherwise the FC is lost (EVENT 0x0201). |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |

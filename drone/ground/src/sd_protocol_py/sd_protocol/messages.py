@@ -89,7 +89,7 @@ class Role(IntEnum):
     GROUND = 1
 
 
-# Spec §2 (v1.3): what each side receives, i.e. what the other side sends. BYE
+# Spec §2 (v1.4): what each side receives, i.e. what the other side sends. BYE
 # goes both ways. HELLO and HELLO_ACK are pre-session: receive_handshake().
 _RECEIVES = {
     Role.ESP: frozenset(

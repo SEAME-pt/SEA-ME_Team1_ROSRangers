@@ -241,7 +241,7 @@ def test_fc_health_is_read_and_shown():
     assert got == h
     line = ground_link.health_line(got)
     assert "fc=LOST" in line and "armed=?" in line and "status=?" in line
-    assert "attitude=>65s" in line and "reply=260ms" in line
+    assert "attitude=>65s" in line and "analog=12ms" in line and "reply=260ms" in line
     assert "errors=10" in line and "rc_replaced=2" in line
     assert link.state(frame) is None  # replayed: refused; and not a STATE
 

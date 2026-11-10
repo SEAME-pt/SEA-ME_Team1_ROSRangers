@@ -1084,6 +1084,25 @@ TEST_F(LinkTest, FcHealthGoesToTheSessionAndSharesTheUdpSeq) {
       rx.receive(io.udp.back().data(), io.udp.back().size(), f)));
 }
 
+TEST_F(LinkTest, ResumeIsRefusedWhileTheFcIsSilent) {
+  Ground g;
+  stream(g);
+  link.tick(300); // LINK_FAILSAFE
+  for (std::uint32_t t = 400; t <= 1000; t += 20) {
+    udp(g.setpoint(0), t); // the 500 ms of neutral a resume needs
+  }
+  link.set_fc_alive(false, 1005);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1010);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kFcNotAnswering));
+  EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
+  link.set_fc_alive(true, 1015);
+  udp(g.setpoint(0), 1020);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1025);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kOk));
+}
+
 TEST_F(LinkTest, ANewLinkStartsWithTheFcNotAlive) {
   Io io2;
   sd::Link fresh(make_config(sd::FailsafeOutput::kNeutralThenStop), io2);

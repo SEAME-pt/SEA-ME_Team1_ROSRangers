@@ -16,6 +16,9 @@ from sd_protocol.frame import (
     frame_size,
 )
 from sd_protocol.messages import (
+    AGE_MAX,
+    AGE_UNKNOWN,
+    ARMED_UNKNOWN,
     CONFIG_ACK_SIZE,
     CONFIG_KV_SIZE,
     EVENT_MAX_SIZE,
@@ -84,6 +87,9 @@ from sd_protocol.setpoint import (
 from sd_protocol.version import protocol_version
 
 __all__ = [
+    "AGE_MAX",
+    "AGE_UNKNOWN",
+    "ARMED_UNKNOWN",
     "CONFIG_ACK_SIZE",
     "CONFIG_KV_SIZE",
     "EVENT_MAX_SIZE",

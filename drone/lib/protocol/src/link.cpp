@@ -555,6 +555,9 @@ void Link::handle_resume(std::uint32_t now_ms) {
   } else if (!(neutral_run_ && have_sp_ && now_ms - last_sp_ms_ < kTFreshMs &&
                now_ms - neutral_since_ms_ >= kResumeNeutralMs)) {
     result = AckResult::kResumeConditionNotMet;
+  } else if (!fc_alive_) {
+    // Like ARM (#179 D2): control must not come back while nothing applies it.
+    result = AckResult::kFcNotAnswering;
   }
   std::uint8_t payload[1];
   const std::size_t n = encode_u8_payload(static_cast<std::uint8_t>(result),

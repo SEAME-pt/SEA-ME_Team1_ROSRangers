@@ -278,7 +278,8 @@ def health_line(h) -> str:
     return (
         f"fc={'alive' if h.fc_alive else 'LOST'} armed={armed} "
         f"flags=0x{h.arming_disable_flags:08x} age status={age(h.status_age_ms)} "
-        f"attitude={age(h.attitude_age_ms)} reply={age(h.reply_age_ms)} "
+        f"attitude={age(h.attitude_age_ms)} analog={age(h.analog_age_ms)} "
+        f"reply={age(h.reply_age_ms)} "
         f"req={h.requests} rep={h.replies} timeouts={h.timeouts} errors={errors} "
         f"rc_sent={h.rc_sent} rc_replaced={h.rc_replaced}"
     )
@@ -426,7 +427,7 @@ def run(args) -> None:
     next_sp = time.monotonic()
     next_print = 0.0
     last_state = None
-    last_health = None  # FC_HEALTH (spec v1.4, #179)
+    last_health, last_health_t = None, 0.0  # FC_HEALTH (spec v1.4, #179)
     last_state_t = time.monotonic()  # grace period right after the handshake
     udp_error = ""  # logged once per change, not 50 times a second
     next_reconnect = 0.0
@@ -472,7 +473,7 @@ def run(args) -> None:
                 while True:
                     st = link.telemetry(udp.recv(512))
                     if isinstance(st, FcHealth):
-                        last_health = st
+                        last_health, last_health_t = st, time.monotonic()
                         continue
                     if st is not None:
                         if time.monotonic() - last_state_t > STATE_STALE_S and tcp:
@@ -530,7 +531,10 @@ def run(args) -> None:
             if last_state is not None and age < STATE_STALE_S:
                 log(t0, state_line(last_state))
                 if last_health is not None:
-                    log(t0, "  " + health_line(last_health))
+                    if now - last_health_t < STATE_STALE_S:
+                        log(t0, "  " + health_line(last_health))
+                    else:  # never show an old fc=alive as current
+                        log(t0, f"  no FC_HEALTH for {now - last_health_t:.1f} s")
             elif udp_on and age >= STATE_STALE_S:  # not before the first STATE
                 log(t0, f"no STATE for {age:.1f} s: link down or session ended")
             next_print = now + args.print_every
@@ -563,6 +567,7 @@ def run(args) -> None:
                 mode, roll = 0, 0
                 stopped_at = None
                 last_state = None  # never show the dead session's STATE
+                last_health = None
                 last_state_t = time.monotonic()
                 log(t0, "new session: sticks neutral; type a to ARM again")
         if stdin.open and stdin.fd in ready:
