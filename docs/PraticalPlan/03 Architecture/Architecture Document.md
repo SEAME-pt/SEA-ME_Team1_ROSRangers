@@ -82,7 +82,7 @@ flowchart LR
 | `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
 | `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` |
 | `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06 |
-| `flight_interface` lifecycle node | `/mission/velocity_target` | `/flight/state` | not set | not built (#103) |
+| `flight_interface` lifecycle node (`flight_interface` package) | `/mission/velocity_target` (`TwistStamped`, body FLU) | `/flight/state` (JSON as above, plus `active`, `estop`, `estop_reason`); services `~/estop`, `~/reset_estop` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | first part (#103): lifecycle, watchdog, E-stop, `loopback` backend only; the ESP and PX4 backends come next |
 
 **QoS:** every topic uses the rclpy default for a depth of 10: reliable, volatile, keep last 10.
 

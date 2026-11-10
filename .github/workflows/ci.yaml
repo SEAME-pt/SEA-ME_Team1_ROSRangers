@@ -401,9 +401,24 @@ jobs:
         env:
           SITL_REQUIRED: "1"
         run: |
-          (cd bf && ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
-          # conftest.py waits for TCP 5761 and an MSP answer, up to 60 s
+          # stdbuf: line-buffered, so sitl.log is complete when a test fails
+          # (#181: the log of a failed run stopped mid-line)
+          (cd bf && stdbuf -oL -eL ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+          # conftest.py waits for TCP 5761 and an MSP answer, up to 60 s, and
+          # says why it gave up (refused, connected without an answer, ...)
           pytest drone/tests/sitl -v
+
+      - name: SITL state at the failure
+        if: failure()
+        run: |
+          pgrep -a betaflight_SITL || echo "SITL is not running"
+          ss -ltnp | grep -E ':576[0-9]' || echo "nothing listening on 5760-5769"
+          tail -n 20 sitl.log || true
+          # Where each SITL thread is stuck (#181: alive, but 5761 never accepted)
+          if pid=$(pgrep -f betaflight_SITL); then
+            command -v gdb >/dev/null || sudo apt-get install -y -qq gdb >/dev/null
+            sudo gdb -p "$pid" -batch -ex "thread apply all bt" 2>&1 | tail -n 80 || true
+          fi
 
       - name: Upload SITL log
         if: failure()

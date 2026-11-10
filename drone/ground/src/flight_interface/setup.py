@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer="Bruno",
     maintainer_email="bmmc136@gmail.com",
-    description="FC telemetry over MSP -> /fc/attitude, /fc/battery",
+    description="Ground link to the drone: FC telemetry over MSP, and the lifecycle node (watchdog, E-stop)",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "fc_telemetry = flight_interface.fc_telemetry:main",
+            "flight_interface = flight_interface.link_node:main",
         ],
     },
 )
