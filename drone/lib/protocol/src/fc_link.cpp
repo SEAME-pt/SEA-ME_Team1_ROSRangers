@@ -39,6 +39,10 @@ void FcLink::expire(std::uint32_t now_ms) {
       now_ms - telemetry_.api_version_ms > kMaxValueAgeMs) {
     telemetry_.has_api_version = false;
   }
+  // Like the values: never "alive" again just because millis() wrapped.
+  if (any_reply_ && now_ms - last_reply_ms_ > kMaxValueAgeMs) {
+    any_reply_ = false;
+  }
 }
 
 bool FcLink::any_poll_due(std::uint32_t now_ms) const {
@@ -139,6 +143,8 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   }
   in_flight_ = false;
   ++counters_.replies;
+  any_reply_ = true; // an error reply too: the FC is answering (#179)
+  last_reply_ms_ = now_ms;
   if (reply.error) {
     ++counters_.error_replies;
     return;

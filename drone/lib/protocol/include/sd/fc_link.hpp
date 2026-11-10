@@ -33,6 +33,10 @@ constexpr std::uint32_t kDrainMs = kReplyTimeoutMs;
 // A value older than this is forgotten (has_* false), so an old "disarmed"
 // can never look fresh again when millis() wraps after 49.7 days.
 constexpr std::uint32_t kMaxValueAgeMs = 10000;
+// The FC counts as lost when no reply to a request came for this long (#179,
+// proposal D1). A healthy FC answers ~85 times a second (an RC ack every
+// 20 ms plus the polls), so this is ~20 missed replies in a row.
+constexpr std::uint32_t kFcLostMs = 250;
 
 // The latest value of each poll and when it arrived (`*_ms`). A value never
 // received has `has_*` false.
@@ -84,6 +88,13 @@ public:
   // The FC answered MSP_API_VERSION within kMaxValueAgeMs.
   bool fc_ready() const { return telemetry_.has_api_version; }
 
+  // A reply to one of our requests came less than kFcLostMs ago. An error
+  // reply ('!') counts: the FC is there and answering. A reply nobody asked
+  // for does not.
+  bool fc_alive(std::uint32_t now_ms) const {
+    return any_reply_ && now_ms - last_reply_ms_ < kFcLostMs;
+  }
+
   // Feed every byte read from the UART.
   void on_byte(std::uint8_t byte, std::uint32_t now_ms);
 
@@ -113,6 +124,8 @@ private:
   msp::Parser parser_;
 
   bool in_flight_ = false;
+  bool any_reply_ = false; // expired with the values (kMaxValueAgeMs)
+  std::uint32_t last_reply_ms_ = 0;
   bool draining_ = false;
   std::uint32_t drain_ms_ = 0;
   std::uint8_t in_flight_cmd_ = 0;

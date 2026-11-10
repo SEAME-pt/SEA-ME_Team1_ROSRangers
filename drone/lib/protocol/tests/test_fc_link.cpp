@@ -385,3 +385,42 @@ TEST(FcLink, ASilentFcDoesNotStarveThePolls) {
   EXPECT_TRUE(fc.telemetry().has_status);
   EXPECT_TRUE(fc.telemetry().has_attitude);
 }
+
+// #179 D1: the FC is alive while it answers our requests, lost after 250 ms.
+TEST(FcLink, AliveWhileTheFcAnswersLostAfter250Ms) {
+  sd::FcLink fc;
+  EXPECT_FALSE(fc.fc_alive(0)); // nothing answered yet
+  ASSERT_EQ(poll_cmd(fc, 0), sd::msp::kAttitude);
+  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), 3);
+  EXPECT_TRUE(fc.fc_alive(3));
+  EXPECT_TRUE(fc.fc_alive(3 + sd::kFcLostMs - 1));
+  EXPECT_FALSE(fc.fc_alive(3 + sd::kFcLostMs));
+}
+
+TEST(FcLink, AnErrorReplyStillMeansAlive) {
+  sd::FcLink fc;
+  ASSERT_EQ(poll_cmd(fc, 0), sd::msp::kAttitude);
+  answer(fc, reply_frame(sd::msp::kAttitude, {}, '!'), 2);
+  EXPECT_TRUE(fc.fc_alive(2)); // the FC refused, but it is there
+}
+
+TEST(FcLink, AReplyNobodyAskedForIsNotAlive) {
+  sd::FcLink fc;
+  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), 1); // no request
+  EXPECT_FALSE(fc.fc_alive(1));
+  EXPECT_EQ(fc.counters().unexpected, 1U);
+}
+
+TEST(FcLink, AliveNeverComesBackAcrossTheMillisWrap) {
+  sd::FcLink fc;
+  ASSERT_EQ(poll_cmd(fc, 0), sd::msp::kAttitude);
+  answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), 1);
+  std::uint8_t out[sd::msp::kMaxFrame];
+  // The FC goes silent; polls keep timing out for longer than the value age.
+  for (std::uint32_t t = 2; t <= sd::kMaxValueAgeMs + 200; t += 10) {
+    fc.poll(t, out, sizeof out);
+  }
+  EXPECT_FALSE(fc.fc_alive(sd::kMaxValueAgeMs + 200));
+  // 2^32 ms after the last reply the clock reads the same value again.
+  EXPECT_FALSE(fc.fc_alive(1));
+}

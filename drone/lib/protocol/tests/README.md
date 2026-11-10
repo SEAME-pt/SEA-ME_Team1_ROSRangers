@@ -219,6 +219,10 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.StopRcSendsNothing` | `stop_rc()` after `set_rc()`: no RC frame | The ADR-004 "stop" really stops |
 | `FcLink.RcAt50HzLeavesTheAdr009Polls` | One simulated second with RC at 50 Hz and an FC that answers at once: 50 RC frames, 25 ATTITUDE, no timeouts | RC and telemetry fit on one UART (the real budget is spike #123) |
 | `FcLink.ASilentFcDoesNotStarveThePolls` | The FC stops answering for 3 s with RC at 50 Hz: polls still go out between the RC timeouts, and when the FC answers again its values come back | A silent FC is seen coming back; RC timeouts never lock out telemetry (safety review of #102 PR 2) |
+| `FcLink.AliveWhileTheFcAnswersLostAfter250Ms` | `fc_alive()` is false before any reply, true after one, still true at 249 ms of silence and false at 250 ms | The FC-lost threshold of #179 (D1) |
+| `FcLink.AnErrorReplyStillMeansAlive` | An error reply ('!') to our request keeps the FC alive | A refusing FC is still there; only silence is "lost" |
+| `FcLink.AReplyNobodyAskedForIsNotAlive` | A reply with no request in flight is counted as unexpected and does not make the FC alive | Stray bytes never fake a live FC |
+| `FcLink.AliveNeverComesBackAcrossTheMillisWrap` | After 10 s of silence "alive" is forgotten, and 2^32 ms later the old reply time does not make it alive again | No false "FC restored" after a long uptime |
 
 ## Link: the ESP link state machine (#102)
 
