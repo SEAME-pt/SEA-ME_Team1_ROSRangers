@@ -14,9 +14,15 @@
 //   failsafe, ADR-005 sessions). STATE goes to the ground at
 //   telemetry_rate_hz.
 //
-// Not yet (#102 PR 3 and later): the ADR-024 OTA gate and lock (OTA is still
-// ungated, as in the bridge), STATE.override_active (needs the MSP box IDs),
-// reading the override mask from the FC (fixed kOverrideMask below).
+// - OTA (ADR-024): ArduinoOTA.handle() runs only while sd::ota_gate_open()
+//   (no session, FC disarmed per an MSP_STATUS under 500 ms old). The start
+//   callback takes the upload lock (MSP_SET_ARMING_DISABLED 1 after a fresh
+//   "disarmed"), or restarts the ESP. Value 0 is sent at every boot and after
+//   a failed upload, from loop() only, retried until the FC confirms. The OTA
+//   port (UDP 8266) is open only while the gate is.
+//
+// Not yet: STATE.override_active (#176, needs the MSP box IDs) and reading the
+// override mask from the FC (fixed kOverrideMask below).
 
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
@@ -25,6 +31,7 @@
 #include "sd/fc_link.hpp"
 #include "sd/frame.hpp"
 #include "sd/link.hpp"
+#include "sd/ota_lock.hpp"
 
 // AP_SSID, AP_PASS, OTA_PASS, AP_CHANNEL and SD_PSK_HEX come from secrets.py
 // (~/.config/seame-drone/ or SEAME_* variables), never from the repo.
@@ -305,6 +312,54 @@ sd::FcView fc_view() {
   return v;
 }
 
+// --- OTA (ADR-024). Blocking MSP exchanges on the FC UART, only around an
+// upload (the loop is stopped then) and at boot / after a failed upload.
+class Uart : public sd::FcUart {
+public:
+  void write(const uint8_t *buf, size_t len) override {
+    Serial.write(buf, len);
+  }
+  int read() override {
+    if (Serial.available() > 0) {
+      return Serial.read();
+    }
+    yield(); // let Wi-Fi run while the FC answers
+    return -1;
+  }
+  uint32_t now_ms() override { return millis(); }
+  void discard_input() override {
+    while (Serial.available() > 0) {
+      Serial.read();
+    }
+  }
+};
+Uart fc_uart;
+bool ota_locked = false; // the upload lock is set (start callback)
+// Set by the error callback (also from the UDP receive callback), read by
+// loop().
+volatile bool release_due = false;
+// Value 0 still to confirm: at every boot, and after a failed upload.
+bool release_wanted = true;
+uint32_t next_release_ms = 0;
+constexpr uint32_t kReleaseRetryMs = 500;
+bool ota_open = false; // the OTA port is open (only while the gate is)
+
+void on_ota_start() {
+  // ADR-024 upload lock, before any byte is written. Anything but "locked"
+  // aborts: the image is not written, and the boot release runs again.
+  if (sd::ota_lock(fc_uart) != sd::OtaLockResult::kLocked) {
+    ESP.restart();
+    return; // restart() does not return on core 3.1.2; never mark a lock
+  }
+  ota_locked = true;
+}
+
+void on_ota_error(ota_error_t) {
+  // Also runs for a wrong password (before any lock) and can run twice for
+  // one failure: only mark the release as due (ADR-024).
+  release_due = true;
+}
+
 WiFiServer server(kPort);
 uint32_t last_rc_ms = 0;
 uint32_t last_state_ms = 0;
@@ -317,10 +372,12 @@ void setup() {
   WiFi.mode(WIFI_AP);
   WiFi.setSleepMode(WIFI_NONE_SLEEP);
   WiFi.softAP(AP_SSID, AP_PASS, AP_CHANNEL, false, 1); // max 1 client
-  // OTA is ungated here, as in the bridge; the ADR-024 gate and lock are #102
-  // PR 3. Until then the ADR-024 procedure is the only protection.
+  // OTA (ADR-024 D3): password from secrets.py. The OTA port is opened only
+  // while the gate is open (loop()), so no request can wait while it is
+  // closed. No mDNS: espota uses the IP.
   ArduinoOTA.setPassword(OTA_PASS);
-  ArduinoOTA.begin();
+  ArduinoOTA.onStart(on_ota_start);
+  ArduinoOTA.onError(on_ota_error);
   static sd::Link link(make_config(), io);
   link_ptr = &link;
   server.begin();
@@ -329,12 +386,34 @@ void setup() {
 }
 
 void loop() {
-  ArduinoOTA.handle();
   sd::Link &link = *link_ptr;
   const uint32_t now = millis();
 
   while (Serial.available() > 0) { // FC -> ESP: replies
     fc.on_byte(static_cast<uint8_t>(Serial.read()), now);
+  }
+  // Value 0 at every boot (ADR-024: an image that rebooted mid-upload, or
+  // after an abort, does not know a lock was taken) and after a failed upload
+  // (only if the lock was taken). Retried every 500 ms until the FC confirms:
+  // value 0 is harmless, and a missed one would leave arming locked. Only in
+  // BOOT or NO_SESSION: each try blocks the loop up to 100 ms and drops
+  // FcLink's pending replies, so never during a session (Dot99, review of
+  // #177). In BOOT nothing goes to the FC yet, so the boot release still goes
+  // out before the link leaves BOOT. A lock left on is the safe side: the
+  // FC refuses to arm, and the radio shows it.
+  if (release_due) {
+    release_due = false;
+    if (ota_locked) {
+      ota_locked = false;
+      release_wanted = true;
+    }
+  }
+  const bool no_session = link.state() == sd::EspState::kBoot ||
+                          link.state() == sd::EspState::kNoSession;
+  if (release_wanted && no_session && fc.fc_ready() &&
+      static_cast<int32_t>(now - next_release_ms) >= 0) {
+    release_wanted = !sd::ota_release(fc_uart);
+    next_release_ms = now + kReleaseRetryMs;
   }
   // BOOT -> NO_SESSION once the FC answers (REQ-SAF-016).
   if (link.state() == sd::EspState::kBoot && fc.fc_ready()) {
@@ -345,6 +424,19 @@ void loop() {
   service_tcp(link, now);
   service_udp(link, now);
   link.tick(now);
+  // ADR-024 D2: the OTA port is open only while the gate is. end() also
+  // drops a request in progress, so none waits for the gate to reopen.
+  const bool gate = sd::ota_gate_open(link, fc, now);
+  if (gate && !ota_open) {
+    ArduinoOTA.begin(false); // false: no mDNS
+    ota_open = true;
+  } else if (!gate && ota_open) {
+    ArduinoOTA.end();
+    ota_open = false;
+  }
+  if (ota_open) {
+    ArduinoOTA.handle();
+  }
 
   // 50 Hz: what goes to the FC. Nothing in BOOT or once the ADR-004 output
   // has stopped.

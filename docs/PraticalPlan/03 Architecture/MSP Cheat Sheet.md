@@ -49,7 +49,7 @@ tags:
 | 150 | MSP_STATUS_EX | extended status | no |
 | 200 | MSP_SET_RAW_RC | setpoints (AETR order) | yes |
 
-The gateway (#101) can build a request only for the IDs marked **yes** (`sd::msp::encode_request`); every other ID, read or write, is refused. `MSP_SET_ARMING_DISABLED` (99) is not on that list on purpose: #102 sends it through a separate internal encoder, only for the ADR-024 lock.
+The gateway (#101) can build a request only for the IDs marked **yes** (`sd::msp::encode_request`); every other ID, read or write, is refused. `MSP_SET_ARMING_DISABLED` (99) is not on that list on purpose: #102 sends it through a separate internal encoder, only for the ADR-024 lock. **2026-11-09:** done, `sd::msp::encode_set_arming_disabled()`, called only by `sd::ota_lock()` / `sd::ota_release()`.
 
 > [!danger] Never forwarded from the network (gateway allow-list)
 > `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. `MSP_SET_ARMING_DISABLED` (99) is sent only by the ESP itself, for the OTA lock ([[ADR-024 OTA Firmware Updates|ADR-024]]), never forwarded. The gateway (#101) enforces this list in code: `sd::msp::encode_request` refuses every other command. The week-2 transparent-bridge spike forwards all of these: use it only with props off ([[Safety Rules]] #13). Network isolation is still an open item ([[Safety Rules]] §2).

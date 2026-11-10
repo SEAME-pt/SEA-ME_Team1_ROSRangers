@@ -116,6 +116,12 @@ def fake_status(armed: bool = False) -> bytes:
     return head + bytes([0, 26]) + struct.pack("<I", FAKE_ARMING_FLAGS) + bytes([0])
 
 
+# MSP_SET_ARMING_DISABLED (ADR-024): the gateway sends value 0 (release) once
+# at every boot, retried until acknowledged; value 1 (lock) only during an OTA
+# upload, which no HIL test does. Not in flight_interface.msp: ESP-only.
+ARMING_DISABLED = 99
+RELEASE = b"\x00"
+
 FAKE_ANSWERS = {
     msp.MSP_ATTITUDE: struct.pack("<hhH", FAKE_ROLL, FAKE_PITCH, FAKE_HEADING),
     # vbat (u8, 0.1 V), mAh drawn, RSSI, amperage, voltage (u16, 0.01 V) at 7
@@ -125,6 +131,7 @@ FAKE_ANSWERS = {
     # until this is answered (REQ-SAF-016).
     msp.MSP_API_VERSION: bytes([0, 1, 46]),
     msp.MSP_SET_RAW_RC: b"",  # Betaflight acknowledges with an empty reply
+    ARMING_DISABLED: b"",  # the same; acknowledged, the boot release is not retried
 }
 
 
@@ -225,7 +232,8 @@ NEUTRAL = msp.encode_rc(setpoint_to_rc(Setpoint(0, 0, 0, 0, 0)))
 def check_frames(raw, frames, bad, rc_ok=(NEUTRAL,)):
     """Only allow-listed requests, nothing outside MSP frames, and every RC
     one of `rc_ok`: neutral, unless the test armed a session and says which
-    values it sent."""
+    values it sent. MSP_SET_ARMING_DISABLED only as the release (value 0):
+    the lock (value 1) belongs to an OTA upload, never to these tests."""
     assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
     assert bad == 0, f"{bad} frames with a bad checksum"
     assert frames, "the gateway sent nothing: is esp_gateway flashed?"
@@ -233,9 +241,12 @@ def check_frames(raw, frames, bad, rc_ok=(NEUTRAL,)):
     stray = stray_bytes(raw, frames)
     assert stray == 0, f"{stray} bytes outside MSP frames: {raw[:300]!r}"
     sent = {f.cmd for _, f in frames}
-    assert sent <= POLLS | {
-        RC
-    }, f"commands outside the allow-list: {sent - POLLS - {RC}}"
+    allowed = POLLS | {RC, ARMING_DISABLED}
+    assert sent <= allowed, f"commands outside the allow-list: {sent - allowed}"
+    locks = [f.payload for _, f in frames if f.cmd == ARMING_DISABLED]
+    assert all(
+        p == RELEASE for p in locks
+    ), f"MSP_SET_ARMING_DISABLED other than the release (value 0): {locks}"
     assert all(
         f.payload == b"" for _, f in frames if f.cmd in POLLS
     ), "polls carry no payload"

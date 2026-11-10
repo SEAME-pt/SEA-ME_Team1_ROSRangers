@@ -23,7 +23,8 @@ bool allowed(std::uint8_t cmd) {
 
 namespace {
 
-// Writes one '$M<' frame. Only called with an allow-listed command.
+// Writes one '$M<' frame. Only called with an allow-listed command, or 99
+// from encode_set_arming_disabled() (ADR-024, ESP-originated only).
 std::size_t encode_frame(std::uint8_t cmd, const std::uint8_t *payload,
                          std::size_t len, std::uint8_t *out,
                          std::size_t out_cap) {
@@ -67,6 +68,13 @@ std::size_t encode_set_raw_rc(const std::uint16_t channels[kRcChannels],
     put_u16(payload + 2 * i, channels[i]);
   }
   return encode_frame(kSetRawRc, payload, sizeof(payload), out, out_cap);
+}
+
+std::size_t encode_set_arming_disabled(bool disable, std::uint8_t *out,
+                                       std::size_t out_cap) {
+  const std::uint8_t payload[1] = {static_cast<std::uint8_t>(disable ? 1 : 0)};
+  return encode_frame(kSetArmingDisabled, payload, sizeof(payload), out,
+                      out_cap);
 }
 
 Parser::Event Parser::feed(std::uint8_t byte) {

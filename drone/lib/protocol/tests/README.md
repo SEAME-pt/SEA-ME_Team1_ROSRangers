@@ -282,6 +282,24 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.StateCarriesTheLinkFieldsAndTheFcView` | STATE has the link state, last control seq, rejected count and the FC values; seq counts up | What the ground sees |
 | `LinkTest.EspFramesAreAcceptedByTheGroundReceiver` | Every TCP frame the ESP sent passes a ground-side Receiver | Both ends agree on keys, seq and direction |
 
+## OtaLock / OtaGate: the ADR-024 OTA gate and upload lock (#102)
+
+A fake FC answers like Betaflight: MSP_STATUS, and MSP_SET_ARMING_DISABLED setting or clearing ARMING_DISABLED_MSP.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `OtaLock.ArmingDisabledHasItsOwnEncoderOnly` | MSP 99 is not on the allow-list (the generic encoder refuses it with any payload); only its own encoder builds it, byte for byte | Nothing from the network can ever build the command that disarms the FC |
+| `OtaLock.LocksADisarmedFcAndReadsTheLockBack` | Disarmed FC: buffered input discarded, then STATUS, SET_ARMING_DISABLED 1, STATUS, in that order; the lock bit is read back | ADR-024 lock steps 1 and 2 |
+| `OtaLock.NeverSendsTheLockToAnArmedFc` | Armed FC: result "armed" and value 1 is never sent | Betaflight disarms an armed FC on value 1 (ADR-024: never without step 1) |
+| `OtaLock.NeverSendsTheLockWithoutAFreshStatus` | A buffered old "disarmed" reply, then a silent FC: result "no reply", value 1 never sent, gives up within the timeout | Only a fresh status counts; a dead FC never gets the lock |
+| `OtaLock.ALateOldReplyIsNeverTakenAsFresh` | An old "disarmed" reply to an earlier poll arrives 20 ms after the discard while the FC is armed: the lock waits for 60 ms of quiet, asks again, sees "armed", never sends value 1 | Only the reply to the lock's own request counts (ADR-024 step 1; review of #102 part 3) |
+| `OtaLock.AnFcThatNeverGoesQuietGetsNoLock` | The UART never goes quiet: no request at all, "no reply" within 500 ms | A babbling line never leads to a lock |
+| `OtaLock.FailsWhenTheFcDoesNotConfirmTheLock` | An error reply to the lock, or an ack without the flag: result "not locked" | The upload is aborted unless the lock is really set |
+| `OtaLock.ReleaseSendsValueZero` | Release sends value 0 (no status check needed) and clears the flag; a silent FC returns false | Value 0 is harmless at any time (ADR-024) |
+| `OtaGate.OpenOnlyWithNoSessionAndAFreshDisarmedStatus` | Closed in BOOT; open in NO_SESSION with a disarmed status younger than 500 ms; closed at 500 ms | ADR-024 D2 |
+| `OtaGate.ClosedWhenArmedOrUnknown` | No status yet, or an armed status: closed | An unknown arm state refuses OTA |
+| `OtaGate.ClosedWhileASessionIsOpen` | SESSION_IDLE: closed; after the session ends (NO_SESSION): open again | No update while a ground session is open |
+
 ## Version: protocol version
 | Test | What it does | Why it matters |
 |---|---|---|

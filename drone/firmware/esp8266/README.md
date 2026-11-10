@@ -105,15 +105,13 @@ What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine
   - neutral sticks without control;
   - the ground's setpoint while STREAMING;
   - the ADR-004 output on link loss: neutral for 1 s, then nothing.
-- **Not yet (#102 PR 3 and later):**
-  - the ADR-024 OTA gate and lock (OTA is still ungated, as in the bridge);
-  - `STATE.override_active` (needs the MSP box IDs);
-  - reading the override mask from the FC: it is fixed at **8** (yaw) in `main.cpp`.
+- **OTA is gated (ADR-024, #102):** the OTA port is open only with **no ground session** and the FC **disarmed** (an `MSP_STATUS` under 500 ms old). The start callback locks arming on the FC (`MSP_SET_ARMING_DISABLED` 1, read back) or restarts the ESP; the lock is released at every boot and after a failed upload.
+- **Not yet:** `STATE.override_active` (#176, needs the MSP box IDs); reading the override mask from the FC (fixed at **8** in `main.cpp`).
 - **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows what STATE carries. STATE carries roll, pitch, battery voltage and `msp_errors`, but **not** the armed flag, the arming-disable flags, the request/reply counts or the age of each value (and `ground_link.py` does not print the heading), so part of ESP-S2-07 cannot be repeated with the gateway until the FC link health reaches the ground (see the ESP Bench Test Plan note of 2026-11-09).
 
 **PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 scripts/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
 
-Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_ota`.
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. **Quit `ground_link.py` first:** with a session open, or with the FC not answering or armed, the gate stays closed: the OTA port is closed, so `espota` gets no answer to its invitation and fails with `No Answer` after its 10 s timeout. Nothing is written. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_ota`. **Then power-cycle the FC** (battery out, FC USB out): the gateway locked arming for the upload, and the bridge never sends the release (value 0), so the FC refuses to arm until it restarts (ADR-024: the safe side).
 
 ## Diagnosis test: link dead periods (2026-10-22)
 

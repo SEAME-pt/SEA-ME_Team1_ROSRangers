@@ -17,6 +17,9 @@ each must end in the defined safe state (ESP Link State Machine).
     g        garbage: bad tag, replayed seq, old seq, bad mode, random bytes
     h        replay the recorded HELLO on a second TCP connection
     c KEY    CONFIG_GET of KEY (hex, e.g. c 40)
+    t        drop TCP only (no BYE): the session keeps flying on UDP (ADR-005)
+    R        reconnect: new TCP + HELLO, then ARM as the first frame under the
+             new keys (operator action), while UDP keeps flowing
     k        kill: close everything without BYE, as a crashed ground node
     b / q    BYE, then quit
 
@@ -575,6 +578,35 @@ def run(args) -> None:
                             MsgType.CONFIG_GET, encode_config_kv(ConfigKv(key, 0))
                         )
                         send_tcp(frame, f"CONFIG_GET 0x{key:02x}")
+                    elif cmd == "t":
+                        if tcp is not None:
+                            tcp.close()
+                            tcp = None
+                        log(
+                            t0,
+                            "TCP dropped (no BYE): the session keeps going on UDP (ADR-005)",
+                        )
+                    elif cmd == "R":
+                        fresh = GroundLink(link.psk)
+                        opened = connect(args, fresh, t0, fatal=False, timeout=1)
+                        if opened is None:
+                            log(t0, "reconnect failed: drone not reachable")
+                        else:
+                            new_tcp, new_reader, early = opened
+                            for frame in early:
+                                log(t0, fresh.describe_tcp(frame))
+                            # The first frame under the new keys confirms the
+                            # switch (ADR-005 entry); the operator asked for ARM.
+                            new_tcp.sendall(fresh.arm(args.mask))
+                            log(
+                                t0,
+                                f"sent ARM_CONTROL_REQUEST mask {args.mask} on the new session",
+                            )
+                            if tcp is not None:
+                                tcp.close()
+                            link, tcp, reader = fresh, new_tcp, new_reader
+                            last_state = None  # never show the old session's STATE
+                            last_state_t = time.monotonic()
                     elif cmd == "k":
                         log(t0, "killed: sockets closed without BYE")
                         os._exit(0)

@@ -16,6 +16,7 @@ import time
 import pytest
 from bench import (
     APP_BAUD,
+    ARMING_DISABLED,
     FAKE_ANSWERS,
     FAKE_ARMING_FLAGS,
     FAKE_ROLL,
@@ -97,6 +98,20 @@ def test_stray_bytes_counts_only_bytes_between_frames():
     # Text between two frames, or more than a cut frame before the first one
     assert stray_bytes(att + b"ok\n" + rc + status, frames) > 0
     assert stray_bytes(b"x" * (MAX_CUT + 3) + att, frames[:1]) == 3
+
+
+def test_check_frames_allows_only_the_arming_release():
+    """Host check (no bench): MSP_SET_ARMING_DISABLED passes only as the
+    release (value 0, sent at every boot, ADR-024); the lock (value 1) fails."""
+    att = msp.encode_request(msp.MSP_ATTITUDE)
+    for value, ok in ((0, True), (1, False)):
+        raw = att + msp.encode_request(ARMING_DISABLED, bytes([value])) + att
+        frames = [(0, f) for f in msp.Parser().feed(raw)]
+        if ok:
+            check_frames(raw, frames, 0)
+        else:
+            with pytest.raises(AssertionError, match="release"):
+                check_frames(raw, frames, 0)
 
 
 def test_boot_with_a_silent_fc_sends_no_rc(esp):
