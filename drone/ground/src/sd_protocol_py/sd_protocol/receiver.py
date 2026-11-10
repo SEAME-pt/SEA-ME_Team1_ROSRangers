@@ -24,6 +24,7 @@ from sd_protocol.messages import (
     CONFIG_KV_SIZE,
     EVENT_MAX_SIZE,
     EVENT_MIN_SIZE,
+    FC_HEALTH_SIZE,
     HELLO_ACK_SIZE,
     HELLO_SIZE,
     STATE_SIZE,
@@ -107,6 +108,7 @@ PAYLOAD_SIZES = {
     MsgType.EVENT: (EVENT_MIN_SIZE, EVENT_MAX_SIZE),
     MsgType.SETPOINT: (SETPOINT_SIZE, SETPOINT_SIZE),
     MsgType.STATE: (STATE_SIZE, STATE_SIZE),
+    MsgType.FC_HEALTH: (FC_HEALTH_SIZE, FC_HEALTH_SIZE),
 }
 
 SETPOINT_MODES = (0, 1)  # 0 neutral, 1 attitude (spec §3)

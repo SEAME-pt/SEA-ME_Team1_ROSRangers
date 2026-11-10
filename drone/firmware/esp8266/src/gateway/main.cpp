@@ -21,6 +21,11 @@
 //   a failed upload, from loop() only, retried until the FC confirms. The OTA
 //   port (UDP 8266) is open only while the gate is.
 //
+// - FC link health (#179): EVENT FC_LINK_LOST / FC_LINK_RESTORED when the FC
+//   stops / starts answering (250 ms), ARM refused while it is silent, and
+//   FC_HEALTH (spec v1.4) at 5 Hz: alive, armed, arming flags, value ages,
+//   the FcLink counters and rc_sent / rc_replaced.
+//
 // Not yet: STATE.override_active (#176, needs the MSP box IDs) and reading the
 // override mask from the FC (fixed kOverrideMask below).
 
@@ -360,8 +365,50 @@ void on_ota_error(ota_error_t) {
   release_due = true;
 }
 
+// FC_HEALTH (spec v1.4, #179 D3): ages in ms, saturated; unknown = 0xFFFF.
+uint16_t age_ms(bool has, uint32_t at, uint32_t now) {
+  if (!has) {
+    return sd::kAgeUnknown;
+  }
+  const uint32_t age = now - at;
+  return age > sd::kAgeMax ? sd::kAgeMax : static_cast<uint16_t>(age);
+}
+
+uint16_t sat16(uint32_t v) {
+  return v > 0xFFFF ? 0xFFFF : static_cast<uint16_t>(v);
+}
+
+sd::FcHealth fc_health(uint32_t now) {
+  const sd::FcTelemetry &t = fc.telemetry();
+  const sd::FcCounters &c = fc.counters();
+  sd::FcHealth h{};
+  h.fc_alive = fc.fc_alive(now) ? 1 : 0;
+  // Armed only from a fresh status (500 ms, the ADR-024 freshness); else
+  // unknown
+  const bool fresh = fc.status_fresh(now, sd::kOtaStatusMaxAgeMs);
+  h.armed = fresh ? (t.status.armed ? 1 : 0) : sd::kArmedUnknown;
+  h.arming_disable_flags = t.has_status ? t.status.arming_disable_flags : 0;
+  h.status_age_ms = age_ms(t.has_status, t.status_ms, now);
+  h.attitude_age_ms = age_ms(t.has_attitude, t.attitude_ms, now);
+  h.analog_age_ms = age_ms(t.has_analog, t.analog_ms, now);
+  h.reply_age_ms = age_ms(fc.has_reply(), fc.last_reply_ms(), now);
+  h.requests = c.requests;
+  h.replies = c.replies;
+  h.timeouts = c.timeouts;
+  h.bad_checksum = sat16(c.bad_checksum);
+  h.too_long = sat16(c.too_long);
+  h.error_replies = sat16(c.error_replies);
+  h.unexpected = sat16(c.unexpected);
+  h.rc_sent = c.rc_sent;
+  h.rc_replaced = c.rc_replaced;
+  return h;
+}
+
+constexpr uint32_t kFcHealthPeriodMs = 200; // 5 Hz (#179 D3)
+
 WiFiServer server(kPort);
 uint32_t last_rc_ms = 0;
+uint32_t last_health_ms = 0;
 uint32_t last_state_ms = 0;
 
 } // namespace
@@ -419,6 +466,9 @@ void loop() {
   if (link.state() == sd::EspState::kBoot && fc.fc_ready()) {
     link.boot_done(now);
   }
+  // The FC link's health (#179): a change is told to the session (EVENT),
+  // and ARM is refused while the FC is silent.
+  link.set_fc_alive(fc.fc_alive(now), now);
 
   accept_tcp(server, now);
   service_tcp(link, now);
@@ -455,6 +505,12 @@ void loop() {
   const size_t n = fc.poll(now, request, sizeof request);
   if (n > 0) { // ESP -> FC: only allow-listed frames
     Serial.write(request, n);
+  }
+
+  // FC_HEALTH at 5 Hz (spec v1.4, #179).
+  if (now - last_health_ms >= kFcHealthPeriodMs) {
+    last_health_ms = now;
+    link.send_fc_health(now, fc_health(now));
   }
 
   // STATE at telemetry_rate_hz (CONFIG key 0x80, 1-50 Hz).

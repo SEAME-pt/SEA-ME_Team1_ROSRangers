@@ -56,14 +56,22 @@ from sd_protocol.frame import (  # noqa: E402
     frame_size,
 )
 from sd_protocol.messages import (  # noqa: E402
+    AGE_MAX,
+    AGE_UNKNOWN,
+    ARMED_UNKNOWN,
+    AckResult,
+    ByeReason,
     ConfigKv,
     EspState,
     EventCode,
+    FcHealth,
     Hello,
     Role,
+    State,
     Transport,
     decode_config_ack,
     decode_event,
+    decode_fc_health,
     decode_hello_ack,
     decode_state,
     decode_u8_payload,
@@ -229,7 +237,11 @@ class GroundLink:
             return f"EVENT {describe_event(e.code)}" if e else "EVENT (bad payload)"
         if t in (MsgType.ARM_CONTROL_ACK, MsgType.RESUME_ACK, MsgType.BYE):
             v = decode_u8_payload(f.payload)
-            return f"{MsgType(t).name} {v}"
+            codes = ByeReason if t == MsgType.BYE else AckResult
+            try:
+                return f"{MsgType(t).name} {v} {codes(v).name}"
+            except ValueError:
+                return f"{MsgType(t).name} {v}"
         if t == MsgType.CONFIG_ACK:
             a = decode_config_ack(f.payload)
             return (
@@ -239,11 +251,37 @@ class GroundLink:
             )
         return f"{MsgType(t).name}"
 
-    def state(self, frame: bytes):
+    def telemetry(self, frame: bytes):
+        """A UDP frame from the ESP: a State, an FcHealth (spec v1.4), or None."""
         result, f = self.rx_udp.receive(frame)
-        if not is_accepted(result) or f is None or f.header.type != MsgType.STATE:
+        if not is_accepted(result) or f is None:
             return None
-        return decode_state(f.payload)
+        if f.header.type == MsgType.STATE:
+            return decode_state(f.payload)
+        if f.header.type == MsgType.FC_HEALTH:
+            return decode_fc_health(f.payload)
+        return None
+
+    def state(self, frame: bytes):
+        st = self.telemetry(frame)
+        return st if isinstance(st, State) else None
+
+
+def health_line(h) -> str:
+    """FC_HEALTH (spec v1.4, #179) in one line."""
+
+    def age(ms: int) -> str:
+        return "?" if ms == AGE_UNKNOWN else (">65s" if ms >= AGE_MAX else f"{ms}ms")
+
+    armed = "?" if h.armed == ARMED_UNKNOWN else str(h.armed)
+    errors = h.timeouts + h.bad_checksum + h.too_long + h.error_replies + h.unexpected
+    return (
+        f"fc={'alive' if h.fc_alive else 'LOST'} armed={armed} "
+        f"flags=0x{h.arming_disable_flags:08x} age status={age(h.status_age_ms)} "
+        f"attitude={age(h.attitude_age_ms)} reply={age(h.reply_age_ms)} "
+        f"req={h.requests} rep={h.replies} timeouts={h.timeouts} errors={errors} "
+        f"rc_sent={h.rc_sent} rc_replaced={h.rc_replaced}"
+    )
 
 
 def state_line(st) -> str:
@@ -388,6 +426,7 @@ def run(args) -> None:
     next_sp = time.monotonic()
     next_print = 0.0
     last_state = None
+    last_health = None  # FC_HEALTH (spec v1.4, #179)
     last_state_t = time.monotonic()  # grace period right after the handshake
     udp_error = ""  # logged once per change, not 50 times a second
     next_reconnect = 0.0
@@ -431,7 +470,10 @@ def run(args) -> None:
         if udp in ready:
             try:
                 while True:
-                    st = link.state(udp.recv(512))
+                    st = link.telemetry(udp.recv(512))
+                    if isinstance(st, FcHealth):
+                        last_health = st
+                        continue
                     if st is not None:
                         if time.monotonic() - last_state_t > STATE_STALE_S and tcp:
                             # Back after an outage: is TCP still alive? A dead
@@ -487,6 +529,8 @@ def run(args) -> None:
             age = now - last_state_t
             if last_state is not None and age < STATE_STALE_S:
                 log(t0, state_line(last_state))
+                if last_health is not None:
+                    log(t0, "  " + health_line(last_health))
             elif udp_on and age >= STATE_STALE_S:  # not before the first STATE
                 log(t0, f"no STATE for {age:.1f} s: link down or session ended")
             next_print = now + args.print_every

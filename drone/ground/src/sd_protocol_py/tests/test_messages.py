@@ -6,6 +6,7 @@ from sd_protocol import (
     EVENT_MAX_SIZE,
     EVENT_MIN_SIZE,
     EVENT_TEXT_MAX,
+    FC_HEALTH_SIZE,
     FW_VERSION_SIZE,
     HELLO_ACK_SIZE,
     HELLO_SIZE,
@@ -19,6 +20,7 @@ from sd_protocol import (
     EspState,
     Event,
     EventCode,
+    FcHealth,
     Hello,
     HelloAck,
     MsgType,
@@ -28,6 +30,7 @@ from sd_protocol import (
     decode_config_ack,
     decode_config_kv,
     decode_event,
+    decode_fc_health,
     decode_hello,
     decode_hello_ack,
     decode_state,
@@ -35,6 +38,7 @@ from sd_protocol import (
     encode_config_ack,
     encode_config_kv,
     encode_event,
+    encode_fc_health,
     encode_hello,
     encode_hello_ack,
     encode_state,
@@ -48,14 +52,21 @@ from sd_protocol import (
 
 def test_code_values_match_the_cpp():
     # Spec §3.1 (v1.1): a change here must change messages.hpp too.
-    assert [int(v) for v in AckResult] == [0, 1, 2, 3]
+    assert [int(v) for v in AckResult] == [0, 1, 2, 3, 4]
     assert [int(v) for v in ByeReason] == [0, 1, 2, 3]
     assert [int(v) for v in ConfigResult] == [0, 1, 2, 3, 4, 5]
     assert ConfigResult.SAFETY_PARAMETER == 3
     assert ConfigResult.OUT_OF_RANGE == 4
     assert ConfigResult.CONTROL_ENABLED == 5
     assert [int(v) for v in EspState] == [0, 1, 2, 3, 4]
-    assert [int(v) for v in EventCode] == [0x0101, 0x0102, 0x0103, 0x0104]
+    assert [int(v) for v in EventCode] == [
+        0x0101,
+        0x0102,
+        0x0103,
+        0x0104,
+        0x0201,
+        0x0202,
+    ]
 
 
 def test_sizes_match_the_spec():
@@ -212,3 +223,30 @@ def test_every_type_has_a_receiving_side_except_the_handshake():
 def test_unknown_role_refused():
     with pytest.raises(ValueError):
         receives(2, MsgType.BYE)
+
+
+# FC_HEALTH (0x81, spec v1.4, #179): the same bytes as the C++ test
+# FcHealth.BytesAndRoundTrip, so the twins cannot drift.
+FC_HEALTH_REF = FcHealth(
+    1, 0, 0x00010020, 12, 40, 180, 3, 1234, 1233, 5, 2, 1, 0, 7, 600, 9
+)
+FC_HEALTH_BYTES = bytes(
+    [1, 0, 0x20, 0x00, 0x01, 0x00, 12, 0, 40, 0, 180, 0, 3, 0,
+     0xD2, 0x04, 0, 0, 0xD1, 0x04, 0, 0, 5, 0, 0, 0, 2, 0,
+     1, 0, 0, 0, 7, 0, 0x58, 0x02, 0, 0, 9, 0, 0, 0]
+)  # fmt: skip
+
+
+def test_fc_health_bytes_and_round_trip():
+    assert encode_fc_health(FC_HEALTH_REF) == FC_HEALTH_BYTES
+    assert len(FC_HEALTH_BYTES) == FC_HEALTH_SIZE == 42
+    assert decode_fc_health(FC_HEALTH_BYTES) == FC_HEALTH_REF
+    assert decode_fc_health(FC_HEALTH_BYTES[:-1]) is None
+
+
+def test_fc_health_codes_and_direction():
+    assert MsgType.FC_HEALTH == 0x81
+    assert AckResult.FC_NOT_ANSWERING == 4
+    assert transport_of(MsgType.FC_HEALTH) is Transport.UDP
+    assert receives(Role.GROUND, MsgType.FC_HEALTH)
+    assert not receives(Role.ESP, MsgType.FC_HEALTH)

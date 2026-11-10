@@ -142,6 +142,16 @@ public:
   // Sends one STATE over UDP to the current session; nothing without one.
   void send_state(std::uint32_t now_ms, const FcView &fc);
 
+  // The FC link, from sd::FcLink::fc_alive(), every loop (#179). A change is
+  // told to the current session: EVENT FC_LINK_LOST / FC_LINK_RESTORED.
+  // While the FC is silent, ARM_CONTROL_REQUEST is refused (result 4). Starts
+  // false: no ARM before the FC has been seen.
+  void set_fc_alive(bool alive, std::uint32_t now_ms);
+  bool fc_alive() const { return fc_alive_; }
+
+  // Sends one FC_HEALTH (spec v1.4) over UDP to the current session.
+  void send_fc_health(std::uint32_t now_ms, const FcHealth &health);
+
   // Applies the timers without any other input (the firmware may call it
   // every loop; the other entry points call it too).
   void tick(std::uint32_t now_ms);
@@ -195,6 +205,8 @@ private:
   void send_tcp_in(Session &s, MsgType type, const std::uint8_t *payload,
                    std::size_t len, std::uint32_t now_ms);
   void send_event(EventCode code, std::uint32_t now_ms);
+  void send_udp_in(MsgType type, const std::uint8_t *payload, std::size_t len,
+                   std::uint32_t now_ms);
   bool new_session_id(std::uint32_t &out) const;
   Session &cur() { return sessions_[cur_]; }
   const Session &cur() const { return sessions_[cur_]; }
@@ -222,6 +234,8 @@ private:
   bool neutral_run_ = false;
   std::uint32_t neutral_since_ms_ = 0;
   bool stale_reported_ = false;
+
+  bool fc_alive_ = false; // see set_fc_alive()
 
   // ADR-004 output.
   bool fs_active_ = false;

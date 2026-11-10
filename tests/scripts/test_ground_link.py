@@ -224,3 +224,33 @@ def test_garbage_twice_in_a_row_never_sends_a_valid_frame():
             result, _ = udp.receive(frame)
             assert not is_accepted(result), name
     assert is_accepted(udp.receive(link.setpoint(0))[0])  # `u`: back on
+
+
+def test_fc_health_is_read_and_shown():
+    # #179: FC_HEALTH (0x81) goes through the same UDP Receiver as STATE.
+    from sd_protocol.messages import FcHealth, encode_fc_health
+
+    link = open_link()
+    h = FcHealth(0, 0xFF, 0, 0xFFFF, 0xFFFE, 12, 260, 100, 90, 10, 0, 0, 0, 0, 50, 2)
+    frame = encode_frame(
+        Header(type=MsgType.FC_HEALTH, session_id=SESSION, seq=1),
+        encode_fc_health(h),
+        link.keys.esp_to_ground,
+    )
+    got = link.telemetry(frame)
+    assert got == h
+    line = ground_link.health_line(got)
+    assert "fc=LOST" in line and "armed=?" in line and "status=?" in line
+    assert "attitude=>65s" in line and "reply=260ms" in line
+    assert "errors=10" in line and "rc_replaced=2" in line
+    assert link.state(frame) is None  # replayed: refused; and not a STATE
+
+
+def test_acks_are_shown_by_name():
+    link = open_link()
+    ack = encode_frame(
+        Header(type=MsgType.ARM_CONTROL_ACK, session_id=SESSION, seq=2),
+        bytes([4]),
+        link.keys.esp_to_ground,
+    )
+    assert link.describe_tcp(ack) == "ARM_CONTROL_ACK 4 FC_NOT_ANSWERING"

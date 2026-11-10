@@ -18,6 +18,7 @@ import time
 import pytest
 from bench import (
     APP_BAUD,
+    FAKE_ARMING_FLAGS,
     FAKE_HEADING,
     FAKE_PITCH,
     FAKE_ROLL,
@@ -39,6 +40,7 @@ from sd_protocol.messages import (
     AckResult,
     EspState,
     EventCode,
+    FcHealth,
     decode_event,
     decode_u8_payload,
 )
@@ -83,6 +85,7 @@ class Ground:
         self.udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp.settimeout(TICK_S)
         self.tcp_rx = []  # (time.monotonic(), msg type, payload)
+        self.health = []  # FC_HEALTH received (spec v1.4, #179)
         self.last_sent = None  # time of the last SETPOINT
 
     def _open(self):
@@ -143,10 +146,12 @@ class Ground:
                 each()
             while time.monotonic() < tick:
                 try:
-                    st = self.link.state(self.udp.recvfrom(512)[0])
+                    st = self.link.telemetry(self.udp.recvfrom(512)[0])
                 except OSError:
                     continue
-                if st is not None:
+                if isinstance(st, FcHealth):
+                    self.health.append(st)
+                elif st is not None:
                     states.append(st)
         return states
 
@@ -244,6 +249,52 @@ def test_wrong_psk_hello_gets_no_ack_and_the_session_keeps_running(fake_fc, sess
     assert len(states) >= 40, "the session stopped sending STATE"
     assert states[-1].esp_state == EspState.SESSION_IDLE
     check_frames(*fake_fc.snapshot())
+
+
+# --- FC link health (#179, spec v1.4). No ARM here: the bench exception to
+# REQ-SAF-023 covers only the three armed tests below; the ARM refusal while
+# the FC is silent (result 4) is unit-tested (test_link.cpp).
+
+
+def test_fc_health_carries_the_fake_fc_link(fake_fc, session):
+    session.health.clear()
+    session.stream(1.2)
+    assert (
+        4 <= len(session.health) <= 9
+    ), f"{len(session.health)} FC_HEALTH in 1.2 s (5 Hz)"
+    h = session.health[-1]
+    assert h.fc_alive == 1
+    assert (h.armed, h.arming_disable_flags) == (0, FAKE_ARMING_FLAGS)
+    assert h.status_age_ms <= 400 and h.attitude_age_ms <= 120  # 5 Hz / 25 Hz polls
+    assert h.reply_age_ms <= 100, "a healthy FC answers every ~12 ms"
+    assert h.replies > 0 and h.rc_sent > 0
+
+
+def test_a_silent_fc_is_reported_within_500_ms(fake_fc, session):
+    """ESP-S2-06 on the bench: the fake FC stops answering. FC_LINK_LOST
+    must reach the ground within 500 ms (250 ms on the ESP plus Wi-Fi), then
+    FC_LINK_RESTORED once it answers again; the session itself goes on."""
+    session.stream(0.3)
+    t = time.monotonic()
+    fake_fc.answering = False
+    try:
+        states = session.stream(0.9)
+    finally:
+        fake_fc.answering = True
+    lost = session.events(EventCode.FC_LINK_LOST, t)
+    assert lost, "no FC_LINK_LOST"
+    assert (
+        lost[0] - t <= 0.5
+    ), f"FC_LINK_LOST {lost[0] - t:.3f} s after the FC went silent"
+    assert session.health[-1].fc_alive == 0
+    assert (
+        session.health[-1].armed == 0xFF
+    ), "armed must be unknown with no fresh status"
+    assert states[-1].esp_state == EspState.SESSION_IDLE  # D2: the state is kept
+    t2 = time.monotonic()
+    session.stream(0.8)
+    assert session.events(EventCode.FC_LINK_RESTORED, t2), "no FC_LINK_RESTORED"
+    assert session.health[-1].fc_alive == 1
 
 
 # --- Armed tests: bench-only exception to REQ-SAF-023 (Requirements.md,

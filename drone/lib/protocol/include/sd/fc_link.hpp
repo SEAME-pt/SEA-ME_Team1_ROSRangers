@@ -94,6 +94,10 @@ public:
   bool fc_alive(std::uint32_t now_ms) const {
     return any_reply_ && now_ms - last_reply_ms_ < kFcLostMs;
   }
+  // When the last reply to one of our requests came; has_reply() is false
+  // before the first one and after kMaxValueAgeMs of silence (FC_HEALTH).
+  bool has_reply() const { return any_reply_; }
+  std::uint32_t last_reply_ms() const { return last_reply_ms_; }
 
   // Feed every byte read from the UART.
   void on_byte(std::uint8_t byte, std::uint32_t now_ms);

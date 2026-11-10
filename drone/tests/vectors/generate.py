@@ -41,6 +41,7 @@ TYPES = {
     "EVENT": 0x40,
     "SETPOINT": 0x60,
     "STATE": 0x80,
+    "FC_HEALTH": 0x81,  # spec v1.4 (#179)
 }
 
 
@@ -153,6 +154,31 @@ def payload(fields: dict) -> bytes:
                     "flow_status",
                     "rx_rejected",
                     "msp_errors",
+                )
+            ),
+        )
+    if t == "FC_HEALTH":  # spec v1.4 §3, 42 bytes
+        return struct.pack(
+            "<BBIHHHHIIIHHHHII",
+            *(
+                fields[k]
+                for k in (
+                    "fc_alive",
+                    "armed",
+                    "arming_disable_flags",
+                    "status_age_ms",
+                    "attitude_age_ms",
+                    "analog_age_ms",
+                    "reply_age_ms",
+                    "requests",
+                    "replies",
+                    "timeouts",
+                    "bad_checksum",
+                    "too_long",
+                    "error_replies",
+                    "unexpected",
+                    "rc_sent",
+                    "rc_replaced",
                 )
             ),
         )
@@ -311,6 +337,12 @@ def group1() -> list[dict]:
                   roll=-15, pitch=30, heading=359, vbat=1110, flow_x=-300, flow_y=300, flow_quality=200,
                   flow_status=2, rx_rejected=7, msp_errors=5),
               note="esp_state 3 = STREAMING (spec §3.1)."),
+        valid("fc_health_fc_lost", "FC_HEALTH after the FC went silent: not alive, armed unknown, ages saturated or unknown",
+              msg("FC_HEALTH", 43, fc_alive=0, armed=0xFF, arming_disable_flags=0, status_age_ms=0xFFFF,
+                  attitude_age_ms=0xFFFE, analog_age_ms=9876, reply_age_ms=260, requests=120000, replies=119990,
+                  timeouts=10, bad_checksum=1, too_long=0, error_replies=2, unexpected=3, rc_sent=60000,
+                  rc_replaced=17),
+              note="Spec v1.4 (#179): ages in ms, 0xFFFE saturated, 0xFFFF never received or expired; armed 0xFF = unknown."),
     ]  # fmt: skip
 
 

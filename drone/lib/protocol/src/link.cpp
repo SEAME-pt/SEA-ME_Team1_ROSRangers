@@ -220,8 +220,7 @@ bool Link::fc_output(std::uint32_t now_ms,
 
 void Link::send_state(std::uint32_t now_ms, const FcView &fc) {
   advance(now_ms);
-  Session &s = cur();
-  if (!s.open) {
+  if (!cur().open) {
     return;
   }
   const std::uint32_t rejected = rx_rejected();
@@ -243,17 +242,47 @@ void Link::send_state(std::uint32_t now_ms, const FcView &fc) {
   st.msp_errors = fc.msp_errors;
   std::uint8_t payload[kStateSize];
   const std::size_t n = encode_state(st, payload, sizeof payload);
-  const Header h{static_cast<std::uint8_t>(MsgType::kState),
+  send_udp_in(MsgType::kState, payload, n, now_ms);
+}
+
+void Link::send_fc_health(std::uint32_t now_ms, const FcHealth &health) {
+  advance(now_ms);
+  std::uint8_t payload[kFcHealthSize];
+  const std::size_t n = encode_fc_health(health, payload, sizeof payload);
+  send_udp_in(MsgType::kFcHealth, payload, n, now_ms);
+}
+
+void Link::set_fc_alive(bool alive, std::uint32_t now_ms) {
+  advance(now_ms);
+  if (alive == fc_alive_) {
+    return;
+  }
+  fc_alive_ = alive;
+  // Told to the current session (none in BOOT / NO_SESSION: FC_HEALTH shows
+  // it to a ground that connects later).
+  send_event(alive ? EventCode::kFcLinkRestored : EventCode::kFcLinkLost,
+             now_ms);
+}
+
+// One UDP frame to the current session, with its sending key and the UDP
+// seq (STATE and FC_HEALTH share it: seq counts per transport, spec §1).
+void Link::send_udp_in(MsgType type, const std::uint8_t *payload,
+                       std::size_t len, std::uint32_t now_ms) {
+  Session &s = cur();
+  if (!s.open || len == 0) {
+    return;
+  }
+  const Header h{static_cast<std::uint8_t>(type),
                  0,
                  0,
                  s.id,
                  s.tx_seq_udp++,
                  t_send_us(now_ms)};
   std::uint8_t out[kMaxFrame];
-  const std::size_t len =
-      encode_frame(h, payload, n, s.tx_key, out, sizeof out);
-  if (len > 0) {
-    io_.send_udp(out, len);
+  const std::size_t n =
+      encode_frame(h, payload, len, s.tx_key, out, sizeof out);
+  if (n > 0) {
+    io_.send_udp(out, n);
   }
 }
 
@@ -502,6 +531,8 @@ void Link::handle_arm(const Frame &f, std::uint32_t now_ms) {
     result = AckResult::kWrongState;
   } else if (mask != config_.override_mask) {
     result = AckResult::kMaskMismatch;
+  } else if (!fc_alive_) {
+    result = AckResult::kFcNotAnswering; // #179 D2: nothing would apply it
   } else {
     state_ = EspState::kStreaming;
     ctrl_ms_ = now_ms; // no setpoint within T_loss of ARM -> LINK_FAILSAFE

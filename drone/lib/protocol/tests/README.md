@@ -280,6 +280,11 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.ByeOfTheOldSessionKeepsASharedConnectionOpen` | A pending session on the current session's connection, then BYE of the old session: the connection stays open and the pending session takes over on it | A BYE never closes the connection another session needs |
 | `LinkTest.ReplacingASharedPendingSessionKeepsTheConnection` | A pending session on the current connection is replaced by a HELLO on another connection: the current connection stays open | Dropping a pending session never cuts the live one |
 | `LinkTest.NewSessionIsToldTheFailsafeOutputStillRuns` | A new session opened after a BYE from control, or confirmed by a switch from STREAMING, gets EVENT 0x0104; a session with no ADR-004 output running gets none | The ground never shows SESSION_IDLE as if the output were neutral (safety pilot, review of #170) |
+| `LinkTest.ArmIsRefusedWhileTheFcIsSilent` | FC silent: ARM gets result 4 (FC not answering) and the state stays SESSION_IDLE; FC back: ARM OK | #179 D2: no control that nothing would apply |
+| `LinkTest.WrongStateAndMaskAreCheckedBeforeTheFc` | FC silent and the wrong mask: result 2, not 4 | One fixed check order, as for CONFIG (spec §3.1) |
+| `LinkTest.TheSessionIsToldWhenTheFcIsLostAndRestored` | While streaming, FC lost: EVENT 0x0201 once, state kept; FC back: EVENT 0x0202; no event without a change | #179 D1 (ESP-S2-06: the ground hears it within 500 ms) |
+| `LinkTest.FcHealthGoesToTheSessionAndSharesTheUdpSeq` | FC_HEALTH: nothing without a session; with one it is sealed for the ground, takes the next UDP seq after STATE, and the ground's Receiver accepts it | #179 D3, spec v1.4 |
+| `LinkTest.ANewLinkStartsWithTheFcNotAlive` | A new Link counts the FC as not alive until told otherwise | No ARM before the FC has been seen |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
 | `LinkTest.ConfigSetChecksStateFirstThenTheKey` | CONFIG_SET while streaming: result 5 for any key; then unknown 1, read-only 2, safety 3, out of range 4 (never clamped), OK | The check order of spec §3.1 |
@@ -303,6 +308,13 @@ A fake FC answers like Betaflight: MSP_STATUS, and MSP_SET_ARMING_DISABLED setti
 | `OtaGate.OpenOnlyWithNoSessionAndAFreshDisarmedStatus` | Closed in BOOT; open in NO_SESSION with a disarmed status younger than 500 ms; closed at 500 ms | ADR-024 D2 |
 | `OtaGate.ClosedWhenArmedOrUnknown` | No status yet, or an armed status: closed | An unknown arm state refuses OTA |
 | `OtaGate.ClosedWhileASessionIsOpen` | SESSION_IDLE: closed; after the session ends (NO_SESSION): open again | No update while a ground session is open |
+
+## FcHealth: the FC_HEALTH message (0x81, spec v1.4, #179)
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `FcHealth.BytesAndRoundTrip` | A FC_HEALTH with distinct values gives the 42 spec bytes (little-endian) and decodes back; a short buffer is refused | The Python twin and the ground must read the same bytes |
+| `FcHealth.ReceiveChecks` | Size 42 only, UDP (telemetry range), received by the ground only | Spec §2 and §3 checks for the new type |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |
