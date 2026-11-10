@@ -27,6 +27,7 @@ from bench import (
     skip_or_fail,
 )
 from ground_link import GroundLink, TcpReader, take_ack
+
 from sd_protocol.messages import EspState
 
 ESP = (os.environ.get("HIL_ESP_IP", "192.168.4.1"), 5759)
@@ -118,7 +119,11 @@ def test_state_carries_the_fake_fc_values(fake_fc, session):
     assert len(states) >= 50, f"{len(states)} STATE in 3 s (25 Hz expected)"
     first, last = states[0], states[-1]
     assert last.esp_state == EspState.SESSION_IDLE
-    assert (last.roll, last.pitch, last.heading) == (FAKE_ROLL, FAKE_PITCH, FAKE_HEADING)
+    assert (last.roll, last.pitch, last.heading) == (
+        FAKE_ROLL,
+        FAKE_PITCH,
+        FAKE_HEADING,
+    )
     assert last.vbat == FAKE_VBAT_CV
     assert last.flow_status == FLOW_NO_DATA
     assert last.last_ctrl_seq > first.last_ctrl_seq, "SETPOINTs not accepted"
