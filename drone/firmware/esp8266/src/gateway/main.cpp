@@ -349,6 +349,7 @@ void on_ota_start() {
   // aborts: the image is not written, and the boot release runs again.
   if (sd::ota_lock(fc_uart) != sd::OtaLockResult::kLocked) {
     ESP.restart();
+    return; // restart() does not return on core 3.1.2; never mark a lock
   }
   ota_locked = true;
 }
@@ -394,7 +395,12 @@ void loop() {
   // Value 0 at every boot (ADR-024: an image that rebooted mid-upload, or
   // after an abort, does not know a lock was taken) and after a failed upload
   // (only if the lock was taken). Retried every 500 ms until the FC confirms:
-  // value 0 is harmless, and a missed one would leave arming locked.
+  // value 0 is harmless, and a missed one would leave arming locked. Only in
+  // BOOT or NO_SESSION: each try blocks the loop up to 100 ms and drops
+  // FcLink's pending replies, so never during a session (Dot99, review of
+  // #177). In BOOT nothing goes to the FC yet, so the boot release still goes
+  // out before the link leaves BOOT. A lock left on is the safe side: the
+  // FC refuses to arm, and the radio shows it.
   if (release_due) {
     release_due = false;
     if (ota_locked) {
@@ -402,7 +408,9 @@ void loop() {
       release_wanted = true;
     }
   }
-  if (release_wanted && fc.fc_ready() &&
+  const bool no_session = link.state() == sd::EspState::kBoot ||
+                          link.state() == sd::EspState::kNoSession;
+  if (release_wanted && no_session && fc.fc_ready() &&
       static_cast<int32_t>(now - next_release_ms) >= 0) {
     release_wanted = !sd::ota_release(fc_uart);
     next_release_ms = now + kReleaseRetryMs;
