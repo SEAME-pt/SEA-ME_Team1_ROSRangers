@@ -3,7 +3,7 @@ title: HIL Runner
 type: ci-cd
 status: draft
 date: 2026-10-12
-updated: 2026-11-09
+updated: 2026-11-10
 project: SEA autonomous drone
 tags:
   - ci
@@ -52,7 +52,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 2. GitHub → the repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
 3. udev rules for the two USB-serial devices.
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK. As built, the Pi has no Ethernet, so it time-slices its Wi-Fi instead (§3.1).
-5. Store the PSK as the repo secret `SD_PSK_HIL`. The current firmware (transparent bridge) does not use it: it builds with `SEAME_AP_SSID`, `SEAME_AP_PASS` and `SEAME_OTA_PASS` instead (§3.1).
+5. Store the PSK as the repo secret `SD_PSK_HIL`: 64 hex characters (32 bytes). `hil.yaml` passes it as `SEAME_PSK`, which the gateway build and the session tests read; the bridge ignores it (§3.1).
 
 ### 3.1 As built (2026-10-22, GitHub #48)
 
@@ -67,7 +67,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 | Device name | `/dev/hil-esp`, udev rule in `/etc/udev/rules.d/99-hil.rules`, matched on vendor, product and FTDI serial |
 | Original firmware backup | `spare_esp_backup.bin`, 4 194 304 bytes, SHA-256 `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e`. Kept off the repo. |
 | Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. `hil.yaml` builds the `esp` env (bridge) and uploads it to `/dev/hil-esp`, runs the bridge tests, then does the same with `esp_gateway_usb` (the gateway, #101, uploaded over USB) and runs the gateway tests (§4). The job has a 30 min timeout. **After every run the spare ESP is left on the gateway**: flash `esp` by hand if you need the bridge. |
-| SoftAP | Its own name and passwords, never the drone's: Secrets `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters, different from each other: `secrets.py` stops the build otherwise, ADR-024 D3). `hil.yaml` stops if the SSID is empty. `SD_PSK_HIL` is kept for message signing (ADR-002) and is not used yet. |
+| SoftAP | Its own name and passwords, never the drone's: Secrets `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters, different from each other: `secrets.py` stops the build otherwise, ADR-024 D3). `hil.yaml` stops if the SSID is empty. `SD_PSK_HIL` is the protocol PSK (ADR-002, 64 hex characters), passed as `SEAME_PSK` to the gateway build and the session tests; it was reset to a new random key on 2026-11-10, when the gateway (#174) started needing it. |
 | Network | The Pi has only its built-in Wi-Fi, used for the internet, so it time-slices it: Wi-Fi tests run in windows of under 2 minutes (decided 2026-10-26, [[ADR-020 HIL Runner|ADR-020]], #48). The lab profile is `netplan-wlan0-SEAME`, autoconnect on. `runner` may run `sudo nmcli` without a password (`/etc/sudoers.d/hil-nmcli`). The window is `drone/tests/hil/softap_window.sh` (§3.2). |
 
 ### 3.2 Wi-Fi window (`softap_window.sh`, #106)
@@ -111,11 +111,11 @@ Why USB and not `esp_ota`: OTA needs the Pi on the spare ESP's SoftAP (`192.168.
 
 ## 4. First HIL tests (`drone/tests/hil/`)
 
-The bench has no FC, so for the gateway the Pi plays the FC on `/dev/hil-esp`: `FakeFc` in `bench.py` answers `MSP_STATUS`, `MSP_ATTITUDE` and `MSP_ANALOG` with fixed values and records every byte the ESP sends. `bench.py` also holds the serial and boot helpers shared by all the tests.
+The bench has no FC, so for the gateway the Pi plays the FC on `/dev/hil-esp`: `FakeFc` in `bench.py` answers `MSP_STATUS`, `MSP_ATTITUDE`, `MSP_ANALOG` and `MSP_API_VERSION` with fixed values, acknowledges `MSP_SET_RAW_RC`, and records every byte the ESP sends. Over Wi-Fi, the session tests play the ground with the code of `scripts/ground_link.py` and the HIL PSK. `bench.py` also holds the serial and boot helpers shared by all the tests.
 
-1. **Smoke:** USB flash (§3.1, not OTA) → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received. *Today (`test_smoke.py`): USB flash → `boot mode:(3,…)` in the ROM output, no crash markers → UART0 silent for 10 s at 115200. Boot output read at 115200 from the reset edge holds no MSP header or frame, over 3 resets (ESP-S1-03). Gateway (`gateway/test_uart.py`, USB): with the fake FC answering, only `MSP_STATUS` / `MSP_ATTITUDE` / `MSP_ANALOG` requests, at 25 / 5 / 5 Hz or less ([[ADR-009 ESP to FC Link|ADR-009]]), and every byte on the UART is part of an MSP frame; with the fake FC silent, still only those polls, at 10 per second at most. Gateway (`gateway/wifi/test_status_view.py`, inside the window): the UDP 5770 bench view shows the fake FC's values, no error counter rises while replies flow, and the values read `-1` 10 s after the FC goes silent. Once #102 lands, these become the BOOT / NO_SESSION output test, and the gateway becomes env `esp` in place of the bridge (#106).*
+1. **Smoke:** USB flash (§3.1, not OTA) → ESP boots → ground HELLO over Wi-Fi → STATE telemetry received. *Today (`test_smoke.py`): USB flash → `boot mode:(3,…)` in the ROM output, no crash markers → UART0 silent for 10 s at 115200. Boot output read at 115200 from the reset edge holds no MSP header or frame, over 3 resets (ESP-S1-03). Gateway BOOT / NO_SESSION (`gateway/test_uart.py`, USB): after a reset with the fake FC silent, no RC at all, only polls (BOOT, REQ-SAF-016); once it answers `MSP_API_VERSION`, neutral `MSP_SET_RAW_RC` at 50 Hz plus the polls at 25 / 5 / 5 / 1 Hz ([[ADR-009 ESP to FC Link|ADR-009]]); when the FC goes silent again, RC does not starve the polls. Every byte on the UART is part of an MSP frame, and every RC is neutral. Gateway session (`gateway/wifi/test_session.py`, inside the window): HELLO / HELLO_ACK with the HIL PSK, STATE at 25 Hz carries the fake FC's values, setpoints are accepted in SESSION_IDLE but never reach the FC, garbage raises `rx_rejected`, and a HELLO signed with another PSK gets no ACK while the session keeps running. The gateway becomes env `esp` in place of the bridge in a later step of #106.*
 2. **Passthrough (ESP only, GitHub #106):** allowed MSP messages go through the gateway firmware (#101), all others are dropped. The 2026-10-26 scope decision ([[ADR-020 HIL Runner|ADR-020]]) takes the FC off the bench, so the AETR mapping on the real FC is checked by hand (GitHub #104) and in Betaflight SITL, not here. *Today (`wifi/test_bridge.py`, inside the window): on the transparent bridge, UDP 5760 ↔ UART0 in both directions.*
-3. **Failsafe timing:** stop sending → measure time until telemetry reports `LINK_FAILSAFE` (expect 250 ms ± one loop).
+3. **Failsafe timing:** stop sending → measure time until telemetry reports `LINK_FAILSAFE` (expect 250 ms ± one loop). *In `gateway/wifi/test_session.py`, with the passthrough and resume tests. They arm the session themselves, under the bench-only exception to REQ-SAF-023 ([[Requirements]], 2026-11-10, safety pilot on #106). On the UART: ground values until `T_fresh` (150 ms), then neutral; `LINK_FAILSAFE_ENTERED` at `T_loss` (250 ms, plus Wi-Fi time); neutral stops 1 s later (2026.6 output). Passthrough: after ARM OK, a mode 1 setpoint reaches the UART in AETR order, clamped. Resume: setpoints alone never end LINK_FAILSAFE; RESUME needs 500 ms of neutral first. **If a real FC is ever connected to the HIL bench, the exception lapses and these three tests must be skipped again.***
 4. **Security:** bad tag / stale seq → counters increase, FC values unchanged.
 5. **Latency:** RTT histogram saved as an artifact.
 

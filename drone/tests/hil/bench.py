@@ -22,7 +22,11 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface"))
+# sd_protocol (the ground side of the protocol) for the session tests
+sys.path.insert(0, str(REPO / "drone/ground/src/sd_protocol_py"))
+sys.path.insert(0, str(REPO / "scripts"))  # ground_link.py, the bench ground
 from flight_interface import msp  # noqa: E402  (same MSP code as scripts/msp_check.py)
+from sd_protocol.setpoint import Setpoint, setpoint_to_rc  # noqa: E402
 
 PORT = os.environ.get("HIL_ESP_PORT", "/dev/hil-esp")
 ROM_BAUD = 74880
@@ -117,6 +121,10 @@ FAKE_ANSWERS = {
     # vbat (u8, 0.1 V), mAh drawn, RSSI, amperage, voltage (u16, 0.01 V) at 7
     msp.MSP_ANALOG: struct.pack("<BHHhH", FAKE_VBAT_CV // 10, 0, 0, 0, FAKE_VBAT_CV),
     msp.MSP_STATUS: fake_status(),
+    # Betaflight 4.5.1: MSP protocol 0, API 1.46. The gateway stays in BOOT
+    # until this is answered (REQ-SAF-016).
+    msp.MSP_API_VERSION: bytes([0, 1, 46]),
+    msp.MSP_SET_RAW_RC: b"",  # Betaflight acknowledges with an empty reply
 }
 
 
@@ -187,15 +195,53 @@ class FakeFc:
                     self.port.write(msp.encode_response(f.cmd, FAKE_ANSWERS[f.cmd]))
 
 
+# The longest frame the gateway sends is MSP_SET_RAW_RC: 6 + 8 channels x 2 =
+# 22 bytes, so a frame cut at either end of a recording leaves at most 21.
+MAX_CUT = 21
+
+
 def stray_bytes(raw: bytes, frames) -> int:
     """Bytes in `raw` that are not the parsed frames back to back.
 
-    The recording can start and end inside a frame, so up to 5 bytes (a poll
-    is 6) at each end don't count. Any byte between two frames does: text, a
-    crash dump, a frame with a bad checksum.
+    The recording can start and end inside a frame, so up to MAX_CUT bytes
+    at each end don't count. Any byte between two frames does: text, a crash
+    dump, a frame with a bad checksum.
     """
     stream = b"".join(msp.encode_request(f.cmd, f.payload) for _, f in frames)
     start = raw.find(stream)
     if start < 0:
         return len(raw)
-    return max(start - 5, 0) + max(len(raw) - start - len(stream) - 5, 0)
+    end = len(raw) - start - len(stream)
+    return max(start - MAX_CUT, 0) + max(end - MAX_CUT, 0)
+
+
+# What the gateway may send to the FC (ADR-009), and the only RC it may send
+# without an armed session: centred sticks, throttle low.
+POLLS = {msp.MSP_STATUS, msp.MSP_ATTITUDE, msp.MSP_ANALOG, msp.MSP_API_VERSION}
+RC = msp.MSP_SET_RAW_RC
+NEUTRAL = msp.encode_rc(setpoint_to_rc(Setpoint(0, 0, 0, 0, 0)))
+
+
+def check_frames(raw, frames, bad, rc_ok=(NEUTRAL,)):
+    """Only allow-listed requests, nothing outside MSP frames, and every RC
+    one of `rc_ok`: neutral, unless the test armed a session and says which
+    values it sent."""
+    assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
+    assert bad == 0, f"{bad} frames with a bad checksum"
+    assert frames, "the gateway sent nothing: is esp_gateway flashed?"
+    assert {f.direction for _, f in frames} == {"<"}, "the gateway only sends requests"
+    stray = stray_bytes(raw, frames)
+    assert stray == 0, f"{stray} bytes outside MSP frames: {raw[:300]!r}"
+    sent = {f.cmd for _, f in frames}
+    assert sent <= POLLS | {
+        RC
+    }, f"commands outside the allow-list: {sent - POLLS - {RC}}"
+    assert all(
+        f.payload == b"" for _, f in frames if f.cmd in POLLS
+    ), "polls carry no payload"
+    unexpected = [
+        f.payload for _, f in frames if f.cmd == RC and f.payload not in rc_ok
+    ]
+    assert (
+        not unexpected
+    ), f"RC the ground never sent, or before ARM: {unexpected[0].hex()}"
