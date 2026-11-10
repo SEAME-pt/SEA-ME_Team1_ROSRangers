@@ -401,9 +401,35 @@ jobs:
         env:
           SITL_REQUIRED: "1"
         run: |
-          # stdbuf: line-buffered, so sitl.log is complete when a test fails
-          # (#181: the log of a failed run stopped mid-line)
-          (cd bf && stdbuf -oL -eL ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+          # Known Betaflight SITL race (betaflight PR #15840, unmerged; #181):
+          # at boot the TCP thread can drop the UART listener, and then 5761
+          # never accepts. Boot again when SITL does not answer MSP within
+          # 15 s, at most 3 boots. Remove once we use a Betaflight with the fix.
+          for boot in 1 2 3; do
+            # stdbuf: line-buffered, so sitl.log is complete at a failure
+            (cd bf && stdbuf -oL -eL ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
+            if python3 - <<'PY'
+          import sys
+          from collections import Counter
+          sys.path.insert(0, "drone/tests/sitl")
+          from conftest import connect_when_ready
+          tries = Counter()
+          link = connect_when_ready(tries, timeout_s=15)
+          if link is None:
+              print(f"no MSP answer within 15 s: {dict(tries)}")
+              sys.exit(1)
+          link.sock.close()
+          PY
+            then
+              break
+            fi
+            echo "::warning title=Betaflight SITL::boot $boot never answered MSP on 5761 (known race, betaflight#15840, #181)"
+            if ((boot < 3)); then
+              pkill -x betaflight_SITL || true # exact name: never this shell
+              sleep 1
+              mv sitl.log "sitl-boot$boot.log"
+            fi
+          done
           # conftest.py waits for TCP 5761 and an MSP answer, up to 60 s, and
           # says why it gave up (refused, connected without an answer, ...)
           pytest drone/tests/sitl -v
@@ -425,5 +451,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: betaflight-sitl-log
-          path: sitl.log
+          path: sitl*.log
           if-no-files-found: warn
