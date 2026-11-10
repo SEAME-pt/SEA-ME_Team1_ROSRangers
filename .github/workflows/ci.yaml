@@ -414,6 +414,11 @@ jobs:
           pgrep -a betaflight_SITL || echo "SITL is not running"
           ss -ltnp | grep -E ':576[0-9]' || echo "nothing listening on 5760-5769"
           tail -n 20 sitl.log || true
+          # Where each SITL thread is stuck (#181: alive, but 5761 never accepted)
+          if pid=$(pgrep -f betaflight_SITL); then
+            command -v gdb >/dev/null || sudo apt-get install -y -qq gdb >/dev/null
+            sudo gdb -p "$pid" -batch -ex "thread apply all bt" 2>&1 | tail -n 80 || true
+          fi
 
       - name: Upload SITL log
         if: failure()
