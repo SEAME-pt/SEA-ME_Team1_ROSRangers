@@ -222,10 +222,10 @@ RC = msp.MSP_SET_RAW_RC
 NEUTRAL = msp.encode_rc(setpoint_to_rc(Setpoint(0, 0, 0, 0, 0)))
 
 
-def check_frames(raw, frames, bad):
+def check_frames(raw, frames, bad, rc_ok=(NEUTRAL,)):
     """Only allow-listed requests, nothing outside MSP frames, and every RC
-    neutral (only an armed session may send other values, and the HIL tests
-    never arm: REQ-SAF-023)."""
+    one of `rc_ok`: neutral, unless the test armed a session and says which
+    values it sent."""
     assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
     assert bad == 0, f"{bad} frames with a bad checksum"
     assert frames, "the gateway sent nothing: is esp_gateway flashed?"
@@ -239,7 +239,9 @@ def check_frames(raw, frames, bad):
     assert all(
         f.payload == b"" for _, f in frames if f.cmd in POLLS
     ), "polls carry no payload"
-    not_neutral = [f.payload for _, f in frames if f.cmd == RC and f.payload != NEUTRAL]
+    unexpected = [
+        f.payload for _, f in frames if f.cmd == RC and f.payload not in rc_ok
+    ]
     assert (
-        not not_neutral
-    ), f"non-neutral RC without an armed session: {not_neutral[0].hex()}"
+        not unexpected
+    ), f"RC the ground never sent, or before ARM: {unexpected[0].hex()}"

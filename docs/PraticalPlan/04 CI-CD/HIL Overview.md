@@ -106,7 +106,7 @@ Off the bench (no board), the hardware test is skipped and only the parser tests
 
 ### 7.2 Today: gateway tests (PR #173)
 
-The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends no RC until the FC answers (BOOT), then neutral RC at 50 Hz and its allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates (NO_SESSION), and nothing outside MSP frames. In a SoftAP window, the Pi opens a real session with the HIL PSK: STATE carries the fake FC's values, and setpoints, garbage and a wrong-PSK HELLO never change the neutral output. The tests that need ARM wait for the safety pilot (#106). Details in [[HIL Runner]] §4.
+The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends no RC until the FC answers (BOOT), then neutral RC at 50 Hz and its allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates (NO_SESSION), and nothing outside MSP frames. In a SoftAP window, the Pi opens a real session with the HIL PSK: STATE carries the fake FC's values, and setpoints, garbage and a wrong-PSK HELLO never change the neutral output. Three tests arm the session themselves, under a bench-only exception to REQ-SAF-023 ([[Requirements]], 2026-11-10): passthrough, link-loss failsafe timing and resume. Details in [[HIL Runner]] §4.
 
 ### 7.3 Planned (GitHub #106, Module 1)
 
