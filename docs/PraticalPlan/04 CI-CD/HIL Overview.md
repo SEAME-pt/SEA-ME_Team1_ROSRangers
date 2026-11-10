@@ -3,7 +3,7 @@ title: HIL Overview
 type: ci-cd
 status: draft
 date: 2026-10-28
-updated: 2026-11-09
+updated: 2026-11-10
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -106,7 +106,7 @@ Off the bench (no board), the hardware test is skipped and only the parser tests
 
 ### 7.2 Today: gateway tests (PR #173)
 
-The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends only its three allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates or below, and nothing outside MSP frames. In a SoftAP window, its UDP 5770 bench view shows the fake FC's values, no error counter rises, and the values are forgotten 10 s after the FC goes silent. Details in [[HIL Runner]] §4.
+The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends no RC until the FC answers (BOOT), then neutral RC at 50 Hz and its allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates (NO_SESSION), and nothing outside MSP frames. In a SoftAP window, the Pi opens a real session with the HIL PSK: STATE carries the fake FC's values, and setpoints, garbage and a wrong-PSK HELLO never change the neutral output. The tests that need ARM wait for the safety pilot (#106). Details in [[HIL Runner]] §4.
 
 ### 7.3 Planned (GitHub #106, Module 1)
 

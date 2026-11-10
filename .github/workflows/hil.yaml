@@ -47,6 +47,9 @@ jobs:
       SEAME_AP_SSID: ${{ secrets.SEAME_AP_SSID_HIL }}
       SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
       SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
+      # Protocol PSK (ADR-002): built into esp_gateway and used by the session
+      # tests as the ground's key. The bridge envs ignore it.
+      SEAME_PSK: ${{ secrets.SD_PSK_HIL }}
 
     steps:
       - uses: actions/checkout@v4
