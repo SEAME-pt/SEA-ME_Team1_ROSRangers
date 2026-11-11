@@ -14,7 +14,8 @@ What it does:
     an old session still exists, the ESP keeps a new one only as pending and
     drops it after 2 s unless a frame under its keys arrives (ESP Link State
     Machine §1, #156); an inactive node sends no setpoints, so without this its
-    new session would expire.  * Sends SETPOINT over UDP. Until decision C1 (who turns the velocity target
+    new session would expire.
+  * Sends SETPOINT over UDP. Until decision C1 (who turns the velocity target
     into attitude sticks) every setpoint goes out as mode 0 (neutral): it keeps
     the link alive (the setpoint stream is the heartbeat, spec §7.2) and never
     moves the drone.
@@ -36,7 +37,12 @@ What it does:
     ESP starts its ADR-004 output at once). request_resume() sends
     RESUME_REQUEST (decision A3: only when the operator asked).
   * Never blocks: non-blocking sockets, driven by poll() from the node's timer.
-    Socket errors are caught and counted here, never raised to the node.
+    Socket errors are caught and counted here, never raised to the node (an
+    exception in the node's tick stops the node). The address is resolved
+    and checked once, when the backend is made (configure): a bad port or
+    host fails configure, and the tick never waits on DNS. One poll reads at
+    most MAX_UDP_READS datagrams and MAX_TCP_READS chunks, so a flood cannot
+    hold up the tick (and ~/estop, served by the same executor).
 
 Open, not done here: airborne will come from the armed flag in FC_HEALTH
 (decision B1), but FC_HEALTH (type 0x81, 5 Hz, #179 D3) has no byte layout
@@ -72,6 +78,12 @@ HANDSHAKE_TIMEOUT = 1.0  # connect + HELLO_ACK, then the attempt is dropped
 RECONNECT_AFTER = 3.0  # no STATE for this long: the session is gone (ground_link.py)
 RECONNECT_EVERY = 2.0  # at most one attempt this often
 SENDING_GAP = 0.5  # no SETPOINT for this long: the ground is not sending
+# Reads per poll. Real traffic is ~1 datagram per 20 ms tick (STATE 25 Hz,
+# FC_HEALTH 5 Hz); 256 is more than a default socket buffer holds, so a
+# burst is still read in one tick, but the work per tick has a bound even
+# when DDS tuning raises the kernel's buffer sizes (~1 ms here).
+MAX_UDP_READS = 256
+MAX_TCP_READS = 16  # of 4096 bytes
 
 _FAILSAFE_ON = {EventCode.LINK_FAILSAFE_ENTERED, EventCode.FAILSAFE_OUTPUT_ACTIVE}
 # #179 D1 (2026-11-10). Local until sd_protocol's EventCode has them (#179's PR).
@@ -84,6 +96,26 @@ MASKS = (8, 11, 15)  # ADR-010 staged override masks
 IDLE, CONNECTING, HELLO_SENT, OPEN = "idle", "connecting", "hello_sent", "open"
 
 
+def resolve(host, port):
+    """(IPv4 address, port) for esp_host / esp_port, or ValueError. Called
+    once, at configure: a host name is looked up here, never in the tick
+    (getaddrinfo blocks, and its error would be raised from poll())."""
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        raise ValueError(f"esp_port must be a number, got {port!r}") from None
+    if not 0 < port < 65536:
+        raise ValueError(f"esp_port must be 1-65535, got {port}")
+    host = str(host).strip()
+    if not host:
+        raise ValueError("esp_host is empty")
+    try:
+        found = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"esp_host {host!r} cannot be resolved: {error}") from None
+    return found[0][4][0], port
+
+
 class EspBackend(Backend):
     """The gateway firmware over sd_protocol. Times are monotonic seconds."""
 
@@ -92,7 +124,7 @@ class EspBackend(Backend):
     def __init__(self, host, port, psk):
         if len(psk) != KEY_SIZE:
             raise ValueError(f"PSK must be {KEY_SIZE} bytes")
-        self.addr = (str(host), int(port))
+        self.addr = resolve(host, port)
         self._psk = psk
         self.phase = IDLE
         self._tcp = None
@@ -181,6 +213,12 @@ class EspBackend(Backend):
     def tcp_open(self):
         return self._tcp is not None
 
+    @property
+    def rx_rejected(self):
+        """Frames of this session dropped by the receive checks (bad tag,
+        replay, wrong size...), like the ESP's STATE.rx_rejected."""
+        return self._session.rejected if self._session is not None else 0
+
     # ---------- connection ----------
     def _error(self, what, error):
         self.errors += 1
@@ -200,20 +238,27 @@ class EspBackend(Backend):
     def _start_connect(self, now):
         self._next_attempt = now + RECONNECT_EVERY
         self._deadline = now + HANDSHAKE_TIMEOUT
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.setblocking(False)
-        tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        err = tcp.connect_ex(self.addr)
+        tcp = None
+        try:  # e.g. EMFILE: no socket left in this process
+            tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp.setblocking(False)
+            tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            err = tcp.connect_ex(self.addr)
+        except OSError as error:
+            err = error.errno or errno.EIO
         if err not in (0, errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY):
-            tcp.close()
+            if tcp is not None:
+                tcp.close()
             self._error("connect", os.strerror(err))
             return
         self._tcp = tcp
         self.phase = CONNECTING
 
     def _finish_connect(self, now):
-        _, writable, _ = select.select([], [self._tcp], [], 0)
-        if not writable:
+        # poll(), not select(): select() raises for a descriptor >= 1024.
+        poller = select.poll()
+        poller.register(self._tcp, select.POLLOUT)
+        if not poller.poll(0):
             return
         err = self._tcp.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
         if err:
@@ -239,16 +284,25 @@ class EspBackend(Backend):
             return
         for i, frame in enumerate(frames):
             if self._pending.take_ack(frame):
-                self._open(now)
-                for rest in frames[i + 1 :]:  # e.g. EVENT 0x0104 in the same read
-                    self._handle_tcp(rest, now)
+                if self._open(now):  # e.g. EVENT 0x0104 in the same read
+                    self._handle_tcp_frames(frames[i + 1 :], now)
                 return
 
     def _open(self, now):
+        """The HELLO_ACK came: the session is open. False if it could not be
+        (no UDP socket): then it is dropped and tried again later."""
+        udp = None
+        try:
+            udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp.setblocking(False)
+            udp.connect(self.addr)  # STATE comes back to this address and port
+        except OSError as error:
+            if udp is not None:
+                udp.close()
+            self._error("udp", error)
+            self._drop(now, retry_after=RECONNECT_EVERY)
+            return False
         self._session, self._pending = self._pending, None
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp.setblocking(False)
-        udp.connect(self.addr)  # STATE comes back to this address and port
         self._udp = udp
         self.phase = OPEN
         self._last_state_t = now
@@ -261,6 +315,7 @@ class EspBackend(Backend):
         self.sessions_opened += 1
         # The first frame under the new keys confirms a pending session.
         self._send_tcp(self._session.config_get(CONFIRM_KEY, now))
+        return True
 
     def _drop(self, now, retry_after=0.0):
         """Forget the session and close both sockets."""
@@ -278,23 +333,31 @@ class EspBackend(Backend):
 
     def _check_session(self, now):
         """A5: open a new session when this one is gone (ground_link.py rules).
-        In STREAMING without TCP the session goes on over UDP (ADR-005)."""
+        In STREAMING without TCP the session goes on over UDP (ADR-005);
+        outside STREAMING the ESP ends it once TCP is closed and no UDP comes
+        (ESP Link State Machine §1), and RESUME needs TCP anyway."""
         if self._last_udp_t is None or now - self._last_udp_t > SENDING_GAP:
             self._waiting_since = None  # not sending: no STATE is expected
         stale = (
             self._waiting_since is not None
             and now - max(self._waiting_since, self._last_state_t) > RECONNECT_AFTER
         )
-        no_tcp = (
-            self._tcp is None
-            and self.esp_state is not None
-            and self.esp_state != EspState.STREAMING.name
-        )
+        no_tcp = self._tcp is None and not self._maybe_streaming()
         if stale or no_tcp:
             self._drop(now)
 
+    def _maybe_streaming(self):
+        """Whether the ESP may be STREAMING in this session. Before the first
+        STATE (an inactive node sends no setpoints, so it gets none) only an
+        ARM of this session can have made it so."""
+        if self.esp_state is not None:
+            return self.esp_state == EspState.STREAMING.name
+        return self.armed_mask is not None or self._arm_requested is not None
+
     # ---------- TCP ----------
     def _send_tcp(self, frame):
+        if self._tcp is None:
+            return False
         try:
             self._tcp.send(frame)
             return True
@@ -312,7 +375,9 @@ class EspBackend(Backend):
         """Bytes waiting on TCP, b"" if none. A closed or broken connection is
         closed here; in a session the session goes on over UDP (ADR-005)."""
         chunks = []
-        while self._tcp is not None:
+        for _ in range(MAX_TCP_READS):  # the rest waits for the next poll
+            if self._tcp is None:
+                break
             try:
                 data = self._tcp.recv(4096)
             except BlockingIOError:
@@ -338,8 +403,11 @@ class EspBackend(Backend):
             self._error("tcp framing", error)
             self._close_tcp()
             return
+        self._handle_tcp_frames(frames, now)
+
+    def _handle_tcp_frames(self, frames, now):
         for frame in frames:
-            if self.phase != OPEN:
+            if self.phase != OPEN:  # a BYE ended the session: the rest is void
                 return
             self._handle_tcp(frame, now)
 
@@ -364,8 +432,11 @@ class EspBackend(Backend):
             if result == AckResult.OK:
                 self.failsafe_output = False
             if t == MsgType.ARM_CONTROL_ACK:  # B1: the mask comes from our ARM
-                ok = result == AckResult.OK and self._arm_requested is not None
-                self.armed_mask = self._arm_requested if ok else None
+                # A refused ARM changes nothing on the ESP (sd::Link::handle_arm),
+                # so it keeps a mask confirmed earlier in this session (e.g. a
+                # second ~/arm_control before STATE showed STREAMING).
+                if result == AckResult.OK and self._arm_requested is not None:
+                    self.armed_mask = self._arm_requested
                 self._arm_requested = None
         elif t == MsgType.BYE:  # the ESP ended the session: open a new one
             self._drop(now)
@@ -385,7 +456,7 @@ class EspBackend(Backend):
     def _read_udp(self, now):
         """The newest accepted STATE as a drone-state dict, or None."""
         latest = None
-        while True:
+        for _ in range(MAX_UDP_READS):  # the rest waits for the next poll
             try:
                 data = self._udp.recv(512)
             except BlockingIOError:

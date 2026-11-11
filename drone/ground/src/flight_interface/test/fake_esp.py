@@ -9,7 +9,13 @@ the resume condition, EVENT 0x0102 / 0x0103 / 0x0104 and STATE at 25 Hz.
 A HELLO while a session exists opens a PENDING session, as the gateway does
 (ESP Link State Machine §1, #156): it takes over only when its first valid
 frame arrives (BYE reason 3 to the old one), and is dropped after 2 s
-without one. CONFIG_GET is answered (value 1 for any key).
+without one. CONFIG_GET is answered (value 1 for any key). ARM is refused with
+MASK_MISMATCH unless the mask is `override_mask` (8, like the gateway's fixed
+kOverrideMask, sd::Link::handle_arm).
+
+Fault controls for the hardening tests: forged and replayed frames, a TCP
+reset, the ESP's UDP port going away, a UDP flood from the ESP's address, and
+a broken handshake (`hello_fault`, `after_hello`).
 
 No thread: the test calls step(now) with its own clock, so timing is exact.
 
@@ -20,7 +26,9 @@ ARM_CONTROL_REQUEST ever reached the ESP, whatever its tag or session.
 
 import secrets
 import socket
+import struct
 
+from flight_interface.guard import ZERO
 from sd_protocol.crypto import NONCE_SIZE, derive_keys
 from sd_protocol.frame import HEADER_SIZE, Header, MsgType, encode_frame, frame_size
 from sd_protocol.messages import (
@@ -100,6 +108,11 @@ class FakeEsp:
         self._pending = None  # dict while a pending session waits
         self.send_state = True
         self.accept_udp = True
+        self.override_mask = 8  # the gateway's kOverrideMask (ADR-010 stage 1)
+        self.hello_fault = None  # None, "hang_up" or "garbage" instead of HELLO_ACK
+        self.after_hello = []  # (type, payload) sent as is right after HELLO_ACK
+        self.last_tcp_frame = None  # the last genuine frames sent, for replays
+        self.last_udp_frame = None
         self._reset_session()
         self.state = EspState.NO_SESSION
         self.failsafe_output = False
@@ -155,7 +168,45 @@ class FakeEsp:
         if self._keys is None or self._peer is None:
             return
         self._seq_udp += 1
-        self._udp.sendto(self._seal(msg_type, payload, self._seq_udp), self._peer)
+        self.last_udp_frame = self._seal(msg_type, payload, self._seq_udp)
+        self._udp.sendto(self.last_udp_frame, self._peer)
+
+    def send_udp_raw(self, data):
+        """Any bytes from the ESP's address and port (a flood, or a spoofed
+        source on the Wi-Fi): the ground's connected socket takes them."""
+        if self._udp is not None and self._peer is not None:
+            self._udp.sendto(data, self._peer)
+
+    def forge_tcp(self, msg_type, payload):
+        """A frame for the session, tagged with a key that is not the
+        session's (an attacker without the PSK): must be dropped."""
+        if self._session_conn is None:
+            return
+        header = Header(msg_type, session_id=self.session_id, seq=self._seq_tcp + 1)
+        self._session_conn.send(encode_frame(header, payload, bytes(32)))
+
+    def replay_tcp(self, frame=None):
+        """A genuine TCP frame again (default: the last one sent)."""
+        if self._session_conn is not None:
+            self._session_conn.send(frame or self.last_tcp_frame)
+
+    def replay_udp(self, frame=None):
+        """A genuine UDP frame again (default: the last one sent)."""
+        self.send_udp_raw(frame or self.last_udp_frame)
+
+    def reset_tcp(self):
+        """The session's TCP connection is reset (RST, e.g. an ESP crash)."""
+        conn = self._session_conn
+        if conn is not None:
+            linger = struct.pack("ii", 1, 0)  # on, 0 s: close() sends RST
+            conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, linger)
+            self._close_conn(conn)
+
+    def close_udp(self):
+        """The ESP's UDP port goes away: the ground's sends get ICMP refused."""
+        if self._udp is not None:
+            self._udp.close()
+            self._udp = None
 
     def send_state_value(self, esp_state):
         """One STATE with any esp_state byte, also an unknown one."""
@@ -182,7 +233,7 @@ class FakeEsp:
         for conn in list(self._conns):
             self._close_conn(conn)
         self._listener.close()
-        self._udp.close()
+        self.close_udp()
 
     # ---------- the model ----------
     def _reset_session(self):
@@ -287,16 +338,17 @@ class FakeEsp:
             self._close_conn(conn)  # a connection without a session carries HELLO only
             return
         t = f.header.type
-        if t == MsgType.ARM_CONTROL_REQUEST:
-            if self.state == EspState.SESSION_IDLE:
+        if t == MsgType.ARM_CONTROL_REQUEST:  # as sd::Link::handle_arm
+            if self.state != EspState.SESSION_IDLE:
+                result = AckResult.WRONG_STATE
+            elif f.payload[:1] != bytes([self.override_mask]):
+                result = AckResult.MASK_MISMATCH
+            else:
+                result = AckResult.OK
                 self.state = EspState.STREAMING
                 self.failsafe_output = False
                 self._last_ctrl_t = now
-                self._send_tcp(MsgType.ARM_CONTROL_ACK, encode_u8_payload(AckResult.OK))
-            else:
-                self._send_tcp(
-                    MsgType.ARM_CONTROL_ACK, encode_u8_payload(AckResult.WRONG_STATE)
-                )
+            self._send_tcp(MsgType.ARM_CONTROL_ACK, encode_u8_payload(result))
         elif t == MsgType.RESUME_REQUEST:
             self._handle_resume(now)
         elif t == MsgType.CONFIG_GET:
@@ -364,9 +416,17 @@ class FakeEsp:
         if hello is None or hello.proto != 1:
             return
         self.hellos += 1
+        if self.hello_fault == "hang_up":
+            self._close_conn(conn)
+            return
+        if self.hello_fault == "garbage":  # a payload_len over the limit
+            conn.send(b"SD\x01\x02\x00\x00\xff\xff" + bytes(12))
+            return
         session = self._new_session(hello.ground_nonce, conn, now)
         if self._keys is None:  # nothing to protect: open at once
             self._adopt(session)
+            for msg_type, payload in self.after_hello:  # the model ignores them
+                self._send_tcp(msg_type, payload)
         else:  # pending until its first valid frame (a later HELLO replaces it)
             self._pending = session
 
@@ -383,7 +443,7 @@ class FakeEsp:
         self._adopt(session)
 
     def _read_udp(self, now):
-        while True:
+        while self._udp is not None:
             try:
                 data, addr = self._udp.recvfrom(1024)
             except BlockingIOError:
@@ -427,7 +487,8 @@ class FakeEsp:
         if self._session_conn is None or self._keys is None:
             return
         self._seq_tcp += 1
-        self._session_conn.send(self._seal(msg_type, payload, self._seq_tcp))
+        self.last_tcp_frame = self._seal(msg_type, payload, self._seq_tcp)
+        self._session_conn.send(self.last_tcp_frame)
 
     def _state_msg(self, esp_state=None):
         return State(
@@ -448,13 +509,35 @@ class FakeEsp:
         )
 
     def _send_state(self, esp_state):
-        if self._keys is None or self._peer is None:
+        if self._keys is None or self._peer is None or self._udp is None:
             return
         self._seq_udp += 1
         payload = encode_state(self._state_msg(esp_state))
+        self.last_udp_frame = self._seal(MsgType.STATE, payload, self._seq_udp)
         try:
-            self._udp.sendto(
-                self._seal(MsgType.STATE, payload, self._seq_udp), self._peer
-            )
+            self._udp.sendto(self.last_udp_frame, self._peer)
         except OSError:  # pragma: no cover - the ground's socket is gone
             pass
+
+
+TICK = 0.02  # the node's 50 Hz tick
+
+
+class Clock:
+    """Steps the fake ESP and a backend together, like the node's 50 Hz tick,
+    on a simulated clock (no sleeping)."""
+
+    def __init__(self, fake, backend):
+        self.fake, self.backend, self.now = fake, backend, 0.0
+        self.states = []
+
+    def run(self, seconds, send=True):
+        end = self.now + seconds
+        while self.now < end - 1e-9:
+            self.fake.step(self.now)
+            self.states += self.backend.poll(self.now)
+            if send:
+                self.backend.send_setpoint(ZERO, self.now)
+            self.fake.step(self.now)
+            self.now = round(self.now + TICK, 6)
+        return self.states[-1] if self.states else None

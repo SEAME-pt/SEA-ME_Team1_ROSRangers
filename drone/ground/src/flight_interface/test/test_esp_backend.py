@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 try:
-    from fake_esp import TEST_PSK, FakeEsp
+    from fake_esp import TEST_PSK, TICK, Clock, FakeEsp
 
     from flight_interface import esp_backend
     from flight_interface.esp_backend import (
@@ -26,14 +26,13 @@ try:
     from sd_protocol.messages import ByeReason, EspState, EventCode, encode_u8_payload
 except ImportError:  # no sd_protocol. A module-level skip would stop the
     esp_backend = None  # collection of the whole folder under the ROS plugins.
-    RECONNECT_AFTER = RECONNECT_EVERY = 0.0
+    RECONNECT_AFTER = RECONNECT_EVERY = TICK = 0.0
 
 from flight_interface.backends import make_backend
 from flight_interface.guard import ZERO
 
 pytestmark = pytest.mark.skipif(esp_backend is None, reason="sd_protocol not installed")
 PACKAGE = pathlib.Path(esp_backend.__file__).parent if esp_backend else None
-TICK = 0.02
 
 
 @pytest.fixture
@@ -50,25 +49,6 @@ def backend(fake):
     b.close()
 
 
-class Clock:
-    """Steps the fake ESP and the backend together, like the node's 50 Hz tick."""
-
-    def __init__(self, fake, backend):
-        self.fake, self.backend, self.now = fake, backend, 0.0
-        self.states = []
-
-    def run(self, seconds, send=True):
-        end = self.now + seconds
-        while self.now < end - 1e-9:
-            self.fake.step(self.now)
-            self.states += self.backend.poll(self.now)
-            if send:
-                self.backend.send_setpoint(ZERO, self.now)
-            self.fake.step(self.now)
-            self.now = round(self.now + TICK, 6)
-        return self.states[-1] if self.states else None
-
-
 @pytest.fixture
 def clock(fake, backend):
     return Clock(fake, backend)
@@ -83,20 +63,51 @@ def test_make_backend_esp_and_bad_psk():
 
 
 # ---------- REQ-SAF-023: one path to ARM, the operator's ----------
+def _scopes(source, name):
+    """The scope (enclosing function or class, or "<module>") of every code
+    reference to `name` in `source`: names, attributes and imports, at any
+    level. Strings, docstrings and the `def` of a function called `name` do
+    not count."""
+    found = []
+
+    def refs(node):
+        if isinstance(node, ast.alias):
+            return {node.name.rsplit(".", 1)[-1], node.asname}
+        return {getattr(node, "attr", None) or getattr(node, "id", None)}
+
+    def visit(node, scope):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                visit(child, child.name)
+                continue
+            if name in refs(child):
+                found.append(scope)
+            visit(child, scope)
+
+    visit(ast.parse(source), "<module>")
+    return found
+
+
 def _uses(name):
-    """(file, enclosing function) of every code reference to `name` in the
-    flight_interface package (strings and docstrings do not count)."""
+    """(file, scope) of every code reference to `name` in the flight_interface
+    package."""
     found = []
     for path in sorted(PACKAGE.glob("*.py")):
-        tree = ast.parse(path.read_text())
-        for func in ast.walk(tree):
-            if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for node in ast.walk(func):
-                ref = getattr(node, "attr", None) or getattr(node, "id", None)
-                if ref == name and not isinstance(node, ast.FunctionDef):
-                    found.append((path.name, func.name))
+        found += [(path.name, scope) for scope in _scopes(path.read_text(), name)]
     return sorted(set(found))
+
+
+def test_the_static_check_also_sees_module_and_class_level_code():
+    source = (
+        "from sd_protocol.ground import arm\n"
+        "session.arm(8)\n"
+        "class C:\n"
+        "    a = session.arm\n"
+        "    def arm(self):\n"
+        "        return self.arm\n"
+        "'''session.arm(8) in a string'''\n"
+    )
+    assert sorted(_scopes(source, "arm")) == ["<module>", "<module>", "C", "arm"]
 
 
 def test_arm_is_built_and_sent_only_on_the_operator_path():

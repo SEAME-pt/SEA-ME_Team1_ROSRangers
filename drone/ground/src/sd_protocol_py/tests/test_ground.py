@@ -5,7 +5,7 @@ import json
 import pytest
 
 from sd_protocol.crypto import derive_keys
-from sd_protocol.frame import Header, MsgType, encode_frame
+from sd_protocol.frame import HEADER_SIZE, Header, MsgType, encode_frame
 from sd_protocol.ground import GroundSession, TcpReader, load_psk, t_send_us
 from sd_protocol.messages import (
     EspState,
@@ -126,3 +126,14 @@ def test_tcp_reader_cuts_frames_and_refuses_a_bad_length():
     assert reader.feed(hello[10:] + hello) == [hello, hello]
     with pytest.raises(ValueError):
         reader.feed(b"SD\x01\x40\x00\x00\xff\xff" + bytes(12))
+
+
+def test_tcp_reader_waits_for_a_frame_cut_after_its_header():
+    """TCP can cut anywhere, also inside the payload or the tag."""
+    s, *_ = open_session()
+    a, b = s.config_get(1, 0.0), s.bye(0.0)
+    reader = TcpReader()
+    assert reader.feed(a[:-1]) == []  # the header is complete, the tag is not
+    assert reader.feed(a[-1:] + b[: HEADER_SIZE + 1]) == [a]
+    assert reader.feed(b[HEADER_SIZE + 1 :]) == [b]
+    assert reader.buf == b""
