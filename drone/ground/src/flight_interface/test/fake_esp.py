@@ -14,8 +14,14 @@ MASK_MISMATCH unless the mask is `override_mask` (8, like the gateway's fixed
 kOverrideMask, sd::Link::handle_arm).
 
 Fault controls for the hardening tests: forged and replayed frames, a TCP
-reset, the ESP's UDP port going away, a UDP flood from the ESP's address, and
-a broken handshake (`hello_fault`, `after_hello`).
+reset, the ESP's UDP port going away, a UDP flood from the ESP's address, a
+broken handshake (`hello_fault`, `after_hello`), a recorded HELLO_ACK replayed
+into a new connection (`hello_fault = "replay_ack"`, ADR-005) and a gateway
+that never answers CONFIG_GET (`answer_config`).
+
+`fc_values` are the FC fields every STATE carries (roll / pitch in 0.1 deg,
+heading in deg, vbat in 0.01 V), as the gateway copies them from its MSP
+polls (main.cpp fc_view).
 
 No thread: the test calls step(now) with its own clock, so timing is exact.
 
@@ -109,7 +115,11 @@ class FakeEsp:
         self.send_state = True
         self.accept_udp = True
         self.override_mask = 8  # the gateway's kOverrideMask (ADR-010 stage 1)
-        self.hello_fault = None  # None, "hang_up" or "garbage" instead of HELLO_ACK
+        # None, "hang_up", "garbage" or "replay_ack" instead of a fresh HELLO_ACK
+        self.hello_fault = None
+        self.last_hello_ack = None  # the last genuine HELLO_ACK frame sent
+        self.answer_config = True  # False: CONFIG_GET gets no CONFIG_ACK
+        self.fc_values = {"roll": 0, "pitch": 0, "heading": 0, "vbat": 1200}
         self.after_hello = []  # (type, payload) sent as is right after HELLO_ACK
         self.last_tcp_frame = None  # the last genuine frames sent, for replays
         self.last_udp_frame = None
@@ -351,7 +361,7 @@ class FakeEsp:
             self._send_tcp(MsgType.ARM_CONTROL_ACK, encode_u8_payload(result))
         elif t == MsgType.RESUME_REQUEST:
             self._handle_resume(now)
-        elif t == MsgType.CONFIG_GET:
+        elif t == MsgType.CONFIG_GET and self.answer_config:
             kv = decode_config_kv(f.payload)
             ack = ConfigAck(key=kv.key, result=0, value=1)
             self._send_tcp(MsgType.CONFIG_ACK, encode_config_ack(ack))
@@ -388,7 +398,15 @@ class FakeEsp:
         rx_udp.start_session(session_id, keys.ground_to_esp)
         ack = HelloAck(session_id, esp_nonce, b"fake-esp".ljust(FW_VERSION_SIZE, b"\0"))
         header = Header(MsgType.HELLO_ACK, session_id=session_id, seq=1)
-        conn.send(encode_frame(header, encode_hello_ack(ack), self.psk))
+        frame = encode_frame(header, encode_hello_ack(ack), self.psk)
+        if self.hello_fault == "replay_ack" and self.last_hello_ack is not None:
+            # An attacker on the Wi-Fi swaps the fresh HELLO_ACK for a recorded
+            # one. It passes the PSK check, but its esp_nonce and session_id
+            # are old: the ground derives keys this ESP session does not have.
+            conn.send(self.last_hello_ack)
+        else:
+            self.last_hello_ack = frame
+            conn.send(frame)
         return {
             "id": session_id,
             "keys": keys,
@@ -496,10 +514,10 @@ class FakeEsp:
             override_active=1 if self.state == EspState.STREAMING else 0,
             last_ctrl_seq=0,
             last_ctrl_t_send_us=0,
-            roll=0,
-            pitch=0,
-            heading=0,
-            vbat=1200,
+            roll=self.fc_values["roll"],
+            pitch=self.fc_values["pitch"],
+            heading=self.fc_values["heading"],
+            vbat=self.fc_values["vbat"],
             flow_x=0,
             flow_y=0,
             flow_quality=0,

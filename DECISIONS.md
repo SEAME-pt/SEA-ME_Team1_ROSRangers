@@ -14,13 +14,9 @@ The code lives in `drone/ground/src/flight_interface/`. `guard.py` holds the saf
 
 ## 1. Still open
 
-| ID | Question | Decide with | Proposal | Needed by |
-|---|---|---|---|---|
-| Track E | Is ThiagoTEP the Track E owner for week 5? Their C1/C2 answers were taken as Track E's. | ThiagoTEP | Yes | Start of the controller, 16–20 Nov 2026 |
-| C1.4 cap | The roll/pitch ground cap in degrees, on top of Betaflight's `angle_limit` | BrunoBMFT, ThiagoTEP | Deferred until roll/pitch control starts | Roll/pitch control (after the ADR-016 velocity estimate) |
-| E6.1 | Is an unknown FC state (`fc_link_ok: null`) treated as "not OK", and from when? | BrunoBMFT (suggested by ptorrao-git on PR #187) | **Yes, from the change that decodes `FC_HEALTH`** (see below) | The `FC_HEALTH` decoding, after PR #183 |
+Nothing for #103 (2026-11-12). BrunoBMFT's rule: a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. The Track E owner and the C1.4 roll/pitch cap value were dropped as not needed now. The cap value is chosen when roll/pitch control starts (`MISSING_FROM_NODE.md` M3). The choices Claude made under that rule are in `MISSING_FROM_NODE.md` §2.
 
-### E6.1. An unknown FC state
+### E6.1. An unknown FC state (decided: b, see §2)
 
 - **Question:** should `fc_link_ok: null` (unknown) block ARM, RESUME and the gate, and make `link_ok` false, like `false` does? ptorrao-git suggested "unknown = not OK until `FC_HEALTH` is decoded" (PR #187, 2026-11-12).
 - **Facts:**
@@ -60,27 +56,29 @@ BrunoBMFT (safety pilot) took the proposal, or the other deciders' answer, on ev
 | E5 | **a + b**: the `fc_telemetry` tests get IDs 97/98, plus a check that fails when two test files share a `TEST_DOMAIN_ID` | Dot99 | Done by Track D in its own PR. The check also rejects 42, the team domain |
 | E6 | **c**: after a reconnect the ground takes `fc_link_ok` from `FC_HEALTH`'s `fc_alive` (5 Hz), so a new session knows the FC state within 200 ms. Until the ground decodes `FC_HEALTH`, it relies on the ESP refusing ARM and RESUME while the FC is silent (result 4) | BrunoBMFT, ptorrao-git | ptorrao-git confirmed on PR #187: "Events report changes, `FC_HEALTH` reports the current state"; `FC_HEALTH` carries `fc_alive = 0` from a new session's first UDP frame on. The ESP sends `EVENT 0x0201` / `0x0202` only on a change and only to the current session; "a ground that connects later reads `FC_HEALTH`" (Protocol Spec v1.4 §3.1 and ESP Link State Machine §1.1 in PR #183; `Link::set_fc_alive`). `EspBackend._open()` resets `fc_link_ok` to unknown on every new session, and unknown does not block ARM on the ground |
 | TCP send | Fix the partial write in `EspBackend._send_tcp` in this PR: check the return of `send()` and close TCP on a short write, with the reason in `last_error` | BrunoBMFT | Found in the review of 2026-11-12. Only touches the ESP backend |
+| E6.1 | **b**: "unknown FC state = not OK" for ARM, RESUME, the gate and `link_ok`, applied in the same change that decodes `FC_HEALTH` | The proposal (BrunoBMFT's rule, 2026-11-12); suggested by ptorrao-git | See E6.1 in §1 for the facts and options |
+| D2.1 | `/fc/*` from `STATE` only while `fc_link_ok` is true; after `FC_HEALTH` is decoded, per-value age checks instead | Claude, under BrunoBMFT's rule | `STATE` carries no age: zero before the FC's first reply, frozen up to 10 s after it goes silent. Details in `MISSING_FROM_NODE.md` §2 |
 
 ## 3. Work that follows
 
-**In #103 (PR #187 or its follow-up, BrunoBMFT):**
+**In #103 (PR #187 or its follow-up, BrunoBMFT).** What is left is written for the next implementer in `MISSING_FROM_NODE.md` (repo root), items M1–M11.
 
-| From | Work | Waits for |
+| From | Work | Status (2026-11-12) |
 |---|---|---|
-| TCP send | Handle a short `send()` in `_send_tcp`; test it | — |
-| E2 | The node logs every `ARM_CONTROL_ACK` / `RESUME_ACK` result (warning with the reason on a refusal); `last_ack` or a callback in the backend interface | — |
-| E4 | Wait for the first `CONFIG_ACK`; redo the handshake if missing. Test: the fake ESP replays an old `HELLO_ACK` | — |
-| E1 | `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` as defaults in `flight_interface.launch.py` and `drone/ground/docker-compose.yml` | — |
-| E3 | `load_psk` warns when `secrets.json` is readable by the group or others; Docker mounts the file read-only instead of passing `SEAME_PSK` | — |
-| D2 | `/fc/attitude` and `/fc/battery` from `STATE` (roll, pitch in 0.1°; heading in °; vbat in 0.01 V) through `telemetry.py`; yaw zeroed on activate; shared conformance tests with `fc_telemetry` | — |
-| D1, E6 | Decode `FC_HEALTH` (0x81, 42 bytes, layout in Protocol Spec v1.4 from PR #183): `armed` on `/flight/state` with `airborne` = armed (D1), and `fc_link_ok` from `fc_alive` on every `FC_HEALTH`, also right after a reconnect (E6); how `null` is treated per E6.1 | PR #183, E6.1 |
-| #183 follow-up | Use `sd_protocol`'s `EventCode.FC_LINK_LOST` / `FC_LINK_RESTORED` and `AckResult.FC_NOT_ANSWERING` instead of local constants; refuse `~/resume` while the FC is silent; rewrite `test_fc_health_without_a_layout_is_ignored`; update the "no layout yet" comments in `esp_backend.py` | PR #183 |
+| TCP send | Handle a short `send()` in `_send_tcp`; test it | ✅ done, not committed yet |
+| E2 (a) | The node logs every `ARM_CONTROL_ACK` / `RESUME_ACK` result (warning with the reason on a refusal); `take_acks()` in the backend interface | ✅ done, not committed yet. (b) waits for #98: M6 |
+| E4 | Wait for the first answer; redo the handshake if missing. Test: the fake ESP replays an old `HELLO_ACK` | ✅ done, not committed yet |
+| E1 | `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` as defaults in `flight_interface.launch.py` and `drone/ground/docker-compose.yml` | ✅ done, not committed yet. Other packages' launch files: M5 |
+| E3 | `load_psk` warns when `secrets.json` is readable by the group or others; Docker mounts the file read-only instead of passing `SEAME_PSK` | ✅ warning done, not committed yet. Docker half waits for a `flight_interface` compose service: M4 |
+| D2 | `/fc/attitude` and `/fc/battery` from `STATE` through `telemetry.py`; yaw zeroed on activate; shared conformance tests with `fc_telemetry` | ✅ done (with the D2.1 gate), not committed yet |
+| #183 follow-up, ground half | Refuse `~/resume` while the ESP reports the FC lost | ✅ done, not committed yet |
+| D1, E6, E6.1, D2.1 | Decode `FC_HEALTH` (0x81, 42 bytes, Protocol Spec v1.4 from PR #183): `armed` on `/flight/state` with `airborne` = armed (D1), `fc_link_ok` from `fc_alive` (E6), unknown = not OK (E6.1), per-value ages for `/fc/*` (D2.1); `sd_protocol` names instead of local constants; rewrite `test_fc_health_without_a_layout_is_ignored` | Waits for PR #183: M1, in a new issue blocked by #179 (not created yet) |
 
 **Other people:**
 
 | Who | Work | Waits for |
 |---|---|---|
-| Track E (ThiagoTEP, to confirm) | Controller node, yaw only (C1.1–C1.3, C2), 16–20 Nov 2026; then `flight_interface` switches its input to `/control/attitude_setpoint`, sends mode 1, and its guard limits move to attitude units (C1.4, C1.5) | Track E confirmed |
+| Track E | Controller node, yaw only (C1.1–C1.3, C2), 16–20 Nov 2026; then `flight_interface` switches its input to `/control/attitude_setpoint`, sends mode 1, and its guard limits move to attitude units (C1.4, C1.5): `MISSING_FROM_NODE.md` M3 | — |
 | Track E | PX4 backend issue (B3); takes #103's Simulation box (D3) | Controller |
 | Dot99 | E5 in its own PR; reword #103 criterion 5 (D2) | — |
 | ptorrao-git | Move `ground_link.py` onto `sd_protocol.ground` (D4) | PR #183 |

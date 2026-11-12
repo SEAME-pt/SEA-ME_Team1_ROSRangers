@@ -1,5 +1,10 @@
 """MSP replies -> /fc/attitude and /fc/battery fields. Pure functions, no ROS.
 
+Two sources, one conversion (decision D2): fc_telemetry decodes the FC's MSP
+replies itself; the flight_interface ESP backend gets the same values inside
+STATE, which the gateway copies from its own MSP polls (state_attitude() and
+state_analog() turn them back into the decode() dicts below).
+
 The protocol choices (docs/PraticalPlan/03 Architecture/Architecture Document.md,
 "/fc/attitude and /fc/battery", pending team confirmation):
 - angles in radians, REP-103 signs: roll + right side down, pitch + nose down,
@@ -70,7 +75,7 @@ def battery_fields(analog, cell_count):
     0 V reading that looks like a real one.
     """
     nan = float("nan")
-    voltage = analog.get("voltage_v", analog["vbat_v"])
+    voltage = analog["voltage_v"] if "voltage_v" in analog else analog["vbat_v"]
     present = voltage >= NO_BATTERY_BELOW_V
     return {
         "voltage": voltage if present else nan,
@@ -88,3 +93,20 @@ def battery_fields(analog, cell_count):
         "cell_voltage": [nan] * cell_count,
         "cell_temperature": [nan] * cell_count,
     }
+
+
+def state_attitude(fc_values):
+    """STATE roll / pitch (0.1 deg) and heading (deg) -> the dict
+    msp.decode() gives for MSP_ATTITUDE. The gateway copies them unchanged
+    from MSP_ATTITUDE (sd::msp::decode_attitude), so the units are the same."""
+    return {
+        "roll_deg": fc_values["roll"] / 10,
+        "pitch_deg": fc_values["pitch"] / 10,
+        "yaw_deg": fc_values["heading"],
+    }
+
+
+def state_analog(fc_values):
+    """STATE vbat (0.01 V) -> the dict msp.decode() gives for MSP_ANALOG. The
+    gateway copies MSP_ANALOG's 0.01 V voltage field (sd::msp::decode_analog)."""
+    return {"voltage_v": fc_values["vbat"] / 100}

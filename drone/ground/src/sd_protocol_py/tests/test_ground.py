@@ -1,6 +1,7 @@
 """sd_protocol.ground: the ground side of a session without sockets (B2)."""
 
 import json
+import logging
 
 import pytest
 
@@ -56,6 +57,59 @@ def test_load_psk_from_env_then_file(tmp_path):
     path = tmp_path / "secrets.json"
     path.write_text(json.dumps({"psk": key}))
     assert load_psk(path=path, environ={}) == bytes.fromhex(key)
+
+
+# ---------- decision E3: a secrets file other users can read ----------
+@pytest.mark.parametrize(
+    "mode, warned",
+    [
+        (0o600, False),
+        (0o400, False),
+        (0o700, False),
+        (0o640, True),
+        (0o604, True),
+        (0o644, True),
+    ],
+)
+def test_load_psk_warns_when_other_users_can_read_the_file(tmp_path, mode, warned):
+    key = "cd" * 32
+    path = tmp_path / "secrets.json"
+    path.write_text(json.dumps({"psk": key}))
+    path.chmod(mode)
+    messages = []
+    assert load_psk(path=path, environ={}, warn=messages.append) == bytes.fromhex(key)
+    assert len(messages) == (1 if warned else 0)
+    if warned:  # it says which file, its mode and the fix
+        assert str(path) in messages[0] and f"mode {mode:o}" in messages[0]
+        assert f"chmod 600 {path}" in messages[0]
+
+
+def test_load_psk_from_the_environment_never_reads_the_file(tmp_path):
+    path = tmp_path / "secrets.json"
+    path.write_text(json.dumps({"psk": "cd" * 32}))
+    path.chmod(0o644)
+    messages = []
+    load_psk(path=path, environ={"SEAME_PSK": "ab" * 32}, warn=messages.append)
+    assert messages == []
+
+
+def test_load_psk_warning_goes_to_the_log_without_a_callback(tmp_path):
+    path = tmp_path / "secrets.json"
+    path.write_text(json.dumps({"psk": "cd" * 32}))
+    path.chmod(0o644)
+    # A handler on the module's own logger, not caplog: with ROS sourced the
+    # launch pytest plugin changes the logger class and stops propagation.
+    records = []
+    handler = logging.Handler(level=logging.WARNING)
+    handler.emit = records.append
+    logger = logging.getLogger("sd_protocol.ground")
+    logger.addHandler(handler)
+    try:
+        load_psk(path=path, environ={})
+    finally:
+        logger.removeHandler(handler)
+    assert [r.levelno for r in records] == [logging.WARNING]
+    assert "chmod 600" in records[0].getMessage()
 
 
 @pytest.mark.parametrize("content", [None, "not json", "[1, 2]", '{"psk": "12"}'])

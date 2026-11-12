@@ -31,6 +31,8 @@ Rules:
     says when the backend may send RESUME_REQUEST: after RESUME_WINDOW of
     neutral setpoints with no gap of RESUME_MAX_GAP or more, while the drone
     still reports LINK_FAILSAFE. The guard never starts a resume by itself.
+    Like ARM, it is refused while the ESP reports the FC link lost: the ESP
+    refuses RESUME then too (result 4, confirmed by the safety pilot on PR #183).
 
 The clock is passed in as MONOTONIC seconds (time.monotonic() in the node), so
 tests need no sleeping and a wall-clock step cannot make old data look fresh.
@@ -205,15 +207,18 @@ class Guard:
     def request_resume(self, now):
         """The operator asks to resume after a link failsafe. Returns (ok, why).
 
-        Refused unless the node is active, not in E-stop, the link is fresh and
-        the drone reports LINK_FAILSAFE. When accepted, the request is only
-        pending: resume_due() says when RESUME_REQUEST may go out."""
+        Refused unless the node is active, not in E-stop, the link is fresh,
+        the FC link is not reported lost and the drone reports LINK_FAILSAFE.
+        When accepted, the request is only pending: resume_due() says when
+        RESUME_REQUEST may go out."""
         if not self.active:
             return False, "not active"
         if self.estop:
             return False, "E-stop latched: reset it first"
         if not self.link_fresh(now):
             return False, "drone link lost"
+        if self._drone.get("fc_link_ok") is False:
+            return False, "the ESP reports the FC link lost"
         esp_state = self._drone.get("esp_state")
         if esp_state != "LINK_FAILSAFE":
             return False, f"the ESP is in {esp_state}, not LINK_FAILSAFE"
@@ -271,7 +276,8 @@ class Guard:
         """True once, when the pending resume may be sent now. A pending resume
         whose conditions no longer hold (not active, E-stop, link lost, the
         drone left LINK_FAILSAFE) or that waited longer than RESUME_TIMEOUT is
-        dropped: the operator has to ask again."""
+        dropped: the operator has to ask again. So is one whose FC link is
+        reported lost meanwhile."""
         if not self.resume_pending:
             return False
         still_valid = (
@@ -279,6 +285,7 @@ class Guard:
             and not self.estop
             and self.link_fresh(now)
             and self._drone.get("esp_state") == "LINK_FAILSAFE"
+            and self._drone.get("fc_link_ok") is not False
             and 0 <= now - self._resume_t <= RESUME_TIMEOUT
         )
         if not still_valid:

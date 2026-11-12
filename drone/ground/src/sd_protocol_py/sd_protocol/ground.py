@@ -13,6 +13,7 @@ latency logging (spec §1).
 """
 
 import json
+import logging
 import os
 import pathlib
 import re
@@ -42,19 +43,27 @@ from sd_protocol.setpoint import Setpoint, encode_setpoint
 
 SECRETS = pathlib.Path.home() / ".config" / "seame-drone" / "secrets.json"
 _PSK_RE = re.compile(r"[0-9a-f]{64}")
+_log = logging.getLogger(__name__)
 
 
-def load_psk(path=None, environ=None):
+def load_psk(path=None, environ=None, warn=None):
     """The PSK (ADR-002) as 32 bytes: SEAME_PSK, else "psk" in
     ~/.config/seame-drone/secrets.json (the same source as the gateway build).
-    ValueError if there is none or it is not 64 hex characters."""
+    ValueError if there is none or it is not 64 hex characters.
+
+    Decision E3: a secrets file that the group or other users can read gets a
+    warning (not a refusal), as ssh does for keys. `warn(message)` receives it;
+    without one it goes to this module's logger."""
     environ = os.environ if environ is None else environ
     text = environ.get("SEAME_PSK", "")
     if not text:
+        secrets_file = pathlib.Path(path or SECRETS)
         try:
-            text = json.loads(pathlib.Path(path or SECRETS).read_text()).get("psk", "")
+            text = json.loads(secrets_file.read_text()).get("psk", "")
         except (OSError, ValueError, AttributeError):
             text = ""
+        else:
+            _check_private(secrets_file, warn or _log.warning)
     text = str(text).strip().lower()
     if not _PSK_RE.fullmatch(text):
         raise ValueError(
@@ -62,6 +71,19 @@ def load_psk(path=None, environ=None):
             "~/.config/seame-drone/secrets.json (64 hex characters)"
         )
     return bytes.fromhex(text)
+
+
+def _check_private(path, warn):
+    """Warn when `path` can be read by its group or by other users."""
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        return
+    if mode & 0o044:  # read permission for the group or others
+        warn(
+            f"{path} is readable by other users (mode {mode:o}): whoever reads "
+            f"the PSK can open a session and send ARM; run: chmod 600 {path}"
+        )
 
 
 def t_send_us(now):

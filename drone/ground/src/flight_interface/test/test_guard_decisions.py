@@ -75,6 +75,11 @@ def test_resume_is_never_due_without_a_request():
         (lambda g: g.deactivate(), "not active"),
         (lambda g: g.trigger_estop("test"), "E-stop"),
         (lambda g: g.on_drone_state(STREAMING, 0.0), "not LINK_FAILSAFE"),
+        # As the ESP (result 4, PR #183): no RESUME while the FC is silent.
+        (
+            lambda g: g.on_drone_state(dict(FAILSAFE, fc_link_ok=False), 0.0),
+            "FC link lost",
+        ),
     ],
 )
 def test_resume_refused(setup, why):
@@ -83,6 +88,14 @@ def test_resume_refused(setup, why):
     ok, message = g.request_resume(0.0)
     assert not ok and why in message
     assert g.resume_pending is False
+
+
+@pytest.mark.parametrize("fc_link_ok", [None, True])
+def test_resume_accepted_when_the_fc_link_is_not_reported_lost(fc_link_ok):
+    """Unknown (null) does not block yet: decision E6.1, applied with the
+    FC_HEALTH decoding (MISSING_FROM_NODE.md)."""
+    g = guard_in(dict(FAILSAFE, fc_link_ok=fc_link_ok))
+    assert g.request_resume(0.0)[0] is True
 
 
 def test_resume_refused_when_the_link_is_lost():
@@ -127,6 +140,7 @@ def test_a_non_neutral_setpoint_restarts_the_window():
         lambda g, t: g.trigger_estop("test"),
         lambda g, t: g.deactivate(),
         lambda g, t: g.on_drone_state(STREAMING, t),
+        lambda g, t: g.on_drone_state(dict(FAILSAFE, fc_link_ok=False), t),
     ],
 )
 def test_a_pending_resume_is_dropped_when_its_conditions_go(event):
@@ -185,6 +199,7 @@ def test_loopback_records_neutral_bye_and_resume_in_order():
 
 def test_base_backend_new_methods_are_only_an_interface():
     b = Backend()
+    assert b.take_acks() == []  # E2: a backend without answers has none
     for call in (
         lambda: b.send_neutral(0.0),
         lambda: b.end_session(0.0),
@@ -255,3 +270,10 @@ def test_loopback_records_arm():
     assert b.armed_masks == [11] and b.log == [(0.0, "arm")]
     with pytest.raises(NotImplementedError):
         Backend().arm_control(8, 0.0)
+
+
+def test_loopback_hands_queued_acks_over_once():
+    b = LoopbackBackend()
+    b.acks.append(("ARM_CONTROL_ACK", 2, "MASK_MISMATCH"))
+    assert b.take_acks() == [("ARM_CONTROL_ACK", 2, "MASK_MISMATCH")]
+    assert b.take_acks() == []

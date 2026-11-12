@@ -12,6 +12,10 @@ fake ESP (test/fake_esp.py): the whole path operator service -> node -> wire
   * A1 without TCP: BYE cannot go out, but the setpoints stop, so the ESP
     still enters its failsafe; the latch holds over the new session; no ARM.
   * A5 while inactive: an ESP restart gives a new session before activate.
+  * D2: /fc/attitude and /fc/battery from STATE, only while the ESP reports
+    the FC link alive; the yaw is zeroed at each activate.
+  * E2: the ESP's answer to ARM reaches the node's log, a refusal with its
+    reason. E3: a secrets file other users can read is warned about.
   * configure fails cleanly with a bad esp_port / esp_host or without a PSK,
     and works from the parameters with a good one.
 
@@ -20,6 +24,7 @@ skipped, unless REQUIRE_ROS_TESTS=1 is set (CI sets it).
 """
 
 import json
+import math
 import os
 import pathlib
 import tempfile
@@ -29,10 +34,11 @@ from unittest import mock
 
 try:
     import rclpy
-    from geometry_msgs.msg import TwistStamped
+    from geometry_msgs.msg import TwistStamped, Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.lifecycle import TransitionCallbackReturn
     from rclpy.parameter import Parameter
+    from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
 
@@ -57,6 +63,16 @@ except ImportError:  # no sd_protocol
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
 TEST_DOMAIN_ID = 95
+
+
+class LogRecorder:
+    """Stands in for the node's logger and keeps (level, message)."""
+
+    def __init__(self):
+        self.lines = []
+
+    def __getattr__(self, level):
+        return lambda message, **kwargs: self.lines.append((level, message))
 
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
@@ -320,6 +336,100 @@ class EspNodeTests(unittest.TestCase):
         self.assertEqual(self.fake.hellos, 1)
         self.assertTrue(self.states[-1]["link_ok"])
         self.assertEqual(self.fake.arm_requests, 0)
+
+    # ---------- D2: /fc/attitude and /fc/battery from STATE ----------
+    def test_fc_topics_from_state_only_while_the_fc_link_is_alive(self):
+        attitudes, batteries = [], []
+        self.probe.create_subscription(
+            Vector3Stamped, "/fc/attitude", attitudes.append, 10
+        )
+        self.probe.create_subscription(
+            BatteryState, "/fc/battery", batteries.append, 10
+        )
+        self.fake.fc_values = {"roll": 187, "pitch": 217, "heading": 55, "vbat": 1552}
+        self.activate()
+        self.spin(0.6)
+        self.assertTrue(self.states[-1]["link_ok"])  # STATE is flowing...
+        self.assertIsNone(self.states[-1]["fc_link_ok"])  # ...but the FC is unknown
+        self.assertEqual((attitudes, batteries), ([], []))  # so no reading at all
+
+        self.fake.send_event(FC_LINK_RESTORED)
+        self.spin(0.4)
+        self.assertGreater(len(attitudes), 3)
+        self.assertGreater(len(batteries), 3)
+        first = attitudes[0]
+        self.assertEqual(first.header.frame_id, "base_link")
+        self.assertAlmostEqual(first.vector.x, math.radians(18.7))  # right side down
+        self.assertAlmostEqual(first.vector.y, math.radians(21.7))  # nose down
+        self.assertAlmostEqual(first.vector.z, 0.0)  # yaw zero at the first sample
+        self.assertAlmostEqual(batteries[-1].voltage, 15.52, places=5)
+        self.assertTrue(batteries[-1].present)
+        self.assertEqual(len(batteries[-1].cell_voltage), 4)
+
+        # Betaflight heading 55 -> 17: 38 deg counter-clockwise, + in REP-103.
+        self.fake.fc_values = dict(self.fake.fc_values, heading=17)
+        self.spin(0.3)
+        self.assertAlmostEqual(attitudes[-1].vector.z, math.radians(38))
+
+        # FC lost: STATE still comes, but its FC values are frozen. Nothing more.
+        self.fake.send_event(FC_LINK_LOST)
+        self.spin(0.2)
+        published = (len(attitudes), len(batteries))
+        self.spin(0.5)
+        self.assertTrue(self.states[-1]["link_ok"] is False)
+        self.assertEqual((len(attitudes), len(batteries)), published)
+
+        # FC back and a new activation: a new yaw zero (heading is 17 now).
+        self.fake.send_event(FC_LINK_RESTORED)
+        self.node.trigger_deactivate()
+        self.node.trigger_activate()
+        before = len(attitudes)
+        self.spin(0.4)
+        self.assertGreater(len(attitudes), before)
+        self.assertAlmostEqual(attitudes[before].vector.z, 0.0)
+        self.assertEqual(self.fake.arm_requests, 0)
+
+    # ---------- E2 + E3: what the operator reads in the log ----------
+    def test_the_esps_answer_to_arm_is_logged_with_its_reason(self):
+        log = LogRecorder()
+        self.node.get_logger = lambda: log
+        self.fake.override_mask = 11  # the gateway runs another mask than the node's 8
+        self.activate()
+        self.spin(0.5)
+        self.assertTrue(self.call("arm_control").success)  # sent, not yet answered
+        self.spin(0.3)
+        self.assertIn(
+            (
+                "warning",
+                "ARM_CONTROL_ACK refused by the ESP, MASK_MISMATCH (2): the ESP "
+                "runs another override mask: the ground must not fly",
+            ),
+            log.lines,
+        )
+        self.fake.override_mask = 8
+        self.assertTrue(self.call("arm_control").success)
+        self.spin(0.3)
+        self.assertIn(("info", "ARM_CONTROL_ACK: OK"), log.lines)
+        self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
+
+    def test_a_secrets_file_other_users_can_read_is_warned_about(self):
+        self.node_from_parameters(esp_host="127.0.0.1", esp_port=self.fake.addr[1])
+        log = LogRecorder()
+        self.node.get_logger = lambda: log
+        with tempfile.TemporaryDirectory() as home:
+            secrets = pathlib.Path(home) / "secrets.json"
+            secrets.write_text(json.dumps({"psk": TEST_PSK.hex()}))
+            secrets.chmod(0o644)
+            with mock.patch.dict(os.environ, {"SEAME_PSK": ""}), mock.patch(
+                "sd_protocol.ground.SECRETS", secrets
+            ):
+                self.assertEqual(
+                    self.node.trigger_configure(), TransitionCallbackReturn.SUCCESS
+                )
+        warnings = [message for level, message in log.lines if level == "warning"]
+        self.assertTrue(
+            any(str(secrets) in m and "chmod 600" in m for m in warnings), warnings
+        )
 
 
 if __name__ == "__main__":

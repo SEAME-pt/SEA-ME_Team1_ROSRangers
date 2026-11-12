@@ -34,6 +34,19 @@ SESSION_IDLE and the FC link is not reported lost. The node never sends ARM on
 its own, also not after a reconnect, a session switch or a reset
 (REQ-SAF-023).
 
+The ESP's answer to ARM and RESUME (decision E2): every ARM_CONTROL_ACK and
+RESUME_ACK is logged, a refusal as a warning with its reason (e.g.
+MASK_MISMATCH: the ground must not fly). The services answer when the request
+is sent, so this log is where the operator sees the ESP's verdict.
+
+FC telemetry (decision D2): with publish_fc true, /fc/attitude
+(Vector3Stamped, rad, REP-103) and /fc/battery (BatteryState) come from the FC
+values in every STATE, through the same conversion as fc_telemetry
+(telemetry.py), with the yaw zeroed at the first sample after each activate.
+Only while the ESP reports the FC link alive (fc_link_ok true): STATE carries
+no age for them, so they are zero before the FC's first reply and frozen for
+up to 10 s after it goes silent. Do not run fc_telemetry on the same graph.
+
 Freshness uses time.monotonic(). Logic: guard.py (no ROS). Backends: backends.py.
 """
 
@@ -45,22 +58,38 @@ import threading
 import time
 
 import rclpy
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, Vector3Stamped
 from rclpy.exceptions import ParameterException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.lifecycle import Node, State, TransitionCallbackReturn
 from rclpy.logging import get_logger
 from rclpy.signals import SignalHandlerOptions
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from flight_interface.backends import make_backend
 from flight_interface.guard import LINK_TIMEOUT, MAX_TARGET_TIMEOUT, ZERO, Guard
+from flight_interface.telemetry import (
+    AttitudeConverter,
+    battery_fields,
+    state_analog,
+    state_attitude,
+)
 
 NODE_NAME = "flight_interface"
 MIN_RATE_HZ, MAX_RATE_HZ = 10.0, 100.0
 # mission_node calls a /flight/state older than 0.5 s lost: publish well above 2 Hz.
 MIN_STATE_RATE_HZ = 5.0
+ATTITUDE_TOPIC = "/fc/attitude"  # the same topics as fc_telemetry (D2)
+BATTERY_TOPIC = "/fc/battery"
+# Why the ESP refused ARM or RESUME (Protocol Spec v0 §3.1), for the log (E2).
+ACK_REASONS = {
+    "WRONG_STATE": "the ESP is not in the state this request needs",
+    "MASK_MISMATCH": "the ESP runs another override mask: the ground must not fly",
+    "RESUME_CONDITION_NOT_MET": "no unbroken neutral stream for 500 ms",
+    "FC_NOT_ANSWERING": "the FC does not answer the ESP",
+}
 
 
 class FlightInterface(Node):
@@ -79,6 +108,11 @@ class FlightInterface(Node):
         self.declare_parameter("mask", 8)  # ARM mask (ADR-010: 8 yaw, 11, 15)
         self.declare_parameter("esp_host", "192.168.4.1")
         self.declare_parameter("esp_port", 5759)
+        # D2: /fc/attitude and /fc/battery from STATE (backend:=esp). False
+        # when fc_telemetry publishes them instead.
+        self.declare_parameter("publish_fc", True)
+        self.declare_parameter("frame_id", "base_link")  # as fc_telemetry
+        self.declare_parameter("cell_count", 4)  # CNHL 4S pack, as fc_telemetry
         self._injected_backend = backend
         self._mask = 8
         self.backend = None
@@ -86,6 +120,7 @@ class FlightInterface(Node):
         self._entities = []
         self._link_was_fresh = False
         self._estop_reason = ""  # the latch lives here, so cleanup cannot clear it
+        self._attitude = None  # AttitudeConverter while /fc/* are published
         self.get_logger().info(
             "unconfigured: use ros2 lifecycle set /flight_interface configure"
         )
@@ -100,10 +135,16 @@ class FlightInterface(Node):
             mask = self.get_parameter("mask").value
             if isinstance(mask, bool) or mask not in (8, 11, 15):
                 raise ValueError(f"mask must be 8, 11 or 15, got {mask!r}")
+            # Types: ROS refuses a value of another type for a declared parameter.
+            publish_fc = self.get_parameter("publish_fc").value
+            cell_count = self.get_parameter("cell_count").value
+            if cell_count < 1:
+                raise ValueError(f"cell_count must be 1 or more, got {cell_count}")
             backend = self._injected_backend or make_backend(
                 str(self.get_parameter("backend").value),
                 esp_host=str(self.get_parameter("esp_host").value),
                 esp_port=int(self.get_parameter("esp_port").value),
+                warn=self.get_logger().warning,  # E3: a secrets file others can read
             )
         except (TypeError, ValueError, ImportError) as error:
             # ImportError: backend:=esp without sd_protocol installed.
@@ -113,6 +154,8 @@ class FlightInterface(Node):
         state_rate = min(rate, max(MIN_STATE_RATE_HZ, state_rate))
         self.backend = backend
         self._mask = mask
+        self._frame_id = str(self.get_parameter("frame_id").value)
+        self._cell_count = cell_count
         self.guard = Guard(target_timeout, link_timeout, tick_period=1.0 / rate)
         if self._estop_reason:
             self.guard.trigger_estop(self._estop_reason)  # still latched
@@ -141,6 +184,16 @@ class FlightInterface(Node):
                 10,
             ),
         )
+        if publish_fc:
+            self._attitude = AttitudeConverter()
+            self._attitude_pub = keep(
+                self.destroy_publisher,
+                self.create_publisher(Vector3Stamped, ATTITUDE_TOPIC, 10),
+            )
+            self._battery_pub = keep(
+                self.destroy_publisher,
+                self.create_publisher(BatteryState, BATTERY_TOPIC, 10),
+            )
         keep(self.destroy_timer, self.create_timer(1.0 / rate, self._tick))
         keep(
             self.destroy_timer, self.create_timer(1.0 / state_rate, self._publish_state)
@@ -169,6 +222,8 @@ class FlightInterface(Node):
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.guard.activate()
+        if self._attitude is not None:
+            self._attitude.reset_yaw()  # D2: yaw 0 at the first sample from now
         self.get_logger().info("active: setpoints go out from the next fresh target")
         return super().on_activate(state)
 
@@ -212,6 +267,7 @@ class FlightInterface(Node):
             self.backend.close()
         self.backend = None
         self.guard = None
+        self._attitude = None
 
     # ---------- callbacks ----------
     def _on_target(self, msg):
@@ -227,6 +283,9 @@ class FlightInterface(Node):
             rx = drone_state.get("rx_time") if isinstance(drone_state, dict) else None
             valid_rx = isinstance(rx, (int, float)) and math.isfinite(rx) and rx <= now
             self.guard.on_drone_state(drone_state, rx if valid_rx else now)
+            self._publish_fc(drone_state)
+        for kind, code, reason in self.backend.take_acks():
+            self._log_ack(kind, code, reason)
         fresh = self.guard.link_fresh(now)
         if fresh != self._link_was_fresh:
             # One call site per severity: rclpy refuses to change it between calls.
@@ -248,6 +307,42 @@ class FlightInterface(Node):
                 self.get_logger().error(
                     "RESUME_REQUEST not sent: no TCP to the ESP; ask again"
                 )
+
+    def _publish_fc(self, drone_state):
+        """D2: /fc/attitude and /fc/battery from a STATE's FC values, only while
+        the ESP reports the FC link alive (see the module docstring)."""
+        if self._attitude is None or not isinstance(drone_state, dict):
+            return
+        values = drone_state.get("fc_values")
+        if not isinstance(values, dict) or drone_state.get("fc_link_ok") is not True:
+            return
+        stamp = self.get_clock().now().to_msg()
+        attitude = Vector3Stamped()
+        attitude.header.stamp = stamp
+        attitude.header.frame_id = self._frame_id
+        x, y, z = self._attitude.convert(state_attitude(values))
+        attitude.vector.x, attitude.vector.y, attitude.vector.z = x, y, z
+        self._attitude_pub.publish(attitude)
+        battery = BatteryState()
+        battery.header.stamp = stamp
+        battery.header.frame_id = self._frame_id
+        for field, value in battery_fields(
+            state_analog(values), self._cell_count
+        ).items():
+            setattr(battery, field, value)
+        self._battery_pub.publish(battery)
+
+    def _log_ack(self, kind, code, reason):
+        """E2: the ESP's answer to ARM or RESUME, for the operator."""
+        # One call site per severity: rclpy refuses to change it between calls.
+        if code == 0:
+            self.get_logger().info(f"{kind}: OK")
+            return
+        why = ACK_REASONS.get(reason)
+        detail = f": {why}" if why else ""
+        self.get_logger().warning(
+            f"{kind} refused by the ESP, {reason} ({code}){detail}"
+        )
 
     def _publish_state(self):
         state = self.guard.flight_state(time.monotonic())

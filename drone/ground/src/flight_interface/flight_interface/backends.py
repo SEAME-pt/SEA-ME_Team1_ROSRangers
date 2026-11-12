@@ -10,6 +10,8 @@ A backend has these methods and no others the node may call:
   arm_control(mask, now)       ARM_CONTROL_REQUEST, only from the operator's
                                ~/arm_control service (A4, REQ-SAF-023)
   poll(now)                    the valid drone states received since the last call
+  take_acks()                  the ESP's ARM / RESUME answers since the last call
+                               (read-only, decision E2)
   close()                      release sockets or ports
 
 ARM_CONTROL_REQUEST goes out only through arm_control(), and the node calls
@@ -59,6 +61,13 @@ class Backend:
         are dropped by the backend and never reach the node."""
         raise NotImplementedError
 
+    def take_acks(self):
+        """The ARM_CONTROL_ACK / RESUME_ACK answers received since the last
+        call, oldest first, as (type name, result code, reason name), e.g.
+        ("ARM_CONTROL_ACK", 2, "MASK_MISMATCH"). Read-only: the node only logs
+        them (decision E2). A backend without answers returns []."""
+        return []
+
     def close(self):
         """Release sockets or ports. Called on cleanup and shutdown."""
 
@@ -87,6 +96,7 @@ class LoopbackBackend(Backend):
         self.sent = []  # (now, command); a neutral is recorded as a zero command
         self.log = []  # (now, what): "setpoint", "neutral", "bye", "resume", "arm"
         self.armed_masks = []  # masks passed to arm_control()
+        self.acks = []  # answers a test queues for take_acks()
         self.closed = False
 
     def send_setpoint(self, command, now):
@@ -112,6 +122,10 @@ class LoopbackBackend(Backend):
     def poll(self, now):
         return [dict(self.state)] if self.connected and not self.closed else []
 
+    def take_acks(self):
+        acks, self.acks = self.acks, []
+        return acks
+
     def close(self):
         self.closed = True
 
@@ -119,17 +133,21 @@ class LoopbackBackend(Backend):
 BACKENDS = ("loopback", "esp")
 
 
-def make_backend(name, esp_host="192.168.4.1", esp_port=5759, psk=None):
+def make_backend(name, esp_host="192.168.4.1", esp_port=5759, psk=None, warn=None):
     """The backend named by the `backend` parameter. ValueError for others.
 
     `esp` needs sd_protocol (drone/ground/src/sd_protocol_py) and the PSK; it is
-    imported only here, so the loopback backend runs without sd_protocol."""
+    imported only here, so the loopback backend runs without sd_protocol.
+    `warn(message)` gets load_psk's warning about a secrets file other users
+    can read (decision E3)."""
     if name == "loopback":
         return LoopbackBackend()
     if name == "esp":
         from flight_interface.esp_backend import EspBackend, load_psk
 
-        return EspBackend(esp_host, esp_port, psk if psk is not None else load_psk())
+        if psk is None:
+            psk = load_psk(warn=warn)
+        return EspBackend(esp_host, esp_port, psk)
     raise ValueError(
         f"backend must be one of {', '.join(BACKENDS)} (px4 waits for C1), got {name!r}"
     )

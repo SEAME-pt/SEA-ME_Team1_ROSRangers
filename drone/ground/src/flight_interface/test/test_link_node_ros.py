@@ -49,11 +49,12 @@ ALLOWED = {
     "end_session",
     "request_resume",
     "poll",
+    "take_acks",  # read-only: the ESP's answers, logged (decision E2)
     "close",
     "name",
 }
 # Data fields the tests themselves read; not calls by the node.
-TEST_FIELDS = {"sent", "log", "state", "connected", "closed", "calls"}
+TEST_FIELDS = {"sent", "log", "state", "connected", "closed", "calls", "acks"}
 
 
 class RecordingBackend(LoopbackBackend):

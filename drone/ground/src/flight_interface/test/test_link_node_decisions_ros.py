@@ -1,7 +1,9 @@
 """ROS 2 tests of the flight_interface node for the #103 part 2 decisions:
-A1 E-stop = one neutral then BYE, A3 operator-only ~/resume, the receive time
-of a drone state, REQ-SAF-023 over E-stop and resume, and the node with the
-ESP backend against the fake ESP (test/fake_esp.py).
+A1 E-stop = one neutral then BYE, A3 operator-only ~/resume (also refused
+while the FC is lost), the receive time of a drone state, REQ-SAF-023 over
+E-stop and resume, the /fc/* parameters (D2), the ESP's answers in the log
+(E2), and the node with the ESP backend against the fake ESP
+(test/fake_esp.py).
 
 Needs ROS 2 Jazzy sourced. Without rclpy the tests are skipped, unless
 REQUIRE_ROS_TESTS=1 is set (CI sets it). The ESP test also needs sd_protocol.
@@ -16,8 +18,10 @@ from flight_interface.backends import LoopbackBackend
 
 try:
     import rclpy
-    from geometry_msgs.msg import TwistStamped
+    from geometry_msgs.msg import TwistStamped, Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
+    from rclpy.lifecycle import TransitionCallbackReturn
+    from rclpy.parameter import Parameter
     from std_msgs.msg import String
     from std_srvs.srv import Trigger
 
@@ -45,6 +49,7 @@ ALLOWED = {
     "end_session",
     "request_resume",
     "poll",
+    "take_acks",  # read-only: the ESP's answers, logged (decision E2)
     "close",
     "name",
 }
@@ -57,6 +62,7 @@ TEST_FIELDS = {
     "calls",
     "resume_ok",
     "armed_masks",
+    "acks",
 }
 IDLE = {"esp_state": "SESSION_IDLE", "override_active": False, "mask": None}
 
@@ -337,3 +343,105 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
         self.assertEqual(self.states[-1]["mask"], 8)
         self.assertEqual(set(self.fake.setpoint_modes), {0})  # neutral until C1
+
+    # ---------- RESUME refused while the FC is silent (as the ESP, PR #183) ----------
+    def test_resume_is_refused_while_the_esp_reports_the_fc_lost(self):
+        self.replace(RecordingBackend(state=dict(FAILSAFE, fc_link_ok=False)))
+        self.activate()
+        self.spin(0.3)
+        response = self.call("resume")
+        self.assertFalse(response.success)
+        self.assertIn("FC link lost", response.message)
+        self.spin(1.0)
+        self.assertNotIn("resume", self.log())
+        self.assertFalse(self.states[-1]["resume_pending"])
+
+    # ---------- D2: the /fc/* parameters ----------
+    def test_fc_publishers_follow_publish_fc(self):
+        self.node.trigger_configure()
+        self.assertEqual(self.probe.count_publishers("/fc/attitude"), 1)
+        self.assertEqual(self.probe.count_publishers("/fc/battery"), 1)
+        self.node.trigger_cleanup()  # also closes the backend
+        self.assertEqual(self.probe.count_publishers("/fc/attitude"), 0)
+        self.replace(RecordingBackend(state=STREAMING))
+        self.node.set_parameters([Parameter("publish_fc", value=False)])
+        self.assertEqual(
+            self.node.trigger_configure(), TransitionCallbackReturn.SUCCESS
+        )
+        self.assertEqual(self.probe.count_publishers("/fc/attitude"), 0)
+        self.assertEqual(self.probe.count_publishers("/fc/battery"), 0)
+        self.node.trigger_activate()  # runs without them
+        self.spin(0.3)
+        self.assertTrue(self.states[-1]["link_ok"])
+
+    def test_a_backend_without_fc_values_publishes_no_fc_topics(self):
+        """Loopback has no STATE: even with the FC link reported alive there
+        is nothing to publish, so nothing is made up."""
+        attitudes = []
+        self.replace(RecordingBackend(state=dict(STREAMING, fc_link_ok=True)))
+        self.probe.create_subscription(
+            Vector3Stamped, "/fc/attitude", attitudes.append, 10
+        )
+        self.activate()
+        self.spin(0.5)
+        self.assertTrue(self.states[-1]["link_ok"])
+        self.assertEqual(attitudes, [])
+
+    def test_a_bad_cell_count_fails_configure(self):
+        for bad in (0, -4):
+            with self.subTest(cell_count=bad):
+                self.node.set_parameters([Parameter("cell_count", value=bad)])
+                self.assertEqual(
+                    self.node.trigger_configure(), TransitionCallbackReturn.FAILURE
+                )
+                self.assertIsNone(self.node.guard)
+
+    # ---------- E2: every answer of the ESP in the log ----------
+    def test_every_esp_answer_is_logged_once_with_its_reason(self):
+        lines = []
+
+        class Log:
+            def __getattr__(self, level):
+                return lambda message, **kwargs: lines.append((level, message))
+
+        self.node.get_logger = Log
+        self.activate()
+        self.backend.acks += [
+            ("ARM_CONTROL_ACK", 0, "OK"),
+            ("ARM_CONTROL_ACK", 1, "WRONG_STATE"),
+            ("ARM_CONTROL_ACK", 2, "MASK_MISMATCH"),
+            ("RESUME_ACK", 3, "RESUME_CONDITION_NOT_MET"),
+            ("ARM_CONTROL_ACK", 4, "FC_NOT_ANSWERING"),
+            ("RESUME_ACK", 9, "UNKNOWN_9"),
+        ]
+        self.spin(0.3)
+        acks = [entry for entry in lines if "_ACK" in entry[1]]
+        self.assertEqual(
+            acks,
+            [
+                ("info", "ARM_CONTROL_ACK: OK"),
+                (
+                    "warning",
+                    "ARM_CONTROL_ACK refused by the ESP, WRONG_STATE (1): "
+                    "the ESP is not in the state this request needs",
+                ),
+                (
+                    "warning",
+                    "ARM_CONTROL_ACK refused by the ESP, MASK_MISMATCH (2): "
+                    "the ESP runs another override mask: the ground must not fly",
+                ),
+                (
+                    "warning",
+                    "RESUME_ACK refused by the ESP, RESUME_CONDITION_NOT_MET "
+                    "(3): no unbroken neutral stream for 500 ms",
+                ),
+                (
+                    "warning",
+                    "ARM_CONTROL_ACK refused by the ESP, FC_NOT_ANSWERING (4): "
+                    "the FC does not answer the ESP",
+                ),
+                ("warning", "RESUME_ACK refused by the ESP, UNKNOWN_9 (9)"),
+            ],
+        )
+        self.assertEqual(self.backend.acks, [])  # each taken once
+        self.assertLessEqual(self.backend.calls, ALLOWED)

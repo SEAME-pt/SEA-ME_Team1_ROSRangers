@@ -15,6 +15,12 @@ What it does:
     drops it after 2 s unless a frame under its keys arrives (ESP Link State
     Machine §1, #156); an inactive node sends no setpoints, so without this its
     new session would expire.
+  * Checks that the ESP answers (decision E4, ADR-005): a new session counts
+    only once a frame under its keys came back (the CONFIG_ACK, or a STATE).
+    None within HANDSHAKE_TIMEOUT means the HELLO_ACK was a replayed one (the
+    keys are wrong) or the gateway lost the session: it is dropped and a new
+    handshake follows, never with ARM. Before E4 an inactive node kept such a
+    session forever.
   * Sends SETPOINT over UDP. Until decision C1 (who turns the velocity target
     into attitude sticks) every setpoint goes out as mode 0 (neutral): it keeps
     the link alive (the setpoint stream is the heartbeat, spec §7.2) and never
@@ -28,6 +34,11 @@ What it does:
     (no valid FC reply for 250 ms) sets fc_link_ok false, 0x0202
     FC_LINK_RESTORED sets it true; None until the ESP says either. The guard
     allows no non-zero setpoint while it is false.
+  * Every ARM_CONTROL_ACK / RESUME_ACK goes to take_acks() (decision E2), so
+    the node can tell the operator what the ESP answered.
+  * The FC values of every STATE (roll, pitch, heading, vbat) go with the drone
+    state as `fc_values` (decision D2): the node publishes /fc/attitude and
+    /fc/battery from them.
   * arm_control(mask) sends ARM_CONTROL_REQUEST (decision A4): the only path
     to ARM, called only from the node's ~/arm_control service, i.e. by the
     operator (REQ-SAF-023). The mask reported to the node is the one this
@@ -48,8 +59,8 @@ Open, not done here: airborne will come from the armed flag in FC_HEALTH
 (decision B1), but FC_HEALTH (type 0x81, 5 Hz, #179 D3) has no byte layout
 yet: until sd_protocol decodes it, airborne is False and FC_HEALTH is dropped
 like any frame that is not a STATE (it never refreshes the watchdog).
-ARM_CONTROL_ACK result 4 "FC not answering" (#179 D2) is kept as the raw
-number in last_ack. The session code is sd_protocol.ground (decision B2),
+ARM_CONTROL_ACK result 4 "FC not answering" (#179 D2) has a local name until
+sd_protocol's AckResult has it (PR #183). The session code is sd_protocol.ground (decision B2),
 shared with scripts/ground_link.py once that tool moves to it.
 """
 
@@ -89,6 +100,7 @@ _FAILSAFE_ON = {EventCode.LINK_FAILSAFE_ENTERED, EventCode.FAILSAFE_OUTPUT_ACTIV
 # #179 D1 (2026-11-10). Local until sd_protocol's EventCode has them (#179's PR).
 FC_LINK_LOST = 0x0201
 FC_LINK_RESTORED = 0x0202
+ACK_FC_NOT_ANSWERING = 4  # #179 D2; AckResult.FC_NOT_ANSWERING after PR #183
 # Read-only key (config_table_version) used to confirm a new session.
 CONFIRM_KEY = 0x01
 MASKS = (8, 11, 15)  # ADR-010 staged override masks
@@ -114,6 +126,16 @@ def resolve(host, port):
     except (OSError, UnicodeError) as error:
         raise ValueError(f"esp_host {host!r} cannot be resolved: {error}") from None
     return found[0][4][0], port
+
+
+def ack_reason(result):
+    """The name of an ARM_CONTROL_ACK / RESUME_ACK result code."""
+    if result == ACK_FC_NOT_ANSWERING:
+        return "FC_NOT_ANSWERING"
+    try:
+        return AckResult(result).name
+    except ValueError:
+        return f"UNKNOWN_{result}"
 
 
 class EspBackend(Backend):
@@ -143,6 +165,10 @@ class EspBackend(Backend):
         self.errors = 0
         self.last_error = ""
         self.last_ack = None  # (type name, result) of the last ARM/RESUME ACK
+        self._acks = []  # (type name, result, reason) not yet taken by the node
+        self._confirmed = False  # E4: a frame under this session's keys came back
+        self._confirm_by = 0.0
+        self.sessions_unconfirmed = 0  # dropped for no answer to the first frame
         self.fc_link_ok = None  # #179: None unknown, False after FC_LINK_LOST
         self.armed_mask = None  # B1: the mask the ESP confirmed with ARM ACK OK
         self._arm_requested = None
@@ -181,6 +207,12 @@ class EspBackend(Backend):
             return False
         return self._send_tcp(self._session.resume_request(now))
 
+    def take_acks(self):
+        """The ARM_CONTROL_ACK / RESUME_ACK answers received since the last
+        call, oldest first: (type name, result code, reason name)."""
+        acks, self._acks = self._acks, []
+        return acks
+
     def poll(self, now):
         if self.closed:
             return []
@@ -192,6 +224,8 @@ class EspBackend(Backend):
             state = self._read_udp(now)
             if state is not None:
                 states.append(state)
+            self._check_confirmed(now)
+        if self.phase == OPEN:
             self._check_session(now)
         return states
 
@@ -313,7 +347,10 @@ class EspBackend(Backend):
         self.fc_link_ok = None
         self.armed_mask = self._arm_requested = None
         self.sessions_opened += 1
-        # The first frame under the new keys confirms a pending session.
+        # The first frame under the new keys confirms a pending session, and
+        # its CONFIG_ACK shows the ESP has the same keys (E4).
+        self._confirmed = False
+        self._confirm_by = now + HANDSHAKE_TIMEOUT
         self._send_tcp(self._session.config_get(CONFIRM_KEY, now))
         return True
 
@@ -330,6 +367,21 @@ class EspBackend(Backend):
         self.fc_link_ok = None
         self.armed_mask = self._arm_requested = None
         self._next_attempt = max(self._next_attempt, now + retry_after)
+
+    def _check_confirmed(self, now):
+        """E4 (ADR-005): no frame under this session's keys came back within
+        HANDSHAKE_TIMEOUT of the HELLO_ACK. Either the HELLO_ACK was a replayed
+        one (other keys than the ESP's) or the gateway lost the session:
+        drop it and do the handshake again (never with ARM)."""
+        if self._confirmed or now <= self._confirm_by:
+            return
+        self.sessions_unconfirmed += 1
+        self._error(
+            "session",
+            "no answer to the first frame (replayed HELLO_ACK or lost "
+            "session): new handshake",
+        )
+        self._drop(now)
 
     def _check_session(self, now):
         """A5: open a new session when this one is gone (ground_link.py rules).
@@ -359,12 +411,20 @@ class EspBackend(Backend):
         if self._tcp is None:
             return False
         try:
-            self._tcp.send(frame)
-            return True
+            sent = self._tcp.send(frame)
         except OSError as error:
             self._error("tcp send", error)
             self._close_tcp()
             return False
+        if sent != len(frame):
+            # A non-blocking send can take only part of the frame when the
+            # send buffer is nearly full (e.g. a Wi-Fi stall). The rest cannot
+            # be sent later in order, and a cut frame breaks the ESP's framing
+            # (it closes TCP), so close it here and say why.
+            self._error("tcp send", f"short write, {sent} of {len(frame)} bytes")
+            self._close_tcp()
+            return False
+        return True
 
     def _close_tcp(self):
         if self._tcp is not None:
@@ -415,6 +475,7 @@ class EspBackend(Backend):
         f = self._session.receive_tcp(frame)
         if f is None:
             return
+        self._confirmed = True  # E4: the ESP has this session's keys
         t = f.header.type
         if t == MsgType.EVENT:
             event = decode_event(f.payload)
@@ -429,6 +490,7 @@ class EspBackend(Backend):
         elif t in (MsgType.ARM_CONTROL_ACK, MsgType.RESUME_ACK):
             result = decode_u8_payload(f.payload)
             self.last_ack = (MsgType(t).name, result)
+            self._acks.append((MsgType(t).name, result, ack_reason(result)))
             if result == AckResult.OK:
                 self.failsafe_output = False
             if t == MsgType.ARM_CONTROL_ACK:  # B1: the mask comes from our ARM
@@ -469,6 +531,7 @@ class EspBackend(Backend):
                 latest = state
         if latest is None:
             return None
+        self._confirmed = True  # E4: an accepted STATE proves the keys too
         try:
             name = EspState(latest.esp_state).name
         except ValueError:
@@ -487,5 +550,15 @@ class EspBackend(Backend):
             "airborne": False,  # B1: FC_HEALTH's armed flag, not decoded yet
             "failsafe_output": self.failsafe_output,
             "fc_link_ok": self.fc_link_ok,
+            # D2: the FC values as the gateway copied them from its MSP polls
+            # (roll / pitch 0.1 deg, heading deg, vbat 0.01 V). STATE has no
+            # age for them: the node publishes them only while the FC link is
+            # reported alive.
+            "fc_values": {
+                "roll": latest.roll,
+                "pitch": latest.pitch,
+                "heading": latest.heading,
+                "vbat": latest.vbat,
+            },
             "rx_time": now,
         }
