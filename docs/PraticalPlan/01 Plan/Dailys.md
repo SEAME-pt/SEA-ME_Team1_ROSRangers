@@ -136,6 +136,15 @@ Guilherme - Acrescentar blockers nas issues, ajudar nas issues associadas ao Pau
 **Blockers**
 Bruno - Esperar que alguem livre para telemetria do drone live. Esperar por PR's
 
+12/Nov - 10:23/10:26
+Bruno - Trabalhar nos nodes
+Guilherme - Trabalhar no HIL, e apoiar o Paulo no protocolo de comunicação (C++)
+Tiago - Protocolo de comunicação(Python), ThoneFlow, estudos para possivelmente de um outro sensor e testes
+Paulo - Desenvolver o protocolo de comunicação(C++), testes no ground até ao ESP (Python), investigar problema que causou red no HIL
+**Blocker**
+Bruno - Esperar por team decisions
+Paulo - Esperar pela reparação do drone
+Guilherme - Esperar pela decisão do Paulo sobre o HIL
 
 
 
