@@ -18,22 +18,22 @@ The code lives in `drone/ground/src/flight_interface/`. `guard.py` holds the saf
 |---|---|---|---|---|
 | Track E | Is ThiagoTEP the Track E owner for week 5? Their C1/C2 answers were taken as Track E's. | ThiagoTEP | Yes | Start of the controller, 16–20 Nov 2026 |
 | C1.4 cap | The roll/pitch ground cap in degrees, on top of Betaflight's `angle_limit` | BrunoBMFT, ThiagoTEP | Deferred until roll/pitch control starts | Roll/pitch control (after the ADR-016 velocity estimate) |
-| E6 | The ground's FC state after a reconnect | BrunoBMFT, ptorrao-git | **c**, with b until `FC_HEALTH` is decoded | PR #183 merged |
+| E6.1 | Is an unknown FC state (`fc_link_ok: null`) treated as "not OK", and from when? | BrunoBMFT (suggested by ptorrao-git on PR #187) | **Yes, from the change that decodes `FC_HEALTH`** (see below) | The `FC_HEALTH` decoding, after PR #183 |
 
-### E6. The ground's FC state after a reconnect
+### E6.1. An unknown FC state
 
-- **Question:** what the ground should believe about the FC link right after it opens a new session.
+- **Question:** should `fc_link_ok: null` (unknown) block ARM, RESUME and the gate, and make `link_ok` false, like `false` does? ptorrao-git suggested "unknown = not OK until `FC_HEALTH` is decoded" (PR #187, 2026-11-12).
 - **Facts:**
-  - `EspBackend._open()` resets `fc_link_ok` to `None` (unknown) on every new session.
-  - `None` does not block ARM. Only `false`, which is set by `EVENT 0x0201` `FC_LINK_LOST`, does.
-  - If the FC was lost before a Wi-Fi drop, the ground does not know it after reconnecting unless the ESP sends `FC_LINK_LOST` again.
-  - With PR #183, the ESP itself refuses ARM while the FC is silent (`ARM_CONTROL_ACK` result 4).
-- **Question for ptorrao-git:** does the ESP send `FC_LINK_LOST` again at the start of a new session while the FC is still silent?
+  - Today only `false` blocks anything. `null` passes `guard.arm_allowed()` and `control_possible()`.
+  - The ESP sends `FC_LINK_LOST` / `FC_LINK_RESTORED` only on a change. A session that starts while the FC is steady (alive or silent) gets no event, so **until the ground decodes `FC_HEALTH`, `fc_link_ok` stays `null` for the whole session**.
+  - Once `FC_HEALTH` is decoded, `fc_alive` arrives from the first UDP frame, so `null` lasts at most about 200 ms after a session start.
+  - Until then, the ESP refuses ARM and RESUME itself while the FC is silent (result 4, PR #183).
 - **Options:**
-  - a) The ground keeps "lost" across reconnects until `FC_LINK_RESTORED`. Risk: if the FC recovers during the drop and the ESP does not resend `FC_LINK_RESTORED`, the ground stays "lost".
-  - b) Rely on the ESP refusing ARM (result 4).
-  - c) Take `fc_link_ok` from `FC_HEALTH`'s FC-alive flag (5 Hz) once it is decoded, so a new session learns the FC state within 200 ms. Keep b until then.
-- **Proposal:** **c**, with b until `FC_HEALTH` is decoded. No wire change, and it ends the "unknown" window. If the ESP already resends the event, nothing is needed beyond c.
+  - a) "Unknown = not OK" **now**: ARM is always refused by the ground until the `FC_HEALTH` decoding lands.
+  - b) "Unknown = not OK" **from the `FC_HEALTH` decoding on** (the same change): then `null` only covers the first ~200 ms of a session. The loopback backend reports `fc_link_ok: true` so dry runs still work.
+  - c) Keep `null` as not blocking; rely on the ESP's result 4.
+- **Proposal:** **b**.
+- **Why:** before the decoding, a would lock out ARM for no gain, because the ESP already refuses when the FC is silent, and no control can pass the gate before #176 anyway. After the decoding, b makes the ground's own check complete at no cost.
 
 ## 2. Decided on PR #187 (2026-11-12)
 
@@ -58,6 +58,7 @@ BrunoBMFT (safety pilot) took the proposal, or the other deciders' answer, on ev
 | E3 | **a** (warn only) + **b** | ptorrao-git, BrunoBMFT | Matches the gateway's `--gen-psk`, which already writes the file as 600 in a 700 folder |
 | E4 | **a**: wait for the first `CONFIG_ACK`; if none within `HANDSHAKE_TIMEOUT` (1 s), drop the session and redo the handshake, never with ARM | ptorrao-git, BrunoBMFT | No wire change; the ESP side needs nothing (`CONFIG_GET 0x01` already confirms the session) |
 | E5 | **a + b**: the `fc_telemetry` tests get IDs 97/98, plus a check that fails when two test files share a `TEST_DOMAIN_ID` | Dot99 | Done by Track D in its own PR. The check also rejects 42, the team domain |
+| E6 | **c**: after a reconnect the ground takes `fc_link_ok` from `FC_HEALTH`'s `fc_alive` (5 Hz), so a new session knows the FC state within 200 ms. Until the ground decodes `FC_HEALTH`, it relies on the ESP refusing ARM and RESUME while the FC is silent (result 4) | BrunoBMFT, ptorrao-git | ptorrao-git confirmed on PR #187: "Events report changes, `FC_HEALTH` reports the current state"; `FC_HEALTH` carries `fc_alive = 0` from a new session's first UDP frame on. The ESP sends `EVENT 0x0201` / `0x0202` only on a change and only to the current session; "a ground that connects later reads `FC_HEALTH`" (Protocol Spec v1.4 §3.1 and ESP Link State Machine §1.1 in PR #183; `Link::set_fc_alive`). `EspBackend._open()` resets `fc_link_ok` to unknown on every new session, and unknown does not block ARM on the ground |
 | TCP send | Fix the partial write in `EspBackend._send_tcp` in this PR: check the return of `send()` and close TCP on a short write, with the reason in `last_error` | BrunoBMFT | Found in the review of 2026-11-12. Only touches the ESP backend |
 
 ## 3. Work that follows
@@ -72,9 +73,8 @@ BrunoBMFT (safety pilot) took the proposal, or the other deciders' answer, on ev
 | E1 | `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` as defaults in `flight_interface.launch.py` and `drone/ground/docker-compose.yml` | — |
 | E3 | `load_psk` warns when `secrets.json` is readable by the group or others; Docker mounts the file read-only instead of passing `SEAME_PSK` | — |
 | D2 | `/fc/attitude` and `/fc/battery` from `STATE` (roll, pitch in 0.1°; heading in °; vbat in 0.01 V) through `telemetry.py`; yaw zeroed on activate; shared conformance tests with `fc_telemetry` | — |
-| D1 | `armed` on `/flight/state`, `airborne` = armed | PR #183 (`FC_HEALTH` decoding) |
-| #183 follow-up | Use `sd_protocol`'s `EventCode.FC_LINK_LOST` / `FC_LINK_RESTORED` and `AckResult.FC_NOT_ANSWERING` instead of local constants; refuse `~/resume` while the FC is silent; rewrite `test_fc_health_without_a_layout_is_ignored` | PR #183 |
-| E6 | Per the decision | E6 decided, PR #183 |
+| D1, E6 | Decode `FC_HEALTH` (0x81, 42 bytes, layout in Protocol Spec v1.4 from PR #183): `armed` on `/flight/state` with `airborne` = armed (D1), and `fc_link_ok` from `fc_alive` on every `FC_HEALTH`, also right after a reconnect (E6); how `null` is treated per E6.1 | PR #183, E6.1 |
+| #183 follow-up | Use `sd_protocol`'s `EventCode.FC_LINK_LOST` / `FC_LINK_RESTORED` and `AckResult.FC_NOT_ANSWERING` instead of local constants; refuse `~/resume` while the FC is silent; rewrite `test_fc_health_without_a_layout_is_ignored`; update the "no layout yet" comments in `esp_backend.py` | PR #183 |
 
 **Other people:**
 
@@ -83,7 +83,8 @@ BrunoBMFT (safety pilot) took the proposal, or the other deciders' answer, on ev
 | Track E (ThiagoTEP, to confirm) | Controller node, yaw only (C1.1–C1.3, C2), 16–20 Nov 2026; then `flight_interface` switches its input to `/control/attitude_setpoint`, sends mode 1, and its guard limits move to attitude units (C1.4, C1.5) | Track E confirmed |
 | Track E | PX4 backend issue (B3); takes #103's Simulation box (D3) | Controller |
 | Dot99 | E5 in its own PR; reword #103 criterion 5 (D2) | — |
-| ptorrao-git | Move `ground_link.py` onto `sd_protocol.ground` (D4); answer the E6 question | PR #183 |
+| ptorrao-git | Move `ground_link.py` onto `sd_protocol.ground` (D4) | PR #183 |
+| ptorrao-git (#188, `safety-critical`, Sprint 3) | On the ESP: ARM and RESUME need good `MSP_SET_RAW_RC` acks, continuously for ≥ 1 s; `FC_LINK_RESTORED` only after 250 ms of continuous replies. Accepted by BrunoBMFT on PR #183 (2026-11-10). It means fewer LOST / RESTORED flips reach `/flight/state` | #179 / PR #183; blocks #104 |
 | Dot99, BrunoBMFT | #109 demo with the C3 measurement | #184 (FC USB repair) |
 | shared (#98) | Docs PR: Architecture Document §2 (`flight_interface` row, services, parameters, `/flight/state` fields incl. `armed`, `last_ack`), Testing Strategy §5 (the #103 test files), and these decisions as dated ADR entries. This file then moves into the vault or is deleted before #187 leaves draft | — |
 
@@ -136,7 +137,7 @@ Decided by BrunoBMFT (safety pilot) on 2026-11-09 and 2026-11-10. The IDs appear
 | **Mask** | Which stick channels the ground controls: 8 = yaw, 11 = roll + pitch + yaw, 15 = all four (ADR-010). |
 | **mode 0 / mode 1** | `SETPOINT` mode: 0 = neutral ("no command"), 1 = apply these sticks. |
 | **Gate** | The guard's condition for a non-zero setpoint: STREAMING, override on, a known mask, FC link not lost. |
-| **`FC_HEALTH`** | A 5 Hz ESP → ground message (0x81, PR #183): FC alive, armed flag, value ages, counters. Not decoded yet. |
+| **`FC_HEALTH`** | A 5 Hz ESP → ground message (0x81, 42 bytes, Protocol Spec v1.4 in PR #183): FC alive, armed flag, arming flags, value ages, counters. The ground decodes it after PR #183 merges. |
 | **Fake ESP** | The test double in `flight_interface/test/fake_esp.py`: the gateway's session rules on localhost. |
 | **`px4_offboard_bridge`** | The simulation-only adapter (PR #154) that sends `/mission/velocity_target` to PX4 SITL. |
 | **`last_ack`** | The ESP backend's record of the last `ARM_CONTROL_ACK` / `RESUME_ACK`: message type and result code. |
