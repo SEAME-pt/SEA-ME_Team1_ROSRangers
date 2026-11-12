@@ -3,7 +3,7 @@ title: ADR-014 — Upgrade Betaflight to 2026.6.2
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-10-30
+updated: 2026-11-12
 project: SEA autonomous drone
 aliases:
   - D14
@@ -45,6 +45,10 @@ The upgrade follows the recorded 4.5.1 failsafe test (done 2026-10-22, GitHub #2
 - **The 4.5.1 hover baseline was not recorded.** The attempt on 2026-10-28 ended in GitHub #126, and the upgrade went ahead without it. The last 4.5.1 configuration is `drone/config/betaflight/4.5.1/diff_all_2026-10-28_before_upgrade.txt`. #23 has to be redone on 2026.6.2.
 - Settings renamed in 2026.6: `d_min_X` → `d_X`, the old `d_X` → `d_max_X`, `dshot_idle_value` → `motor_idle`. The board needed `align_board_roll = 180`.
 - **Unchanged:** MSP Override is still bench-only until #123 and #104 pass ([[Safety Rules]] #13, #14, [[ADR-010 MSP Override|ADR-010]]).
+
+### Update 2026-11-12: SITL boot race in CI
+
+Betaflight 2026.6.2 SITL sometimes never accepts on TCP 5761 at boot: its TCP thread drops the UART listener (upstream [betaflight PR #15840](https://github.com/betaflight/betaflight/pull/15840), unmerged; GitHub #181). The `betaflight-sitl` job in `ci.yaml` boots SITL again, at most 3 times. **At the next Betaflight upgrade, check whether that fix is in and remove the reboot loop.**
 
 ## 3. Consequences
 

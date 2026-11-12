@@ -425,8 +425,12 @@ jobs:
             fi
             echo "::warning title=Betaflight SITL::boot $boot never answered MSP on 5761 (known race, betaflight#15840, #181)"
             if ((boot < 3)); then
-              pkill -x betaflight_SITL || true # exact name: never this shell
-              sleep 1
+              # -x: exact name, never this shell. The kernel cuts the process
+              # name to 15 characters, so betaflight_SITL.elf is betaflight_SITL.
+              pkill -x betaflight_SITL || true
+              # Wait until it is gone and has freed 5761, else boot 2 fails to bind
+              for _ in $(seq 20); do pgrep -x betaflight_SITL >/dev/null || break; sleep 0.25; done
+              pkill -9 -x betaflight_SITL || true
               mv sitl.log "sitl-boot$boot.log"
             fi
           done
