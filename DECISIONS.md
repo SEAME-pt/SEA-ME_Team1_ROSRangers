@@ -1,223 +1,93 @@
-# #103 `flight_interface`: open decisions
+# #103 `flight_interface`: decisions
 
-State on 2026-11-12. This file lists the decisions that are **still open** for the `flight_interface` lifecycle node (#103) and its ESP backend. It also lists the decisions already taken, as constraints that every proposal has to respect.
+State on 2026-11-12. The open decisions of the `flight_interface` lifecycle node (#103) and its ESP backend were put to the team on draft PR #187. This file records what was decided there, who decided it, and what is still left.
 
 The code lives in `drone/ground/src/flight_interface/`. `guard.py` holds the safety logic, `link_node.py` is the ROS node, and `backends.py` / `esp_backend.py` talk to the drone.
 
 ## How to use this file
 
-- Each open decision has the same fields: question, who decides, depends on / blocks, facts, options, proposal and why.
-- The proposal is the author's recommendation. Nothing is decided until the people under **Decide with** agree.
-- A proposal must not break a rule in §3 (fixed rules) or §4 (decided). Changing a rule in §4 needs the safety pilot (BrunoBMFT) first.
-- To record a decision: write `ID = option, by <who>, <date>`, move it to §4 as one line, and update the code comment or ADR that refers to the ID.
+- §1 lists what is **still open**. Each item names who decides and what is proposed.
+- §2 lists what was **decided on PR #187**, with who decided and the details given in the comments. These details are part of the decision.
+- §3 lists the **work that follows** from the decisions, and who does it.
+- §4 lists **fixed rules** and §5 the **earlier decisions**. A new proposal must respect both. Changing a decision needs the safety pilot (BrunoBMFT) first.
+- To record a new decision: write `ID = option, by <who>, <date>`, move it from §1 to §2, and update the code comment or ADR that refers to the ID.
 
-## 1. Summary
+## 1. Still open
 
-| ID | Question | Decide with | Proposal | Blocks |
+| ID | Question | Decide with | Proposal | Needed by |
 |---|---|---|---|---|
-| C1 | How the velocity target becomes stick commands (controller node) | ThiagoTEP, Track E owner, BrunoBMFT | `/control/attitude_setpoint` JSON topic, built by Track E 16–20 Nov | Any non-neutral setpoint; PX4 backend |
-| C2 | When a setpoint is mode 0 (neutral) or mode 1 (active) | Same as C1 | Neutral when there is no command; active when the controller commands, including an active zero | C1 implementation |
-| C3 | How to measure the E-stop in the #109 demo | Dot99, BrunoBMFT, ptorrao-git, ThiagoTEP | Measure both; end to end (until the FC gets safe sticks) is the pass number | #109 |
-| D1 | `armed` vs. `airborne` in `/flight/state` | BrunoBMFT, ThiagoTEP | Add an `armed` field (true/false/null); `airborne` = armed for now | `FC_HEALTH` decoding after PR #183 |
-| D2 | What #103 criterion 5 ("uses the MSP client") means | Dot99, BrunoBMFT, ThiagoTEP | ESP backend publishes `/fc/attitude` and `/fc/battery` from `STATE`; reword the criterion | Closing #103 |
-| D3 | Where the "Simulation" box of #103 goes | Dot99, BrunoBMFT | Move it to the PX4 backend issue | Closing #103 |
-| D4 | When `ground_link.py` moves onto `sd_protocol.ground` | ptorrao-git, Dot99 | Track B, right after PR #183 merges | #60 |
-| E1 | Who can call the node's services | BrunoBMFT, Dot99 | Localhost discovery + team `ROS_DOMAIN_ID` now; SROS2 later if needed | First override flight |
-| E2 | The operator never sees the ESP's answer to ARM / RESUME | BrunoBMFT, ThiagoTEP | Log every answer now; add `last_ack` to `/flight/state` later | Readable bench sessions (#104, #109) |
-| E3 | How the PSK is protected on the ground | ptorrao-git, BrunoBMFT | Warn on loose file permissions; mount the file in Docker | none |
-| E4 | Ground side of ADR-005's replayed-`HELLO_ACK` rule | BrunoBMFT, ptorrao-git | Wait for the first `CONFIG_ACK`, redo the handshake if it is missing | none |
-| E5 | Test ROS domain IDs used twice | Dot99 | Give the duplicates free IDs and add a test that catches repeats | none |
+| Track E | Is ThiagoTEP the Track E owner for week 5? Their C1/C2 answers were taken as Track E's. | ThiagoTEP | Yes | Start of the controller, 16–20 Nov 2026 |
+| C1.4 cap | The roll/pitch ground cap in degrees, on top of Betaflight's `angle_limit` | BrunoBMFT, ThiagoTEP | Deferred until roll/pitch control starts | Roll/pitch control (after the ADR-016 velocity estimate) |
+| E6 | The ground's FC state after a reconnect | BrunoBMFT, ptorrao-git | **c**, with b until `FC_HEALTH` is decoded | PR #183 merged |
 
-## 2. Open decisions
+### E6. The ground's FC state after a reconnect
 
-### C1. Who turns the velocity target into stick commands
-
-- **Question:** what sits between `/mission/velocity_target` and the ESP's stick setpoints, and when it is built.
-- **Decide with:** ThiagoTEP (author of the velocity input and of `px4_offboard_bridge`), the Track E owner for week 5, BrunoBMFT.
-- **Already agreed:** a separate controller node: `/mission/velocity_target` → controller → `flight_interface` (Mission Node §6.5, 05 Future Nodes §5, ADR-019, Study Plan week 5).
+- **Question:** what the ground should believe about the FC link right after it opens a new session.
 - **Facts:**
-  - Today the ESP backend sends every setpoint as mode 0 (neutral). It keeps the link alive and never moves the drone.
-  - Nothing can pass the gate before #176 anyway: the gateway reports `override_active = 0`.
-  - The gateway accepts only mask 8 (yaw) today (`kOverrideMask`).
-  - x/y control needs a velocity estimate (ThoneFlow, #107/#108).
-- **Sub-decisions:**
-
-| # | Point | Options | Proposal | Why |
-|---|---|---|---|---|
-| C1.1 | Topic and message | a) JSON in `std_msgs/String`; b) a new message package; c) an existing type | **a**: `/control/attitude_setpoint` with `roll`, `pitch`, `yaw_rate`, `throttle`, `active` | No new package; same style as `/flight/state` |
-| C1.2 | Who builds it, when | a) Track E, week 5; b) Track C; c) later | **a**, 16–20 Nov 2026 | Study Plan week 5 (C + E) |
-| C1.3 | Until the controller exists | a) neutral only; b) yaw-only pass-through for mask 8 | **b** | The gateway runs mask 8 only; x/y has no velocity estimate yet |
-| C1.4 | Guard limits | a) keep the velocity ceilings; b) limits in attitude units | **b**: yaw rate ≤ 45 °/s; roll/pitch from Betaflight `angle_limit` plus a ground cap; throttle only under mask 15 | The guard should check what is actually sent |
-| C1.5 | The velocity input of `flight_interface` | a) moves to the controller; b) stays | **a** | One input contract for every backend (ADR-019) |
-| C1.6 | Before or after #109 | a) before; b) after | **b** | #109 needs only neutral sticks |
-
-### C2. Neutral (mode 0) vs. active (mode 1) setpoints
-
-- **Question:** when each setpoint mode is used, once C1 exists.
-- **Decide with:** same as C1. BrunoBMFT chose option c in principle; the team confirms it and the details are written with C1.
+  - `EspBackend._open()` resets `fc_link_ok` to `None` (unknown) on every new session.
+  - `None` does not block ARM. Only `false`, which is set by `EVENT 0x0201` `FC_LINK_LOST`, does.
+  - If the FC was lost before a Wi-Fi drop, the ground does not know it after reconnecting unless the ESP sends `FC_LINK_LOST` again.
+  - With PR #183, the ESP itself refuses ARM while the FC is silent (`ARM_CONTROL_ACK` result 4).
+- **Question for ptorrao-git:** does the ESP send `FC_LINK_LOST` again at the start of a new session while the FC is still silent?
 - **Options:**
-  - a) Always neutral.
-  - b) Always active.
-  - c) Neutral when there is no command (no target, stale target, link lost, before ARM, the RESUME window, the E-stop's neutral, FC link lost). Active when the controller commands, including an active zero.
-- **Proposal:** **c**, carried as the `active` field of the C1.1 topic.
-- **Why:** RESUME needs neutral setpoints, and the ESP reads neutral as "nobody is driving". An active zero can brake drift once there is a velocity estimate.
+  - a) The ground keeps "lost" across reconnects until `FC_LINK_RESTORED`. Risk: if the FC recovers during the drop and the ESP does not resend `FC_LINK_RESTORED`, the ground stays "lost".
+  - b) Rely on the ESP refusing ARM (result 4).
+  - c) Take `fc_link_ok` from `FC_HEALTH`'s FC-alive flag (5 Hz) once it is decoded, so a new session learns the FC state within 200 ms. Keep b until then.
+- **Proposal:** **c**, with b until `FC_HEALTH` is decoded. No wire change, and it ends the "unknown" window. If the ESP already resends the event, nothing is needed beyond c.
 
-### C3. How to measure the E-stop for the #109 demo
+## 2. Decided on PR #187 (2026-11-12)
 
-- **Question:** what start and end point the E-stop time is measured between.
-- **Decide with:** Dot99 and BrunoBMFT (assignees), ptorrao-git (gateway), ThiagoTEP. OD-12 says "safe" is a team judgement.
-- **Depends on:** #184 (FC USB connector repair). #109 cannot run before it.
-- **Options:**
-  - a) Ground side only.
-  - b) End to end: from the fault until the FC receives the safe sticks, with the HIL Pi acting as the FC.
-  - c) Both.
-- **Proposal:** **c**, with **b** as the pass/fail number.
-- **Why:**
-  - REQ-SAF-021 asks for the time to the safe state, and that state is on the FC side.
-  - Measure from the fault the requirement names. In #86, stopping the gestures measured `intent_node`'s 0.3 s filter instead of the 0.25 s rule.
+BrunoBMFT (safety pilot) took the proposal, or the other deciders' answer, on every item where they are named.
 
-### D1. `armed` and `airborne` in `/flight/state`
+| ID | Decision | Decided by | Details from the comments (binding) |
+|---|---|---|---|
+| C1.1 | **a**: JSON on `std_msgs/String`, topic `/control/attitude_setpoint`, fields `roll`, `pitch`, `yaw_rate`, `throttle`, `active` | ThiagoTEP, BrunoBMFT | Units: roll/pitch in degrees, `yaw_rate` in °/s, throttle 0–1, body frame FLU like `/mission/velocity_target` |
+| C1.2 | **a**: Track E builds the controller, 16–20 Nov 2026 | ThiagoTEP, BrunoBMFT | That week: **yaw only** (mask 8), tested in SITL. Roll/pitch only after a velocity estimate (flow + height, ADR-016); before that x/y would be open loop |
+| C1.3 | **b**: yaw-only pass-through for mask 8 until the full controller exists | ThiagoTEP, BrunoBMFT | The yaw rate → stick mapping uses the FC's rate curve (`rates_type`, `rc_rate`, expo) from the baseline in `drone/config/betaflight`, with a unit test that 45 °/s stays inside the stick limit. First used on the props-off bench (#104) |
+| C1.4 | **b**: the guard checks limits in attitude units: yaw rate ≤ 45 °/s; roll/pitch from Betaflight `angle_limit` plus a ground cap; throttle only under mask 15 | ThiagoTEP, BrunoBMFT | Keep the velocity ceilings in `mission_node` too, so there are two independent limits. The cap value is open (§1) |
+| C1.5 | **a**: the velocity input moves from `flight_interface` to the controller | ThiagoTEP, BrunoBMFT | `px4_offboard_bridge` stays velocity-based and sim-only until the PX4 backend (B3) replaces it |
+| C1.6 | **b**: the controller comes after #109 | ThiagoTEP, BrunoBMFT | #109 needs only neutral sticks |
+| C2 | **c**: neutral (mode 0) when there is no command; active (mode 1) when the controller commands, including an active zero | ThiagoTEP, BrunoBMFT | Until there is a velocity estimate, "no command" on x/y is neutral, not an active zero |
+| C3 | **c**: measure ground side and end to end; **b (end to end) is the pass/fail number** | ptorrao-git, Dot99, ThiagoTEP, BrunoBMFT | Start: the injected fault itself (E-stop call, link cut, Wi-Fi drop, first garbage frame), not a node's reaction (the #86 mistake). End: the first neutral `MSP_SET_RAW_RC` on the FC UART, with the HIL Pi acting as the FC (the HIL link-loss test already measures it). Stamp start and end on the HIL Pi's clock |
+| D1 | **c**: a new `armed` field (true / false / null) on `/flight/state`, and `airborne` = armed for now | ThiagoTEP, BrunoBMFT | Checked in `mission_logic.py`: `airborne` is display-only, null reads as false, unknown fields are ignored |
+| D2 | **a**: the ESP backend publishes `/fc/attitude` and `/fc/battery` from `STATE` with the `fc_telemetry` conversion (`telemetry.py`); the MSP client stays the USB/bench path | Dot99, ThiagoTEP, BrunoBMFT | Dot99 rewords #103 criterion 5 to that. Zero the yaw on activate. Reuse the `fc_telemetry` recorded-input tests to show both paths give the same topics |
+| D3 | **a**: #103's Simulation box moves to the PX4 backend issue | Dot99, BrunoBMFT | Dot99 moves it once that issue exists |
+| D4 | **a**: Track B moves `ground_link.py` onto `sd_protocol.ground` right after PR #183 merges | ptorrao-git, Dot99 | The bench-only keys (garbage, HELLO replay, t/R) stay in the tool, not in `sd_protocol.ground`. #60 waits for it and stays a pure file move |
+| E1 | **a** now, **b** (SROS2) only if the ground ever spans more than one PC | Dot99, BrunoBMFT | Team `ROS_DOMAIN_ID = 42` (not 0, outside the test range 81–98), set as the default in `drone/ground/docker-compose.yml` (today `${ROS_DOMAIN_ID:-0}`) and in the launch file, together with `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` |
+| E2 | **a** now (log every ARM/RESUME answer), **b** (`last_ack` on `/flight/state`) with #98 | ThiagoTEP, BrunoBMFT | b needs no change in `mission_node` (unknown fields are ignored) |
+| E3 | **a** (warn only) + **b** | ptorrao-git, BrunoBMFT | Matches the gateway's `--gen-psk`, which already writes the file as 600 in a 700 folder |
+| E4 | **a**: wait for the first `CONFIG_ACK`; if none within `HANDSHAKE_TIMEOUT` (1 s), drop the session and redo the handshake, never with ARM | ptorrao-git, BrunoBMFT | No wire change; the ESP side needs nothing (`CONFIG_GET 0x01` already confirms the session) |
+| E5 | **a + b**: the `fc_telemetry` tests get IDs 97/98, plus a check that fails when two test files share a `TEST_DOMAIN_ID` | Dot99 | Done by Track D in its own PR. The check also rejects 42, the team domain |
+| TCP send | Fix the partial write in `EspBackend._send_tcp` in this PR: check the return of `send()` and close TCP on a short write, with the reason in `last_error` | BrunoBMFT | Found in the review of 2026-11-12. Only touches the ESP backend |
 
-- **Question:** how the FC's armed flag (from `FC_HEALTH`, PR #183) appears on `/flight/state`.
-- **Decide with:** BrunoBMFT, ThiagoTEP (`mission_node`).
-- **Depends on:** PR #183 merged and `FC_HEALTH` (0x81) decoded in `sd_protocol`. Until then `airborne` is always `false`.
-- **Facts:** the armed flag is 0, 1 or unknown. "Armed" is not "airborne". `mission_node` reads `airborne`, for display only today.
-- **Options:**
-  - a) `airborne` = armed (what B1 says today).
-  - b) A new `armed` field; `airborne` stays `false` until there is a real source.
-  - c) Both: a new `armed` field (true / false / null), and `airborne` = armed for now.
-- **Proposal:** **c**.
-- **Why:** nothing breaks in `mission_node`, and an honest field exists for later landing logic. "Unknown" must never read as "not armed".
+## 3. Work that follows
 
-### D2. #103 criterion 5: "uses the MSP client (#96)"
+**In #103 (PR #187 or its follow-up, BrunoBMFT):**
 
-- **Question:** what "uses the MSP client" means now that the ground no longer speaks MSP to the real drone.
-- **Decide with:** Dot99 (author of #103), BrunoBMFT, ThiagoTEP.
-- **Facts:**
-  - With the gateway (ADR-009), the ESP polls the FC over MSP and sends `STATE` to the ground. The lifecycle node has no use for the MSP client.
-  - The Architecture Document says every backend must deliver `/fc/attitude` and `/fc/battery`. Today only `fc_telemetry` does (MSP over USB or the ESP bridge).
-- **Options:**
-  - a) The ESP backend publishes `/fc/attitude` and `/fc/battery` from `STATE`, using the same conversion code as `fc_telemetry` (`telemetry.py`). The MSP client stays the path for USB and the bench. Reword criterion 5.
-  - b) The lifecycle node also uses the MSP client over USB.
-  - c) Leave it, and count criterion 5 as met by the package.
-- **Proposal:** **a**.
-- **Why:** one telemetry contract for every backend, as the Architecture Document already says. Option b talks MSP past the gateway, which is not the real drone's path.
-- **If a is chosen:**
-  - zero the yaw when the node is activated, not at node start (#96 T5 recommendation; `fc_telemetry` zeroes at its first sample today);
-  - the recorded-input → expected-topic tests of `fc_telemetry` can be reused to prove that the MSP and `STATE` paths give the same topics.
+| From | Work | Waits for |
+|---|---|---|
+| TCP send | Handle a short `send()` in `_send_tcp`; test it | — |
+| E2 | The node logs every `ARM_CONTROL_ACK` / `RESUME_ACK` result (warning with the reason on a refusal); `last_ack` or a callback in the backend interface | — |
+| E4 | Wait for the first `CONFIG_ACK`; redo the handshake if missing. Test: the fake ESP replays an old `HELLO_ACK` | — |
+| E1 | `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` as defaults in `flight_interface.launch.py` and `drone/ground/docker-compose.yml` | — |
+| E3 | `load_psk` warns when `secrets.json` is readable by the group or others; Docker mounts the file read-only instead of passing `SEAME_PSK` | — |
+| D2 | `/fc/attitude` and `/fc/battery` from `STATE` (roll, pitch in 0.1°; heading in °; vbat in 0.01 V) through `telemetry.py`; yaw zeroed on activate; shared conformance tests with `fc_telemetry` | — |
+| D1 | `armed` on `/flight/state`, `airborne` = armed | PR #183 (`FC_HEALTH` decoding) |
+| #183 follow-up | Use `sd_protocol`'s `EventCode.FC_LINK_LOST` / `FC_LINK_RESTORED` and `AckResult.FC_NOT_ANSWERING` instead of local constants; refuse `~/resume` while the FC is silent; rewrite `test_fc_health_without_a_layout_is_ignored` | PR #183 |
+| E6 | Per the decision | E6 decided, PR #183 |
 
-### D3. The "Simulation" box of #103
+**Other people:**
 
-- **Question:** where the simulation check of #103 belongs.
-- **Decide with:** Dot99 (author of #103, Track D), BrunoBMFT.
-- **Options:**
-  - a) Move it to the week-5 PX4 backend issue (B3). #103 is verified by unit tests, the fake ESP and the HIL bench.
-  - b) Keep it in #103, with the PX4 backend inside.
-  - c) Count the fake-ESP tests as simulation.
-- **Proposal:** **a**.
-- **Why:**
-  - It matches B3.
-  - The fake ESP is a unit-test double, not a simulator.
-  - The gateway firmware cannot run in SITL.
-  - The MSP client has no TCP transport, so it cannot reach Betaflight SITL (TCP 5761) either.
+| Who | Work | Waits for |
+|---|---|---|
+| Track E (ThiagoTEP, to confirm) | Controller node, yaw only (C1.1–C1.3, C2), 16–20 Nov 2026; then `flight_interface` switches its input to `/control/attitude_setpoint`, sends mode 1, and its guard limits move to attitude units (C1.4, C1.5) | Track E confirmed |
+| Track E | PX4 backend issue (B3); takes #103's Simulation box (D3) | Controller |
+| Dot99 | E5 in its own PR; reword #103 criterion 5 (D2) | — |
+| ptorrao-git | Move `ground_link.py` onto `sd_protocol.ground` (D4); answer the E6 question | PR #183 |
+| Dot99, BrunoBMFT | #109 demo with the C3 measurement | #184 (FC USB repair) |
+| shared (#98) | Docs PR: Architecture Document §2 (`flight_interface` row, services, parameters, `/flight/state` fields incl. `armed`, `last_ack`), Testing Strategy §5 (the #103 test files), and these decisions as dated ADR entries. This file then moves into the vault or is deleted before #187 leaves draft | — |
 
-### D4. When `ground_link.py` moves onto `sd_protocol.ground`
-
-- **Question:** who moves the bench tool `scripts/ground_link.py` onto the shared session code (B2), and when.
-- **Decide with:** ptorrao-git (Track B, owner of `ground_link.py` and PR #183), Dot99 (#60, moving the bench tools under `drone/`).
-- **Options:**
-  - a) Track B, right after PR #183 merges.
-  - b) As part of #60's move.
-  - c) BrunoBMFT, inside #103.
-- **Proposal:** **a**.
-- **Why:** PR #183 changes `ground_link.py` heavily, so moving it earlier means conflicts. #60 is a file move, and mixing in a code change makes both harder to review.
-
-### E1. Who can call the node's services
-
-- **Question:** how to stop other machines from calling `~/arm_control`, `~/reset_estop` and `~/resume`, or publishing `/mission/velocity_target`.
-- **Decide with:** BrunoBMFT (safety pilot, Track A), Dot99 (Track D: CI, Docker, launch), whoever sets up the ground PC.
-- **Facts:**
-  - ROS 2 has no access control here. Any process on the same ROS domain and network can call the services, for example a laptop on the drone's Wi-Fi with the default domain.
-  - Effect: someone else could ARM (hand the masked sticks to the ground), clear an E-stop or start a resume.
-  - The radio and the SA switch still win, and ARM never arms the motors.
-  - CI already uses `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`.
-- **Options:**
-  - a) Keep ROS traffic on the ground PC: `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` and a team `ROS_DOMAIN_ID` in the launch file and the Docker setup.
-  - b) SROS2 (DDS security: keys and per-topic permissions).
-  - c) Accept it and document it as a known limit.
-- **Proposal:** **a** now; **b** in Module 2 if the ground ever spans more than one machine.
-- **Why:** a needs only environment variables and stops the realistic case. b is the real fix but adds a key store and setup for every teammate.
-
-### E2. The operator never sees the ESP's answer to ARM or RESUME
-
-- **Question:** how the ESP's `ARM_CONTROL_ACK` / `RESUME_ACK` result reaches the operator.
-- **Decide with:** BrunoBMFT, ThiagoTEP (`mission_node`, the `/flight/state` reader).
-- **Facts:**
-  - `~/arm_control` and `~/resume` reply as soon as the request is **sent**.
-  - The ESP's answer is kept only in the backend (`last_ack`). It is not logged or published.
-  - These refusals are invisible except as `mask: null` or an unchanged `esp_state`:
-    - `1` wrong state;
-    - `2` mask mismatch (for example `mask:=11` while the gateway runs 8). The Protocol Spec says "the ground must not fly" after this one;
-    - `3` resume condition not met;
-    - `4` FC not answering.
-- **Options:**
-  - a) The node logs every answer (a warning with the reason for a refusal). Needs `last_ack` or a callback in the backend interface; no topic change.
-  - b) a, plus a `last_ack` field on `/flight/state` (`{"type": "ARM_CONTROL_ACK", "result": 2}`). `mission_node` ignores unknown fields.
-  - c) The service waits for the answer before it replies. Needs a second executor thread so `~/estop` is never blocked behind it.
-  - d) Leave it.
-- **Proposal:** **a** now; **b** together with the Architecture Document update (#98).
-- **Why:** a is a few lines and makes bench sessions readable. c adds threads to the safety path for little gain.
-
-### E3. How the PSK is protected on the ground
-
-- **Question:** whether `load_psk` should check how the PSK is stored.
-- **Decide with:** ptorrao-git (Track B, owner of the PSK and the gateway build), BrunoBMFT.
-- **Facts:**
-  - `load_psk` reads `SEAME_PSK` or `~/.config/seame-drone/secrets.json` (ADR-002).
-  - The file's permissions are not checked.
-  - `SEAME_PSK` can be read from `/proc/<pid>/environ` by the same user, and with `docker inspect` when it is passed to a container.
-  - Whoever has the PSK can open a session and send ARM, RESUME and setpoints like the ground.
-- **Options:**
-  - a) Warn (or refuse) when `secrets.json` is readable by the group or others, as `ssh` does with keys.
-  - b) In Docker, mount the file read-only (or use a Docker secret) instead of passing `SEAME_PSK`.
-  - c) Leave it: the ground PC is a team machine.
-- **Proposal:** **a** (warn only) and **b**.
-- **Why:** both are small. Refusing could block a teammate at the bench, so warn first.
-
-### E4. The ground side of ADR-005's replayed-`HELLO_ACK` rule
-
-- **Question:** should the backend check that the first frame of a new session gets an answer.
-- **Decide with:** BrunoBMFT (author of the ESP backend), ptorrao-git (Track B, gateway side).
-- **Facts:**
-  - `HELLO_ACK` carries no copy of the ground's nonce, so a recorded one can be replayed into a new connection.
-  - ADR-005 (entry of 2026-11-06) accepts this because such a ground "has the wrong keys, gets no answer to its first frame and redoes the handshake". Session takeover is impossible.
-  - The backend's first frame is the `CONFIG_GET 0x01` of K2, but it never checks that `CONFIG_ACK` comes back. An active node notices only after 3 s without `STATE`; an inactive node never notices.
-  - Risk is low: the attacker must inject into the TCP stream on the Wi-Fi, and could just as well reset it.
-- **Options:**
-  - a) Wait for the first `CONFIG_ACK`. If none comes within `HANDSHAKE_TIMEOUT` (1 s), drop the session and redo the handshake (never with ARM). Test with the fake ESP replaying an old `HELLO_ACK`.
-  - b) Leave it: the 3 s `STATE` rule covers the active node.
-  - c) Spec change: `HELLO_ACK` carries the ground's nonce. Needs the firmware, both protocol implementations and the golden vectors.
-- **Proposal:** **a**.
-- **Why:** it is what ADR-005 already describes, needs no wire change, and also catches a gateway that took `HELLO` but lost the session.
-
-### E5. Test ROS domain IDs used twice
-
-- **Question:** fix the duplicate `TEST_DOMAIN_ID`s, and stop new duplicates.
-- **Decide with:** Dot99 (Track D).
-- **Facts:**
-  - The convention is one domain ID per test file.
-  - ID 89 is used by `flight_interface/test/test_fc_telemetry_ros.py` and `drone/tests/ros/test_mission_pipeline.py`.
-  - ID 90 is used by `flight_interface/test/test_fc_telemetry_process.py` and `drone/tests/ros/test_mission_launch.py`.
-  - CI runs them one after another today, so nothing breaks. A parallel run (`pytest -n`, two terminals) would mix their topics.
-  - IDs in use: 83, 89–96.
-- **Options:**
-  - a) Give the two `fc_telemetry` tests free IDs (for example 97 and 98).
-  - b) Add a test that fails when two files share a `TEST_DOMAIN_ID`.
-  - c) Leave it.
-- **Proposal:** **a** and **b**.
-- **Why:** both are trivial, and b stops it from coming back.
-
-## 3. Fixed rules every proposal must respect
+## 4. Fixed rules every proposal must respect
 
 These come from requirements, ADRs and the hardware.
 
@@ -231,13 +101,13 @@ These come from requirements, ADRs and the hardware.
 - A non-zero setpoint needs the drone to report `STREAMING`, override on and a known mask (8, 11, 15), and the FC link must not be reported lost.
 - Hardware and firmware facts today:
   - the gateway accepts only mask 8;
-  - `override_active` is 0 until #176;
+  - `override_active` is 0 until #176, so no control passes the gate;
   - the bench test of the node on the real gateway is blocked by #184.
 - Never run `px4_offboard_bridge` together with `flight_interface`: both publish `/flight/state`.
 
-## 4. Decided (do not reopen without the safety pilot)
+## 5. Earlier decisions (implemented)
 
-Decided by BrunoBMFT (safety pilot) on 2026-11-09 and 2026-11-10, and implemented. The IDs appear in code comments.
+Decided by BrunoBMFT (safety pilot) on 2026-11-09 and 2026-11-10. The IDs appear in code comments.
 
 | ID | Decision | Main reason |
 |---|---|---|
@@ -248,17 +118,15 @@ Decided by BrunoBMFT (safety pilot) on 2026-11-09 and 2026-11-10, and implemente
 | K6 | RESUME timing: 0.6 s of neutral setpoints with gaps under 0.1 s; a pending request is dropped after 2 s. | Margin over the ESP's 0.5 s / 0.15 s so Wi-Fi jitter does not cause a refusal. |
 | A4 | ARM: `std_srvs/Trigger` `~/arm_control`, mask from the `mask` parameter (8/11/15, checked at configure). Accepted only when the node is active, not in E-stop, the link is fresh, the ESP is in SESSION_IDLE and the FC link is not lost. | No new interface package; a topic could be replayed into an accidental ARM. |
 | A5 | The ESP backend reconnects by itself (one attempt every 2 s), never with ARM. | Otherwise the ground is blind after every Wi-Fi drop. |
-| K2 | Each new session is confirmed with a read-only `CONFIG_GET 0x01` (E4 is about checking its answer). | The gateway drops an unconfirmed session after 2 s (#156). |
+| K2 | Each new session is confirmed with a read-only `CONFIG_GET 0x01` (E4 adds the check of its answer). | The gateway drops an unconfirmed session after 2 s (#156). |
 | K5 | "No `STATE` for 3 s" means a lost session only while setpoints are going out. | The ESP sends `STATE` only to the address of the last setpoint. |
 | K3 | `cleanup` and `shutdown` send `BYE`. | Starts the ESP's failsafe at once. |
 | K1 | FC link lost (`EVENT 0x0201`): zero setpoints and `link_ok: false`; no E-stop. | `mission_node` goes IDLE; a short FC hiccup should not cost a reset and an ARM. |
 | A6 | A process restart clears the E-stop latch; the launch file has no respawn (a test checks it). | Saving the latch to a file adds code and failure modes to the safety path. |
-| — | `/flight/state` stays `mission_node`'s JSON, with `active`, `estop`, `estop_reason`, `resume_pending`, `failsafe_output`, `fc_link_ok` added. | A typed message needs an interface package (Module 2). |
-| B1 | `mask` = the mask this session sent and the ESP confirmed with `ARM_CONTROL_ACK` OK. It resets every session, and a refused ARM does not change it. `airborne` comes from `FC_HEALTH`'s armed flag (see D1). | No wire change; the ground already has the data. |
-| B2 | One ground session implementation: `sd_protocol.ground` in `sd_protocol_py` (see D4 for `ground_link.py`). | Two copies had already drifted. |
+| — | `/flight/state` stays `mission_node`'s JSON, with `active`, `estop`, `estop_reason`, `resume_pending`, `failsafe_output`, `fc_link_ok` added (D1 adds `armed`, E2 later `last_ack`). | A typed message needs an interface package (Module 2). |
+| B1 | `mask` = the mask this session sent and the ESP confirmed with `ARM_CONTROL_ACK` OK. It resets every session, and a refused ARM does not change it. `airborne` per D1. | No wire change; the ground already has the data. |
+| B2 | One ground session implementation: `sd_protocol.ground` in `sd_protocol_py` (D4 moves `ground_link.py` onto it). | Two copies had already drifted. |
 | B3 | The PX4 backend gets its own issue in week 5, together with the controller. | #103 would otherwise wait on C1. |
-| C1 (base) | A separate controller node between the mission and `flight_interface`. Details are open in C1. | ADR-019, Study Plan week 5. |
-| C2 (principle) | Option c. Details are open in C2. | — |
 
 ## Glossary
 
@@ -275,3 +143,4 @@ Decided by BrunoBMFT (safety pilot) on 2026-11-09 and 2026-11-10, and implemente
 | **PSK** | The pre-shared key (ADR-002). The ground and the ESP derive every session key from it. |
 | **ROS domain** | `ROS_DOMAIN_ID`: nodes only see nodes with the same number. Not a security boundary. |
 | **SROS2** | ROS 2's security layer (DDS Security): signed and encrypted traffic, per-topic and per-service permissions. |
+| **Short write** | A non-blocking `send()` that sends only part of the bytes it was given. |
