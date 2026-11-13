@@ -3,7 +3,7 @@ title: HIL Overview
 type: ci-cd
 status: draft
 date: 2026-10-28
-updated: 2026-11-10
+updated: 2026-11-13
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -84,9 +84,8 @@ Trigger: push to `dev` or `main`, or manual (`workflow_dispatch`). **Never on pu
 1. `check-hil` (GitHub-hosted) skips the job unless `drone/firmware/esp8266/platformio.ini` and a test in `drone/tests/hil/` exist.
 2. `hil` (on the Pi, one job at a time, `concurrency: hil-bench`):
    - checks that `/dev/hil-esp` exists and that the SoftAP SSID secret is set
-   - builds the `esp` firmware environment (bridge) and flashes it to `/dev/hil-esp` over USB
-   - runs `pytest drone/tests/hil` with `HIL_REQUIRED=1`, so a missing board is a failure, not a skip, then the bridge's Wi-Fi tests in a SoftAP window
-   - builds and flashes `esp_gateway_usb` (the gateway, #101) and runs `drone/tests/hil/gateway`, then its Wi-Fi tests in a second window
+   - builds the `esp` firmware environment (the gateway, #101, default since #106) and flashes it to `/dev/hil-esp` over USB
+   - runs `pytest drone/tests/hil` with `HIL_REQUIRED=1`, so a missing board is a failure, not a skip, then the Wi-Fi tests (`drone/tests/hil/gateway/wifi`) in one SoftAP window
    - uploads the JUnit reports (`hil-*report.xml`) as an artifact. Timeout 30 min.
 
 > [!note] First real run
@@ -100,7 +99,9 @@ After the flash, the ESP is reset over RTS. The test then checks:
 
 - the ROM banner (74880 baud) shows `boot mode:(3,…)`, a normal boot from flash
 - the banner has no crash markers (exception, soft WDT, `rst cause:4`)
-- UART0 stays **silent for 10 s** at 115200. Our firmware never prints on UART0, so any bytes there mean a crash dump or a reboot.
+- what the FC's UART sees at 115200 from the reset edge has no MSP header before the gateway's first frame, and only allow-listed frames after it (ESP-S1-03)
+
+Until #106 (2026-11-13) it also checked that UART0 stays silent for 10 s, which held only for the bridge. That the gateway stays up is now checked by the gateway tests (§7.2): every byte on the UART is part of an allowed MSP frame.
 
 Off the bench (no board), the hardware test is skipped and only the parser tests run.
 
@@ -108,14 +109,9 @@ Off the bench (no board), the hardware test is skipped and only the parser tests
 
 The Pi plays the FC on the ESP's serial port (`FakeFc`, `drone/tests/hil/bench.py`). Over USB, the gateway sends no RC until the FC answers (BOOT), then neutral RC at 50 Hz and its allow-listed polls at the [[ADR-009 ESP to FC Link|ADR-009]] rates (NO_SESSION), and nothing outside MSP frames. In a SoftAP window, the Pi opens a real session with the HIL PSK: STATE carries the fake FC's values, and setpoints, garbage and a wrong-PSK HELLO never change the neutral output. Three tests arm the session themselves, under a bench-only exception to REQ-SAF-023 ([[Requirements]], 2026-11-10): passthrough, link-loss failsafe timing and resume. Details in [[HIL Runner]] §4.
 
-### 7.3 Planned (GitHub #106, Module 1)
+### 7.3 Planned
 
-| Test | Checks | Depends on |
-|---|---|---|
-| Passthrough | allowed MSP messages go through, all others are dropped | gateway firmware #101 |
-| Failsafe timing | link loss detected at 250 ms ± tolerance ([[ADR-004 ESP Failsafe\|ADR-004]]) | state machine #102 |
-
-Listed in [[HIL Runner]] §4 but not in an issue yet: security (bad tag or stale sequence increases the counters) and latency (RTT histogram as an artifact).
+Passthrough and failsafe timing (#106) are done (§7.2, PR #180). Listed in [[HIL Runner]] §4 but not in an issue yet: security (bad tag or stale sequence increases the counters) and latency (RTT histogram as an artifact).
 
 Wi-Fi tests **time-slice** the Pi's only radio: leave the lab Wi-Fi, join the spare ESP's SoftAP, test, re-join. Each window stays under 2 minutes. A watchdog outside the job re-joins the lab Wi-Fi if the job dies ([[ADR-020 HIL Runner|ADR-020]], 2026-10-26).
 

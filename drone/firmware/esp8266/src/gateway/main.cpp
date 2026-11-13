@@ -1,6 +1,6 @@
-// Gateway firmware (#101, #102), env esp_gateway. Replaces the transparent
-// bridge step by step; the bridge (src/main.cpp, env esp) stays as the stable
-// bench tool until the gateway has passed its bench tests (#106).
+// Gateway firmware (#101, #102), envs esp and esp_ota: the default build since
+// #106. It replaced the transparent bridge (src/main.cpp, env esp_bridge),
+// which stays as the base of the diag envs.
 //
 // What it does:
 // - FC link (ADR-009): one scheduler (sd::FcLink) owns UART0 = FC UART4. It

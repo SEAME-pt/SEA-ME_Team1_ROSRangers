@@ -1,8 +1,8 @@
-"""HIL: the gateway firmware (#101, #102, env esp_gateway) on the FC's UART.
+"""HIL: the gateway firmware (#101, #102, env esp) on the FC's UART.
 
 USB only, no Wi-Fi, so no session ever opens: these cover BOOT and
 NO_SESSION of the ESP Link State Machine. hil.yaml runs this folder after
-flashing esp_gateway; it must not run against the bridge (env esp). The Pi
+flashing env esp; it must not run against the bridge (env esp_bridge). The Pi
 plays the FC (bench.FakeFc).
 
 The gateway polls MSP_ATTITUDE (25 Hz), MSP_STATUS / MSP_ANALOG (5 Hz) and

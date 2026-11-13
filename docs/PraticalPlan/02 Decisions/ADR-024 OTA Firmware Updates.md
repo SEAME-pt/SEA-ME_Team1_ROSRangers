@@ -3,7 +3,7 @@ title: ADR-024 — OTA Firmware Updates on the Flight ESP
 type: adr
 status: accepted
 date: 2026-11-04
-updated: 2026-11-09
+updated: 2026-11-13
 project: SEA autonomous drone
 tags:
   - adr
@@ -75,6 +75,8 @@ How the gate works (ArduinoOTA, ESP8266 core 3.1.2): `ArduinoOTA.begin()` answer
 > - **The "pending request" description in D2 above no longer applies to the gateway.** Two corrections to it: the password is accepted on the ESP, but `espota` reports "No Answer to our Authentication" (the "OK" comes from `handle()`, not from the callback); and the error callback can run twice for one failed upload (the core falls through after a failed connect-back). Both remain true for the ungated bridge.
 > - **No mDNS:** `espota` uses the IP (`upload_port = 192.168.4.1`), and mDNS is only served from `handle()`.
 > - **Release retried:** value 0 is retried every 500 ms until the FC acknowledges it, at boot and after a failed upload. One missed exchange no longer leaves arming locked until the next reboot. Retries run only in BOOT or NO_SESSION, never during a session (each try blocks the loop for up to 100 ms; Dot99, review of #177). If the FC never confirms, arming stays locked, which is the safe side.
+>
+> 2026-11-13 (#106): **the gateway is the default build.** Envs `esp` (USB) and `esp_ota` (OTA) now build the gateway, so D2 and the upload lock apply to every normal update. The bridge moved to `esp_bridge` / `esp_bridge_ota` and stays ungated, like the diag envs built on it; the "Today" line above now describes those. The decision is unchanged.
 
 **D3. Credentials are required** (team, 2026-11-04). Two separate secrets protect a flash:
 - the SoftAP Wi-Fi password (WPA2, one client at a time, [[ADR-006 Network|ADR-006]]);
