@@ -56,7 +56,9 @@ Checked in SITL on 2026-11-05 (x500 facing east, 95°): forward 0.3 m/s × 4 s m
 
 ## Run
 
-From the repo root, in its own container (`px4sim-smoke`):
+With the rest of the ground nodes, from `drone/ground/`: `make sim` (camera gestures), `make sim-smoke` (scripted test, see below), `make sim-down`.
+
+By hand, from the repo root, in its own container (`px4sim-smoke`):
 
 ```sh
 drone/simulation/px4/sim_smoke.sh up            # headless, mask 15; or: up 11
@@ -76,7 +78,17 @@ The logic tests need no ROS and no `px4_msgs` (`bridge_logic.py` has no ROS impo
 cd drone/simulation/px4/ros/px4_offboard_bridge && python3 -m pytest test
 ```
 
-The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SITL (`sim_smoke.sh`), not in CI.
+The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SITL (`sim_smoke.sh`, `make sim-smoke`), not in CI.
+
+`make sim-smoke` runs `sim_smoke_scenario` (`smoke_scenario.py`, needs ROS and `px4_msgs`). It starts its own `intent_node`, sends gestures on `/gesture/raw` (no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT, then `intent_node` killed with SIGKILL), records a rosbag and judges the run with `smoke_checks.py` (no ROS, unit-tested in CI):
+
+| Check | Pass when |
+|---|---|
+| Direction | the commanded body axis moved ≥ 0.3 m the right way, the others ≤ 0.25 m; an axis outside the mask does not move |
+| REQ-CTL-001 | every target ≤ 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw; measured speed ≤ 0.5 m/s |
+| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent`; zero setpoint at PX4 ≤ 0.30 s (one more bridge tick); hovering 2.5 s after the kill |
+| REQ-SAF-018 | no target or PX4 setpoint on an axis outside the mask |
+| REQ-SW-001 | `/mission/velocity_target` at 20 Hz ± 10 %, no gap above 150 ms |
 
 ## Glossary
 

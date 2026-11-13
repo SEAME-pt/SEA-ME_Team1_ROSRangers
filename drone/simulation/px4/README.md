@@ -8,7 +8,20 @@ docker build -t seame-px4-sim:jazzy-1.17 drone/simulation/px4
 
 Run the sim with the Gazebo GUI (software rendering) and the ROS 2 offboard example: see the vault page. Start `offboard_control` only after PX4 prints `Ready for takeoff!`.
 
-## Ground chain smoke test (#86)
+## Ground chain with make (#86)
+
+From `drone/ground/` (the Makefile builds this image the first time, then reuses it):
+
+```sh
+make sim          # PX4 + Gazebo window, bridge, camera gestures, intent, mission, echo
+make sim GUI=0    # same, Gazebo headless; MASK=11 leaves z to PX4 (default 15)
+make sim-smoke    # headless test: scripted gestures + the #86 checks, rosbag and summary.md
+make sim-down
+```
+
+The `px4` service (`drone/ground/docker/px4/`) arms, takes off and switches to Offboard by itself, in the sim only. `make sim-smoke` runs `sim_smoke_scenario` (in `ros/px4_offboard_bridge`): no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT with `intent_node` killed. It checks direction, REQ-CTL-001, REQ-SAF-017, REQ-SAF-018 and REQ-SW-001 and writes the bag and `summary.md` to `drone/ground/logs/sim-smoke/<start time>/`.
+
+## Ground chain smoke test by hand (`sim_smoke.sh`)
 
 `sim_smoke.sh` starts PX4 SITL headless in its own container (`px4sim-smoke`), builds `intent_node`, `mission_node` and the sim-only `px4_offboard_bridge` inside it, and launches the chain `/gesture/raw → intent_node → mission_node → px4_offboard_bridge → PX4`:
 
