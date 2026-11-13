@@ -24,7 +24,7 @@ class AckResult(IntEnum):
     WRONG_STATE = 1
     MASK_MISMATCH = 2
     RESUME_CONDITION_NOT_MET = 3
-    FC_NOT_ANSWERING = 4  # ARM refused: the FC is silent (#179, D2)
+    FC_NOT_ANSWERING = 4  # ARM/RESUME refused: FC silent or RC not acked for 1 s
 
 
 class ByeReason(IntEnum):
@@ -63,7 +63,7 @@ class EventCode(IntEnum):
     LINK_RESUMED = 0x0103
     FAILSAFE_OUTPUT_ACTIVE = 0x0104  # new session while the ADR-004 output runs
     FC_LINK_LOST = 0x0201  # no FC reply for 250 ms (#179, D1)
-    FC_LINK_RESTORED = 0x0202  # the first FC reply after that
+    FC_LINK_RESTORED = 0x0202  # after 250 ms of FC replies with no timeout (#188)
 
 
 class Transport(IntEnum):

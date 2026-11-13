@@ -105,9 +105,9 @@ What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine
   - nothing until the FC answers `MSP_API_VERSION` (BOOT);
   - neutral sticks without control;
   - the ground's setpoint while STREAMING;
-  - the ADR-004 output on link loss: neutral for 1 s, then nothing.
+  - the ADR-004 output on link loss: neutral for 1 s, then nothing while the ground is quiet (neutral again while it streams, ADR-004 §2.6, #188).
 - **OTA is gated (ADR-024, #102):** the OTA port is open only with **no ground session** and the FC **disarmed** (an `MSP_STATUS` under 500 ms old). The start callback locks arming on the FC (`MSP_SET_ARMING_DISABLED` 1, read back) or restarts the ESP; the lock is released at every boot and after a failed upload.
-- **FC link health (#179, spec v1.4):** the FC counts as lost after 250 ms without a reply. The session gets `EVENT FC_LINK_LOST` / `FC_LINK_RESTORED`, ARM is refused while the FC is silent (result 4), and `FC_HEALTH` at 5 Hz carries alive, armed, the arming flags, the value ages and the FC link counters (`rc_sent`, `rc_replaced`).
+- **FC link health (#179, spec v1.4):** the FC counts as lost after 250 ms without a reply. The session gets `EVENT FC_LINK_LOST` / `FC_LINK_RESTORED`, ARM and RESUME are refused while the FC is silent or has not acknowledged RC continuously for 1 s (result 4, #188), `FC_LINK_RESTORED` comes after 250 ms of replies, and `FC_HEALTH` at 5 Hz carries alive, armed, the arming flags, the value ages and the FC link counters (`rc_sent`, `rc_replaced`).
 - **Not yet:** `STATE.override_active` (#176, needs the MSP box IDs); reading the override mask from the FC (fixed at **8** in `main.cpp`).
 - **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows STATE and, since #179, the `FC_HEALTH` line (armed, arming flags, value ages, request/reply counts), so all of ESP-S2-07 can be repeated with the gateway.
 

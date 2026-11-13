@@ -424,3 +424,178 @@ TEST(FcLink, AliveNeverComesBackAcrossTheMillisWrap) {
   // 2^32 ms after the last reply the clock reads the same value again.
   EXPECT_FALSE(fc.fc_alive(1));
 }
+
+// --- #188: RC accepted, and alive with hysteresis
+// -----------------------------
+
+namespace {
+
+enum class Answer { kNone, kGood, kError };
+
+// RC at 50 Hz from `from` to `to` (1 ms steps); each request gets what
+// `policy(cmd, t)` says.
+template <typename Policy>
+void run_fc(sd::FcLink &fc, std::uint32_t from, std::uint32_t to, Policy policy,
+            bool send_rc = true) {
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  for (std::uint32_t t = from; t < to; ++t) {
+    if (send_rc && t % 20 == 0) {
+      fc.set_rc(ch);
+    }
+    for (int i = 0; i < 2; ++i) { // RC and a poll may both be due this ms
+      Bytes frame;
+      const int cmd = poll_frame(fc, t, frame);
+      if (cmd < 0) {
+        break;
+      }
+      const Answer a = policy(cmd, t);
+      if (a == Answer::kNone) {
+        break;
+      }
+      const Bytes payload = a == Answer::kError || cmd == sd::msp::kSetRawRc
+                                ? Bytes{}
+                            : cmd == sd::msp::kStatus ? status_payload(false)
+                            : cmd == sd::msp::kApiVersion ? Bytes{0, 1, 47}
+                                                          : Bytes(9, 0);
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd), payload,
+                         a == Answer::kError ? '!' : '>'),
+             t);
+    }
+  }
+}
+
+Answer all_good(int, std::uint32_t) { return Answer::kGood; }
+
+} // namespace
+
+TEST(FcLink, RcAcceptedAfterOneSecondOfGoodAcks) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 900, all_good);
+  EXPECT_FALSE(fc.rc_accepted(899)); // first ack at t=0: not 1 s yet
+  run_fc(fc, 900, 1100, all_good);
+  EXPECT_TRUE(fc.rc_accepted(1099));
+  EXPECT_FALSE(fc.rc_accepted(1099 + sd::kRcMaxGapMs)); // no ack for 100 ms
+}
+
+TEST(FcLink, PollsAnsweredButRcNotIsNeverAccepted) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 3000, [](int cmd, std::uint32_t) {
+    return cmd == sd::msp::kSetRawRc ? Answer::kNone : Answer::kGood;
+  });
+  EXPECT_TRUE(fc.fc_alive(2999)); // #183's rule alone would let ARM through
+  EXPECT_FALSE(fc.rc_accepted(2999));
+}
+
+TEST(FcLink, RcRefusedWithErrorIsNeverAccepted) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 3000, [](int cmd, std::uint32_t) {
+    return cmd == sd::msp::kSetRawRc ? Answer::kError : Answer::kGood;
+  });
+  EXPECT_TRUE(fc.fc_alive(2999));
+  EXPECT_FALSE(fc.rc_accepted(2999));
+}
+
+TEST(FcLink, OneMissedRcAckRestartsTheSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  bool dropped = false;
+  run_fc(fc, 1500, 1600, [&dropped](int cmd, std::uint32_t) {
+    if (cmd == sd::msp::kSetRawRc && !dropped) {
+      dropped = true; // one RC request goes unanswered
+      return Answer::kNone;
+    }
+    return Answer::kGood;
+  });
+  EXPECT_FALSE(fc.rc_accepted(1599));
+  run_fc(fc, 1600, 2700, all_good);
+  EXPECT_TRUE(fc.rc_accepted(2699)); // 1 s of good acks again
+}
+
+TEST(FcLink, RcStoppedThenRestartedNeedsAnotherSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  run_fc(fc, 1500, 3000, all_good, false); // the ADR-004 output stopped
+  EXPECT_FALSE(fc.rc_accepted(2999));
+  run_fc(fc, 3000, 3500, all_good);
+  EXPECT_FALSE(fc.rc_accepted(3499)); // back, but only 0.5 s of acks
+  run_fc(fc, 3500, 4100, all_good);
+  EXPECT_TRUE(fc.rc_accepted(4099));
+}
+
+TEST(FcLink, FcComesBackOnlyAfter250MsOfReplies) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 100, all_good);
+  EXPECT_FALSE(fc.fc_up(false, 99)); // answering for < 250 ms
+  EXPECT_TRUE(fc.fc_up(true, 99));   // already up: stays up while alive
+  run_fc(fc, 100, 300, all_good);
+  EXPECT_TRUE(fc.fc_up(false, 299));
+}
+
+TEST(FcLink, AHalfAnsweringFcNeverComesBack) {
+  // Every other request of each kind goes unanswered: alive in short windows
+  // (#183 review), but never 250 ms without a timeout, so no RESTORED
+  // flapping, and RC is never accepted.
+  sd::FcLink fc;
+  int n[256] = {};
+  bool up = false;
+  int changes = 0;
+  for (std::uint32_t t = 0; t < 3000; t += 10) {
+    run_fc(fc, t, t + 10, [&n](int cmd, std::uint32_t) {
+      return ++n[cmd & 0xFF] % 2 ? Answer::kGood : Answer::kNone;
+    });
+    const bool now_up = fc.fc_up(up, t + 9);
+    changes += now_up != up;
+    up = now_up;
+  }
+  EXPECT_EQ(changes, 0);
+  EXPECT_FALSE(fc.rc_accepted(2999));
+}
+
+TEST(FcLink, ASilenceWithoutATimeoutStillNeeds250MsToComeBack) {
+  // Nothing in flight for 400 ms (a stalled loop): no timeout is counted, but
+  // the FC was lost, so it comes back only after 250 ms of replies again.
+  sd::FcLink fc;
+  run_fc(fc, 0, 400, all_good);
+  ASSERT_TRUE(fc.fc_up(false, 399));
+  EXPECT_FALSE(fc.fc_alive(400 + sd::kFcLostMs)); // nobody polled meanwhile
+  run_fc(fc, 800, 850, all_good);
+  EXPECT_FALSE(fc.fc_up(false, 849));
+  run_fc(fc, 850, 1100, all_good);
+  EXPECT_TRUE(fc.fc_up(false, 1099));
+}
+
+TEST(FcLink, OneRefusedRcRestartsTheSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  bool refused = false;
+  run_fc(fc, 1500, 1600, [&refused](int cmd, std::uint32_t) {
+    if (cmd == sd::msp::kSetRawRc && !refused) {
+      refused = true; // one '!' reply to RC
+      return Answer::kError;
+    }
+    return Answer::kGood;
+  });
+  EXPECT_FALSE(fc.rc_accepted(1599));
+  run_fc(fc, 1600, 2700, all_good);
+  EXPECT_TRUE(fc.rc_accepted(2699));
+}
+
+TEST(FcLink, APollTimeoutDoesNotRestartTheRcSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  bool dropped = false;
+  run_fc(fc, 1500, 1600, [&dropped](int cmd, std::uint32_t) {
+    if (cmd != sd::msp::kSetRawRc && !dropped) {
+      dropped = true; // one poll unanswered, every RC acked
+      return Answer::kNone;
+    }
+    return Answer::kGood;
+  });
+  EXPECT_TRUE(fc.rc_accepted(1599));
+}

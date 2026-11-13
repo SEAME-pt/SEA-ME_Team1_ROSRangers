@@ -30,13 +30,16 @@ constexpr std::uint32_t kResumeNeutralMs = 500; // neutral stream before RESUME
 constexpr std::uint32_t kPendingMaxMs = 2000;   // pending session lifetime
 constexpr std::uint32_t kHelloMinGapMs = 500;   // HELLO rate limit
 constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
+                                                   // while the ground is quiet
 constexpr std::int32_t kSetpointLimit = 1000;      // spec §7.3 key 0x42
 
 // What the ESP sends to the FC once the link failsafe is active (ADR-004 §2).
 enum class FailsafeOutput : std::uint8_t {
   kNeutralForever = 0,  // Betaflight 4.5.1: overrides are held forever
-  kNeutralThenStop = 1, // 2026.6.x: neutral 1 s, then stop, so the FC's
-                        // freshness guard falls back to the ELRS sticks
+  kNeutralThenStop = 1, // 2026.6.x: neutral 1 s, then nothing while the
+                        // ground is quiet, so the FC's freshness guard falls
+                        // back to the ELRS sticks; neutral again while a live
+                        // ground streams (ADR-004 §2.6, #188)
 };
 
 // TCP connection handle chosen by the firmware (for example its socket slot).
@@ -142,12 +145,17 @@ public:
   // Sends one STATE over UDP to the current session; nothing without one.
   void send_state(std::uint32_t now_ms, const FcView &fc);
 
-  // The FC link, from sd::FcLink::fc_alive(), every loop (#179). A change is
-  // told to the current session: EVENT FC_LINK_LOST / FC_LINK_RESTORED.
-  // While the FC is silent, ARM_CONTROL_REQUEST is refused (result 4). Starts
-  // false: no ARM before the FC has been seen.
+  // The FC link, from sd::FcLink::fc_up() (alive with the #188 hysteresis),
+  // every loop (#179). A change is told to the current session: EVENT
+  // FC_LINK_LOST / FC_LINK_RESTORED. While the FC is silent, ARM and RESUME
+  // are refused (result 4). Starts false: no ARM before the FC has been seen.
   void set_fc_alive(bool alive, std::uint32_t now_ms);
   bool fc_alive() const { return fc_alive_; }
+
+  // From sd::FcLink::rc_accepted(), every loop (#188): the FC has acknowledged
+  // RC continuously for 1 s. ARM and RESUME also need it (result 4). Starts
+  // false.
+  void set_rc_accepted(bool accepted) { rc_accepted_ = accepted; }
 
   // Sends one FC_HEALTH (spec v1.4) over UDP to the current session.
   void send_fc_health(std::uint32_t now_ms, const FcHealth &health);
@@ -235,7 +243,8 @@ private:
   std::uint32_t neutral_since_ms_ = 0;
   bool stale_reported_ = false;
 
-  bool fc_alive_ = false; // see set_fc_alive()
+  bool fc_alive_ = false;    // see set_fc_alive()
+  bool rc_accepted_ = false; // see set_rc_accepted()
 
   // ADR-004 output.
   bool fs_active_ = false;

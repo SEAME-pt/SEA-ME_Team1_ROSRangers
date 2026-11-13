@@ -8,8 +8,9 @@ ESP is checked with the same Receiver rules as the ESP's own (sd_protocol).
 It is the Sprint 2 fault-injection demo tool: each key below is one fault, and
 each must end in the defined safe state (ESP Link State Machine).
 
-    a        ARM_CONTROL_REQUEST with --mask (operator action only, REQ-SAF-023)
-    r        RESUME_REQUEST (needs 500 ms of neutral first: press n, wait)
+    a        ARM_CONTROL_REQUEST with --mask (operator action only, REQ-SAF-023);
+             result 4 if the FC has not acked RC for 1 s: stream first
+    r        RESUME_REQUEST (500 ms of neutral and 1 s of FC RC acks: n, u, wait 1.5 s)
     n        neutral sticks (SETPOINT mode 0, the default)
     m R      move: mode 1 with roll R (-1000..1000), the rest at 0
     s        stop UDP: simulated link loss; shows the failsafe time

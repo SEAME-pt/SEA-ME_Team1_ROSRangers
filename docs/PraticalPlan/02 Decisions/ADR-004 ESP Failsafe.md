@@ -3,7 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-11-13
 project: SEA autonomous drone
 aliases:
   - D04
@@ -34,7 +34,7 @@ tags:
 | Betaflight version | ESP action | Result |
 |---|---|---|
 | 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override\|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
-| 2026.6.2 | Neutral for 1 s, then **stop sending** | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
+| 2026.6.2 | Neutral for 1 s, then **stop sending** while the ground is quiet (neutral again while a live ground streams, §2.6, 2026-11-13) | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
 
 **Resume:** never automatic. The ground sends `RESUME_REQUEST` inside a valid session, then streams neutral setpoints for ≥ 500 ms before control returns ([[ESP Link State Machine]]).
 
@@ -65,6 +65,19 @@ The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-0
 ### 2.5 `T_fresh` set (2026-11-03)
 
 The decision and `T_loss` = 250 ms are unchanged. The protocol review of 2026-11-03 (#97) set **`T_fresh` = 150 ms** as a separate timer (OD-06, [[Protocol Spec v0]] §7.2). A setpoint older than 150 ms is replaced by neutral sticks, and the next valid setpoint is used at once, with no failsafe and no handshake. Only `T_loss` enters `LINK_FAILSAFE`. The ground streams `SETPOINT` at 50 Hz at all times (`mode 0` when there is no gesture), so an operator who does not gesture never triggers the failsafe.
+
+### 2.6 Neutral again while a live ground streams (2026-11-13, #188)
+
+The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2 the output after that second changes:
+
+- **Before:** nothing is sent to the FC until ARM or RESUME succeeds.
+- **Now:** nothing is sent while the ground is quiet, as before; **while a live ground sends `SETPOINT`s** (one accepted within `T_fresh`), the ESP sends **neutral** RC again. That covers the RESUME neutral run in `LINK_FAILSAFE` and a new session in `SESSION_IDLE` after a crashed ground. It is never the ground's sticks: those come back only after ARM or RESUME OK.
+
+**Why:** #188 makes ARM and RESUME wait for the FC to acknowledge `MSP_SET_RAW_RC` continuously for 1 s. With no RC sent after a failsafe there would be no acks, so RESUME (and ARM in a new session) would be refused forever. With neutral RC flowing while the ground is back, the check measures the real path: the ground is back, its neutral reaches the FC, and the FC takes it. Option A of the #188 comment of 2026-11-13; B (restart only on a refused request) and C (no RC check after a failsafe) were not taken.
+
+**What it asks of the ground:** after a failsafe, stream neutral `SETPOINT`s for ≥ 1 s before ARM or RESUME; on result 4, keep streaming and the **operator** retries (or `flight_interface` holds the operator's request until it has streamed long enough). The ground never sends ARM or RESUME on its own (REQ-SAF-023). A ground that sends HELLO then ARM at once is refused with 4 until then (the `flight_interface` ESP backend, #103 / PR #187, follows this).
+
+**What it changes for Betaflight (confirmed by the safety pilot 2026-11-13 on PR #191: option A):** while the ground streams, Betaflight sees MSP RC again, so the MSP override channels (mask 8 = yaw) are held at neutral by the ESP instead of falling back to the radio sticks after 300 ms. With the ground quiet, the fallback to the radio is as before. The override switch on the radio and the safety pilot still win. Because the ground node streams at 50 Hz all the time, after any failsafe where the Wi-Fi comes back, yaw is held at neutral until RESUME or override off (pilot briefing). **Condition:** this firmware does not fly until the override switch check and the failsafe re-test in #189 are done (BrunoBMFT, review of PR #191).
 
 ## 3. Safety layers (inner → outer)
 

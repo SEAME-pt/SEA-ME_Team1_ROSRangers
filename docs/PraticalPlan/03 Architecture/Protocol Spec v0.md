@@ -4,7 +4,7 @@ type: interface-spec
 status: accepted
 version: 1.4
 date: 2026-10-12
-updated: 2026-11-10
+updated: 2026-11-13
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.4. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.4.1. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -105,7 +105,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 1 | wrong state | both | `ARM_CONTROL_REQUEST` while `STREAMING` or in `LINK_FAILSAFE` (which needs `RESUME_REQUEST`); `RESUME_REQUEST` outside `LINK_FAILSAFE` |
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
-| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
+| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). Since 2026-11-13 (v1.4.1, #188) also when the FC has not acknowledged RC continuously for 1 s. After a failsafe, or in a new session after one, RC flows only while the ground streams `SETPOINT`s, so the ground streams neutral for ≥ 1 s before ARM or RESUME; on result 4 it keeps streaming and the **operator** retries (or `flight_interface` holds the operator's request until it has streamed long enough). The ground never sends ARM or RESUME on its own (REQ-SAF-023). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
 
 `CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 
@@ -135,7 +135,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 |---|---|---|
 | `0x00xx` | System (boot, watchdog, memory) | defined with the gateway firmware (#101) |
 | `0x01xx` | Link | `0x0101` setpoint stale (`T_fresh` expired, neutral sticks), `0x0102` `LINK_FAILSAFE` entered, `0x0103` resumed, `0x0104` failsafe output active (a new session starts while the [[ADR-004 ESP Failsafe\|ADR-004]] output still runs; added 2026-11-09, #102) |
-| `0x02xx` | FC / MSP | `0x0201` FC link lost (no FC reply for 250 ms), `0x0202` FC link restored (the first reply after that); added 2026-11-10, v1.4, #179 D1. Sent to the current session on each change; a ground that connects later reads `FC_HEALTH` |
+| `0x02xx` | FC / MSP | `0x0201` FC link lost (no FC reply for 250 ms), `0x0202` FC link restored (after 250 ms of replies with no timeout since 2026-11-13, v1.4.1, #188; before that, the first reply); added 2026-11-10, v1.4, #179 D1. Sent to the current session on each change; a ground that connects later reads `FC_HEALTH` |
 
 ## 4. Receive rules
 
@@ -296,6 +296,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-06 | 1.3.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
 | 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 | 2026-11-10 | 1.4 | New message `FC_HEALTH` (0x81, UDP, ESP → ground, 5 Hz, §3), `ARM_CONTROL_ACK.result` 4 "FC not answering" and `EVENT` codes `0x0201` / `0x0202` (§3.1). Team decision on #179 (D1–D3). `STATE` is unchanged; a v1.3 ground that receives `FC_HEALTH` rejects it as `bad_type` and nothing else changes. Golden vector `fc_health_fc_lost` (§6, group 1) |
+| 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
 
 ## 9. Glossary
 
