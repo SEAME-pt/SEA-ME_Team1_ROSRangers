@@ -32,8 +32,8 @@ jobs:
           fi
 
   # Spare ESP on the Pi's USB, no FC (ADR-020 update 2026-10-22), so it is
-  # flashed over USB, not OTA. It runs its own SoftAP name and passwords so
-  # it can never be mistaken for the drone.
+  # flashed over USB, not OTA, with the gateway (env esp, #106). It runs its
+  # own SoftAP name and passwords so it can never be mistaken for the drone.
   hil:
     needs: [check-hil]
     if: ${{ needs.check-hil.outputs.enabled == 'true' }}
@@ -47,8 +47,8 @@ jobs:
       SEAME_AP_SSID: ${{ secrets.SEAME_AP_SSID_HIL }}
       SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
       SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
-      # Protocol PSK (ADR-002): built into esp_gateway and used by the session
-      # tests as the ground's key. The bridge envs ignore it.
+      # Protocol PSK (ADR-002): built into the gateway (env esp) and used by
+      # the session tests as the ground's key
       SEAME_PSK: ${{ secrets.SD_PSK_HIL }}
 
     steps:
@@ -89,8 +89,9 @@ jobs:
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
-          # The window script's self-test runs in PR CI (ci.yaml), not here
-          pytest drone/tests/hil -v --ignore=drone/tests/hil/wifi --ignore=drone/tests/hil/gateway \
+          # The window script's self-test runs in PR CI (ci.yaml), not here.
+          # The Pi plays the FC on the ESP's UART (bench.FakeFc)
+          pytest drone/tests/hil -v --ignore=drone/tests/hil/gateway/wifi \
             --ignore=drone/tests/hil/test_softap_window.py --junitxml=hil-report.xml
 
       # The Pi's only Wi-Fi radio leaves the lab network for this step, so
@@ -104,28 +105,7 @@ jobs:
           # exec: a cancel or step timeout signals the step's shell, so the
           # script must be that shell to restore the lab Wi-Fi at once
           exec drone/tests/hil/softap_window.sh 50 -- \
-            pytest drone/tests/hil/wifi -v --junitxml=hil-wifi-report.xml
-
-      # The gateway (#101) after the bridge: the bridge stays env esp until
-      # the gateway passes these, so both are tested on every push
-      - name: Build and flash the gateway over USB
-        run: |
-          . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp_gateway_usb -t upload --upload-port "$HIL_ESP_PORT"
-
-      - name: Gateway tests on the FC's UART (Pi plays the FC)
-        run: |
-          . .venv/bin/activate
-          pytest drone/tests/hil/gateway -v --ignore=drone/tests/hil/gateway/wifi \
-            --junitxml=hil-gateway-report.xml
-
-      # Second offline window, also under 2 min (ADR-020 update 2026-10-26)
-      - name: Gateway Wi-Fi tests on the SoftAP (offline window)
-        timeout-minutes: 4
-        run: |
-          . .venv/bin/activate
-          exec drone/tests/hil/softap_window.sh 50 -- \
-            pytest drone/tests/hil/gateway/wifi -v --junitxml=hil-gateway-wifi-report.xml
+            pytest drone/tests/hil/gateway/wifi -v --junitxml=hil-wifi-report.xml
 
       - uses: actions/upload-artifact@v4
         if: always()

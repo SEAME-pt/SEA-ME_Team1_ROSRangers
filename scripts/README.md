@@ -113,11 +113,11 @@ Before: instructor OK for soldering on the lab drone, `ESP_to_FC` §10 checks do
 
 ### Cycle 2 · Gateway session and fault injection (#102, props off, battery connected)
 
-The gateway firmware (`esp_gateway`) has no 5760 bridge: it speaks Protocol Spec v0 on 5759. `ground_link.py` is the bench ground for it, and the tool for the Sprint 2 demo (ESP-S2-08).
+The gateway firmware (env `esp` / `esp_ota`, the default since #106) has no 5760 bridge: it speaks Protocol Spec v0 on 5759. `ground_link.py` is the bench ground for it, and the tool for the Sprint 2 demo (ESP-S2-08).
 
 ```bash
 python3 scripts/ground_link.py --gen-psk   # once: PSK in ~/.config/seame-drone/secrets.json
-# build and flash esp_gateway with that PSK (drone/firmware/esp8266/README.md, "Gateway")
+# build and flash esp_ota (the gateway) with that PSK (drone/firmware/esp8266/README.md, "Gateway")
 python3 scripts/seame.py network connect   # join the drone's network
 python3 scripts/ground_link.py             # session, 50 Hz SETPOINT, STATE twice a second
 ```

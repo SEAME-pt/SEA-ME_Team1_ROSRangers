@@ -236,7 +236,7 @@ def check_frames(raw, frames, bad, rc_ok=(NEUTRAL,)):
     the lock (value 1) belongs to an OTA upload, never to these tests."""
     assert not crash_markers(raw), f"crash on UART0: {raw[:300]!r}"
     assert bad == 0, f"{bad} frames with a bad checksum"
-    assert frames, "the gateway sent nothing: is esp_gateway flashed?"
+    assert frames, "the gateway sent nothing: is env esp (the gateway) flashed?"
     assert {f.direction for _, f in frames} == {"<"}, "the gateway only sends requests"
     stray = stray_bytes(raw, frames)
     assert stray == 0, f"{stray} bytes outside MSP frames: {raw[:300]!r}"
