@@ -274,10 +274,15 @@ def health_line(h) -> str:
         return "?" if ms == AGE_UNKNOWN else (">65s" if ms >= AGE_MAX else f"{ms}ms")
 
     armed = "?" if h.armed == ARMED_UNKNOWN else str(h.armed)
-    errors = h.timeouts + h.bad_checksum + h.too_long + h.error_replies + h.unexpected
+    # Flags come from the same fresh status as `armed`: unknown together, and
+    # never shown as 0 ("nothing blocks arming") when unknown (#183 review).
+    flags = "?" if h.armed == ARMED_UNKNOWN else f"0x{h.arming_disable_flags:08x}"
+    errors = (
+        h.bad_checksum + h.too_long + h.error_replies + h.unexpected
+    )  # not timeouts
     return (
         f"fc={'alive' if h.fc_alive else 'LOST'} armed={armed} "
-        f"flags=0x{h.arming_disable_flags:08x} age status={age(h.status_age_ms)} "
+        f"flags={flags} age status={age(h.status_age_ms)} "
         f"attitude={age(h.attitude_age_ms)} analog={age(h.analog_age_ms)} "
         f"reply={age(h.reply_age_ms)} "
         f"req={h.requests} rep={h.replies} timeouts={h.timeouts} errors={errors} "

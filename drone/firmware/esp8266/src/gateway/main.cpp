@@ -514,8 +514,11 @@ void loop() {
     Serial.write(request, n);
   }
 
-  // FC_HEALTH at 5 Hz (spec v1.4, #179).
-  if (now - last_health_ms >= kFcHealthPeriodMs) {
+  // FC_HEALTH at 5 Hz (spec v1.4, #179). Not while a STATE retry is pending:
+  // both share the UDP seq, so a higher-seq FC_HEALTH sent first would make the
+  // ground drop the retried STATE as old (BrunoBMFT, review of #183). The
+  // retry ends within kStateRetries * kStateRetryMs, then FC_HEALTH goes.
+  if (retry_len == 0 && now - last_health_ms >= kFcHealthPeriodMs) {
     last_health_ms = now;
     link.send_fc_health(now, fc_health(now));
   }

@@ -105,7 +105,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 1 | wrong state | both | `ARM_CONTROL_REQUEST` while `STREAMING` or in `LINK_FAILSAFE` (which needs `RESUME_REQUEST`); `RESUME_REQUEST` outside `LINK_FAILSAFE` |
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
-| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, to be confirmed by the safety pilot on the #179 PR) |
+| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
 
 `CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 

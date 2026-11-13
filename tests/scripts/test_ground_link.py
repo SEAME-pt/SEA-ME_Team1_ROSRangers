@@ -231,7 +231,7 @@ def test_fc_health_is_read_and_shown():
     from sd_protocol.messages import FcHealth, encode_fc_health
 
     link = open_link()
-    h = FcHealth(0, 0xFF, 0, 0xFFFF, 0xFFFE, 12, 260, 100, 90, 10, 0, 0, 0, 0, 50, 2)
+    h = FcHealth(0, 0xFF, 0, 0xFFFF, 0xFFFE, 12, 260, 100, 90, 10, 1, 2, 3, 4, 50, 2)
     frame = encode_frame(
         Header(type=MsgType.FC_HEALTH, session_id=SESSION, seq=1),
         encode_fc_health(h),
@@ -241,8 +241,10 @@ def test_fc_health_is_read_and_shown():
     assert got == h
     line = ground_link.health_line(got)
     assert "fc=LOST" in line and "armed=?" in line and "status=?" in line
+    assert "flags=?" in line  # unknown flags never read as 0x00000000
     assert "attitude=>65s" in line and "analog=12ms" in line and "reply=260ms" in line
-    assert "errors=10" in line and "rc_replaced=2" in line
+    assert "timeouts=10" in line and "errors=10" in line  # 1+2+3+4, not the timeouts
+    assert "rc_replaced=2" in line
     assert link.state(frame) is None  # replayed: refused; and not a STATE
 
 
