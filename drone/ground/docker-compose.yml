@@ -124,7 +124,9 @@ services:
 
   # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent + px4_offboard_bridge.
   # docker/px4/sim_start.sh arms, takes off and switches to Offboard, then the
-  # healthcheck turns healthy. MASK=8|11|15 (default 15), GUI=1 opens Gazebo.
+  # healthcheck turns healthy. MASK=8|11|15 (default 15; make sim-smoke takes
+  # 11|15 only). GUI=1 opens Gazebo: the default here is 0, make sim passes 1
+  # (its own default), so plain `docker compose --profile sim up` is headless.
   px4:
     <<: *node
     profiles: [sim, sim-smoke]

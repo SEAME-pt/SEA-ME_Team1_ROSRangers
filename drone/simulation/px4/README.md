@@ -15,7 +15,7 @@ From `drone/ground/` (the Makefile builds this image the first time, then reuses
 ```sh
 make sim          # PX4 + Gazebo window, bridge, camera gestures, intent, mission, echo
 make sim GUI=0    # same, Gazebo headless; MASK=11 leaves z to PX4 (default 15)
-make sim-smoke    # headless test: scripted gestures + the #86 checks, rosbag and summary.md
+make sim-smoke    # headless test: scripted gestures + the #86 checks, rosbag and summary.md (MASK 11 or 15)
 make sim-down
 ```
 

@@ -17,7 +17,6 @@ writes summary.md next to the bag. Exit code 0 only if every check passed.
 
 import argparse
 import json
-import math
 import os
 import signal
 import subprocess
@@ -64,10 +63,13 @@ class Recorder(Node):
     def __init__(self):
         super().__init__("sim_smoke_scenario")
         self.gesture = NO_HANDS
-        self.intent_times = []
-        self.targets = []  # (t, (vx, vy, vz, wz))
-        self.setpoints = []  # (t, (v_north, v_east, v_down, yawspeed))
-        self.velocities = []  # (t, (v_north, v_east, v_down)) measured
+        # Times in seconds on the wall clock, which every container shares.
+        # Targets and setpoints carry their PUBLISH stamp, so the DDS delay to
+        # this container is not counted against mission_node (REQ-SAF-017).
+        self.intent_times = []  # receive time
+        self.targets = []  # (header.stamp, (vx, vy, vz, wz))
+        self.setpoints = []  # (PX4 timestamp, (v_north, v_east, v_down, yawspeed))
+        self.velocities = []  # (receive time, (v_north, v_east, v_down)) measured
         self.position = None  # (n, e, d, heading)
         self.mission = {}
         self.flight = {}
@@ -98,9 +100,9 @@ class Recorder(Node):
         )
         self.create_timer(1.0 / GESTURE_HZ, self._publish_gesture)
 
-    @staticmethod
-    def now():
-        return time.monotonic()
+    def now(self):
+        """Wall clock (s), the clock mission_node and the bridge stamp with."""
+        return self.get_clock().now().nanoseconds / 1e9
 
     def _publish_gesture(self):
         self._raw.publish(String(data=json.dumps({"gesture": self.gesture})))
@@ -110,13 +112,13 @@ class Recorder(Node):
 
     def _on_target(self, msg):
         t = msg.twist
-        self.targets.append(
-            (self.now(), (t.linear.x, t.linear.y, t.linear.z, t.angular.z))
-        )
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec / 1e9
+        self.targets.append((stamp, (t.linear.x, t.linear.y, t.linear.z, t.angular.z)))
 
     def _on_setpoint(self, msg):
         v = msg.velocity
-        self.setpoints.append((self.now(), (v[0], v[1], v[2], msg.yawspeed)))
+        stamp = msg.timestamp / 1e6  # µs, the bridge's ROS clock
+        self.setpoints.append((stamp, (v[0], v[1], v[2], msg.yawspeed)))
 
     def _on_position(self, msg):
         self.position = (msg.x, msg.y, msg.z, msg.heading)
@@ -192,6 +194,10 @@ def run_scenario(node, intent):
             sc.Check("chain ready", False, f"mission state {node.mission or 'none'}")
         ]
     mask = int(node.flight.get("mask", 15))
+    if mask not in sc.SMOKE_MASKS:
+        # Only right and up are flown: under mask 8 nothing moves, so the
+        # REQ-SAF-017 check could never pass. The Makefile refuses it too.
+        return [sc.Check("mask", False, f"mask {mask}: sim-smoke needs 11 or 15")]
     say(f"chain ready, mask {mask}")
 
     t_start = node.now()
@@ -217,15 +223,7 @@ def run_scenario(node, intent):
     hold(node, NO_HANDS, 2.0)
     last_intent = max(node.intent_times, default=None)
     checks += sc.loss_checks(last_intent, node.targets, node.setpoints)
-    stopped = [v for t, v in node.velocities if t >= t_kill + 2.5]
-    still = bool(stopped) and max(math.hypot(v[0], v[1]) for v in stopped) <= 0.1
-    checks.append(
-        sc.Check(
-            "hovers after the loss",
-            still,
-            "horizontal speed <= 0.1 m/s 2.5 s after the kill",
-        )
-    )
+    checks.append(sc.hover_check(window(node.velocities, t_kill + 2.5)))
 
     targets = window(node.targets, t_start)
     checks.append(sc.rate_check([t for t, _ in node.targets if t >= t_start]))

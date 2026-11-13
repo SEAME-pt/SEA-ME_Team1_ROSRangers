@@ -39,6 +39,12 @@ MASK_AXES = {
     11: {"forward", "left", "yaw"},
     15: {"forward", "left", "up", "yaw"},
 }
+# The scenario moves only right and up, so under mask 8 (yaw only) nothing is
+# ever commanded and the REQ-SAF-017 check cannot pass: make sim-smoke refuses it.
+SMOKE_MASKS = (11, 15)
+
+# After the loss the drone must hover: every measured axis at most this.
+HOVER_MPS = 0.1
 
 # Movement: the commanded axis must move at least MIN_MOVE_M the right way;
 # every other axis (and an axis outside the mask) at most MAX_DRIFT_M.
@@ -187,7 +193,9 @@ def loss_checks(last_intent, targets, setpoints):
 
     last_intent: receive time of the last /gesture/intent before intent_node was
     killed. targets / setpoints: (t, values) of /mission/velocity_target and
-    /fmu/in/trajectory_setpoint. REQ-SAF-017 is about the mission_node output
+    /fmu/in/trajectory_setpoint, t = the PUBLISH stamp (header.stamp, PX4
+    timestamp), all on the same wall clock. The delivery delay of the zero to
+    the test is not counted: it is not mission_node's. REQ-SAF-017 is about the mission_node output
     (<= 0.25 s). The bridge forwards it at its next tick, so PX4 may get it
     one tick (0.05 s) later.
     """
@@ -216,6 +224,22 @@ def loss_checks(last_intent, targets, setpoints):
             )
         )
     return checks
+
+
+def hover_check(velocities):
+    """velocities: (v_north, v_east, v_down) PX4 measured, some time after the
+    loss. The drone hovers: horizontal AND vertical speed <= HOVER_MPS."""
+    name = "hovers after the loss (REQ-SAF-017)"
+    if not velocities:
+        return Check(name, False, "no PX4 velocity")
+    horizontal = max(math.hypot(v[0], v[1]) for v in velocities)
+    vertical = max(abs(v[2]) for v in velocities)
+    ok = horizontal <= HOVER_MPS and vertical <= HOVER_MPS
+    detail = (
+        f"max horizontal {horizontal:.2f} m/s, vertical {vertical:.2f} m/s "
+        f"(<= {HOVER_MPS}) 2.5 s after the kill"
+    )
+    return Check(name, ok, detail)
 
 
 def summary(checks, title="make sim-smoke"):

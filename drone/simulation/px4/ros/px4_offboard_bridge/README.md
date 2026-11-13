@@ -86,9 +86,11 @@ The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SI
 |---|---|
 | Direction | the commanded body axis moved ≥ 0.3 m the right way, the others ≤ 0.25 m; an axis outside the mask does not move |
 | REQ-CTL-001 | every target ≤ 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw; measured speed ≤ 0.5 m/s |
-| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent`; zero setpoint at PX4 ≤ 0.30 s (one more bridge tick); hovering 2.5 s after the kill |
+| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent` (timed with the publish stamps); zero setpoint at PX4 ≤ 0.30 s (one more bridge tick); 2.5 s after the kill, measured horizontal and vertical speed ≤ 0.1 m/s |
 | REQ-SAF-018 | no target or PX4 setpoint on an axis outside the mask |
 | REQ-SW-001 | `/mission/velocity_target` at 20 Hz ± 10 %, no gap above 150 ms |
+
+Masks 11 and 15 only (`make sim-smoke` refuses 8): the scenario flies right and up, which mask 8 does not own.
 
 ## Glossary
 

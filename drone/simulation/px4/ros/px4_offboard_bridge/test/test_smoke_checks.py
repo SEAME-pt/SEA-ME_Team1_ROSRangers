@@ -4,9 +4,12 @@ import math
 
 import pytest
 from px4_offboard_bridge.smoke_checks import (
+    MASK_AXES,
+    SMOKE_MASKS,
     Check,
     body_displacement,
     first_zero_after,
+    hover_check,
     is_zero,
     limits_check,
     loss_checks,
@@ -189,6 +192,30 @@ def test_loss_without_intent_or_movement_fails():
     assert not loss_checks(None, [], [])[0].ok
     still = [(t, (0.0, 0.0, 0.0, 0.0)) for t in ticks(20, 12)]
     assert not loss_checks(10.0, still, still)[0].ok
+
+
+def test_hover_still_passes():
+    assert hover_check([(0.05, -0.05, 0.08), (0.0, 0.0, -0.1)]).ok
+
+
+@pytest.mark.parametrize(
+    "velocity",
+    [(0.2, 0.0, 0.0), (0.08, 0.08, 0.0), (0.0, 0.0, 0.15), (0.0, 0.0, -0.15)],
+)
+def test_hover_moving_fails(velocity):
+    # A vertical runaway after the loss fails too, not only a horizontal one
+    assert not hover_check([(0.0, 0.0, 0.0), velocity]).ok
+
+
+def test_hover_without_samples_fails():
+    assert not hover_check([]).ok
+
+
+def test_smoke_masks_fly_right_and_up():
+    # The scenario only flies right and up: every smoke mask owns "left"
+    for mask in SMOKE_MASKS:
+        assert "left" in MASK_AXES[mask]
+    assert 8 not in SMOKE_MASKS
 
 
 # ---------- summary ----------

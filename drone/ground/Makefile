@@ -29,8 +29,10 @@
 #                   Rosbag + summary.md in logs/sim-smoke/<start time>/
 #   make sim-down   stop the simulation
 #   make px4-image  rebuild the PX4 image (after a change to its Dockerfile)
-#   Options: MASK=8|11|15 (axes the ground owns, default 15), GUI=0 (no Gazebo
-#   window, make sim only; sim-smoke is always headless). Logs: logs/px4/ (sim start-up, bridge),
+#   Options: MASK (axes the ground owns, default 15): 8|11|15 for make sim,
+#   11|15 for make sim-smoke (it flies right and up only, so under mask 8
+#   nothing moves and the checks cannot pass). GUI=0 (no Gazebo window,
+#   make sim only; sim-smoke is always headless). Logs: logs/px4/ (sim start-up, bridge),
 #   logs/px4-sitl/ (PX4, agent), logs/<node>/ as above.
 #
 # Every test target ends with a summary (passed/total per package or file)
@@ -270,7 +272,13 @@ sim-down:
 
 # sim_smoke waits for px4 to be healthy (armed, in Offboard); its exit code is
 # the result. Everything is stopped afterwards, pass or fail.
-sim-smoke: px4-image-present
+# Checked before the PX4 image is built: mask 8 owns only yaw, which the
+# scenario never flies, so its checks could never pass.
+sim-smoke-mask:
+	@[[ "$(MASK)" == 11 || "$(MASK)" == 15 ]] || \
+		{ echo "make sim-smoke: MASK must be 11 or 15, got '$(MASK)'"; exit 2; }
+
+sim-smoke: sim-smoke-mask px4-image-present
 	@mkdir -p logs $(TESTLOG)
 	$(COMPOSE) $(SIM_PROFILES) down
 	@$(SMOKE_ENV) $(COMPOSE) --profile sim-smoke up --build --force-recreate \
@@ -302,4 +310,4 @@ fclean: clean
 re: fclean all
 
 .PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
-	px4-image px4-image-present sim sim-down sim-smoke
+	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask

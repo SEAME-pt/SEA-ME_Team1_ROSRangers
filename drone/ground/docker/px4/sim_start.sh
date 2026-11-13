@@ -8,7 +8,7 @@
 #    velocity until mission_node is ENGAGED
 # 5. touches /tmp/sim_ready (the compose healthcheck), then runs until stopped
 #
-# Env: MASK 8|11|15 (default 15), GUI 1 opens the Gazebo window (needs DISPLAY),
+# Env: MASK 8|11|15 (default 15; the Makefile allows only 11|15 for sim-smoke), GUI 1 opens the Gazebo window (needs DISPLAY),
 # READY_TIMEOUT_SEC (default 300). Output: this script and the bridge in
 # $LOG_DIR/px4/ (entrypoint.sh), PX4, the agent and the Gazebo window in
 # $LOG_DIR/px4-sitl/. On docker stop the bridge stops first and sends one last

@@ -158,6 +158,8 @@ make sim-smoke             # mask 15
 make sim-smoke MASK=11     # z left to PX4: the climb must NOT move the drone
 ```
 
+Only masks 11 and 15: the scenario flies right and up, so under mask 8 (yaw only) nothing moves and the REQ-SAF-017 check could never pass. `make sim-smoke MASK=8` stops at once with an error; `make sim MASK=8` works.
+
 It starts `px4`, `mission` and `sim_smoke`, waits until `px4` is healthy, runs the scenario and stops everything, pass or fail. The exit code is the result (0 only when every check passed). It is not in GitHub CI: Gazebo is too heavy for hosted runners ([[CI-CD Overview]], level 3).
 
 **Scenario** (`px4_offboard_bridge/smoke_scenario.py`). It starts its own `intent_node` and drives the chain through `/gesture/raw` only (30 Hz), never `/mission/velocity_target`, which `mission_node` publishes:
@@ -172,9 +174,11 @@ To test REQ-SAF-017 it kills `intent_node` rather than stopping the gestures. Wi
 |---|---|
 | Direction | the commanded body axis moved ≥ 0.3 m the right way, the others ≤ 0.25 m; an axis outside the mask does not move |
 | REQ-CTL-001 | every target ≤ 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw; measured speed ≤ 0.5 m/s |
-| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent`; zero setpoint at PX4 ≤ 0.30 s (one bridge tick more); hovering 2.5 s after the loss |
+| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent`; zero setpoint at PX4 ≤ 0.30 s (one bridge tick more); 2.5 s after the loss the drone hovers: measured horizontal and vertical speed ≤ 0.1 m/s |
 | REQ-SAF-018 | no target or PX4 setpoint on an axis outside the mask |
 | REQ-SW-001 | `/mission/velocity_target` at 20 Hz ± 10 %, no gap above 150 ms |
+
+**Timing.** The REQ-SAF-017 delays and the REQ-SW-001 rate use the stamp each message was **published** with (`header.stamp` of `/mission/velocity_target`, `timestamp` of the PX4 setpoint), not the time the scenario received it, so the DDS delay to the test container does not count against `mission_node`. The loss is timed from when the scenario received the last `/gesture/intent` (`/gesture/intent` has no stamp). Every container reads the same host wall clock.
 
 **Output**, under `drone/ground/logs/`:
 
