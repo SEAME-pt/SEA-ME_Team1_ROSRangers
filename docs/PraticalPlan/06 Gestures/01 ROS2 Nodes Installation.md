@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-10-27
+updated: 2026-11-13
 project: SEA autonomous drone
 tags:
   - gestures
@@ -85,6 +85,8 @@ From `drone/ground/`:
 | `make unit` / `make smoke` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
 | `make fclean` / `make re` | `clean` + removes `logs/` and this project's other Docker objects / `fclean`, then `make` |
+| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `flight`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
+| `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
 
 `q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). `MASK=` and `AIRBORNE=` set the pretend flight state ([[04 Mission Node]] §8.1).
 
@@ -168,6 +170,7 @@ From `drone/ground/`:
 | :--- | :--- | :--- |
 | `make unit` | Python 3 | the package tests that need no ROS 2 (the others are skipped) |
 | `make smoke` | Docker | the smoke test (§7.3) |
+| `make sim-smoke` | Docker, several GB for the PX4 image | the chain against PX4 SITL, not in CI ([[PX4 SITL Setup]] §7.3) |
 
 Full output in `logs/test/`.
 

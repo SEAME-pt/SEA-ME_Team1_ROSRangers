@@ -3,7 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-27
+updated: 2026-11-13
 project: SEA autonomous drone
 tags:
   - gestures
@@ -123,6 +123,8 @@ The **left hand** makes the mirror image of each pose. Up, down, forward and bac
 ## ▶️ 6. Run
 
 `cd drone/ground && make`. Everything else: [[01 ROS2 Nodes Installation|01]] §4.
+
+Against the simulated drone (PX4 SITL + Gazebo): `make sim`, and the headless test `make sim-smoke` ([[PX4 SITL Setup]] §7).
 
 ---
 
