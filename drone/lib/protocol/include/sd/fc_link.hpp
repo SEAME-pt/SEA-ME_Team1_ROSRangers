@@ -37,6 +37,14 @@ constexpr std::uint32_t kMaxValueAgeMs = 10000;
 // proposal D1). A healthy FC answers ~85 times a second (an RC ack every
 // 20 ms plus the polls), so this is ~20 missed replies in a row.
 constexpr std::uint32_t kFcLostMs = 250;
+// #188 (BrunoBMFT, review of #183): the FC counts as back only after replies
+// without a timeout for this long, so a half-answering FC cannot flap
+// LOST / RESTORED.
+constexpr std::uint32_t kFcRestoredMs = 250;
+// #188: ARM and RESUME need MSP_SET_RAW_RC acknowledged ('>', not '!') with no
+// RC timeout for this long, the last ack under kFcLostMs old. An ack only shows
+// that Betaflight received the frame: the radio still wins.
+constexpr std::uint32_t kRcStableMs = 1000;
 
 // The latest value of each poll and when it arrived (`*_ms`). A value never
 // received has `has_*` false.
@@ -97,6 +105,14 @@ public:
   // When the last reply to one of our requests came; has_reply() is false
   // before the first one and after kMaxValueAgeMs of silence (FC_HEALTH).
   bool has_reply() const { return any_reply_; }
+  // #188 rule 3: alive with hysteresis. Once up, the FC stays up until
+  // fc_alive() turns false (kFcLostMs of silence); once down, it comes back
+  // only after kFcRestoredMs of replies with no timeout in between. Pass the
+  // previous answer as `was_up`.
+  bool fc_up(bool was_up, std::uint32_t now_ms) const;
+  // #188 rules 1 and 2: the FC has acknowledged RC continuously (no RC timeout
+  // or '!' reply) for at least kRcStableMs, the last ack under kFcLostMs old.
+  bool rc_accepted(std::uint32_t now_ms) const;
   std::uint32_t last_reply_ms() const { return last_reply_ms_; }
 
   // Feed every byte read from the UART.
@@ -130,6 +146,13 @@ private:
   bool in_flight_ = false;
   bool any_reply_ = false; // expired with the values (kMaxValueAgeMs)
   std::uint32_t last_reply_ms_ = 0;
+  // #188: replies with no timeout since alive_since_ms_; RC acks with no RC
+  // timeout or error since rc_since_ms_.
+  bool alive_run_ = false;
+  std::uint32_t alive_since_ms_ = 0;
+  bool rc_run_ = false;
+  std::uint32_t rc_since_ms_ = 0;
+  std::uint32_t last_rc_ack_ms_ = 0;
   bool draining_ = false;
   std::uint32_t drain_ms_ = 0;
   std::uint8_t in_flight_cmd_ = 0;

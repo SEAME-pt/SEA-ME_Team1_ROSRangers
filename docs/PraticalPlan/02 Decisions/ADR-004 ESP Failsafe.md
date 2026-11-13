@@ -3,7 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-11-13
 project: SEA autonomous drone
 aliases:
   - D04
@@ -65,6 +65,17 @@ The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-0
 ### 2.5 `T_fresh` set (2026-11-03)
 
 The decision and `T_loss` = 250 ms are unchanged. The protocol review of 2026-11-03 (#97) set **`T_fresh` = 150 ms** as a separate timer (OD-06, [[Protocol Spec v0]] §7.2). A setpoint older than 150 ms is replaced by neutral sticks, and the next valid setpoint is used at once, with no failsafe and no handshake. Only `T_loss` enters `LINK_FAILSAFE`. The ground streams `SETPOINT` at 50 Hz at all times (`mode 0` when there is no gesture), so an operator who does not gesture never triggers the failsafe.
+
+### 2.6 Neutral again while a live ground streams (2026-11-13, #188)
+
+The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2 the output after that second changes:
+
+- **Before:** nothing is sent to the FC until ARM or RESUME succeeds.
+- **Now:** nothing is sent while the ground is quiet, as before; **while a live ground sends `SETPOINT`s** (one accepted within `T_fresh`), the ESP sends **neutral** RC again. That covers the RESUME neutral run in `LINK_FAILSAFE` and a new session in `SESSION_IDLE` after a crashed ground. It is never the ground's sticks: those come back only after ARM or RESUME OK.
+
+**Why:** #188 makes ARM and RESUME wait for the FC to acknowledge `MSP_SET_RAW_RC` continuously for 1 s. With no RC sent after a failsafe there would be no acks, so RESUME (and ARM in a new session) would be refused forever. With neutral RC flowing while the ground is back, the check measures the real path: the ground is back, its neutral reaches the FC, and the FC takes it. Option A of the #188 comment of 2026-11-13; B (restart only on a refused request) and C (no RC check after a failsafe) were not taken.
+
+**What it changes for Betaflight (safety pilot to confirm on the #188 PR):** while the ground streams, Betaflight sees MSP RC again, so the MSP override channels (mask 8 = yaw) are held at neutral by the ESP instead of falling back to the radio sticks after 300 ms. With the ground quiet, the fallback to the radio is as before. The override switch on the radio and the safety pilot still win.
 
 ## 3. Safety layers (inner → outer)
 

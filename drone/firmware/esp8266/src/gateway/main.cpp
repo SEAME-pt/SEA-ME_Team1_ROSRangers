@@ -474,8 +474,10 @@ void loop() {
     link.boot_done(now);
   }
   // The FC link's health (#179): a change is told to the session (EVENT),
-  // and ARM is refused while the FC is silent.
-  link.set_fc_alive(fc.fc_alive(now), now);
+  // and ARM is refused while the FC is silent. #188: RESTORED only after
+  // 250 ms of replies, and ARM / RESUME also need 1 s of good RC acks.
+  link.set_fc_alive(fc.fc_up(link.fc_alive(), now), now);
+  link.set_rc_accepted(fc.rc_accepted(now));
 
   accept_tcp(server, now);
   service_tcp(link, now);

@@ -42,6 +42,10 @@ void FcLink::expire(std::uint32_t now_ms) {
   // Like the values: never "alive" again just because millis() wrapped.
   if (any_reply_ && now_ms - last_reply_ms_ > kMaxValueAgeMs) {
     any_reply_ = false;
+    alive_run_ = false;
+  }
+  if (rc_run_ && now_ms - last_rc_ack_ms_ > kMaxValueAgeMs) {
+    rc_run_ = false;
   }
 }
 
@@ -60,6 +64,10 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
       return 0;
     }
     ++counters_.timeouts;
+    alive_run_ = false; // #188: a missed reply ends the run of good replies
+    if (in_flight_cmd_ == msp::kSetRawRc) {
+      rc_run_ = false;
+    }
     // A silent FC must not starve the polls: after an RC timeout one due poll
     // goes before the next RC, so the FC is seen when it answers again.
     poll_first_ = in_flight_cmd_ == msp::kSetRawRc;
@@ -145,8 +153,15 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   ++counters_.replies;
   any_reply_ = true; // an error reply too: the FC is answering (#179)
   last_reply_ms_ = now_ms;
+  if (!alive_run_) {
+    alive_run_ = true;
+    alive_since_ms_ = now_ms;
+  }
   if (reply.error) {
     ++counters_.error_replies;
+    if (reply.cmd == msp::kSetRawRc) {
+      rc_run_ = false; // '!': the FC refused the RC frame (#188)
+    }
     return;
   }
   bool ok = false;
@@ -184,6 +199,12 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
     break;
   case msp::kSetRawRc:
     ok = true; // empty acknowledgement
+    // #188: a new run after a gap (RC stopped, e.g. the ADR-004 output)
+    if (!rc_run_ || now_ms - last_rc_ack_ms_ >= kFcLostMs) {
+      rc_run_ = true;
+      rc_since_ms_ = now_ms;
+    }
+    last_rc_ack_ms_ = now_ms;
     break;
   default:
     break;
@@ -191,6 +212,18 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   if (!ok) {
     ++counters_.unexpected;
   }
+}
+
+bool FcLink::fc_up(bool was_up, std::uint32_t now_ms) const {
+  if (!fc_alive(now_ms)) {
+    return false;
+  }
+  return was_up || (alive_run_ && now_ms - alive_since_ms_ >= kFcRestoredMs);
+}
+
+bool FcLink::rc_accepted(std::uint32_t now_ms) const {
+  return rc_run_ && now_ms - last_rc_ack_ms_ < kFcLostMs &&
+         now_ms - rc_since_ms_ >= kRcStableMs;
 }
 
 bool FcLink::status_fresh(std::uint32_t now_ms,

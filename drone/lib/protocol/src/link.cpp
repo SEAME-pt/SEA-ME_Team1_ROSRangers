@@ -204,6 +204,14 @@ bool Link::fc_output(std::uint32_t now_ms,
     if (config_.failsafe_output == FailsafeOutput::kNeutralThenStop &&
         (fs_stopped_ || now_ms - fs_since_ms_ >= kFailsafeNeutralMs)) {
       fs_stopped_ = true;
+      // ADR-004 entry of 2026-11-13 (#188): neutral again while a live ground
+      // sends SETPOINTs (one accepted within T_fresh), in LINK_FAILSAFE or in
+      // a new session. The FC's RC acks then show it takes RC before ARM or
+      // RESUME; with no ground, nothing goes to the FC, as before.
+      if (have_sp_ && now_ms - last_sp_ms_ < kTFreshMs) {
+        neutral(channels);
+        return true;
+      }
       return false;
     }
     neutral(channels);
@@ -531,8 +539,9 @@ void Link::handle_arm(const Frame &f, std::uint32_t now_ms) {
     result = AckResult::kWrongState;
   } else if (mask != config_.override_mask) {
     result = AckResult::kMaskMismatch;
-  } else if (!fc_alive_) {
-    result = AckResult::kFcNotAnswering; // #179 D2: nothing would apply it
+  } else if (!fc_alive_ || !rc_accepted_) {
+    // #179 D2: nothing would apply it; #188: RC acks good for 1 s
+    result = AckResult::kFcNotAnswering;
   } else {
     state_ = EspState::kStreaming;
     ctrl_ms_ = now_ms; // no setpoint within T_loss of ARM -> LINK_FAILSAFE
@@ -555,8 +564,9 @@ void Link::handle_resume(std::uint32_t now_ms) {
   } else if (!(neutral_run_ && have_sp_ && now_ms - last_sp_ms_ < kTFreshMs &&
                now_ms - neutral_since_ms_ >= kResumeNeutralMs)) {
     result = AckResult::kResumeConditionNotMet;
-  } else if (!fc_alive_) {
-    // Like ARM (#179 D2): control must not come back while nothing applies it.
+  } else if (!fc_alive_ || !rc_accepted_) {
+    // Like ARM (#179 D2, #188): control must not come back while nothing
+    // applies it.
     result = AckResult::kFcNotAnswering;
   }
   std::uint8_t payload[1];

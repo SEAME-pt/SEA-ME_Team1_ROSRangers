@@ -310,7 +310,10 @@ def armed(fake_fc):
     """A new session, armed with the gateway's override mask: STREAMING."""
     ground = Ground(psk())
     assert ground.tcp is not None, "no HELLO_ACK for the armed session"
-    ground.stream(0.5)  # confirms the session (first UDP frame) and the peer
+    # Confirms the session (first UDP frame) and the peer. 1.2 s: after the
+    # previous armed test's ADR-004 output stopped, neutral RC restarts with
+    # this stream, and ARM needs 1 s of RC acks (#188)
+    ground.stream(1.2)
     t = time.monotonic()
     # ARM from a test: HIL bench exception to REQ-SAF-023 (Requirements.md, 2026-11-10)
     ground.send_tcp(ground.link.arm(OVERRIDE_MASK))

@@ -142,12 +142,17 @@ public:
   // Sends one STATE over UDP to the current session; nothing without one.
   void send_state(std::uint32_t now_ms, const FcView &fc);
 
-  // The FC link, from sd::FcLink::fc_alive(), every loop (#179). A change is
-  // told to the current session: EVENT FC_LINK_LOST / FC_LINK_RESTORED.
-  // While the FC is silent, ARM_CONTROL_REQUEST is refused (result 4). Starts
-  // false: no ARM before the FC has been seen.
+  // The FC link, from sd::FcLink::fc_up() (alive with the #188 hysteresis),
+  // every loop (#179). A change is told to the current session: EVENT
+  // FC_LINK_LOST / FC_LINK_RESTORED. While the FC is silent, ARM and RESUME
+  // are refused (result 4). Starts false: no ARM before the FC has been seen.
   void set_fc_alive(bool alive, std::uint32_t now_ms);
   bool fc_alive() const { return fc_alive_; }
+
+  // From sd::FcLink::rc_accepted(), every loop (#188): the FC has acknowledged
+  // RC continuously for 1 s. ARM and RESUME also need it (result 4). Starts
+  // false.
+  void set_rc_accepted(bool accepted) { rc_accepted_ = accepted; }
 
   // Sends one FC_HEALTH (spec v1.4) over UDP to the current session.
   void send_fc_health(std::uint32_t now_ms, const FcHealth &health);
@@ -235,7 +240,8 @@ private:
   std::uint32_t neutral_since_ms_ = 0;
   bool stale_reported_ = false;
 
-  bool fc_alive_ = false; // see set_fc_alive()
+  bool fc_alive_ = false;    // see set_fc_alive()
+  bool rc_accepted_ = false; // see set_rc_accepted()
 
   // ADR-004 output.
   bool fs_active_ = false;

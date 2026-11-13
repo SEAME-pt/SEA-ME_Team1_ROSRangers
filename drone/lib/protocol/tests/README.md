@@ -223,6 +223,13 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.AnErrorReplyStillMeansAlive` | An error reply ('!') to our request keeps the FC alive | A refusing FC is still there; only silence is "lost" |
 | `FcLink.AReplyNobodyAskedForIsNotAlive` | A reply with no request in flight is counted as unexpected and does not make the FC alive | Stray bytes never fake a live FC |
 | `FcLink.AliveNeverComesBackAcrossTheMillisWrap` | After 10 s of silence "alive" is forgotten, and 2^32 ms later the old reply time does not make it alive again | No false "FC restored" after a long uptime |
+| `FcLink.RcAcceptedAfterOneSecondOfGoodAcks` | RC at 50 Hz, every ack good: not accepted before 1 s, accepted after, not any more 250 ms after the last ack | ARM/RESUME only once the FC has taken RC for 1 s (#188 rules 1–2) |
+| `FcLink.PollsAnsweredButRcNotIsNeverAccepted` | The FC answers every poll but no RC: alive, never RC-accepted | The gap #183 left: alive alone no longer lets ARM through (#188) |
+| `FcLink.RcRefusedWithErrorIsNeverAccepted` | Every RC answered with `!`: alive, never RC-accepted | An FC that refuses RC can't be armed (#188) |
+| `FcLink.OneMissedRcAckRestartsTheSecond` | One RC request unanswered after 1.5 s of good acks: not accepted at once, accepted again after another 1 s | "Continuously good" means no RC timeout (#188 rule 2) |
+| `FcLink.RcStoppedThenRestartedNeedsAnotherSecond` | RC stops for 1.5 s (ADR-004 output), then restarts: not accepted after 0.5 s, accepted after 1 s | Old acks never count after a gap (#188) |
+| `FcLink.FcComesBackOnlyAfter250MsOfReplies` | `fc_up()`: down → up only after 250 ms of replies; up stays up while alive | `FC_LINK_RESTORED` hysteresis (#188 rule 3) |
+| `FcLink.AHalfAnsweringFcNeverComesBack` | Every other request of each kind unanswered for 3 s: `fc_up()` never changes, RC never accepted | No LOST/RESTORED flapping, no ARM in a short good window (#188) |
 
 ## Link: the ESP link state machine (#102)
 
@@ -251,7 +258,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.FailsafeOn2026SendsNeutralForOneSecondThenStops` | In LINK_FAILSAFE: neutral for 1 s, then nothing | ADR-004 on Betaflight 2026.6: the FC falls back to the radio sticks |
 | `LinkTest.FailsafeOn451SendsNeutralForever` | With the 4.5.1 setting: neutral frames forever | ADR-004 on 4.5.1, where overrides are held |
 | `LinkTest.FailsafeStopSurvivesAClockWrap` | Once the output has stopped, a 2^32 ms clock wrap does not restart the neutral | No surprise output after a long uptime |
-| `LinkTest.PacketsComingBackDoNotResumeControl` | Mode-1 setpoints arrive again for 1 s after the loss: still LINK_FAILSAFE, only the ADR-004 output | Control never comes back by itself |
+| `LinkTest.PacketsComingBackDoNotResumeControl` | Mode-1 setpoints arrive again for 1 s after the loss: still LINK_FAILSAFE, only neutral RC (the ADR-004 output, then neutral while the ground streams, §2.6) | Control never comes back by itself |
 | `LinkTest.ResumeNeedsFiveHundredMsOfNeutralStream` | RESUME after 460 ms of neutral: result 3; after 500 ms: OK, STREAMING, EVENT | The resume rule of ADR-004 |
 | `LinkTest.AGapOrANonNeutralSetpointRestartsTheNeutralStream` | A mode-1 setpoint or a 150 ms gap restarts the 500 ms | The neutral stream must be continuous |
 | `LinkTest.ResumeNeedsAFreshSetpoint` | RESUME when the last neutral setpoint is 150 ms old: result 3 | The link must be alive right now |
@@ -285,6 +292,10 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.TheSessionIsToldWhenTheFcIsLostAndRestored` | While streaming, FC lost: EVENT 0x0201 once, state kept; FC back: EVENT 0x0202; no event without a change | #179 D1 (ESP-S2-06: the ground hears it within 500 ms) |
 | `LinkTest.FcHealthGoesToTheSessionAndSharesTheUdpSeq` | FC_HEALTH: nothing without a session; with one it is sealed for the ground, takes the next UDP seq after STATE, and the ground's Receiver accepts it | #179 D3, spec v1.4 |
 | `LinkTest.ResumeIsRefusedWhileTheFcIsSilent` | In LINK_FAILSAFE with 500 ms of neutral, FC silent: RESUME gets result 4 and the failsafe stays; FC back: RESUME OK | Control never comes back while nothing would apply it (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10) |
+| `LinkTest.ArmNeedsRcAcksGoodForOneSecond` | SESSION_IDLE, FC alive but RC not accepted: ARM gets result 4; RC accepted: ARM OK | #188 rules 1–2 for ARM |
+| `LinkTest.ResumeNeedsRcAcksGoodForOneSecond` | LINK_FAILSAFE with 500 ms of neutral, RC not accepted: RESUME gets 4 and the failsafe stays; RC accepted: RESUME OK | #188 rules 1–2 for RESUME |
+| `LinkTest.StoppedFailsafeOutputIsNeutralAgainWhileTheGroundStreams` | After the 1 s of ADR-004 neutral: nothing while the ground is quiet, neutral (never the ground's sticks) while it streams, nothing again when it stops | ADR-004 §2.6 (#188): RC acks can exist before RESUME |
+| `LinkTest.NewSessionAfterAStoppedOutputGetsNeutralWhileItStreams` | BYE while STREAMING, output stopped, new session: nothing before its first SETPOINT, neutral after it, still SESSION_IDLE | ADR-004 §2.6 (#188): ARM possible in a new session after a crashed ground |
 | `LinkTest.ANewLinkStartsWithTheFcNotAlive` | A new Link counts the FC as not alive until told otherwise | No ARM before the FC has been seen |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
