@@ -146,7 +146,15 @@ Bruno - Esperar por team decisions
 Paulo - Esperar pela reparação do drone
 Guilherme - Esperar pela decisão do Paulo sobre o HIL
 
-
+13/Nov - 11:15/11:20
+Guilherme - Tratar da apresentação da retro e tentar fechar o issue do HIL
+Bruno - Terminar issue 103 + terminar issue 86
+Tiago - Terminar o issue 107
+Paulo - Perceber o problema do HIL relativamente ao firmware. Tentar terminar issues pendentes. 
+Verificar a issue (Sprint 2 demo).
+**Blockers**
+Tiago - FC
+Paulo - HiL
 
 ---
 
