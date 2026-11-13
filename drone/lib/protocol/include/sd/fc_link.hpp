@@ -45,6 +45,9 @@ constexpr std::uint32_t kFcRestoredMs = 250;
 // RC timeout for this long, the last ack under kFcLostMs old. An ack only shows
 // that Betaflight received the frame: the radio still wins.
 constexpr std::uint32_t kRcStableMs = 1000;
+// #188: RC acks count as continuous only with gaps under this (RC is 50 Hz, an
+// ack every ~20 ms); a longer gap starts the 1 s again.
+constexpr std::uint32_t kRcMaxGapMs = 100;
 
 // The latest value of each poll and when it arrived (`*_ms`). A value never
 // received has `has_*` false.

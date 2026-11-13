@@ -230,6 +230,9 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.RcStoppedThenRestartedNeedsAnotherSecond` | RC stops for 1.5 s (ADR-004 output), then restarts: not accepted after 0.5 s, accepted after 1 s | Old acks never count after a gap (#188) |
 | `FcLink.FcComesBackOnlyAfter250MsOfReplies` | `fc_up()`: down → up only after 250 ms of replies; up stays up while alive | `FC_LINK_RESTORED` hysteresis (#188 rule 3) |
 | `FcLink.AHalfAnsweringFcNeverComesBack` | Every other request of each kind unanswered for 3 s: `fc_up()` never changes, RC never accepted | No LOST/RESTORED flapping, no ARM in a short good window (#188) |
+| `FcLink.ASilenceWithoutATimeoutStillNeeds250MsToComeBack` | No request in flight for 400 ms (no timeout counted): `fc_up()` comes back only after 250 ms of replies again | A stalled loop cannot skip the RESTORED hysteresis (#188 pre-review) |
+| `FcLink.OneRefusedRcRestartsTheSecond` | One `!` reply to RC after 1.5 s of good acks: not accepted at once, accepted again after 1 s | A refused RC frame breaks "continuously good" (#188) |
+| `FcLink.APollTimeoutDoesNotRestartTheRcSecond` | One poll unanswered, every RC acked: RC stays accepted | Only RC problems restart the RC second (#188) |
 
 ## Link: the ESP link state machine (#102)
 

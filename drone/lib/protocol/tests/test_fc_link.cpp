@@ -554,3 +554,48 @@ TEST(FcLink, AHalfAnsweringFcNeverComesBack) {
   EXPECT_EQ(changes, 0);
   EXPECT_FALSE(fc.rc_accepted(2999));
 }
+
+TEST(FcLink, ASilenceWithoutATimeoutStillNeeds250MsToComeBack) {
+  // Nothing in flight for 400 ms (a stalled loop): no timeout is counted, but
+  // the FC was lost, so it comes back only after 250 ms of replies again.
+  sd::FcLink fc;
+  run_fc(fc, 0, 400, all_good);
+  ASSERT_TRUE(fc.fc_up(false, 399));
+  EXPECT_FALSE(fc.fc_alive(400 + sd::kFcLostMs)); // nobody polled meanwhile
+  run_fc(fc, 800, 850, all_good);
+  EXPECT_FALSE(fc.fc_up(false, 849));
+  run_fc(fc, 850, 1100, all_good);
+  EXPECT_TRUE(fc.fc_up(false, 1099));
+}
+
+TEST(FcLink, OneRefusedRcRestartsTheSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  bool refused = false;
+  run_fc(fc, 1500, 1600, [&refused](int cmd, std::uint32_t) {
+    if (cmd == sd::msp::kSetRawRc && !refused) {
+      refused = true; // one '!' reply to RC
+      return Answer::kError;
+    }
+    return Answer::kGood;
+  });
+  EXPECT_FALSE(fc.rc_accepted(1599));
+  run_fc(fc, 1600, 2700, all_good);
+  EXPECT_TRUE(fc.rc_accepted(2699));
+}
+
+TEST(FcLink, APollTimeoutDoesNotRestartTheRcSecond) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1500, all_good);
+  ASSERT_TRUE(fc.rc_accepted(1499));
+  bool dropped = false;
+  run_fc(fc, 1500, 1600, [&dropped](int cmd, std::uint32_t) {
+    if (cmd != sd::msp::kSetRawRc && !dropped) {
+      dropped = true; // one poll unanswered, every RC acked
+      return Answer::kNone;
+    }
+    return Answer::kGood;
+  });
+  EXPECT_TRUE(fc.rc_accepted(1599));
+}

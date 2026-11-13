@@ -30,13 +30,16 @@ constexpr std::uint32_t kResumeNeutralMs = 500; // neutral stream before RESUME
 constexpr std::uint32_t kPendingMaxMs = 2000;   // pending session lifetime
 constexpr std::uint32_t kHelloMinGapMs = 500;   // HELLO rate limit
 constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
+                                                   // while the ground is quiet
 constexpr std::int32_t kSetpointLimit = 1000;      // spec §7.3 key 0x42
 
 // What the ESP sends to the FC once the link failsafe is active (ADR-004 §2).
 enum class FailsafeOutput : std::uint8_t {
   kNeutralForever = 0,  // Betaflight 4.5.1: overrides are held forever
-  kNeutralThenStop = 1, // 2026.6.x: neutral 1 s, then stop, so the FC's
-                        // freshness guard falls back to the ELRS sticks
+  kNeutralThenStop = 1, // 2026.6.x: neutral 1 s, then nothing while the
+                        // ground is quiet, so the FC's freshness guard falls
+                        // back to the ELRS sticks; neutral again while a live
+                        // ground streams (ADR-004 §2.6, #188)
 };
 
 // TCP connection handle chosen by the firmware (for example its socket slot).

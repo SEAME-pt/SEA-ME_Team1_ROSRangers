@@ -4,7 +4,7 @@ type: interface-spec
 status: accepted
 version: 1.4
 date: 2026-10-12
-updated: 2026-11-10
+updated: 2026-11-13
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -105,7 +105,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 1 | wrong state | both | `ARM_CONTROL_REQUEST` while `STREAMING` or in `LINK_FAILSAFE` (which needs `RESUME_REQUEST`); `RESUME_REQUEST` outside `LINK_FAILSAFE` |
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
-| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). Since 2026-11-13 (v1.4.1, #188) also when the FC has not acknowledged RC continuously for 1 s. `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
+| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). Since 2026-11-13 (v1.4.1, #188) also when the FC has not acknowledged RC continuously for 1 s. After a failsafe, or in a new session after one, RC flows only while the ground streams `SETPOINT`s, so the ground streams neutral for ≥ 1 s before ARM or RESUME, and on result 4 keeps streaming and retries. `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
 
 `CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 
@@ -135,7 +135,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 |---|---|---|
 | `0x00xx` | System (boot, watchdog, memory) | defined with the gateway firmware (#101) |
 | `0x01xx` | Link | `0x0101` setpoint stale (`T_fresh` expired, neutral sticks), `0x0102` `LINK_FAILSAFE` entered, `0x0103` resumed, `0x0104` failsafe output active (a new session starts while the [[ADR-004 ESP Failsafe\|ADR-004]] output still runs; added 2026-11-09, #102) |
-| `0x02xx` | FC / MSP | `0x0201` FC link lost (no FC reply for 250 ms), `0x0202` FC link restored (the first reply after that); added 2026-11-10, v1.4, #179 D1. Sent to the current session on each change; a ground that connects later reads `FC_HEALTH` |
+| `0x02xx` | FC / MSP | `0x0201` FC link lost (no FC reply for 250 ms), `0x0202` FC link restored (after 250 ms of replies with no timeout since 2026-11-13, v1.4.1, #188; before that, the first reply); added 2026-11-10, v1.4, #179 D1. Sent to the current session on each change; a ground that connects later reads `FC_HEALTH` |
 
 ## 4. Receive rules
 

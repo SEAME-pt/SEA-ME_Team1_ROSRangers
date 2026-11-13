@@ -34,7 +34,7 @@ tags:
 | Betaflight version | ESP action | Result |
 |---|---|---|
 | 4.5.1 | Keep streaming **neutral** values (roll/pitch/yaw 1500). Throttle is not overridden (pilot owns it, [[ADR-010 MSP Override\|ADR-010]]). | Drone levels in Angle mode. The pilot holds altitude and takes over. |
-| 2026.6.2 | Neutral for 1 s, then **stop sending** | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
+| 2026.6.2 | Neutral for 1 s, then **stop sending** while the ground is quiet (neutral again while a live ground streams, §2.6, 2026-11-13) | After 300 ms, Betaflight's freshness guard falls back to the ELRS sticks |
 
 **Resume:** never automatic. The ground sends `RESUME_REQUEST` inside a valid session, then streams neutral setpoints for ≥ 500 ms before control returns ([[ESP Link State Machine]]).
 
@@ -74,6 +74,8 @@ The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2
 - **Now:** nothing is sent while the ground is quiet, as before; **while a live ground sends `SETPOINT`s** (one accepted within `T_fresh`), the ESP sends **neutral** RC again. That covers the RESUME neutral run in `LINK_FAILSAFE` and a new session in `SESSION_IDLE` after a crashed ground. It is never the ground's sticks: those come back only after ARM or RESUME OK.
 
 **Why:** #188 makes ARM and RESUME wait for the FC to acknowledge `MSP_SET_RAW_RC` continuously for 1 s. With no RC sent after a failsafe there would be no acks, so RESUME (and ARM in a new session) would be refused forever. With neutral RC flowing while the ground is back, the check measures the real path: the ground is back, its neutral reaches the FC, and the FC takes it. Option A of the #188 comment of 2026-11-13; B (restart only on a refused request) and C (no RC check after a failsafe) were not taken.
+
+**What it asks of the ground:** after a failsafe, stream neutral `SETPOINT`s for ≥ 1 s before ARM or RESUME, and on result 4 keep streaming and retry. A ground that sends HELLO then ARM at once is refused with 4 until then (the `flight_interface` ESP backend, #103 / PR #187, follows this).
 
 **What it changes for Betaflight (safety pilot to confirm on the #188 PR):** while the ground streams, Betaflight sees MSP RC again, so the MSP override channels (mask 8 = yaw) are held at neutral by the ESP instead of falling back to the radio sticks after 300 ms. With the ground quiet, the fallback to the radio is as before. The override switch on the radio and the safety pilot still win.
 

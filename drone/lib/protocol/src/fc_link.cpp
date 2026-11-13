@@ -151,12 +151,14 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   }
   in_flight_ = false;
   ++counters_.replies;
-  any_reply_ = true; // an error reply too: the FC is answering (#179)
-  last_reply_ms_ = now_ms;
-  if (!alive_run_) {
+  // #188: a new run after a timeout, or after a silence of kFcLostMs with no
+  // request in flight (a stalled loop): checked before last_reply_ms_ moves.
+  if (!alive_run_ || !any_reply_ || now_ms - last_reply_ms_ >= kFcLostMs) {
     alive_run_ = true;
     alive_since_ms_ = now_ms;
   }
+  any_reply_ = true; // an error reply too: the FC is answering (#179)
+  last_reply_ms_ = now_ms;
   if (reply.error) {
     ++counters_.error_replies;
     if (reply.cmd == msp::kSetRawRc) {
@@ -200,7 +202,7 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   case msp::kSetRawRc:
     ok = true; // empty acknowledgement
     // #188: a new run after a gap (RC stopped, e.g. the ADR-004 output)
-    if (!rc_run_ || now_ms - last_rc_ack_ms_ >= kFcLostMs) {
+    if (!rc_run_ || now_ms - last_rc_ack_ms_ >= kRcMaxGapMs) {
       rc_run_ = true;
       rc_since_ms_ = now_ms;
     }

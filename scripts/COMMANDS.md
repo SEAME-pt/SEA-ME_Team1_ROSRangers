@@ -341,7 +341,7 @@ Keys while it runs (type, then Enter):
 | `g` | Garbage: bad tag, replay, old seq, bad mode, random bytes | still STREAMING, `rx_rejected` +5 |
 | `h` | Replay the recorded HELLO on a second connection | that connection closed after 2 s, session unchanged |
 | `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |
-| `r` | RESUME_REQUEST (after `u`, `n` and 1.5 s) | `RESUME_ACK 0`, `LINK_RESUMED`. The 1.5 s covers 500 ms of neutral and, if the failsafe output had stopped, 1 s of RC acks after `u` (#188) |
+| `r` | RESUME_REQUEST (`n`, `u`, then wait 1.5 s) | `RESUME_ACK 0`, `LINK_RESUMED`. The 1.5 s covers 500 ms of neutral and, if the failsafe output had stopped, 1 s of RC acks after `u` (#188) |
 | `c KEY` | CONFIG_GET (hex key, e.g. `c 40`) | `CONFIG_ACK` with the value |
 | `t` | Drop only TCP (no BYE) | still STREAMING on UDP, `last_ctrl_seq` grows (ADR-005) |
 | `R` | Reconnect: new TCP + HELLO, then ARM as the first frame under the new keys (operator action) | `ARM_CONTROL_ACK 0` on the new session, STREAMING throughout (one 20 ms neutral tick at the switch). The tool has one loop, so the SETPOINT stream pauses while it connects (up to 1 s each for the TCP connect and the HELLO): on a slow link `R` can cause `SETPOINT_STALE` or `LINK_FAILSAFE` by itself |
