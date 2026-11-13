@@ -90,9 +90,10 @@ jobs:
         run: |
           . .venv/bin/activate
           # The window script's self-test runs in PR CI (ci.yaml), not here.
-          # The Pi plays the FC on the ESP's UART (bench.FakeFc)
-          pytest drone/tests/hil -v --ignore=drone/tests/hil/gateway/wifi \
-            --ignore=drone/tests/hil/test_softap_window.py --junitxml=hil-report.xml
+          # The Pi plays the FC on the ESP's UART (bench.FakeFc). Smoke first:
+          # its resets must not be the last thing before the window (#106)
+          pytest drone/tests/hil/test_smoke.py drone/tests/hil/gateway -v \
+            --ignore=drone/tests/hil/gateway/wifi --junitxml=hil-report.xml
 
       # The Pi's only Wi-Fi radio leaves the lab network for this step, so
       # the runner is offline: under 2 min in total (ADR-020 update
