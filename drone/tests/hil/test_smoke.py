@@ -71,12 +71,16 @@ def test_boot_bytes_never_look_like_msp():
             pulse_reset(port)
             rom = read_for(port, ROM_WINDOW_S)
             assert boot_mode(rom) == 3, f"reset {reset}: no flash boot: {rom[:300]!r}"
+            assert not crash_markers(
+                rom
+            ), f"reset {reset}: crash in ROM output: {rom!r}"
 
             port.baudrate = APP_BAUD
             pulse_reset(port)
             boot = read_for(port, BOOT_WINDOW_S)
             assert boot, f"reset {reset}: no boot output at all, did the reset work?"
-            frames = [(0, f) for f in msp.Parser().feed(boot)]
+            parser = msp.Parser()
+            frames = [(0, f) for f in parser.feed(boot)]
             stream = b"".join(msp.encode_request(f.cmd, f.payload) for _, f in frames)
             start = boot.find(stream) if frames else len(boot)
             assert start >= 0, f"reset {reset}: bytes between MSP frames: {boot!r}"
@@ -84,6 +88,6 @@ def test_boot_bytes_never_look_like_msp():
             assert (
                 msp_like(banner) == []
             ), f"reset {reset}: MSP in boot ROM output: {banner!r}"
-            check_frames(boot[start:], frames, 0)
+            check_frames(boot[start:], frames, parser.bad_checksums)
     finally:
         port.close()

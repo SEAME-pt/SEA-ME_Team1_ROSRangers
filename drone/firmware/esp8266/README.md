@@ -174,6 +174,8 @@ For each request the ESP records four `micros()` stamps and sends them every 100
 
 Each report also has the ESP's longest loop time in those 100 ms (an ESP stall shows up there). The ESP can't see time on air: a slow PC RTT with small ESP stages means the time was spent on Wi-Fi.
 
+Flashing a diag env over OTA from the gateway locks arming on the FC until it is power-cycled (battery out, FC USB out; see "Gateway"). Do that before arming again.
+
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_timing -t upload           # OTA
 python3 scripts/esp_timing.py listen --csv s1-09_run1_esp.csv            # terminal 1, start first
@@ -207,6 +209,8 @@ Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05
 | `HANG_HW` | Same with the software watchdog off: the hardware watchdog resets it (about 8 s) |
 
 Props off, battery connected (the ESP needs it, #164). FC also on USB, so the FC can be watched while the ESP reboots (Safety Rules #16). **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
+
+Flashing a diag env over OTA from the gateway locks arming on the FC until it is power-cycled (battery out, FC USB out; see "Gateway"). Do that before arming again.
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network
