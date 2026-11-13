@@ -38,6 +38,7 @@ class MsgType(IntEnum):
     EVENT = 0x40
     SETPOINT = 0x60
     STATE = 0x80
+    FC_HEALTH = 0x81  # spec v1.4 (#179): ESP -> ground, 5 Hz
 
 
 class RxError(IntEnum):

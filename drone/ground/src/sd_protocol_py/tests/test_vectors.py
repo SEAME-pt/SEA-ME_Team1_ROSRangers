@@ -14,6 +14,7 @@ from sd_protocol import (
     ConfigAck,
     ConfigKv,
     Event,
+    FcHealth,
     HandshakeResult,
     Header,
     Hello,
@@ -28,6 +29,7 @@ from sd_protocol import (
     decode_config_ack,
     decode_config_kv,
     decode_event,
+    decode_fc_health,
     decode_frame,
     decode_hello,
     decode_hello_ack,
@@ -38,6 +40,7 @@ from sd_protocol import (
     encode_config_ack,
     encode_config_kv,
     encode_event,
+    encode_fc_health,
     encode_frame,
     encode_hello,
     encode_hello_ack,
@@ -56,6 +59,7 @@ VECTOR_DIR = Path(__file__).resolve().parents[4] / "tests" / "vectors"
 _HEADER_FIELDS = ("flags", "session_id", "seq", "t_send_us")
 _SETPOINT_FIELDS = ("mode", "roll", "pitch", "yaw_rate", "throttle")
 _STATE_FIELDS = tuple(State.__dataclass_fields__)
+_FC_HEALTH_FIELDS = tuple(FcHealth.__dataclass_fields__)
 
 
 def load_vectors() -> list[dict]:
@@ -134,6 +138,10 @@ CODECS = {
     "STATE": (
         lambda f: encode_state(State(*(f[k] for k in _STATE_FIELDS))),
         lambda p: (lambda m: {k: getattr(m, k) for k in _STATE_FIELDS})(decode_state(p)),
+    ),
+    "FC_HEALTH": (
+        lambda f: encode_fc_health(FcHealth(*(f[k] for k in _FC_HEALTH_FIELDS))),
+        lambda p: (lambda m: {k: getattr(m, k) for k in _FC_HEALTH_FIELDS})(decode_fc_health(p)),
     ),
 }  # fmt: skip
 

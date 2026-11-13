@@ -31,6 +31,7 @@ enum class MsgType : std::uint8_t {
   kEvent = 0x40,
   kSetpoint = 0x60,
   kState = 0x80,
+  kFcHealth = 0x81, // spec v1.4 (#179): ESP -> ground, 5 Hz
 };
 
 struct Header {

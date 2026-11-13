@@ -22,6 +22,7 @@ enum class AckResult : std::uint8_t {
   kWrongState = 1,
   kMaskMismatch = 2,
   kResumeConditionNotMet = 3,
+  kFcNotAnswering = 4, // ARM refused: the FC is silent (#179, D2)
 };
 
 enum class ByeReason : std::uint8_t {
@@ -59,6 +60,9 @@ enum class EventCode : std::uint16_t {
   kLinkResumed = 0x0103,
   // A new session starts while the ADR-004 output still runs (#102 PR 2).
   kFailsafeOutputActive = 0x0104,
+  // FC / MSP range (#179, D1): no FC reply for kFcLostMs, then the first one
+  kFcLinkLost = 0x0201,
+  kFcLinkRestored = 0x0202,
 };
 
 // --- Payloads.
@@ -125,6 +129,32 @@ struct State {
 };
 constexpr std::size_t kStateSize = 28;
 
+// FC_HEALTH (0x81, spec v1.4, #179 D3): the ESP<->FC link as the ESP sees it.
+// Ages in ms since the value arrived, saturated at kAgeMax; kAgeUnknown =
+// never received or expired (sd::FcLink forgets values after 10 s).
+constexpr std::uint16_t kAgeMax = 0xFFFE;
+constexpr std::uint16_t kAgeUnknown = 0xFFFF;
+constexpr std::uint8_t kArmedUnknown = 0xFF;
+struct FcHealth {
+  std::uint8_t fc_alive; // 1: an FC reply within kFcLostMs
+  std::uint8_t armed;    // 0, 1, or kArmedUnknown (no fresh MSP_STATUS)
+  std::uint32_t arming_disable_flags; // 0 when unknown
+  std::uint16_t status_age_ms;
+  std::uint16_t attitude_age_ms;
+  std::uint16_t analog_age_ms;
+  std::uint16_t reply_age_ms; // since the last reply to one of our requests
+  std::uint32_t requests;
+  std::uint32_t replies;
+  std::uint32_t timeouts;
+  std::uint16_t bad_checksum; // the u16 counters saturate at 0xFFFF
+  std::uint16_t too_long;
+  std::uint16_t error_replies;
+  std::uint16_t unexpected;
+  std::uint32_t rc_sent;
+  std::uint32_t rc_replaced; // RC overwritten before it was sent (#123)
+};
+constexpr std::size_t kFcHealthSize = 42;
+
 std::size_t encode_hello(const Hello &m, std::uint8_t *out,
                          std::size_t out_cap);
 bool decode_hello(const std::uint8_t *payload, std::size_t len, Hello &out);
@@ -160,6 +190,11 @@ bool decode_event(const std::uint8_t *payload, std::size_t len, Event &out);
 std::size_t encode_state(const State &m, std::uint8_t *out,
                          std::size_t out_cap);
 bool decode_state(const std::uint8_t *payload, std::size_t len, State &out);
+
+std::size_t encode_fc_health(const FcHealth &m, std::uint8_t *out,
+                             std::size_t out_cap);
+bool decode_fc_health(const std::uint8_t *payload, std::size_t len,
+                      FcHealth &out);
 
 // --- Receive check: spec §3 types and sizes, and SETPOINT.mode (REQ-COM-001,
 // REQ-COM-002). Receiver runs it on a frame whose header, tag and session are

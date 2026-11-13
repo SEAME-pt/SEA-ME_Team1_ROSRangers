@@ -348,6 +348,14 @@ Keys while it runs (type, then Enter):
 | `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
 | `b` / `q` | BYE, then quit | – |
 
+**Health line** (2026-11-10, #179, `FC_HEALTH`, spec v1.4), printed under each STATE line:
+`fc=alive armed=0 flags=0x00000020 age status=40ms attitude=12ms analog=90ms reply=3ms req=… rep=… timeouts=0 errors=0 rc_sent=… rc_replaced=0`.
+- `fc=LOST`: no FC reply for 250 ms. `armed=?`, `flags=?` and `status=?`: unknown (no status under 500 ms old), so never read as a value.
+- `errors`: bad checksums, oversize frames, error replies and unexpected replies. Timeouts are counted only in `timeouts` (2026-11-13, #183 review).
+- `no FC_HEALTH for N s`: no health message for over 1 s; the old line is not shown as current.
+- `rc_replaced` growing: the FC UART can't keep up with RC at 50 Hz (#123).
+- Replies show their code by name, for example `ARM_CONTROL_ACK 4 FC_NOT_ANSWERING` (ARM refused while the FC is silent).
+
 **When the Wi-Fi drops** (2026-11-09):
 - **No old values:** the tool never reprints old values. After 1 s without STATE it prints `no STATE for N s`.
 - **One error line:** a send error is printed once, not 50 times a second.

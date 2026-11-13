@@ -24,6 +24,7 @@ class AckResult(IntEnum):
     WRONG_STATE = 1
     MASK_MISMATCH = 2
     RESUME_CONDITION_NOT_MET = 3
+    FC_NOT_ANSWERING = 4  # ARM refused: the FC is silent (#179, D2)
 
 
 class ByeReason(IntEnum):
@@ -61,6 +62,8 @@ class EventCode(IntEnum):
     LINK_FAILSAFE_ENTERED = 0x0102
     LINK_RESUMED = 0x0103
     FAILSAFE_OUTPUT_ACTIVE = 0x0104  # new session while the ADR-004 output runs
+    FC_LINK_LOST = 0x0201  # no FC reply for 250 ms (#179, D1)
+    FC_LINK_RESTORED = 0x0202  # the first FC reply after that
 
 
 class Transport(IntEnum):
@@ -86,7 +89,7 @@ class Role(IntEnum):
     GROUND = 1
 
 
-# Spec §2 (v1.3): what each side receives, i.e. what the other side sends. BYE
+# Spec §2 (v1.4): what each side receives, i.e. what the other side sends. BYE
 # goes both ways. HELLO and HELLO_ACK are pre-session: receive_handshake().
 _RECEIVES = {
     Role.ESP: frozenset(
@@ -102,6 +105,7 @@ _RECEIVES = {
     Role.GROUND: frozenset(
         {
             MsgType.STATE,
+            MsgType.FC_HEALTH,
             MsgType.ARM_CONTROL_ACK,
             MsgType.RESUME_ACK,
             MsgType.BYE,
@@ -130,6 +134,10 @@ CONFIG_ACK_SIZE = 6
 EVENT_MIN_SIZE = 2
 EVENT_MAX_SIZE = 2 + EVENT_TEXT_MAX
 STATE_SIZE = 28
+FC_HEALTH_SIZE = 42
+AGE_MAX = 0xFFFE  # FC_HEALTH ages saturate here
+AGE_UNKNOWN = 0xFFFF  # never received, or expired (10 s)
+ARMED_UNKNOWN = 0xFF  # no fresh MSP_STATUS
 
 _HELLO = struct.Struct(f"<B{NONCE_SIZE}s")
 _HELLO_ACK = struct.Struct(f"<I{NONCE_SIZE}s{FW_VERSION_SIZE}s")
@@ -277,6 +285,44 @@ def decode_event(payload: bytes) -> Event | None:
         return None
     (code,) = _EVENT_CODE.unpack_from(payload)
     return Event(code, bytes(payload[EVENT_MIN_SIZE:]))
+
+
+# fc_alive, armed, arming_disable_flags, status/attitude/analog/reply age (ms),
+# requests, replies, timeouts, bad_checksum, too_long, error_replies,
+# unexpected, rc_sent, rc_replaced
+_FC_HEALTH = struct.Struct("<BBIHHHHIIIHHHHII")
+
+
+@dataclass(frozen=True)
+class FcHealth:
+    """FC_HEALTH (0x81, spec v1.4, #179): the ESP<->FC link as the ESP sees it."""
+
+    fc_alive: int  # 1: an FC reply within 250 ms
+    armed: int  # 0, 1, or ARMED_UNKNOWN
+    arming_disable_flags: int  # 0 when unknown
+    status_age_ms: int  # AGE_UNKNOWN: never received or expired
+    attitude_age_ms: int
+    analog_age_ms: int
+    reply_age_ms: int  # since the last reply to one of the ESP's requests
+    requests: int
+    replies: int
+    timeouts: int
+    bad_checksum: int  # the u16 counters saturate at 0xFFFF
+    too_long: int
+    error_replies: int
+    unexpected: int
+    rc_sent: int
+    rc_replaced: int  # RC overwritten before it was sent (#123)
+
+
+def encode_fc_health(m: FcHealth) -> bytes:
+    return _FC_HEALTH.pack(*(getattr(m, f) for f in FcHealth.__dataclass_fields__))
+
+
+def decode_fc_health(payload: bytes) -> FcHealth | None:
+    if len(payload) != FC_HEALTH_SIZE:
+        return None
+    return FcHealth(*_FC_HEALTH.unpack(payload))
 
 
 def encode_state(m: State) -> bytes:
