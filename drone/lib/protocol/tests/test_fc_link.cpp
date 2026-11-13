@@ -476,7 +476,7 @@ TEST(FcLink, RcAcceptedAfterOneSecondOfGoodAcks) {
   EXPECT_FALSE(fc.rc_accepted(899)); // first ack at t=0: not 1 s yet
   run_fc(fc, 900, 1100, all_good);
   EXPECT_TRUE(fc.rc_accepted(1099));
-  EXPECT_FALSE(fc.rc_accepted(1099 + sd::kFcLostMs)); // no ack for 250 ms
+  EXPECT_FALSE(fc.rc_accepted(1099 + sd::kRcMaxGapMs)); // no ack for 100 ms
 }
 
 TEST(FcLink, PollsAnsweredButRcNotIsNeverAccepted) {

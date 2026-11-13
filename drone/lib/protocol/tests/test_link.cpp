@@ -146,8 +146,8 @@ class LinkTest : public ::testing::Test {
 protected:
   LinkTest() : link(make_config(sd::FailsafeOutput::kNeutralThenStop), io) {
     link.set_fc_alive(true, 0); // a healthy FC; the #179 tests turn it off
-    link.set_rc_accepted(
-        true); // RC acks good (#188); its own tests turn it off
+    // RC acks good (#188); its own tests turn it off
+    link.set_rc_accepted(true);
   }
 
   static sd::LinkConfig make_config(sd::FailsafeOutput fo) {

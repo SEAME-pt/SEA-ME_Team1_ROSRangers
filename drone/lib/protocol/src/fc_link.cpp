@@ -224,7 +224,7 @@ bool FcLink::fc_up(bool was_up, std::uint32_t now_ms) const {
 }
 
 bool FcLink::rc_accepted(std::uint32_t now_ms) const {
-  return rc_run_ && now_ms - last_rc_ack_ms_ < kFcLostMs &&
+  return rc_run_ && now_ms - last_rc_ack_ms_ < kRcMaxGapMs &&
          now_ms - rc_since_ms_ >= kRcStableMs;
 }
 

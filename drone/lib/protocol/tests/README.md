@@ -223,7 +223,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.AnErrorReplyStillMeansAlive` | An error reply ('!') to our request keeps the FC alive | A refusing FC is still there; only silence is "lost" |
 | `FcLink.AReplyNobodyAskedForIsNotAlive` | A reply with no request in flight is counted as unexpected and does not make the FC alive | Stray bytes never fake a live FC |
 | `FcLink.AliveNeverComesBackAcrossTheMillisWrap` | After 10 s of silence "alive" is forgotten, and 2^32 ms later the old reply time does not make it alive again | No false "FC restored" after a long uptime |
-| `FcLink.RcAcceptedAfterOneSecondOfGoodAcks` | RC at 50 Hz, every ack good: not accepted before 1 s, accepted after, not any more 250 ms after the last ack | ARM/RESUME only once the FC has taken RC for 1 s (#188 rules 1–2) |
+| `FcLink.RcAcceptedAfterOneSecondOfGoodAcks` | RC at 50 Hz, every ack good: not accepted before 1 s, accepted after, not any more 100 ms after the last ack | ARM/RESUME only once the FC has taken RC for 1 s (#188 rules 1–2) |
 | `FcLink.PollsAnsweredButRcNotIsNeverAccepted` | The FC answers every poll but no RC: alive, never RC-accepted | The gap #183 left: alive alone no longer lets ARM through (#188) |
 | `FcLink.RcRefusedWithErrorIsNeverAccepted` | Every RC answered with `!`: alive, never RC-accepted | An FC that refuses RC can't be armed (#188) |
 | `FcLink.OneMissedRcAckRestartsTheSecond` | One RC request unanswered after 1.5 s of good acks: not accepted at once, accepted again after another 1 s | "Continuously good" means no RC timeout (#188 rule 2) |

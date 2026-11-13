@@ -114,7 +114,8 @@ public:
   // previous answer as `was_up`.
   bool fc_up(bool was_up, std::uint32_t now_ms) const;
   // #188 rules 1 and 2: the FC has acknowledged RC continuously (no RC timeout
-  // or '!' reply) for at least kRcStableMs, the last ack under kFcLostMs old.
+  // or '!' reply, no gap of kRcMaxGapMs) for at least kRcStableMs, the last
+  // ack under kRcMaxGapMs old.
   bool rc_accepted(std::uint32_t now_ms) const;
   std::uint32_t last_reply_ms() const { return last_reply_ms_; }
 
