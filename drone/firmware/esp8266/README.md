@@ -32,9 +32,9 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
 
 | Env | Upload | Use |
 |---|---|---|
-| `esp` (default) | USB, 460800 baud | **Gateway**. First flash and recovery. CI builds this one; the HIL runner flashes its spare ESP over USB with it (`hil.yaml`). Needs the PSK |
-| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | **Gateway**. Every later update of the flight ESP (ADR-024, gated: see "Gateway") |
-| `esp_bridge` | USB, 460800 baud | Transparent bridge (`src/main.cpp`), the default until #106 |
+| `esp` (default) | USB, 460800 baud | **Gateway**, for an ESP that is not wired to an FC: the HIL bench's spare ESP on the Pi's USB (`hil.yaml`), or a new ESP before it is soldered. The drone's ESP is soldered to the FC, so it is flashed with `esp_ota` only (ADR-012). CI builds this one. Needs the PSK |
+| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | **Gateway**. Every update of the drone's ESP (ADR-024, gated: see "Gateway") |
+| `esp_bridge` | USB, 460800 baud | Transparent bridge (`src/main.cpp`), the default until #106. USB, so only for an ESP not wired to an FC (the HIL spare) |
 | `esp_bridge_ota` | Wi-Fi (OTA) | The bridge over the air, as a way back from the gateway (then power-cycle the FC, see "Gateway") |
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
