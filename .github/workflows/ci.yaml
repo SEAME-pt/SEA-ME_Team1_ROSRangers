@@ -224,7 +224,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest pytest-cov
-      - run: python3 -m pytest test -q --cov=px4_offboard_bridge.bridge_logic --cov-fail-under=90
+      - run: python3 -m pytest test -q --cov=px4_offboard_bridge.bridge_logic --cov=px4_offboard_bridge.smoke_checks --cov-fail-under=90
 
   # The HIL tests that need no bench, on every PR: the Wi-Fi window script
   # against a fake nmcli, and the smoke test's parsers. The hardware tests

@@ -3,7 +3,7 @@ title: Testing Strategy
 type: test-plan
 status: draft
 date: 2026-10-21
-updated: 2026-11-09
+updated: 2026-11-13
 project: SEA autonomous drone
 aliases:
   - Communication Test Plan
@@ -32,6 +32,7 @@ tags:
 | 2 Cross-language | golden vectors (`drone/tests/vectors/*.json`) | both | C++ encoder and Python decoder agree byte for byte |
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |
+| 3 Simulation (ground chain) | gesture → intent → mission → `px4_offboard_bridge` (sim-only stand-in for `flight_interface`) → PX4, scripted gestures | team laptop, `make sim-smoke` ([[PX4 SITL Setup]] §7.3); not in CI | drone moves the commanded way; REQ-CTL-001 speeds; zero within 0.25 s of killing `intent_node` (REQ-SAF-017); no axis outside the mask (REQ-SAF-018); 20 Hz target (REQ-SW-001) |
 | 3 Simulation | controller + flight interface | PX4 SITL + Gazebo | square path, link-loss injection |
 | 4 HIL | real spare ESP, no FC (FC checks through Betaflight SITL or the flight unit, #61), no battery; Wi-Fi by time-slicing the Pi's radio (ADR-020, 2026-10-26) | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
 | 4 Bench (manual) | ESP alone, then with the FC on temporary wires | lab | [[ESP Bench Test Plan]] Stages 1–2 |

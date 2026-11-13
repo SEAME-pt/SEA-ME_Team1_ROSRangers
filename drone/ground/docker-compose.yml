@@ -14,6 +14,8 @@
 #   docker compose run --rm --build echo   # terminal 3: live table (gesture, intent, mode, velocity)
 #   docker compose up --build mission flight  # terminal 4: mode changes in the log
 #   docker compose down                    # stop everything
+# PX4 SITL instead of the pretend /flight/state (simulation only): make sim,
+# make sim-smoke, make sim-down (Makefile; services px4 and sim_smoke below).
 #
 # Logs: every node (not echo) writes logs/<service>/<start time>.log, one file
 # per run, every line timestamped; logs/<service>/latest.log is the newest.
@@ -114,3 +116,69 @@ services:
       dockerfile: docker/echo/Dockerfile
     image: rosrangers/echo:jazzy
     tty: true   # the live table, also inside `docker compose up`
+
+  # ---------- SIMULATION ONLY (#86): make sim, make sim-smoke ----------
+  # Profiles, so `docker compose up` (make) never starts them. The bridge
+  # publishes /flight/state from PX4, so `flight` must not run with them (the
+  # Makefile lists the services by name). Never use with the real drone.
+
+  # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent + px4_offboard_bridge.
+  # docker/px4/sim_start.sh arms, takes off and switches to Offboard, then the
+  # healthcheck turns healthy. MASK=8|11|15 (default 15; make sim-smoke takes
+  # 11|15 only). GUI=1 opens Gazebo: the default here is 0, make sim passes 1
+  # (its own default), so plain `docker compose --profile sim up` is headless.
+  px4:
+    <<: *node
+    profiles: [sim, sim-smoke]
+    build: &px4-build
+      context: .
+      dockerfile: docker/px4/Dockerfile
+      additional_contexts:
+        sim: ../simulation/px4/ros
+    image: rosrangers/px4-sim:jazzy
+    # GPU (Mesa) for Gazebo rendering. This image runs as uid 1000, so it also
+    # needs the host's render group: the Makefile sets RENDER_GID from
+    # /dev/dri/renderD128. Without access Mesa falls back to software (slow).
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${RENDER_GID:-0}"
+    environment:
+      <<: *node-env
+      LOG_NAME: px4
+      MASK: ${MASK:-15}
+      GUI: ${GUI:-0}
+      DISPLAY: ${DISPLAY:-:0}
+      # This image runs as uid 1000, the others as root: Fast DDS shared
+      # memory between them can drop messages, so UDP only.
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${GROUND_LOG_DIR:-./logs}:/logs
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/sim_ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 420s
+
+  # The scripted scenario and its checks (smoke_scenario.py in
+  # px4_offboard_bridge): its own intent_node, gestures on /gesture/raw, a
+  # rosbag and summary.md in logs/sim-smoke/<start time>/.
+  sim_smoke:
+    <<: *node
+    profiles: [sim-smoke]
+    attach: true
+    build: *px4-build
+    image: rosrangers/px4-sim:jazzy
+    depends_on:
+      px4:
+        condition: service_healthy
+      mission:
+        condition: service_started
+    environment:
+      <<: *node-env
+      LOG_NAME: sim-smoke
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+    command: ["/ws/install/px4_offboard_bridge/lib/px4_offboard_bridge/sim_smoke_scenario"]

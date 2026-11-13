@@ -18,6 +18,23 @@
 #                 inside them, gesture -> intent -> mission across containers,
 #                 the echo monitor, clean stops, node logs (in logs/smoke)
 #
+# SIMULATION ONLY (#86): PX4 SITL + Gazebo instead of the pretend /flight/state.
+# The first run builds the PX4 image (long, several GB); later runs reuse it.
+#   make sim        PX4 SITL + Gazebo (headless) + XRCE agent + px4_offboard_bridge,
+#                   gesture (camera), intent, mission, echo. PX4 arms, takes off
+#                   and switches to Offboard by itself; then ENGAGE (both open
+#                   hands) and fly. Never flight (the bridge publishes /flight/state)
+#   make sim-smoke  headless test, no camera: scripted gestures (ENGAGE, right,
+#                   climb, intent_node killed) and the checks of #86, then stops.
+#                   Rosbag + summary.md in logs/sim-smoke/<start time>/
+#   make sim-down   stop the simulation
+#   make px4-image  rebuild the PX4 image (after a change to its Dockerfile)
+#   Options: MASK (axes the ground owns, default 15): 8|11|15 for make sim,
+#   11|15 for make sim-smoke (it flies right and up only, so under mask 8
+#   nothing moves and the checks cannot pass). GUI=0 (no Gazebo window,
+#   make sim only; sim-smoke is always headless). Logs: logs/px4/ (sim start-up, bridge),
+#   logs/px4-sitl/ (PX4, agent), logs/<node>/ as above.
+#
 # Every test target ends with a summary (passed/total per package or file)
 # and keeps its full output in logs/test/<target>.log.
 #
@@ -35,6 +52,20 @@ WS      := ros2_ws
 PKGS    := gesture_node intent_node mission_node
 E2E     := ../tests/ros
 TESTLOG := logs/test
+
+# Simulation (#86). The PX4 image (drone/simulation/px4/Dockerfile) is built
+# with plain docker build, not by compose, so make clean and fclean keep it:
+# rebuilding it takes a long time. Remove it by hand: docker rmi $(PX4_IMAGE)
+PX4_IMAGE    := seame-px4-sim:jazzy-1.17
+SIM_PROFILES := --profile sim --profile sim-smoke
+SIM          := px4 gesture intent mission echo
+SIM_SMOKE    := px4 mission sim_smoke
+MASK         ?= 15
+GUI          ?= 1
+# Host group of the GPU render node, so the px4 container (uid 1000) can use it
+RENDER_GID   := $(shell stat -c %g /dev/dri/renderD128 2>/dev/null || echo 0)
+SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID)
+SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID)
 
 # Compose projects: ground (make, make up: named after this folder) and
 # ground-smoke (make smoke). Compose labels their containers, images and
@@ -203,17 +234,59 @@ smoke:
 
 # ---------- Docker ----------
 
-# logs/ made here, not by Docker (as root), so it stays the user's
+# logs/ made here, not by Docker (as root), so it stays the user's.
+# A running simulation is stopped first: its bridge also publishes /flight/state.
 up:
 	-xhost +local: >/dev/null
 	mkdir -p logs
+	$(COMPOSE) $(SIM_PROFILES) stop px4 sim_smoke
 	$(COMPOSE) up --build
 
 down:
-	$(COMPOSE) down
+	$(COMPOSE) $(SIM_PROFILES) down
 
 clean:
-	$(COMPOSE) down --rmi all --remove-orphans
+	$(COMPOSE) $(SIM_PROFILES) down --rmi all --remove-orphans
+
+# ---------- Simulation (SIMULATION ONLY, #86) ----------
+
+# make px4-image rebuilds it (after a change to its Dockerfile); sim and
+# sim-smoke build it only when it is missing, so they also work offline
+# (docker build checks Docker Hub for the base image every time).
+px4-image:
+	docker build -t $(PX4_IMAGE) ../simulation/px4
+
+px4-image-present:
+	@docker image inspect $(PX4_IMAGE) >/dev/null 2>&1 || $(MAKE) --no-print-directory px4-image
+
+# Every service listed by name: never flight (pretend /flight/state). Started
+# from scratch: the other modes stopped, the containers recreated.
+sim: px4-image-present
+	-xhost +local: >/dev/null
+	mkdir -p logs
+	$(COMPOSE) $(SIM_PROFILES) down
+	$(SIM_ENV) $(COMPOSE) --profile sim up --build --force-recreate $(SIM)
+
+sim-down:
+	$(COMPOSE) $(SIM_PROFILES) down
+
+# sim_smoke waits for px4 to be healthy (armed, in Offboard); its exit code is
+# the result. Everything is stopped afterwards, pass or fail.
+# Checked before the PX4 image is built: mask 8 owns only yaw, which the
+# scenario never flies, so its checks could never pass.
+sim-smoke-mask:
+	@[[ "$(MASK)" == 11 || "$(MASK)" == 15 ]] || \
+		{ echo "make sim-smoke: MASK must be 11 or 15, got '$(MASK)'"; exit 2; }
+
+sim-smoke: sim-smoke-mask px4-image-present
+	@mkdir -p logs $(TESTLOG)
+	$(COMPOSE) $(SIM_PROFILES) down
+	@$(SMOKE_ENV) $(COMPOSE) --profile sim-smoke up --build --force-recreate \
+		--exit-code-from sim_smoke $(SIM_SMOKE) 2>&1 | tee $(TESTLOG)/sim-smoke.log; \
+	code=$${PIPESTATUS[0]}; \
+	$(COMPOSE) $(SIM_PROFILES) down; \
+	echo "full output: $(TESTLOG)/sim-smoke.log, PX4: logs/px4-sitl/px4.log"; \
+	exit $$code
 
 # logs/: everything but its .gitignore, which keeps the folder out of git.
 # Docker: only this project's objects, never a host-wide prune. Containers
@@ -236,4 +309,5 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re
+.PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
+	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask
