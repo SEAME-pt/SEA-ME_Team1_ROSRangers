@@ -696,7 +696,9 @@ def main() -> None:
     args = p.parse_args()
     if args.gen_psk:
         gen_psk()
-        print(f"PSK stored in {SECRETS}. Rebuild and flash esp_gateway with it.")
+        print(
+            f"PSK stored in {SECRETS}. Rebuild and flash the gateway (env esp_ota) with it."
+        )
         return
     run(args)
 

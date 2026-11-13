@@ -240,7 +240,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install "pytest==9.2.*" "pyserial==3.5"
-      - run: pytest drone/tests/hil --ignore=drone/tests/hil/wifi --ignore=drone/tests/hil/gateway/wifi -v
+      - run: pytest drone/tests/hil --ignore=drone/tests/hil/gateway/wifi -v
 
   # gesture_node + intent_node, plus mission_node and flight_interface once
   # their package.xml exists (list in check-components ros_pkgs): unit, node,
@@ -331,8 +331,8 @@ jobs:
           python-version: "3.12"
       - run: pip install platformio
       - name: Build ESP8266 firmware
-        # the diagnostic envs too, so a broken diag build fails the PR (same cache)
-        run: pio run -d drone/firmware/esp8266 -e esp -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart -e esp_gateway
+        # the bridge and diagnostic envs too, so a broken build fails the PR (same cache)
+        run: pio run -d drone/firmware/esp8266 -e esp -e esp_bridge -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass

@@ -1,6 +1,6 @@
 # ESP8266 firmware: transparent UART↔UDP bridge and gateway
 
-Custom Arduino firmware for the drone's ESP-12F (ADR-007). It replaces the Espressif AT 1.7.4 firmware since 2026-10-21. The default build (`esp`, `esp_ota`) is still a **transparent** bridge: bytes pass through unchanged, nothing is parsed, there is no allow-list (Study Plan §5). The **gateway** (`esp_gateway`, #101) is the allow-listed replacement; see "Gateway" below.
+Custom Arduino firmware for the drone's ESP-12F (ADR-007). It replaces the Espressif AT 1.7.4 firmware since 2026-10-21. Since #106 (2026-11-13) the default build (`esp`, `esp_ota`) is the **gateway** (#101, #102): allow-listed FC link and the link state machine on 5759; see "Gateway" below. The **transparent bridge** (`esp_bridge`, `esp_bridge_ota`) it replaced passes bytes through unchanged, with no allow-list; it stays as the base of the diag envs and as a way back. The sections below on the bridge describe `esp_bridge`.
 
 ```text
 ground PC 192.168.4.2 ──UDP 5760── ESP SoftAP 192.168.4.1 ──UART0 115200── FC UART4 (MSP)
@@ -32,14 +32,15 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
 
 | Env | Upload | Use |
 |---|---|---|
-| `esp` (default) | USB, 460800 baud | First flash and recovery. CI builds this one |
-| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | Every later update of the flight ESP (ADR-024). The HIL runner flashes its spare ESP over USB with `esp` (`hil.yaml`) |
+| `esp` (default) | USB, 460800 baud | **Gateway**, for an ESP that is not wired to an FC: the HIL bench's spare ESP on the Pi's USB (`hil.yaml`), or a new ESP before it is soldered. The drone's ESP is soldered to the FC, so it is flashed with `esp_ota` only (ADR-012). CI builds this one. Needs the PSK |
+| `esp_ota` | Wi-Fi, `espota` to 192.168.4.1 | **Gateway**. Every update of the drone's ESP (ADR-024, gated: see "Gateway") |
+| `esp_bridge` | USB, 460800 baud | Transparent bridge (`src/main.cpp`), the default until #106. USB, so only for an ESP not wired to an FC (the HIL spare) |
+| `esp_bridge_ota` | Wi-Fi (OTA) | The bridge over the air, as a way back from the gateway (then power-cycle the FC, see "Gateway") |
 | `esp_diag_udp` | USB | Bench diagnosis: UDP → UART only (`WITH_UART=0`) |
 | `esp_diag_uart` | USB | Bench diagnosis: UART → UDP only (`WITH_UDP=0`) |
 | `esp_diag_timing` | Wi-Fi (OTA) | Bench diagnosis: four timestamps per request on UDP 5770 (`WITH_TIMING=1`), see below |
 | `esp_diag_tcp` | Wi-Fi (OTA) | S1-07: TCP echo server on TCP 5759 next to the bridge, plus the timestamps (`WITH_TCP_ECHO=1 WITH_TIMING=1`) |
 | `esp_diag_wdt` | Wi-Fi (OTA) | S1-10: hangs on command (UDP 5771) so the watchdog resets the ESP (`WITH_WDT_TEST=1`) |
-| `esp_gateway` | Wi-Fi (OTA) | **Gateway firmware (#101, #102)**, not the default yet: allow-listed FC link and the link state machine on 5759, no bridge. Needs the PSK; see "Gateway" below |
 
 ## Build
 
@@ -59,7 +60,7 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
    ```
    Build-only check without the config folder (what CI does):
    ```bash
-   SEAME_AP_SSID=ci-dummy-ssid SEAME_AP_PASS=ci-dummy-ap-pass SEAME_OTA_PASS=ci-dummy-ota-pass pio run -d drone/firmware/esp8266 -e esp
+   SEAME_AP_SSID=ci-dummy-ssid SEAME_AP_PASS=ci-dummy-ap-pass SEAME_OTA_PASS=ci-dummy-ota-pass SEAME_PSK=$(printf '0%.0s' {1..64}) pio run -d drone/firmware/esp8266 -e esp
    ```
    The image is `.pio/build/<env>/firmware.bin`.
 
@@ -81,20 +82,20 @@ Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see
 ### Every later update (OTA)
 
 1. **Battery connected** (the ESP needs it; VTX antenna on before the battery goes in, Safety Rules #2), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**, two people present (#15), the battery never left unattended (#8): the ESP sends no neutral frames while it updates and reboots.
-2. No ground session: stop the ground node (`flight_interface`).
+2. No ground session: stop the ground node (`flight_interface`) and `ground_link.py`. The gateway keeps the OTA port closed while a session is open or the FC is armed or silent (ADR-024 D2).
 3. Join the drone network: `python3 scripts/seame.py network connect`.
-4. Upload (the OTA password comes from `secrets.py`). The current firmware does **not** check the arm state or the session yet: steps 1 and 2 are the only protection until #102 adds the ADR-024 gate and lock.
+4. Upload (the OTA password comes from `secrets.py`). The gateway checks the arm state and the session (ADR-024 gate and lock); steps 1 and 2 still apply. If `espota` fails with `No Answer`, the gate is closed (see "Gateway").
    ```bash
    pio run -d drone/firmware/esp8266 -e esp_ota -t upload
    ```
 5. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
-6. Check the link: `python3 scripts/seame.py msp info` (expect API 1.46), and note the SHA-256. After #102: if the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
+6. Check the link: `python3 scripts/ground_link.py` (a session opens and STATE shows the FC values; `seame.py msp info` only works on the bridge), and note the SHA-256. If the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
-## Gateway (#101, #102, env `esp_gateway`)
+## Gateway (#101, #102, envs `esp`, `esp_ota`)
 
-The gateway replaces the transparent bridge step by step. Until it has passed its bench tests, `esp` stays the bridge and the gateway is its own env (the default switch is #106).
+The gateway replaced the transparent bridge as the default build in #106 (2026-11-13), after its HIL tests passed. Until then it was the env `esp_gateway` (`esp_gateway_usb` on the HIL bench); older records use those names.
 
 What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine.md`):
 - **One scheduler owns the FC UART** (`sd::FcLink` in `drone/lib/protocol`). It polls `MSP_ATTITUDE` at 25 Hz, `MSP_STATUS` / `MSP_ANALOG` at 5 Hz and `MSP_API_VERSION` at 1 Hz, one request at a time (50 ms reply timeout), and keeps the latest values with their age. `MSP_SET_RAW_RC` goes ahead of the polls; only the newest RC frame is ever sent.
@@ -112,7 +113,7 @@ What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine
 
 **PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 scripts/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
 
-Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_gateway`. **Quit `ground_link.py` first:** with a session open, or with the FC not answering or armed, the gate stays closed: the OTA port is closed, so `espota` gets no answer to its invitation and fails with `No Answer` after its 10 s timeout. Nothing is written. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_ota`. **Then power-cycle the FC** (battery out, FC USB out): the gateway locked arming for the upload, and the bridge never sends the release (value 0), so the FC refuses to arm until it restarts (ADR-024: the safe side).
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_ota`. **Quit `ground_link.py` first:** with a session open, or with the FC not answering or armed, the gate stays closed: the OTA port is closed, so `espota` gets no answer to its invitation and fails with `No Answer` after its 10 s timeout. Nothing is written. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_bridge_ota` (or a diag env). **Then power-cycle the FC** (battery out, FC USB out): the gateway locked arming for the upload, and the bridge never sends the release (value 0), so the FC refuses to arm until it restarts (ADR-024: the safe side).
 
 ## Diagnosis test: link dead periods (2026-10-22)
 
@@ -162,7 +163,7 @@ Post run2, run3 and this run on #30 as they are, failures included.
 
 ## Diagnosis: timestamps per request (`esp_diag_timing`)
 
-For each request the ESP records four `micros()` stamps and sends them every 100 ms to the PC on UDP 5770. The bridge on 5760 is unchanged, and the normal `esp` / `esp_ota` build is byte for byte the same (`WITH_TIMING` defaults to 0).
+For each request the ESP records four `micros()` stamps and sends them every 100 ms to the PC on UDP 5770. The bridge on 5760 is unchanged, and the `esp_bridge` / `esp_bridge_ota` build is byte for byte the same (`WITH_TIMING` defaults to 0).
 
 | Stamp | When | |
 |---|---|---|
@@ -173,13 +174,15 @@ For each request the ESP records four `micros()` stamps and sends them every 100
 
 Each report also has the ESP's longest loop time in those 100 ms (an ESP stall shows up there). The ESP can't see time on air: a slow PC RTT with small ESP stages means the time was spent on Wi-Fi.
 
+Flashing a diag env over OTA from the gateway locks arming on the FC until it is power-cycled (battery out, FC USB out; see "Gateway"). Do that before arming again.
+
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_timing -t upload           # OTA
 python3 scripts/esp_timing.py listen --csv s1-09_run1_esp.csv            # terminal 1, start first
 python3 scripts/msp_check.py ...                                         # terminal 2, the test as usual
 # Ctrl+C in terminal 1 after the test; split the loss with the PC's numbers:
 python3 scripts/esp_timing.py summary s1-09_run1_esp.csv --sent 30000 --pc-lost 12
-pio run -d drone/firmware/esp8266 -e esp_ota -t upload                   # back to the normal firmware
+pio run -d drone/firmware/esp8266 -e esp_ota -t upload                   # back to the gateway
 ```
 
 The reports add about 3 kB/s of ESP → PC traffic. Record which runs used this build.
@@ -207,12 +210,14 @@ Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05
 
 Props off, battery connected (the ESP needs it, #164). FC also on USB, so the FC can be watched while the ESP reboots (Safety Rules #16). **Stop every MSP stream first**: the bridge forwards whatever the PC sends, so a running stream would look like control output.
 
+Flashing a diag env over OTA from the gateway locks arming on the FC until it is power-cycled (battery out, FC USB out; see "Gateway"). Do that before arming again.
+
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network
 python3 scripts/seame.py msp --usb status-watch --csv s1-10_fc.csv     # terminal 1, FC over USB
 python3 scripts/esp_wdt.py cycle -n 5 --csv s1-10_sw.csv               # terminal 2, software watchdog
 python3 scripts/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv          # hardware watchdog
-pio run -d drone/firmware/esp8266 -e esp_ota -t upload                 # back to the normal firmware
+pio run -d drone/firmware/esp8266 -e esp_ota -t upload                 # back to the gateway
 ```
 
 Pass: every cycle comes back by itself with the expected reason (`Software Watchdog` / `Hardware Watchdog`) and a small uptime; `status-watch` shows the FC never armed, no change in the arming flags, and no FC reboot. This is the bridge part of REQ-SAF-016. "Forwarding only inside a session" waits for the gateway firmware.

@@ -321,7 +321,7 @@ python3 scripts/seame.py msp cycle1a \
 
 ### Gateway session: `ground_link.py` (#102)
 
-Bench ground for the gateway firmware (`esp_gateway`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
+Bench ground for the gateway firmware (env `esp` / `esp_ota`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
 
 | Command | What it does |
 |---|---|
