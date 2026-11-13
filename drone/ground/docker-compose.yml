@@ -20,6 +20,11 @@
 # Compare two runs:  diff logs/mission/2026-10-23_10-00-00.log logs/mission/latest.log
 # Follow one live:   tail -f logs/mission/latest.log   (or docker compose logs -f mission)
 # GROUND_LOG_DIR=./other  puts them somewhere else (the smoke test uses ./logs/smoke).
+#
+# ROS traffic stays on this PC (decision E1 of #103): ROS_DOMAIN_ID 42 (the
+# team domain) and ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST unless you set them.
+# A host terminal that talks to these nodes needs the same:
+#   export ROS_DOMAIN_ID=42 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 
 # Shared by every service. Build context is this folder so the Dockerfiles can
 # COPY src/ and docker/entrypoint.sh.
@@ -27,7 +32,8 @@ x-ros: &ros
   network_mode: host   # DDS discovery between containers (and with a host ROS install)
   ipc: host            # Fast DDS shared-memory transport
   environment:
-    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+    - ROS_AUTOMATIC_DISCOVERY_RANGE=${ROS_AUTOMATIC_DISCOVERY_RANGE:-LOCALHOST}
   volumes:
     - /etc/localtime:/etc/localtime:ro   # host time zone in logs and the table
 
@@ -37,7 +43,8 @@ x-node: &node
   <<: *ros
   attach: false
   environment: &node-env
-    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-0}
+    ROS_DOMAIN_ID: ${ROS_DOMAIN_ID:-42}
+    ROS_AUTOMATIC_DISCOVERY_RANGE: ${ROS_AUTOMATIC_DISCOVERY_RANGE:-LOCALHOST}
     LOG_DIR: /logs
     PYTHONUNBUFFERED: "1"   # print() lines reach the log at once
     # The log lines already carry the time (entrypoint.sh)

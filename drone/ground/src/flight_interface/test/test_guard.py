@@ -163,9 +163,12 @@ def test_flight_state_follows_the_drone():
         "override_active": True,
         "mask": 11,
         "airborne": True,
+        "failsafe_output": False,
+        "fc_link_ok": None,
         "active": True,
         "estop": False,
         "estop_reason": "",
+        "resume_pending": False,
     }
     # Only a real True counts (mission_node parses strictly).
     g.on_drone_state(
@@ -213,9 +216,16 @@ def test_estop_holds_across_deactivate_and_activate():
 
 
 # ---------- REQ-SAF-023: never arms ----------
-def test_guard_and_backends_have_no_way_to_arm():
-    names = {n.lower() for n in dir(Guard) + dir(Backend) + dir(LoopbackBackend)}
-    assert not [n for n in names if "arm" in n.replace("alarm", "")]
+def test_guard_and_backends_have_no_way_to_arm_but_the_operator_path():
+    # Decision A4 (2026-11-10): the backend's arm_control() is the one way to
+    # ARM, called only from the operator's ~/arm_control (checked in the node
+    # tests); the guard only answers arm_allowed(). Nothing else may exist.
+    def arm_names(cls):
+        return {n for n in dir(cls) if "arm" in n.lower().replace("alarm", "")}
+
+    assert arm_names(Guard) == {"arm_allowed"}
+    assert arm_names(Backend) == {"arm_control"}
+    assert arm_names(LoopbackBackend) == {"arm_control"}
 
 
 # ---------- backends ----------
@@ -240,7 +250,9 @@ def test_loopback_is_conservative_by_default_and_records_what_is_sent():
 
 def test_unknown_backend_refused():
     with pytest.raises(ValueError):
-        make_backend("esp")
+        make_backend("px4")  # waits for decision C1
+    with pytest.raises(ValueError):
+        make_backend("nope")
 
 
 def test_base_backend_is_only_an_interface():

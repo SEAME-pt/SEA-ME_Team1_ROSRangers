@@ -41,9 +41,20 @@ STREAMING = {
 
 
 # What the node may use on a backend (REQ-SAF-023: nothing that could arm).
-ALLOWED = {"send_setpoint", "poll", "close", "name"}
+# send_neutral and end_session: the E-stop (decision A1); request_resume: the
+# operator's ~/resume (decision A3).
+ALLOWED = {
+    "send_setpoint",
+    "send_neutral",
+    "end_session",
+    "request_resume",
+    "poll",
+    "take_acks",  # read-only: the ESP's answers, logged (decision E2)
+    "close",
+    "name",
+}
 # Data fields the tests themselves read; not calls by the node.
-TEST_FIELDS = {"sent", "state", "connected", "closed", "calls"}
+TEST_FIELDS = {"sent", "log", "state", "connected", "closed", "calls", "acks"}
 
 
 class RecordingBackend(LoopbackBackend):

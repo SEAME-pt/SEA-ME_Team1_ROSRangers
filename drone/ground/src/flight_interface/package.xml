@@ -15,6 +15,10 @@
   <depend>lifecycle_msgs</depend>
 
   <exec_depend>python3-serial</exec_depend>  <!-- msp.py SerialTransport -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- backend:=esp also needs sd_protocol (drone/ground/src/sd_protocol_py), a
+       pip package, not a ROS one: pip install -e drone/ground/src/sd_protocol_py -->
 
   <test_depend>python3-pytest</test_depend>
 
