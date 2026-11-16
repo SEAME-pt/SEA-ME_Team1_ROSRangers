@@ -420,28 +420,56 @@ constexpr uint32_t kFcHealthPeriodMs = 200; // 5 Hz (#179 D3)
 #if WITH_LOOP_TIMING
 // REQ-SW-005 (#146): the period of every loop() in a histogram, sent once a
 // second to the UDP peer on port 5770 (read by scripts/rt_profile.py).
-// Bucket = the period truncated to its 5 top bits (< 6.25 % error); the
-// window max is exact. Lines: L,<window>,<now_us>,<loops>,<max_us> then
+// The window max is exact. Lines: L,<window>,<now_us>,<loops>,<max_us> then
 // B,<lo_us>,<count> per non-empty bucket; the L line starts every packet.
+//
+// Buckets: 0..15 us get one bucket each (1 us wide). Above that, each octave
+// (16-31 us, 32-63 us, 64-127 us, ...) is cut into 16 equal buckets, so a
+// bucket is never wider than 1/16 (6.25 %) of the periods in it:
+//   octave 0: 16-31 us, 1 us wide   -> buckets 16..31
+//   octave 1: 32-63 us, 2 us wide   -> buckets 32..47
+//   octave 2: 64-127 us, 4 us wide  -> buckets 48..63, and so on.
 constexpr uint16_t kLoopTimingPort = 5770;
 constexpr uint32_t kLoopReportMs = 1000;
-constexpr size_t kLoopBins = 16 * 18; // periods up to 2^21 us, then clamped
+constexpr uint32_t kLoopOctaves = 17;                // up to 2^21 us (2 s)
+constexpr size_t kLoopBins = 16 + 16 * kLoopOctaves; // longer: last bucket
 constexpr size_t kBinsPerPacket = 60; // about 1 kB, below one Wi-Fi frame
 uint32_t loop_bins[kLoopBins];
-uint32_t loop_last_us = 0, loop_max_us = 0, loop_count = 0, loop_window = 0;
+uint32_t loop_last_us = 0;
+uint32_t loop_max_us = 0;
+uint32_t loop_count = 0;
+uint32_t loop_window = 0;
 uint32_t loop_report_ms = 0;
 
+// Bucket index of a period.
 size_t loop_bin(uint32_t us) {
   if (us < 16) {
     return us;
   }
-  const uint32_t e = 31 - __builtin_clz(us); // 4..31
-  const size_t i = 16 * (e - 3) + ((us >> (e - 4)) & 15);
-  return i < kLoopBins ? i : kLoopBins - 1;
+  uint32_t octave = 0; // us is in [16 << octave, 32 << octave)
+  while ((us >> octave) >= 32) {
+    ++octave;
+  }
+  const uint32_t octave_start = 16u << octave;
+  const uint32_t width = 1u << octave;               // bucket width, us
+  const uint32_t slot = (us - octave_start) / width; // 0..15
+  const size_t bin = 16 + 16 * octave + slot;
+  if (bin >= kLoopBins) {
+    return kLoopBins - 1;
+  }
+  return bin;
 }
 
-uint32_t loop_bin_lo(size_t i) {
-  return i < 16 ? i : (16 + i % 16) << (i / 16 - 1);
+// Lowest period (us) that falls in a bucket: what the B line reports.
+uint32_t loop_bin_lo(size_t bin) {
+  if (bin < 16) {
+    return bin;
+  }
+  const uint32_t octave = (bin - 16) / 16;
+  const uint32_t slot = (bin - 16) % 16;
+  const uint32_t octave_start = 16u << octave;
+  const uint32_t width = 1u << octave;
+  return octave_start + slot * width;
 }
 
 void loop_timing(uint32_t now_ms) {
@@ -480,7 +508,8 @@ void loop_timing(uint32_t now_ms) {
   }
   ++loop_window; // a gap in the windows = no peer or a lost packet
   memset(loop_bins, 0, sizeof loop_bins);
-  loop_count = loop_max_us = 0;
+  loop_count = 0;
+  loop_max_us = 0;
   loop_last_us = micros(); // the report itself is not a loop period
 }
 #endif

@@ -98,6 +98,10 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
 - Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
 
+## Code style
+
+- Write code a teammate can read at a glance: `if`/`else` with named intermediate variables, not nested or packed ternaries, chained assignments (`a = b = 0`) or bit tricks (`__builtin_clz`, shift-and-mask). When math is unavoidable, a comment shows it with a worked example.
+
 ## Gotchas
 
 - `Closes #N` does not close issues on PRs into `dev` by itself (see `close-linked-issues.yaml` above).
