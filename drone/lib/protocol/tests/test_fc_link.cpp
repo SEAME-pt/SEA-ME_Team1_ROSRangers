@@ -758,3 +758,59 @@ TEST(FcLink, OverrideBoxOnTheSecondPage) {
   EXPECT_EQ(fc.override_box(), 35);
   EXPECT_EQ(fc.override_state(1000), sd::OverrideState::kOn);
 }
+
+TEST(FcLink, BoxListExpiresWhenNotReadFor10Seconds) {
+  // The FC answers every poll but MSP_BOXIDS: after kMaxValueAgeMs the old
+  // list is dropped and override_active is unknown, never a stale "on".
+  sd::FcLink fc;
+  run_fc(fc, 0, 1000, kBoxIdsMask8, kStatusOverrideOn);
+  ASSERT_EQ(fc.override_state(1000), sd::OverrideState::kOn);
+  const std::uint32_t read_at = 1000;
+  std::uint32_t t = 1001;
+  for (; t <= read_at + sd::kMaxValueAgeMs + 1000; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, kStatusOverrideOn), t);
+    } else if (cmd >= 0 && cmd != sd::msp::kBoxIds) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         {0, 1, 48, 0, 0, 0, 0, 0, 0}),
+             t);
+    }
+  }
+  EXPECT_TRUE(fc.fc_alive(t - 1));
+  EXPECT_FALSE(fc.has_boxes());
+  EXPECT_EQ(fc.override_state(t - 1), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, ALostBoxIdsPageRestartsFromPageZero) {
+  // Page 0 is full, the page-1 request times out: the next MSP_BOXIDS asks
+  // for page 0 again, not page 1 forever (#198 review).
+  sd::FcLink fc;
+  Bytes page0;
+  for (std::uint8_t i = 0; i < 32; ++i) {
+    page0.push_back(i);
+  }
+  std::vector<int> pages; // the page of each MSP_BOXIDS request
+  for (std::uint32_t t = 0; t <= 2500; ++t) {
+    Bytes req;
+    const int cmd = poll_frame(fc, t, req);
+    if (cmd == sd::msp::kBoxIds) {
+      const int page = req[3] == 1 ? req[5] : 0;
+      pages.push_back(page);
+      if (page == 0) {
+        answer(fc, reply_frame(sd::msp::kBoxIds, page0), t);
+      } // page 1: no answer, it times out
+    } else if (cmd >= 0) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         {0, 1, 48, 0, 0, 0, 0, 0, 0}),
+             t);
+    }
+  }
+  ASSERT_GE(pages.size(), 3U);
+  EXPECT_EQ(pages[0], 0);
+  EXPECT_EQ(pages[1], 1);
+  EXPECT_EQ(pages[2], 0);
+  EXPECT_FALSE(fc.has_boxes());
+}

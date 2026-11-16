@@ -240,6 +240,8 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.OverrideUnknownWhenTheStatusIsOld` | On while MSP_STATUS is under 500 ms old, unknown at 500 ms | An old "on" is never reported as current |
 | `FcLink.BoxListIsForgottenAfterAnFcSilence` | 400 ms of FC silence (a reboot), then the FC comes back with mask 0: the old list is dropped, unknown until the new list is read | A box list from before a reboot is never matched with a new STATUS |
 | `FcLink.OverrideBoxOnTheSecondPage` | Page 0 has 32 boxes without 50: the next request asks for page 1 (payload 1), box 50 is its 4th entry → box 35, read from the extra mode byte | Works on an FC with more than 32 modes |
+| `FcLink.BoxListExpiresWhenNotReadFor10Seconds` | The FC answers everything but MSP_BOXIDS: 10 s after the last list, `override_state()` is unknown although STATUS still says bit 22 is on | A box list that is no longer confirmed is never trusted |
+| `FcLink.ALostBoxIdsPageRestartsFromPageZero` | Page 0 full, the page-1 request times out: the next MSP_BOXIDS asks for page 0 again | A lost reply never leaves the list half-read for good |
 
 ## Link: the ESP link state machine (#102)
 

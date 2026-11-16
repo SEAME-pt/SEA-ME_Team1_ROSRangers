@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.5. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.4.1; v1.5 (`override_active` values, #176) is **proposed** until the team agrees to put `MSP_BOXIDS` on the allow-list. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -103,7 +103,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 |---|---|
 | 0 | MSP OVERRIDE is off: the radio's sticks fly |
 | 1 | MSP OVERRIDE is on: the channels in the override mask come from the ESP |
-| 2 | Unknown: the box list is not read yet, the FC has no MSP OVERRIDE box (`msp_override_channels_mask` = 0), or the last `MSP_STATUS` is 500 ms old or more |
+| 2 | Unknown: the box list is not read yet (or not re-read for 10 s, or the FC was silent for 250 ms or more since), the FC has no MSP OVERRIDE box (`msp_override_channels_mask` = 0), or the last `MSP_STATUS` is 500 ms old or more |
 
 `ARM_CONTROL_ACK.result` and `RESUME_ACK.result` share one list, so a number means the same in both.
 
@@ -305,7 +305,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 | 2026-11-10 | 1.4 | New message `FC_HEALTH` (0x81, UDP, ESP → ground, 5 Hz, §3), `ARM_CONTROL_ACK.result` 4 "FC not answering" and `EVENT` codes `0x0201` / `0x0202` (§3.1). Team decision on #179 (D1–D3). `STATE` is unchanged; a v1.3 ground that receives `FC_HEALTH` rejects it as `bad_type` and nothing else changes. Golden vector `fc_health_fc_lost` (§6, group 1) |
 | 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
-| 2026-11-16 | 1.5 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. Needs `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3, proposed). |
+| 2026-11-16 | 1.5 (proposed) | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. Needs `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3, proposed). |
 
 ## 9. Glossary
 

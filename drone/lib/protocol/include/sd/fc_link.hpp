@@ -189,6 +189,9 @@ private:
   // #176: the box list, read page by page (32 boxes each).
   bool has_boxes_ = false;
   std::uint32_t boxes_ms_ = 0;
+  // When the current list was first read: a STATUS older than this may come
+  // from before an FC reboot and is never matched with it.
+  std::uint32_t boxes_since_ms_ = 0;
   int override_box_ = -1;
   std::uint8_t box_page_ = 0; // the page the next MSP_BOXIDS asks for
   FcTelemetry telemetry_ = {};
