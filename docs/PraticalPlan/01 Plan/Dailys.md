@@ -156,6 +156,14 @@ Verificar a issue (Sprint 2 demo).
 Tiago - FC
 Paulo - HiL
 
+16/Nov - 10:32/10:34
+Guilherme - Avancar com os testes de HiL
+Bruno - Lifecycle node pronto a ser entregue e implementar flight interface nas sims
+Tiago - Terminar a issue do ThoneFlow e tentar tratar do USB
+Paulo - Continuar com issues pendentes da semana passada. Avancar com a issue 171
+**Blockers**
+Geral - USB
+
 ---
 
 ## Glossary
