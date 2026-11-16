@@ -3,7 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - simulation
@@ -126,6 +126,8 @@ The services, in `drone/ground/docker-compose.yml`:
 | `sim_smoke` | the scripted test (§7.3) |
 
 The `flight` service (pretend `/flight/state`) never runs with them: the bridge publishes the real one from PX4. `make sim` lists its services by name for that reason, and `make` / `make up` stop a running sim first. The sim services are behind the compose profiles `sim` and `sim-smoke`, so plain `make` never starts them.
+
+**Discovery.** `make sim` and `make sim-smoke` run every container with `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`; the rest of the ground chain defaults to `LOCALHOST` ([[ADR-025 flight_interface Ground Node|ADR-025]] E1, E1.2). With `LOCALHOST` the `px4` container (uid 1000, UDP only) and the others never see each other. With `SUBNET` other PCs on the same network and `ROS_DOMAIN_ID` see the sim's topics: on a shared network, use your own domain (`export ROS_DOMAIN_ID=<n>` before `make sim`).
 
 **`px4_offboard_bridge`** (`drone/simulation/px4/ros/px4_offboard_bridge/`) turns `/mission/velocity_target` into PX4 offboard velocity setpoints at 20 Hz (body FLU → local NED, using the PX4 heading). It sends zero when the target is older than 0.25 s (REQ-SAF-017), zeroes the axes outside the mask (REQ-SAF-018) and clamps to the ceilings. It publishes `/flight/state` for `mission_node`: `override_active` is "armed and in Offboard", the sim's takeover switch. It never arms or changes mode. Details, the frame formulas and the parameters: its `README.md`.
 

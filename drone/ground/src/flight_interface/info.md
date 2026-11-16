@@ -24,7 +24,7 @@ ROS 2 package for the ground ↔ flight controller link.
   - `/fc/attitude` and `/fc/battery` (decisions D2, D2.1; `publish_fc`, default true): from the FC values in every `STATE`, through the same conversion as `fc_telemetry` (`telemetry.py`; `frame_id`, `cell_count` as there), with the yaw zeroed at the first sample after each `activate`. Each is published only while `FC_HEALTH` says its value is fresh (attitude under 250 ms, battery under 1 s): `STATE` alone carries zero before the FC's first reply and frozen values after it goes silent.
   - Code: `guard.py` (logic, no ROS), `backends.py`, `esp_backend.py`, `link_node.py`, `telemetry.py` (shared with `fc_telemetry`). Test doubles: `test/fake_esp.py` (an ESP on localhost built on `sd_protocol`, with `FC_HEALTH`, the #188 RC rule and fault controls such as a replayed `HELLO_ACK`).
 
-The topic contract, parameters, exit codes and bench results are in the vault: `docs/PraticalPlan/03 Architecture/Architecture Document.md` §2. Tests: `docs/PraticalPlan/04 CI-CD/Testing Strategy.md` §5 (`fc_telemetry`) and §6 (`flight_interface`).
+The topic contract, parameters, exit codes and bench results are in the vault: `docs/PraticalPlan/03 Architecture/Architecture Document.md` §2. Tests: `docs/PraticalPlan/04 CI-CD/Testing Strategy.md` §5 (`fc_telemetry`).
 
 Run: `ros2 run flight_interface fc_telemetry --ros-args -p transport:=udp`, `ros2 launch flight_interface flight_interface.launch.py backend:=esp`
 Test: `colcon test --packages-select flight_interface`
