@@ -23,31 +23,40 @@ restart nothing is sent before configure, activate and an operator ARM.
 
 Link loss (decision A2): zero setpoints and link_ok false, no latch. The way
 back after the ESP's link failsafe is the operator's ~/resume (decision A3):
-it is refused unless the node is active, not in E-stop, the link is fresh and
-the ESP reports LINK_FAILSAFE; then RESUME_REQUEST goes out after 0.6 s of
-neutral setpoints. The node never resumes by itself.
+it is refused unless the node is active, not in E-stop, the link is fresh,
+the FC link is reported alive and the ESP reports LINK_FAILSAFE. The node
+then holds it: RESUME_REQUEST goes out after 1.5 s of neutral setpoints
+(decision K6 as changed on PR #191), or the request is dropped after 3 s.
+The node never resumes by itself.
 
-ARM (decision A4): only the operator's ~/arm_control sends ARM_CONTROL_REQUEST,
-with the `mask` parameter (8, 11 or 15, checked at configure). It is refused
-unless the node is active, not in E-stop, the link is fresh, the ESP reports
-SESSION_IDLE and the FC link is not reported lost. The node never sends ARM on
-its own, also not after a reconnect, a session switch or a reset
+ARM (decision A4): only the operator's ~/arm_control leads to
+ARM_CONTROL_REQUEST, with the `mask` parameter (8, 11 or 15, checked at
+configure). It is refused unless the node is active, not in E-stop, the link
+is fresh, the FC link is reported alive and the ESP reports SESSION_IDLE.
+Like RESUME it is held until 1.5 s of neutral setpoints went out (the ESP
+refuses ARM until the FC has acknowledged RC for 1 s, #188), and dropped if
+its conditions go, the session changes or 3 s pass. The node never sends ARM
+on its own, also not after a reconnect, a session switch or a reset
 (REQ-SAF-023).
 
 The ESP's answer to ARM and RESUME (decision E2): every ARM_CONTROL_ACK and
 RESUME_ACK is logged, a refusal as a warning with its reason (e.g.
 MASK_MISMATCH: the ground must not fly). The services answer when the request
-is sent, so this log is where the operator sees the ESP's verdict.
+is accepted and held, so this log is where the operator sees what was sent
+and the ESP's verdict.
 
-FC telemetry (decision D2): with publish_fc true, /fc/attitude
-(Vector3Stamped, rad, REP-103) and /fc/battery (BatteryState) come from the FC
-values in every STATE, through the same conversion as fc_telemetry
+FC telemetry (decisions D2, D2.1): with publish_fc true, /fc/attitude
+(Vector3Stamped, rad, REP-103) and /fc/battery (BatteryState) come from the
+FC values in every STATE, through the same conversion as fc_telemetry
 (telemetry.py), with the yaw zeroed at the first sample after each activate.
-Only while the ESP reports the FC link alive (fc_link_ok true): STATE carries
-no age for them, so they are zero before the FC's first reply and frozen for
-up to 10 s after it goes silent. Do not run fc_telemetry on the same graph.
+STATE carries no age for them, so each is published only while FC_HEALTH says
+its value is fresh (attitude under ATTITUDE_MAX_AGE, battery under
+ANALOG_MAX_AGE): never a zero before the FC's first reply or a frozen value
+after it goes silent. Do not run fc_telemetry on the same graph.
 
 Freshness uses time.monotonic(). Logic: guard.py (no ROS). Backends: backends.py.
+The decisions (A1-A6, K1-K6, B1-B3, C-E) are in docs/PraticalPlan/02 Decisions/
+ADR-025 flight_interface Ground Node.md.
 """
 
 import json
@@ -83,12 +92,19 @@ MIN_RATE_HZ, MAX_RATE_HZ = 10.0, 100.0
 MIN_STATE_RATE_HZ = 5.0
 ATTITUDE_TOPIC = "/fc/attitude"  # the same topics as fc_telemetry (D2)
 BATTERY_TOPIC = "/fc/battery"
+# D2.1: the oldest FC value published. The ESP polls MSP_ATTITUDE at 25 Hz and
+# MSP_ANALOG at 5 Hz; 250 ms is also its own "FC lost" limit.
+ATTITUDE_MAX_AGE = 0.25
+ANALOG_MAX_AGE = 1.0
 # Why the ESP refused ARM or RESUME (Protocol Spec v0 §3.1), for the log (E2).
 ACK_REASONS = {
     "WRONG_STATE": "the ESP is not in the state this request needs",
     "MASK_MISMATCH": "the ESP runs another override mask: the ground must not fly",
     "RESUME_CONDITION_NOT_MET": "no unbroken neutral stream for 500 ms",
-    "FC_NOT_ANSWERING": "the FC does not answer the ESP",
+    "FC_NOT_ANSWERING": (
+        "the FC does not answer the ESP, or has not acknowledged RC for 1 s "
+        "(#188): keep the node active and ask again"
+    ),
 }
 
 
@@ -300,29 +316,51 @@ class FlightInterface(Node):
         if command is not None:
             self.backend.send_setpoint(command, now)
             self.guard.note_sent(command, now)
-        if self.guard.resume_due(now):
-            if self.backend.request_resume(now):
-                self.get_logger().warning("RESUME_REQUEST sent (operator request)")
-            else:
-                self.get_logger().error(
-                    "RESUME_REQUEST not sent: no TCP to the ESP; ask again"
-                )
+        due = self.guard.request_due(now)
+        if due is not None:
+            self._send_due_request(*due, now)
+
+    def _send_due_request(self, kind, mask, now):
+        """The operator's held ARM or RESUME, now that the guard says it is
+        due (K6). The ONLY place that calls arm_control(): the guard holds an
+        ARM only from ~/arm_control (REQ-SAF-023)."""
+        # One call site per severity: rclpy refuses to change it between calls.
+        if kind == "arm":
+            what = f"ARM_CONTROL_REQUEST mask {mask}"
+            sent = self.backend.arm_control(mask, now)
+        else:
+            what = "RESUME_REQUEST"
+            sent = self.backend.request_resume(now)
+        if sent:
+            self.get_logger().warning(f"{what} sent (operator request)")
+        else:
+            self.get_logger().error(f"{what} not sent: no TCP to the ESP; ask again")
+
+    @staticmethod
+    def _fresh_value(drone_state, which, limit):
+        """D2.1: the value's age from FC_HEALTH is known and under `limit`."""
+        ages = drone_state.get("fc_ages")
+        age = ages.get(which) if isinstance(ages, dict) else None
+        return isinstance(age, (int, float)) and 0 <= age <= limit
 
     def _publish_fc(self, drone_state):
-        """D2: /fc/attitude and /fc/battery from a STATE's FC values, only while
-        the ESP reports the FC link alive (see the module docstring)."""
+        """D2: /fc/attitude and /fc/battery from a STATE's FC values, each only
+        while FC_HEALTH says that value is fresh (D2.1, module docstring)."""
         if self._attitude is None or not isinstance(drone_state, dict):
             return
         values = drone_state.get("fc_values")
-        if not isinstance(values, dict) or drone_state.get("fc_link_ok") is not True:
+        if not isinstance(values, dict):
             return
         stamp = self.get_clock().now().to_msg()
-        attitude = Vector3Stamped()
-        attitude.header.stamp = stamp
-        attitude.header.frame_id = self._frame_id
-        x, y, z = self._attitude.convert(state_attitude(values))
-        attitude.vector.x, attitude.vector.y, attitude.vector.z = x, y, z
-        self._attitude_pub.publish(attitude)
+        if self._fresh_value(drone_state, "attitude", ATTITUDE_MAX_AGE):
+            attitude = Vector3Stamped()
+            attitude.header.stamp = stamp
+            attitude.header.frame_id = self._frame_id
+            x, y, z = self._attitude.convert(state_attitude(values))
+            attitude.vector.x, attitude.vector.y, attitude.vector.z = x, y, z
+            self._attitude_pub.publish(attitude)
+        if not self._fresh_value(drone_state, "analog", ANALOG_MAX_AGE):
+            return
         battery = BatteryState()
         battery.header.stamp = stamp
         battery.header.frame_id = self._frame_id
@@ -370,16 +408,13 @@ class FlightInterface(Node):
         return response
 
     def _on_arm_control(self, request, response):
-        """A4: the operator's ARM. The ONLY place that calls arm_control()."""
-        now = time.monotonic()
-        ok, why = self.guard.arm_allowed(self._mask, now)
-        if ok:
-            ok = self.backend.arm_control(self._mask, now)
-            why = f"{why} sent" if ok else f"{why} not sent: no TCP to the ESP"
+        """A4, K6: the operator's ARM. The ONLY place that asks the guard to
+        hold one; _send_due_request() sends it when it is due."""
+        ok, why = self.guard.request_arm(self._mask, time.monotonic())
         response.success, response.message = ok, why
         # One call site per severity: rclpy refuses to change it between calls.
         if ok:
-            self.get_logger().warning(f"ARM (operator): {why}")
+            self.get_logger().warning(f"ARM requested (operator): {why}")
         else:
             self.get_logger().info(f"ARM refused: {why}")
         return response

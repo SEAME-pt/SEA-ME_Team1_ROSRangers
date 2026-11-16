@@ -5,15 +5,17 @@ fake ESP (test/fake_esp.py): the whole path operator service -> node -> wire
   * A2 + A3: silence trips the watchdog (link_ok false, no latch); the ESP's
     link failsafe shows on /flight/state; nothing resumes by itself; the
     operator's ~/resume brings STREAMING back with RESUME_REQUEST on the wire.
-  * K1 + A4 (#179): FC link lost sets link_ok false and refuses
+  * K1 + A4 (#179, E6.2): FC link lost sets link_ok false and refuses
     ~/arm_control; FC link restored opens both again.
+  * K6 (PR #191): ARM and RESUME go out after 1.5 s of neutral setpoints; the
+    fake ESP wants 1 s of streaming first, as the gateway does (#188).
   * A4 + B1: a mask the gateway does not run (it runs 8 only) is refused by
     the ESP and never reaches /flight/state.
   * A1 without TCP: BYE cannot go out, but the setpoints stop, so the ESP
     still enters its failsafe; the latch holds over the new session; no ARM.
   * A5 while inactive: an ESP restart gives a new session before activate.
-  * D2: /fc/attitude and /fc/battery from STATE, only while the ESP reports
-    the FC link alive; the yaw is zeroed at each activate.
+  * D2, D2.1: /fc/attitude and /fc/battery from STATE, each only while
+    FC_HEALTH says its value is fresh; the yaw is zeroed at each activate.
   * E2: the ESP's answer to ARM reaches the node's log, a refusal with its
     reason. E3: a secrets file other users can read is warned about.
   * configure fails cleanly with a bad esp_port / esp_host or without a PSK,
@@ -51,14 +53,12 @@ except ImportError:
 try:
     from fake_esp import TEST_PSK, FakeEsp
 
-    from flight_interface.esp_backend import (
-        FC_LINK_LOST,
-        FC_LINK_RESTORED,
-        EspBackend,
-    )
+    from flight_interface.esp_backend import EspBackend
     from sd_protocol.frame import MsgType
-    from sd_protocol.messages import AckResult, EspState
-except ImportError:  # no sd_protocol
+    from sd_protocol.messages import AGE_UNKNOWN, AckResult, EspState, EventCode
+except ModuleNotFoundError as error:  # no sd_protocol; any other import error fails
+    if not (error.name or "").startswith("sd_protocol"):
+        raise
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
@@ -88,6 +88,7 @@ class EspNodeTests(unittest.TestCase):
 
     def setUp(self):
         self.fake = FakeEsp()
+        self.fake.rc_ack_needed = 1.0  # as the gateway since #188
         self.make(EspBackend(*self.fake.addr, TEST_PSK))
 
     def make(self, backend):
@@ -162,11 +163,12 @@ class EspNodeTests(unittest.TestCase):
         self.node.trigger_activate()
 
     def streaming(self):
-        """Active, then the operator's ARM (mask 8): the ESP streams."""
+        """Active, then the operator's ARM (mask 8), held for the neutral
+        window (K6): the ESP streams."""
         self.activate()
-        self.spin(0.5, yaw=0.3)
+        self.spin(0.8, yaw=0.3)  # E6.2: the FC is known alive after ~0.4 s
         self.assertTrue(self.call("arm_control").success)
-        self.spin(0.4, yaw=0.3)
+        self.spin(1.9, yaw=0.3)
         state = self.states[-1]
         self.assertEqual(state["esp_state"], "STREAMING")
         self.assertEqual(state["mask"], 8)
@@ -199,7 +201,9 @@ class EspNodeTests(unittest.TestCase):
         # A3: only the operator's ~/resume, after the neutral window.
         response = self.call("resume")
         self.assertTrue(response.success, response.message)
-        self.spin(1.2, yaw=0.3)
+        self.spin(1.0, yaw=0.3)
+        self.assertEqual(self.fake.count(MsgType.RESUME_REQUEST), 0)  # held (K6)
+        self.spin(1.0, yaw=0.3)
         self.assertEqual(self.fake.count(MsgType.RESUME_REQUEST), 1)
         self.assertEqual(self.backend.last_ack, ("RESUME_ACK", AckResult.OK))
         self.assertEqual(self.fake.state, EspState.STREAMING)
@@ -211,12 +215,18 @@ class EspNodeTests(unittest.TestCase):
 
     # ---------- K1 + A4: FC link health ----------
     def test_fc_link_lost_closes_the_gate_and_refuses_arm(self):
+        self.fake.fc_health["fc_alive"] = 0  # the FC is silent from the start
         self.activate()
-        self.spin(0.5, yaw=0.3)
+        self.spin(0.8, yaw=0.3)
+        self.assertIs(self.states[-1]["fc_link_ok"], False)  # E6: from FC_HEALTH
+        self.assertFalse(self.states[-1]["link_ok"])
+        self.fake.fc_health["fc_alive"] = 1
+        self.spin(0.6, yaw=0.3)
         self.assertTrue(self.states[-1]["link_ok"])
-        self.assertIsNone(self.states[-1]["fc_link_ok"])
+        self.assertIs(self.states[-1]["fc_link_ok"], True)
 
-        self.fake.send_event(FC_LINK_LOST)
+        self.fake.fc_health["fc_alive"] = 0  # as the gateway: both say it
+        self.fake.send_event(EventCode.FC_LINK_LOST)
         self.spin(0.3, yaw=0.3)
         self.assertIs(self.states[-1]["fc_link_ok"], False)
         self.assertFalse(self.states[-1]["link_ok"])  # mission_node goes IDLE
@@ -226,25 +236,26 @@ class EspNodeTests(unittest.TestCase):
         self.spin(0.2)
         self.assertEqual(self.fake.arm_requests, 0)
 
-        self.fake.send_event(FC_LINK_RESTORED)
+        self.fake.fc_health["fc_alive"] = 1
+        self.fake.send_event(EventCode.FC_LINK_RESTORED)
         self.spin(0.3, yaw=0.3)
         self.assertIs(self.states[-1]["fc_link_ok"], True)
         self.assertTrue(self.states[-1]["link_ok"])
         self.assertTrue(self.call("arm_control").success)
-        self.spin(0.4, yaw=0.3)
+        self.spin(1.9, yaw=0.3)
         self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
         self.assertEqual(self.fake.arm_requests, 1)
 
     # ---------- A4 + B1: the mask ----------
     def test_a_mask_the_gateway_does_not_run_never_reaches_flight_state(self):
-        """~/arm_control answers once ARM is SENT; the ESP's MASK_MISMATCH
+        """~/arm_control answers once ARM is held; the ESP's MASK_MISMATCH
         shows only as no mask and SESSION_IDLE on /flight/state."""
         self.node.set_parameters([Parameter("mask", value=11)])
         self.activate()
-        self.spin(0.5, yaw=0.3)
+        self.spin(0.8, yaw=0.3)
         response = self.call("arm_control")
         self.assertTrue(response.success, response.message)
-        self.spin(0.4, yaw=0.3)
+        self.spin(1.9, yaw=0.3)
         self.assertEqual(
             self.backend.last_ack, ("ARM_CONTROL_ACK", AckResult.MASK_MISMATCH)
         )
@@ -297,7 +308,7 @@ class EspNodeTests(unittest.TestCase):
         self.assertEqual(self.backend.sessions_opened, 2)
         self.assertEqual(self.fake.session_id, self.backend.session_id)
         self.node.trigger_activate()
-        self.spin(0.4)
+        self.spin(0.8)  # STATE at once; the FC alive after ~0.4 s of FC_HEALTH
         self.assertTrue(self.states[-1]["link_ok"])  # no 3 s wait first
         self.assertEqual(self.fake.arm_requests, 0)
 
@@ -331,14 +342,14 @@ class EspNodeTests(unittest.TestCase):
                 self.node.trigger_configure(), TransitionCallbackReturn.SUCCESS
             )
         self.node.trigger_activate()
-        self.spin(0.5)
+        self.spin(0.8)
         self.assertEqual(self.backend.name, "esp")
         self.assertEqual(self.fake.hellos, 1)
         self.assertTrue(self.states[-1]["link_ok"])
         self.assertEqual(self.fake.arm_requests, 0)
 
     # ---------- D2: /fc/attitude and /fc/battery from STATE ----------
-    def test_fc_topics_from_state_only_while_the_fc_link_is_alive(self):
+    def test_fc_topics_only_while_fc_health_says_the_values_are_fresh(self):
         attitudes, batteries = [], []
         self.probe.create_subscription(
             Vector3Stamped, "/fc/attitude", attitudes.append, 10
@@ -347,14 +358,17 @@ class EspNodeTests(unittest.TestCase):
             BatteryState, "/fc/battery", batteries.append, 10
         )
         self.fake.fc_values = {"roll": 187, "pitch": 217, "heading": 55, "vbat": 1552}
+        # The ESP has not had the values yet (the gateway sends 0 then).
+        self.fake.fc_health["attitude_age_ms"] = AGE_UNKNOWN
+        self.fake.fc_health["analog_age_ms"] = AGE_UNKNOWN
         self.activate()
-        self.spin(0.6)
-        self.assertTrue(self.states[-1]["link_ok"])  # STATE is flowing...
-        self.assertIsNone(self.states[-1]["fc_link_ok"])  # ...but the FC is unknown
-        self.assertEqual((attitudes, batteries), ([], []))  # so no reading at all
+        self.spin(0.8)
+        self.assertTrue(self.states[-1]["link_ok"])  # STATE and the FC are fine...
+        self.assertEqual((attitudes, batteries), ([], []))  # ...but no value yet
 
-        self.fake.send_event(FC_LINK_RESTORED)
-        self.spin(0.4)
+        self.fake.fc_health["attitude_age_ms"] = 20
+        self.fake.fc_health["analog_age_ms"] = 100
+        self.spin(0.5)
         self.assertGreater(len(attitudes), 3)
         self.assertGreater(len(batteries), 3)
         first = attitudes[0]
@@ -371,20 +385,31 @@ class EspNodeTests(unittest.TestCase):
         self.spin(0.3)
         self.assertAlmostEqual(attitudes[-1].vector.z, math.radians(38))
 
+        # The attitude goes stale on the ESP (D2.1): only the battery goes on.
+        self.fake.fc_health["attitude_age_ms"] = 900
+        self.spin(0.3)
+        published = len(attitudes)
+        before = len(batteries)
+        self.spin(0.5)
+        self.assertEqual(len(attitudes), published)
+        self.assertGreater(len(batteries), before)
+
         # FC lost: STATE still comes, but its FC values are frozen. Nothing more.
-        self.fake.send_event(FC_LINK_LOST)
-        self.spin(0.2)
+        self.fake.fc_health.update(fc_alive=0, analog_age_ms=1500)
+        self.fake.send_event(EventCode.FC_LINK_LOST)
+        self.spin(0.3)
         published = (len(attitudes), len(batteries))
         self.spin(0.5)
         self.assertTrue(self.states[-1]["link_ok"] is False)
         self.assertEqual((len(attitudes), len(batteries)), published)
 
         # FC back and a new activation: a new yaw zero (heading is 17 now).
-        self.fake.send_event(FC_LINK_RESTORED)
+        self.fake.fc_health.update(fc_alive=1, attitude_age_ms=20, analog_age_ms=100)
+        self.fake.send_event(EventCode.FC_LINK_RESTORED)
         self.node.trigger_deactivate()
         self.node.trigger_activate()
         before = len(attitudes)
-        self.spin(0.4)
+        self.spin(0.6)
         self.assertGreater(len(attitudes), before)
         self.assertAlmostEqual(attitudes[before].vector.z, 0.0)
         self.assertEqual(self.fake.arm_requests, 0)
@@ -395,9 +420,9 @@ class EspNodeTests(unittest.TestCase):
         self.node.get_logger = lambda: log
         self.fake.override_mask = 11  # the gateway runs another mask than the node's 8
         self.activate()
-        self.spin(0.5)
-        self.assertTrue(self.call("arm_control").success)  # sent, not yet answered
-        self.spin(0.3)
+        self.spin(0.8)
+        self.assertTrue(self.call("arm_control").success)  # held, not yet sent
+        self.spin(1.9)
         self.assertIn(
             (
                 "warning",
@@ -408,7 +433,7 @@ class EspNodeTests(unittest.TestCase):
         )
         self.fake.override_mask = 8
         self.assertTrue(self.call("arm_control").success)
-        self.spin(0.3)
+        self.spin(1.9)
         self.assertIn(("info", "ARM_CONTROL_ACK: OK"), log.lines)
         self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
 

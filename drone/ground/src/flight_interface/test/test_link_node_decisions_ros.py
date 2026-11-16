@@ -35,14 +35,27 @@ try:
     from fake_esp import TEST_PSK, FakeEsp
 
     from flight_interface.esp_backend import EspBackend
-except ImportError:  # no sd_protocol
+except ModuleNotFoundError as error:  # no sd_protocol; any other import error fails
+    if not (error.name or "").startswith("sd_protocol"):
+        raise
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
 TEST_DOMAIN_ID = 94
 
-STREAMING = {"esp_state": "STREAMING", "override_active": True, "mask": 8}
-FAILSAFE = {"esp_state": "LINK_FAILSAFE", "override_active": False, "mask": None}
+# fc_link_ok true: ARM, RESUME and control need the FC link alive (E6.1).
+STREAMING = {
+    "esp_state": "STREAMING",
+    "override_active": True,
+    "mask": 8,
+    "fc_link_ok": True,
+}
+FAILSAFE = {
+    "esp_state": "LINK_FAILSAFE",
+    "override_active": False,
+    "mask": None,
+    "fc_link_ok": True,
+}
 ALLOWED = {
     "send_setpoint",
     "send_neutral",
@@ -64,7 +77,12 @@ TEST_FIELDS = {
     "armed_masks",
     "acks",
 }
-IDLE = {"esp_state": "SESSION_IDLE", "override_active": False, "mask": None}
+IDLE = {
+    "esp_state": "SESSION_IDLE",
+    "override_active": False,
+    "mask": None,
+    "fc_link_ok": True,
+}
 
 
 class RecordingBackend(LoopbackBackend):
@@ -221,7 +239,7 @@ class DecisionTests(unittest.TestCase):
         self.assertNotIn("resume", self.log())  # never by itself
         response = self.call("resume")
         self.assertTrue(response.success, response.message)
-        self.spin(0.2)
+        self.spin(1.0)  # K6: 1.5 s of neutral setpoints first (PR #191)
         self.assertTrue(self.states[-1]["resume_pending"])
         self.assertNotIn("resume", self.log())
         self.spin(1.0)
@@ -236,11 +254,11 @@ class DecisionTests(unittest.TestCase):
         self.activate()
         self.spin(0.1)
         self.assertTrue(self.call("resume").success)
-        self.spin(1.0)
+        self.spin(2.0)
         self.assertEqual(self.log().count("resume"), 1)
         self.assertFalse(self.node.guard.resume_pending)
 
-    # ---------- A4: ARM only on the operator's call ----------
+    # ---------- A4, K6: ARM only on the operator's call, after the window ----------
     def test_arm_control_sends_one_arm_with_the_mask_parameter(self):
         self.backend.state = dict(IDLE)
         self.node.set_parameters([rclpy.parameter.Parameter("mask", value=11)])
@@ -249,8 +267,14 @@ class DecisionTests(unittest.TestCase):
         self.assertNotIn("arm", self.log())  # never by itself
         response = self.call("arm_control")
         self.assertTrue(response.success, response.message)
+        self.assertIn("after 1.5 s", response.message)
+        self.spin(1.0)  # held: the ESP wants 1 s of RC acks first (#188)
+        self.assertEqual(self.backend.armed_masks, [])
+        self.assertTrue(self.states[-1]["arm_pending"])
+        self.spin(1.0)
         self.assertEqual(self.backend.armed_masks, [11])
-        self.spin(0.5)
+        self.assertFalse(self.states[-1]["arm_pending"])
+        self.spin(1.0)
         self.assertEqual(self.log().count("arm"), 1)
 
     def test_arm_control_refused_outside_session_idle_or_in_estop(self):
@@ -270,12 +294,26 @@ class DecisionTests(unittest.TestCase):
             def arm_control(self, mask, now):
                 return False
 
+        lines = []
+
+        class Log:
+            def __getattr__(self, level):
+                return lambda message, **kwargs: lines.append((level, message))
+
         self.replace(NoTcp(state=IDLE))
+        self.node.get_logger = Log
         self.activate()
         self.spin(0.2)
-        response = self.call("arm_control")
-        self.assertFalse(response.success)
-        self.assertIn("no TCP", response.message)
+        self.assertTrue(self.call("arm_control").success)  # held
+        self.spin(2.0)
+        self.assertFalse(self.node.guard.arm_pending)
+        self.assertIn(
+            (
+                "error",
+                "ARM_CONTROL_REQUEST mask 8 not sent: no TCP to the ESP; ask again",
+            ),
+            lines,
+        )
 
     def test_a_bad_mask_parameter_fails_configure(self):
         self.node.set_parameters([rclpy.parameter.Parameter("mask", value=9)])
@@ -299,7 +337,7 @@ class DecisionTests(unittest.TestCase):
         self.activate()
         self.spin(0.2)
         self.call("resume")
-        self.spin(0.8)
+        self.spin(1.8)  # K6: due after 1.5 s of neutral setpoints
         self.call("estop")
         self.call("reset_estop")
         self.spin(0.2)
@@ -315,9 +353,10 @@ class DecisionTests(unittest.TestCase):
         self.fake = FakeEsp()
         self.replace(EspBackend(*self.fake.addr, TEST_PSK))
         self.activate()
-        self.spin(0.6, yaw=0.3)
+        self.spin(1.0, yaw=0.3)  # E6.2: FC alive after 250 ms of FC_HEALTH
         self.assertTrue(self.backend.session_open)
         self.assertEqual(self.states[-1]["esp_state"], "SESSION_IDLE")
+        self.assertTrue(self.states[-1]["fc_link_ok"])
         self.assertTrue(self.states[-1]["link_ok"])
         self.assertGreater(self.fake.setpoints(), 10)
         self.assertEqual(set(self.fake.setpoint_modes), {0})  # neutral until C1
@@ -336,9 +375,15 @@ class DecisionTests(unittest.TestCase):
         self.assertGreater(self.fake.setpoints(), n)
         self.assertEqual(self.fake.arm_requests, 0)  # still the operator's
 
-        # A4 + B1: the operator arms; the mask comes back from the ESP's ACK.
+        # A4 + B1 + K6: the operator arms; the node streams 1.5 s first, so
+        # the ESP's "RC acknowledged for 1 s" rule (#188) is met; the mask
+        # comes back from the ESP's ACK.
+        self.fake.rc_ack_needed = 1.0
+        self.spin(0.5, yaw=0.3)  # FC alive again in the new session (E6.2)
         self.assertTrue(self.call("arm_control").success)
         self.spin(0.5, yaw=0.3)
+        self.assertEqual(self.fake.arm_requests, 0)  # held
+        self.spin(1.5, yaw=0.3)
         self.assertEqual(self.fake.arm_requests, 1)
         self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
         self.assertEqual(self.states[-1]["mask"], 8)
@@ -438,7 +483,8 @@ class DecisionTests(unittest.TestCase):
                 (
                     "warning",
                     "ARM_CONTROL_ACK refused by the ESP, FC_NOT_ANSWERING (4): "
-                    "the FC does not answer the ESP",
+                    "the FC does not answer the ESP, or has not acknowledged RC "
+                    "for 1 s (#188): keep the node active and ask again",
                 ),
                 ("warning", "RESUME_ACK refused by the ESP, UNKNOWN_9 (9)"),
             ],

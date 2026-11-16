@@ -22,6 +22,7 @@ needs the package installed (colcon build, workspace sourced).
 import os
 import shutil
 import signal
+import site
 import subprocess
 import sys
 import tempfile
@@ -41,7 +42,9 @@ except ImportError:
 
 try:
     from fake_esp import TEST_PSK, FakeEsp
-except ImportError:  # no sd_protocol
+except ModuleNotFoundError as error:  # no sd_protocol; any other import error fails
+    if not (error.name or "").startswith("sd_protocol"):
+        raise
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
@@ -148,6 +151,9 @@ class LifecycleTestCase(unittest.TestCase):
             ROS_DOMAIN_ID=str(TEST_DOMAIN_ID),
             PYTHONUNBUFFERED="1",
             HOME=home.name,
+            # A `pip install --user` sd_protocol lives under the real HOME:
+            # keep it visible with the clean one.
+            PYTHONUSERBASE=os.environ.get("PYTHONUSERBASE", site.getuserbase()),
         )
         self.env.pop("SEAME_PSK", None)
         self.probe = rclpy.create_node("flight_interface_esp_process_probe")

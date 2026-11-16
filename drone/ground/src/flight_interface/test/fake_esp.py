@@ -21,7 +21,15 @@ that never answers CONFIG_GET (`answer_config`).
 
 `fc_values` are the FC fields every STATE carries (roll / pitch in 0.1 deg,
 heading in deg, vbat in 0.01 V), as the gateway copies them from its MSP
-polls (main.cpp fc_view).
+polls (main.cpp fc_view). `fc_health` are the FC_HEALTH fields (Protocol Spec
+v1.4, #179) sent at 5 Hz to the same address as STATE (`send_health`).
+`rx_rejected` is the raw u16 every STATE carries (#149: it wraps).
+
+ARM and RESUME are refused with result 4 FC_NOT_ANSWERING while
+fc_health["fc_alive"] is 0 and, when `rc_ack_needed` is set (seconds), until
+the ground has streamed setpoints with no gap of T_FRESH for that long: a
+model of the gateway's "RC acknowledged for 1 s" rule (#188), which after a
+failsafe only holds while the ground streams.
 
 No thread: the test calls step(now) with its own clock, so timing is exact.
 
@@ -45,6 +53,7 @@ from sd_protocol.messages import (
     EspState,
     Event,
     EventCode,
+    FcHealth,
     HelloAck,
     Role,
     State,
@@ -53,6 +62,7 @@ from sd_protocol.messages import (
     decode_hello,
     encode_config_ack,
     encode_event,
+    encode_fc_health,
     encode_hello_ack,
     encode_state,
     encode_u8_payload,
@@ -69,6 +79,7 @@ T_FRESH = 0.15
 T_LOSS = 0.25
 RESUME_NEUTRAL = 0.5
 STATE_PERIOD = 0.04  # 25 Hz
+HEALTH_PERIOD = 0.2  # FC_HEALTH, 5 Hz
 PENDING_MAX = 2.0
 
 TEST_PSK = bytes(range(32))
@@ -120,6 +131,18 @@ class FakeEsp:
         self.last_hello_ack = None  # the last genuine HELLO_ACK frame sent
         self.answer_config = True  # False: CONFIG_GET gets no CONFIG_ACK
         self.fc_values = {"roll": 0, "pitch": 0, "heading": 0, "vbat": 1200}
+        # FC_HEALTH: a live FC, disarmed, every value fresh (ms).
+        self.fc_health = {
+            "fc_alive": 1,
+            "armed": 0,
+            "status_age_ms": 40,
+            "attitude_age_ms": 20,
+            "analog_age_ms": 100,
+            "reply_age_ms": 10,
+        }
+        self.send_health = True
+        self.rx_rejected = 0  # raw STATE.rx_rejected (u16)
+        self.rc_ack_needed = None  # seconds of streaming before ARM / RESUME
         self.after_hello = []  # (type, payload) sent as is right after HELLO_ACK
         self.last_tcp_frame = None  # the last genuine frames sent, for replays
         self.last_udp_frame = None
@@ -127,6 +150,7 @@ class FakeEsp:
         self.state = EspState.NO_SESSION
         self.failsafe_output = False
         self._next_state_t = 0.0
+        self._next_health_t = 0.0
 
     # ---------- what the tests read ----------
     def count(self, msg_type):
@@ -173,8 +197,8 @@ class FakeEsp:
         self._udp.sendto(frame, self._peer)
 
     def send_udp_frame(self, msg_type, payload):
-        """Any ESP -> ground UDP type under the session keys (e.g. FC_HEALTH
-        0x81 of #179, which has no layout yet)."""
+        """Any ESP -> ground UDP type under the session keys, with any
+        payload (e.g. a malformed FC_HEALTH)."""
         if self._keys is None or self._peer is None:
             return
         self._seq_udp += 1
@@ -258,6 +282,7 @@ class FakeEsp:
         self._last_ctrl_t = None
         self._last_sp_t = None
         self._neutral_since = None
+        self._stream_since = None  # unbroken setpoints, any mode (rc_ack_needed)
 
     def _end_session(self):
         if self.state in (EspState.STREAMING, EspState.LINK_FAILSAFE):
@@ -287,6 +312,9 @@ class FakeEsp:
         if self._keys is not None and self.send_state and now >= self._next_state_t:
             self._send_state(self.state)
             self._next_state_t = now + STATE_PERIOD
+        if self._keys is not None and self.send_health and now >= self._next_health_t:
+            self._send_health()
+            self._next_health_t = now + HEALTH_PERIOD
 
     def _accept(self):
         while True:
@@ -353,6 +381,8 @@ class FakeEsp:
                 result = AckResult.WRONG_STATE
             elif f.payload[:1] != bytes([self.override_mask]):
                 result = AckResult.MASK_MISMATCH
+            elif not self._rc_accepted(now):
+                result = AckResult.FC_NOT_ANSWERING
             else:
                 result = AckResult.OK
                 self.state = EspState.STREAMING
@@ -372,21 +402,36 @@ class FakeEsp:
     def _handle_resume(self, now):
         if self.state != EspState.LINK_FAILSAFE:
             result = AckResult.WRONG_STATE
-        elif (
+        elif not (
             self._neutral_since is not None
             and now - self._neutral_since >= RESUME_NEUTRAL
             and self._last_sp_t is not None
             and now - self._last_sp_t < T_FRESH
         ):
-            result = AckResult.OK
-        else:
             result = AckResult.RESUME_CONDITION_NOT_MET
+        elif not self._rc_accepted(now):
+            result = AckResult.FC_NOT_ANSWERING
+        else:
+            result = AckResult.OK
         self._send_tcp(MsgType.RESUME_ACK, encode_u8_payload(result))
         if result == AckResult.OK:
             self.state = EspState.STREAMING
             self.failsafe_output = False
             self._last_ctrl_t = now
             self.send_event(EventCode.LINK_RESUMED)
+
+    def _rc_accepted(self, now):
+        """#179 D2 and #188: the FC answers, and (with rc_ack_needed) the
+        ground has streamed long enough for the FC to acknowledge RC."""
+        if self.fc_health["fc_alive"] != 1:
+            return False
+        if self.rc_ack_needed is None:
+            return True
+        return (
+            self._stream_since is not None
+            and now - self._stream_since >= self.rc_ack_needed
+            and now - self._last_sp_t < T_FRESH
+        )
 
     def _new_session(self, ground_nonce, conn, now):
         session_id = secrets.randbits(31) + 1
@@ -487,6 +532,8 @@ class FakeEsp:
             sp = decode_setpoint(f.payload)
             self.setpoint_modes.append(sp.mode)
             gap_ok = self._last_sp_t is not None and now - self._last_sp_t < T_FRESH
+            if self._stream_since is None or not gap_ok:
+                self._stream_since = now
             if sp.mode == 0:
                 if self._neutral_since is None or not gap_ok:
                     self._neutral_since = now
@@ -522,9 +569,38 @@ class FakeEsp:
             flow_y=0,
             flow_quality=0,
             flow_status=4,
-            rx_rejected=0,
+            rx_rejected=self.rx_rejected,
             msp_errors=0,
         )
+
+    def _send_health(self):
+        if self._keys is None or self._peer is None or self._udp is None:
+            return
+        h = self.fc_health
+        health = FcHealth(
+            fc_alive=h["fc_alive"],
+            armed=h["armed"],
+            arming_disable_flags=0,
+            status_age_ms=h["status_age_ms"],
+            attitude_age_ms=h["attitude_age_ms"],
+            analog_age_ms=h["analog_age_ms"],
+            reply_age_ms=h["reply_age_ms"],
+            requests=0,
+            replies=0,
+            timeouts=0,
+            bad_checksum=0,
+            too_long=0,
+            error_replies=0,
+            unexpected=0,
+            rc_sent=0,
+            rc_replaced=0,
+        )
+        self._seq_udp += 1
+        frame = self._seal(MsgType.FC_HEALTH, encode_fc_health(health), self._seq_udp)
+        try:
+            self._udp.sendto(frame, self._peer)
+        except OSError:  # pragma: no cover - the ground's socket is gone
+            pass
 
     def _send_state(self, esp_state):
         if self._keys is None or self._peer is None or self._udp is None:

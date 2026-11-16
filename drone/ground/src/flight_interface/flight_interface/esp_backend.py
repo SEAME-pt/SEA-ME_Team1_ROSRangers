@@ -1,5 +1,5 @@
-"""ESP backend of the flight_interface node (#103 part 2): Protocol Spec v0 over
-TCP + UDP port 5759 to the gateway firmware (#102).
+"""ESP backend of the flight_interface node (#103 part 2): Protocol Spec v0
+(v1.4.x) over TCP + UDP port 5759 to the gateway firmware (#102).
 
 What it does:
   * Opens a session (HELLO / HELLO_ACK over TCP, keys from the PSK) and keeps it:
@@ -25,23 +25,38 @@ What it does:
     into attitude sticks) every setpoint goes out as mode 0 (neutral): it keeps
     the link alive (the setpoint stream is the heartbeat, spec §7.2) and never
     moves the drone.
-  * Reads STATE (UDP) and EVENT / ACK / BYE (TCP). Every frame is checked by an
-    sd_protocol Receiver; a rejected frame is dropped and never refreshes the
-    watchdog (REQ-SAF-011). failsafe_output is true after EVENT 0x0104 or
-    0x0102, or while the ESP reports LINK_FAILSAFE; it is cleared by STREAMING,
-    EVENT 0x0103 or an ACK OK.
-  * FC link health (#179, decision D1 of 2026-11-10): EVENT 0x0201 FC_LINK_LOST
-    (no valid FC reply for 250 ms) sets fc_link_ok false, 0x0202
-    FC_LINK_RESTORED sets it true; None until the ESP says either. The guard
-    allows no non-zero setpoint while it is false.
+  * Reads STATE and FC_HEALTH (UDP) and EVENT / ACK / BYE (TCP). Every frame
+    is checked by an sd_protocol Receiver; a rejected frame is dropped and
+    never refreshes the watchdog (REQ-SAF-011). Only a STATE refreshes it.
+    failsafe_output is true after EVENT 0x0104 or 0x0102, or while the ESP
+    reports LINK_FAILSAFE; it is cleared by STREAMING, EVENT 0x0103 or an ACK
+    OK.
+  * FC link health (#179; decisions E6, E6.1, E6.2): fc_link_ok is None
+    (unknown) at the start of every session. It becomes False at once on
+    EVENT 0x0201 FC_LINK_LOST or on any FC_HEALTH with fc_alive 0, and True
+    on EVENT 0x0202 FC_LINK_RESTORED (the ESP's 250 ms hysteresis, #188) or
+    once every FC_HEALTH has said fc_alive 1 for FC_RESTORE_AFTER (the same
+    250 ms on the ground: fc_alive itself has none). The events report
+    changes over TCP, FC_HEALTH (5 Hz, UDP) the current state, so a lost
+    event (TCP down) or a session that starts while the FC is steady is
+    still covered. No FC_HEALTH for FC_HEALTH_TIMEOUT: unknown again. The
+    guard treats anything but True as not OK.
+  * armed (decision D1) comes from FC_HEALTH: true / false, None when the
+    ESP has no fresh MSP_STATUS (0xFF) or no fresh FC_HEALTH; airborne =
+    armed is true for now.
+  * The ESP's own reject count (STATE.rx_rejected, a u16 that wraps) goes
+    through sd_protocol's WrapCounter, reset on every new session (Protocol
+    Spec §7.5, #149), and is reported as esp_rx_rejected.
   * Every ARM_CONTROL_ACK / RESUME_ACK goes to take_acks() (decision E2), so
     the node can tell the operator what the ESP answered.
   * The FC values of every STATE (roll, pitch, heading, vbat) go with the drone
-    state as `fc_values` (decision D2): the node publishes /fc/attitude and
-    /fc/battery from them.
+    state as `fc_values` (decision D2), with their ages from the last fresh
+    FC_HEALTH as `fc_ages` (decision D2.1, seconds, None when unknown): the
+    node publishes /fc/attitude and /fc/battery from them while they are
+    fresh.
   * arm_control(mask) sends ARM_CONTROL_REQUEST (decision A4): the only path
-    to ARM, called only from the node's ~/arm_control service, i.e. by the
-    operator (REQ-SAF-023). The mask reported to the node is the one this
+    to ARM, called only for the operator's ~/arm_control once the guard says
+    it is due (K6), i.e. by the operator (REQ-SAF-023). The mask reported to the node is the one this
     session asked for and the ESP confirmed with ARM_CONTROL_ACK OK (decision
     B1); None before that and in every new session.
   * end_session() sends BYE (decision A1: the E-stop ends the session, so the
@@ -55,13 +70,8 @@ What it does:
     most MAX_UDP_READS datagrams and MAX_TCP_READS chunks, so a flood cannot
     hold up the tick (and ~/estop, served by the same executor).
 
-Open, not done here: airborne will come from the armed flag in FC_HEALTH
-(decision B1), but FC_HEALTH (type 0x81, 5 Hz, #179 D3) has no byte layout
-yet: until sd_protocol decodes it, airborne is False and FC_HEALTH is dropped
-like any frame that is not a STATE (it never refreshes the watchdog).
-ARM_CONTROL_ACK result 4 "FC not answering" (#179 D2) has a local name until
-sd_protocol's AckResult has it (PR #183). The session code is sd_protocol.ground (decision B2),
-shared with scripts/ground_link.py once that tool moves to it.
+The session code is sd_protocol.ground (decision B2), shared with
+scripts/ground_link.py once that tool moves to it (D4).
 """
 
 import errno
@@ -71,14 +81,18 @@ import socket
 import time
 
 from flight_interface.backends import Backend
+from sd_protocol.counters import WrapCounter
 from sd_protocol.crypto import KEY_SIZE
 from sd_protocol.frame import MsgType
 from sd_protocol.ground import GroundSession, TcpReader, load_psk
 from sd_protocol.messages import (
+    AGE_UNKNOWN,
     AckResult,
     EspState,
     EventCode,
     decode_event,
+    decode_fc_health,
+    decode_state,
     decode_u8_payload,
 )
 
@@ -89,6 +103,11 @@ HANDSHAKE_TIMEOUT = 1.0  # connect + HELLO_ACK, then the attempt is dropped
 RECONNECT_AFTER = 3.0  # no STATE for this long: the session is gone (ground_link.py)
 RECONNECT_EVERY = 2.0  # at most one attempt this often
 SENDING_GAP = 0.5  # no SETPOINT for this long: the ground is not sending
+# FC link (E6.2): fc_alive in every FC_HEALTH for this long before the ground
+# calls the FC link alive again, like the ESP's FC_LINK_RESTORED (#188).
+FC_RESTORE_AFTER = 0.25
+# No FC_HEALTH (5 Hz) for this long: the FC state is unknown again (E6.1).
+FC_HEALTH_TIMEOUT = 1.0
 # Reads per poll. Real traffic is ~1 datagram per 20 ms tick (STATE 25 Hz,
 # FC_HEALTH 5 Hz); 256 is more than a default socket buffer holds, so a
 # burst is still read in one tick, but the work per tick has a bound even
@@ -97,10 +116,6 @@ MAX_UDP_READS = 256
 MAX_TCP_READS = 16  # of 4096 bytes
 
 _FAILSAFE_ON = {EventCode.LINK_FAILSAFE_ENTERED, EventCode.FAILSAFE_OUTPUT_ACTIVE}
-# #179 D1 (2026-11-10). Local until sd_protocol's EventCode has them (#179's PR).
-FC_LINK_LOST = 0x0201
-FC_LINK_RESTORED = 0x0202
-ACK_FC_NOT_ANSWERING = 4  # #179 D2; AckResult.FC_NOT_ANSWERING after PR #183
 # Read-only key (config_table_version) used to confirm a new session.
 CONFIRM_KEY = 0x01
 MASKS = (8, 11, 15)  # ADR-010 staged override masks
@@ -130,8 +145,6 @@ def resolve(host, port):
 
 def ack_reason(result):
     """The name of an ARM_CONTROL_ACK / RESUME_ACK result code."""
-    if result == ACK_FC_NOT_ANSWERING:
-        return "FC_NOT_ANSWERING"
     try:
         return AckResult(result).name
     except ValueError:
@@ -169,7 +182,12 @@ class EspBackend(Backend):
         self._confirmed = False  # E4: a frame under this session's keys came back
         self._confirm_by = 0.0
         self.sessions_unconfirmed = 0  # dropped for no answer to the first frame
-        self.fc_link_ok = None  # #179: None unknown, False after FC_LINK_LOST
+        self.fc_link_ok = None  # #179, E6.2: None unknown, then False / True
+        self._fc_alive_since = None  # first of the current run of fc_alive 1
+        self._health = None  # the last FC_HEALTH of this session
+        self._health_t = None  # when it was received
+        self._esp_rejected = WrapCounter()  # #149: STATE.rx_rejected, wrapped
+        self.esp_rx_rejected = None  # its total in this session, None before
         self.armed_mask = None  # B1: the mask the ESP confirmed with ARM ACK OK
         self._arm_requested = None
         self.closed = False
@@ -227,6 +245,7 @@ class EspBackend(Backend):
             self._check_confirmed(now)
         if self.phase == OPEN:
             self._check_session(now)
+            self._check_fc_health_age(now)
         return states
 
     def close(self):
@@ -249,8 +268,9 @@ class EspBackend(Backend):
 
     @property
     def rx_rejected(self):
-        """Frames of this session dropped by the receive checks (bad tag,
-        replay, wrong size...), like the ESP's STATE.rx_rejected."""
+        """Frames of this session the GROUND dropped in its receive checks
+        (bad tag, replay, wrong size...). The ESP's own count is
+        esp_rx_rejected."""
         return self._session.rejected if self._session is not None else 0
 
     # ---------- connection ----------
@@ -344,7 +364,7 @@ class EspBackend(Backend):
         self._waiting_since = None
         self.esp_state = None
         self.failsafe_output = False
-        self.fc_link_ok = None
+        self._forget_fc()
         self.armed_mask = self._arm_requested = None
         self.sessions_opened += 1
         # The first frame under the new keys confirms a pending session, and
@@ -364,9 +384,19 @@ class EspBackend(Backend):
         self.phase = IDLE
         self.esp_state = None
         self.failsafe_output = False
-        self.fc_link_ok = None
+        self._forget_fc()
         self.armed_mask = self._arm_requested = None
         self._next_attempt = max(self._next_attempt, now + retry_after)
+
+    def _forget_fc(self):
+        """A new session (or none) knows nothing about the FC yet (E6.1), and
+        its rx_rejected total starts again (#149: a reboot would look like a
+        wrap otherwise)."""
+        self.fc_link_ok = None
+        self._fc_alive_since = None
+        self._health = self._health_t = None
+        self._esp_rejected.reset()
+        self.esp_rx_rejected = None
 
     def _check_confirmed(self, now):
         """E4 (ADR-005): no frame under this session's keys came back within
@@ -483,10 +513,11 @@ class EspBackend(Backend):
                 self.failsafe_output = True
             elif event is not None and event.code == EventCode.LINK_RESUMED:
                 self.failsafe_output = False
-            elif event is not None and event.code == FC_LINK_LOST:
+            elif event is not None and event.code == EventCode.FC_LINK_LOST:
                 self.fc_link_ok = False
-            elif event is not None and event.code == FC_LINK_RESTORED:
-                self.fc_link_ok = True
+                self._fc_alive_since = None
+            elif event is not None and event.code == EventCode.FC_LINK_RESTORED:
+                self.fc_link_ok = True  # after the ESP's 250 ms (#188)
         elif t in (MsgType.ARM_CONTROL_ACK, MsgType.RESUME_ACK):
             result = decode_u8_payload(f.payload)
             self.last_ack = (MsgType(t).name, result)
@@ -516,7 +547,9 @@ class EspBackend(Backend):
         self._last_udp_t = now
 
     def _read_udp(self, now):
-        """The newest accepted STATE as a drone-state dict, or None."""
+        """The newest accepted STATE as a drone-state dict, or None. FC_HEALTH
+        frames update the FC link state on the way (they never refresh the
+        watchdog). Every STATE feeds the rx_rejected WrapCounter, in order."""
         latest = None
         for _ in range(MAX_UDP_READS):  # the rest waits for the next poll
             try:
@@ -526,12 +559,22 @@ class EspBackend(Backend):
             except OSError as error:
                 self._error("udp recv", error)
                 break
-            state = self._session.receive_udp_state(data)
-            if state is not None:
-                latest = state
+            f = self._session.receive_udp(data)
+            if f is None:
+                continue
+            if f.header.type == MsgType.STATE:
+                state = decode_state(f.payload)
+                if state is not None:
+                    self._confirmed = True  # E4: the ESP has this session's keys
+                    self.esp_rx_rejected = self._esp_rejected.update(state.rx_rejected)
+                    latest = state
+            elif f.header.type == MsgType.FC_HEALTH:
+                health = decode_fc_health(f.payload)
+                if health is not None:
+                    self._confirmed = True
+                    self._on_fc_health(health, now)
         if latest is None:
             return None
-        self._confirmed = True  # E4: an accepted STATE proves the keys too
         try:
             name = EspState(latest.esp_state).name
         except ValueError:
@@ -543,22 +586,80 @@ class EspBackend(Backend):
             self.failsafe_output = True
         elif name == EspState.STREAMING.name:
             self.failsafe_output = False
+        armed = self.armed
         return {
             "esp_state": name,
             "override_active": bool(latest.override_active),
             "mask": self.armed_mask,  # B1: confirmed by ARM_CONTROL_ACK OK
-            "airborne": False,  # B1: FC_HEALTH's armed flag, not decoded yet
+            "armed": armed,  # D1: FC_HEALTH's armed flag, None when unknown
+            "airborne": armed is True,  # D1: airborne = armed for now
             "failsafe_output": self.failsafe_output,
             "fc_link_ok": self.fc_link_ok,
+            "session_id": self.session_id,  # a pending ARM / RESUME is per session
+            "esp_rx_rejected": self.esp_rx_rejected,  # #149, wraps counted
             # D2: the FC values as the gateway copied them from its MSP polls
             # (roll / pitch 0.1 deg, heading deg, vbat 0.01 V). STATE has no
-            # age for them: the node publishes them only while the FC link is
-            # reported alive.
+            # age for them: fc_ages comes from FC_HEALTH (D2.1).
             "fc_values": {
                 "roll": latest.roll,
                 "pitch": latest.pitch,
                 "heading": latest.heading,
                 "vbat": latest.vbat,
             },
+            "fc_ages": {
+                "attitude": self._value_age("attitude_age_ms", now),
+                "analog": self._value_age("analog_age_ms", now),
+            },
             "rx_time": now,
         }
+
+    # ---------- FC_HEALTH (#179, decisions D1, D2.1, E6.2) ----------
+    def _on_fc_health(self, health, now):
+        """E6.2: lost at once on fc_alive 0; alive again only after
+        FC_RESTORE_AFTER of fc_alive 1 (fc_alive has no hysteresis of its
+        own). The events (TCP) can set either sooner."""
+        self._health, self._health_t = health, now
+        if health.fc_alive != 1:
+            self.fc_link_ok = False
+            self._fc_alive_since = None
+            return
+        if self._fc_alive_since is None:
+            self._fc_alive_since = now
+        if (
+            self.fc_link_ok is not True
+            and now - self._fc_alive_since >= FC_RESTORE_AFTER
+        ):
+            self.fc_link_ok = True
+
+    def _health_fresh(self, now):
+        return (
+            self._health is not None and 0 <= now - self._health_t <= FC_HEALTH_TIMEOUT
+        )
+
+    def _check_fc_health_age(self, now):
+        """No FC_HEALTH for FC_HEALTH_TIMEOUT (it comes at 5 Hz while the node
+        sends setpoints): the FC state is unknown again (E6.1)."""
+        if self._health is not None and not self._health_fresh(now):
+            self._health = self._health_t = None
+            self.fc_link_ok = None
+            self._fc_alive_since = None
+
+    @property
+    def armed(self):
+        """D1: the FC's armed flag from a fresh FC_HEALTH; None when unknown
+        (0xFF: no fresh MSP_STATUS on the ESP, or no fresh FC_HEALTH)."""
+        if self._health is None or self._health.armed not in (0, 1):
+            return None
+        return self._health.armed == 1
+
+    def _value_age(self, field, now):
+        """D2.1: how old an FC value is now, in seconds: its age in the last
+        FC_HEALTH plus the time since that FC_HEALTH arrived. None when the
+        ESP never had the value or it expired (AGE_UNKNOWN), or without a
+        fresh FC_HEALTH."""
+        if not self._health_fresh(now):
+            return None
+        age_ms = getattr(self._health, field)
+        if age_ms == AGE_UNKNOWN:
+            return None
+        return age_ms / 1000 + (now - self._health_t)

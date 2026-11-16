@@ -30,8 +30,6 @@ try:
 
     from flight_interface import esp_backend
     from flight_interface.esp_backend import (
-        FC_LINK_LOST,
-        FC_LINK_RESTORED,
         HANDSHAKE_TIMEOUT,
         RECONNECT_AFTER,
         RECONNECT_EVERY,
@@ -47,7 +45,9 @@ try:
         encode_event,
         encode_u8_payload,
     )
-except ImportError:  # no sd_protocol: see test_esp_backend.py
+except ModuleNotFoundError as error:  # no sd_protocol; any other import error fails
+    if not (error.name or "").startswith("sd_protocol"):
+        raise
     esp_backend = None
     RECONNECT_AFTER = RECONNECT_EVERY = HANDSHAKE_TIMEOUT = TICK = 0.0
 
@@ -231,7 +231,7 @@ def test_tcp_is_read_in_bounded_slices(clock, fake, backend, monkeypatch):
     clock.run(0.3)
     for _ in range(299):  # ~12 KB: several slices
         fake.send_event(EventCode.SETPOINT_STALE)
-    fake.send_event(FC_LINK_LOST)
+    fake.send_event(EventCode.FC_LINK_LOST)
     backend.poll(clock.now)
     assert backend.fc_link_ok is None  # the last event is not read yet
     clock.run(0.2)
@@ -244,13 +244,13 @@ def test_forged_tcp_frames_change_nothing(clock, fake, backend):
     """Tagged with a key that is not the session's: no ARM ACK OK can set a
     mask, no FC_LINK_RESTORED can open the gate, no BYE can end the session."""
     clock.run(0.3)
-    fake.send_event(FC_LINK_LOST)
+    fake.send_event(EventCode.FC_LINK_LOST)
     clock.run(0.1)
     fake.force_state(EspState.LINK_FAILSAFE)  # the real ESP will refuse ARM
     first = backend.session_id
     assert backend.arm_control(8, clock.now)
     fake.forge_tcp(MsgType.ARM_CONTROL_ACK, encode_u8_payload(AckResult.OK))
-    fake.forge_tcp(MsgType.EVENT, encode_event(Event(code=FC_LINK_RESTORED)))
+    fake.forge_tcp(MsgType.EVENT, encode_event(Event(code=EventCode.FC_LINK_RESTORED)))
     fake.forge_tcp(MsgType.EVENT, encode_event(Event(code=EventCode.LINK_RESUMED)))
     fake.forge_tcp(MsgType.BYE, encode_u8_payload(ByeReason.NORMAL))
     backend.poll(clock.now)  # the forged frames first, before the ESP answers
@@ -322,7 +322,7 @@ def test_a_bye_right_after_hello_ack_ends_the_new_session(clock, fake, backend):
     AttributeError out of poll(), which stops the node)."""
     fake.after_hello = [
         (MsgType.BYE, encode_u8_payload(ByeReason.NORMAL)),
-        (MsgType.EVENT, encode_event(Event(code=FC_LINK_LOST))),
+        (MsgType.EVENT, encode_event(Event(code=EventCode.FC_LINK_LOST))),
     ]
     clock.run(TICK)  # connect
     fake.step(clock.now)  # the fake answers HELLO with all three frames
@@ -337,7 +337,7 @@ def test_a_bye_right_after_hello_ack_ends_the_new_session(clock, fake, backend):
 def test_frames_after_a_bye_in_the_same_read_are_not_handled(clock, fake, backend):
     clock.run(0.3)
     fake.send_tcp_message(MsgType.BYE, encode_u8_payload(ByeReason.TIMEOUT))
-    fake.send_event(FC_LINK_LOST)
+    fake.send_event(EventCode.FC_LINK_LOST)
     backend.poll(clock.now)
     assert not backend.session_open and backend.fc_link_ok is None
 

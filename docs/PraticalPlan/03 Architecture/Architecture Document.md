@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: draft
 date: 2026-11-02
-updated: 2026-11-09
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - architecture
@@ -44,6 +44,8 @@ flowchart TB
   end
   MIS -->|"/mission/velocity_target"| FI
   FI -->|"/flight/state"| MIS
+  FI <-->|"SETPOINT / STATE, FC_HEALTH<br/>UDP + TCP 5759"| ESP([ESP gateway])
+  FI -->|"/fc/attitude, /fc/battery<br/>from STATE (ESP backend)"| OUT
   FI <-->|"Wi-Fi SoftAP, WPA2<br/>UDP 5759: control 50 Hz / telemetry 25 Hz<br/>TCP 5759: session + events, HMAC"| ESP
   ESP <-->|"MSP over UART4, 115200"| FC
   PILOT["Safety pilot<br/>RadioMaster Pocket"] -->|"ELRS 2.4 GHz → CRSF, UART2<br/>arm, modes, override switch"| FC
@@ -70,6 +72,8 @@ flowchart LR
   MIS -->|"/mission/velocity_target<br/>20 Hz"| FI["flight_interface<br/>lifecycle node (#103)"]
   MIS -->|"/mission/state"| OUT([logs, rosbag])
   FI -->|"/flight/state"| MIS
+  FI <-->|"SETPOINT / STATE, FC_HEALTH<br/>UDP + TCP 5759"| ESP([ESP gateway])
+  FI -->|"/fc/attitude, /fc/battery<br/>from STATE (ESP backend)"| OUT
   FC([FC over MSP:<br/>USB or ESP bridge UDP 5760]) --> FCT["fc_telemetry<br/>flight_interface package (#96)"]
   FCT -->|"/fc/attitude 20 Hz<br/>/fc/battery 5 Hz"| OUT
   FFS["fake_flight_state<br/>until #103"] -.->|"/flight/state 10 Hz"| MIS
@@ -82,7 +86,7 @@ flowchart LR
 | `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
 | `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` |
 | `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06 |
-| `flight_interface` lifecycle node (`flight_interface` package) | `/mission/velocity_target` (`TwistStamped`, body FLU) | `/flight/state` (JSON as above, plus `active`, `estop`, `estop_reason`); services `~/estop`, `~/reset_estop` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | first part (#103): lifecycle, watchdog, E-stop, `loopback` backend only; the ESP and PX4 backends come next |
+| `flight_interface` lifecycle node (`flight_interface` package) | `/mission/velocity_target` (`TwistStamped`, body FLU) | `/flight/state` (JSON as above, plus the fields below); `/fc/attitude`, `/fc/battery` from `STATE` (ESP backend, `publish_fc`); services `~/estop`, `~/reset_estop`, `~/resume`, `~/arm_control` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | #103: `loopback` and `esp` backends (PR #187); every setpoint is neutral until the controller (C1); the PX4 backend has its own issue. Details below and in [[ADR-025 flight_interface Ground Node\|ADR-025]] |
 
 **QoS:** every topic uses the rclpy default for a depth of 10: reliable, volatile, keep last 10.
 
@@ -136,6 +140,25 @@ Known limits:
 
 MSP round trip median 13.5–14.4 ms (bridge baseline 12–15 ms, #30). Missed replies about 0.2 % over 11.5 min. The rosbag `fc_telemetry_2026-11-06_udp` (MCAP, ~60 s, tilted one axis at a time) is attached to #96. Tests: [[Testing Strategy]] §5.
 
+### `flight_interface` node
+
+The decisions behind it are in [[ADR-025 flight_interface Ground Node|ADR-025]]; the code and its parameters in `drone/ground/src/flight_interface/` (`info.md`, `link_node.py`).
+
+Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file and `docker-compose.yml` default to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1): every terminal that talks to the node needs the same two variables.
+
+| Service | What it does |
+|---|---|
+| `~/estop` | Latches the E-stop, sends one neutral setpoint (if setpoints were going out) and `BYE`, then nothing. Kept through deactivate, cleanup and configure. |
+| `~/reset_estop` | Clears the latch. Control then needs a new target and, after a new session, an operator ARM. |
+| `~/arm_control` | ARM with the `mask` parameter (8, 11, 15), only in `SESSION_IDLE` with a fresh link and the FC link alive. Held until 1.5 s of neutral setpoints went out, then sent once; dropped after 3 s or when its conditions go. |
+| `~/resume` | RESUME after the ESP's link failsafe (`LINK_FAILSAFE`), with the same conditions and the same 1.5 s hold. |
+
+The node never sends ARM or RESUME by itself (REQ-SAF-023). The services answer when the request is accepted; the ESP's `ARM_CONTROL_ACK` / `RESUME_ACK` appears in the node's log, a refusal with its reason.
+
+`/flight/state` fields added to `mission_node`'s: `active`, `estop`, `estop_reason`, `resume_pending`, `arm_pending`, `failsafe_output` (the ESP sends its ADR-004 output), `fc_link_ok` (from the FC-link events and `FC_HEALTH`; `null` = unknown, which counts as not OK), `armed` (`FC_HEALTH`'s armed flag, `null` when unknown; `airborne` = armed for now) and `esp_rx_rejected` (the ESP's reject count, wraps counted). `link_ok` is true only while the link is fresh, the node is active, not in E-stop and the FC link is alive.
+
+With the ESP backend `/fc/attitude` and `/fc/battery` come from the FC values in `STATE`, through the same conversion as `fc_telemetry`. Each is published only while `FC_HEALTH` says its value is fresh (attitude under 250 ms, battery under 1 s), so a value the ESP never had or that froze is never published. Don't run `fc_telemetry` on the same graph.
+
 ## 3. Message contracts
 
 Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document does not repeat them. Summary:
@@ -146,6 +169,7 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 | Configuration: `CONFIG_GET` / `CONFIG_SET` (0x20 / 0x21), keys in spec §7.3. The reply is `CONFIG_ACK` (0x22, spec §3.1, #142) | Protocol Spec v0 §3, §7.3 | TCP 5759 | `flight_interface` ↔ ESP |
 | Control: `SETPOINT` (0x60) | Protocol Spec v0 §3, §5 | UDP 5759, 50 Hz | `flight_interface` → ESP |
 | Telemetry: `STATE` (0x80) | Protocol Spec v0 §3 | UDP 5759, 25 Hz | ESP → `flight_interface` |
+| FC link health: `FC_HEALTH` (0x81) | Protocol Spec v0 §3 (v1.4) | UDP 5759, 5 Hz | ESP → `flight_interface` |
 | Events: `EVENT` (0x40) | Protocol Spec v0 §3 | TCP 5759 | ESP → `flight_interface` |
 | ESP → FC: `MSP_SET_RAW_RC`, 8 channels AETR | Protocol Spec v0 §5, [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP, 50 Hz | ESP → FC |
 | ESP polls `MSP_ATTITUDE` (25 Hz), `MSP_ANALOG` / `MSP_STATUS` (5 Hz) | [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP | ESP ↔ FC |
@@ -188,6 +212,10 @@ Still to measure: the end-to-end gesture → motors latency and the failsafe-tim
 | **CRSF** | Crossfire serial protocol between the ELRS receiver and the FC (UART2). |
 | **DDS** | Data Distribution Service: the middleware ROS 2 topics run on. |
 | **ELRS** | ExpressLRS: the radio-control link from the safety pilot's radio to the drone. |
+| **E-stop** | The operator's `~/estop` on `flight_interface`: latched until `~/reset_estop`. |
+| **`FC_HEALTH`** | ESP → ground message (0x81, 5 Hz): FC alive, armed flag, value ages, counters. |
+| **Held request** | An operator ARM or RESUME that `flight_interface` keeps until 1.5 s of neutral setpoints went out (ADR-025 K6). |
+| **Lifecycle node** | A ROS 2 node with explicit states (unconfigured, inactive, active) changed with `ros2 lifecycle set`. |
 | **ESP8266** | The Wi-Fi microcontroller on the drone that bridges the ground to the FC over UART4. |
 | **FC** | Flight Controller: the OddityRC F7 AIO running Betaflight. |
 | **HMAC** | Hash-based Message Authentication Code: a keyed tag proving the sender holds the key. |

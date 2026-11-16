@@ -7,16 +7,18 @@ A backend has these methods and no others the node may call:
   send_neutral(now)            one neutral setpoint (SETPOINT mode 0)
   end_session(now)             BYE: ends the session (E-stop, decision A1)
   request_resume(now)          RESUME_REQUEST, only when the operator asked (A3)
-  arm_control(mask, now)       ARM_CONTROL_REQUEST, only from the operator's
-                               ~/arm_control service (A4, REQ-SAF-023)
+  arm_control(mask, now)       ARM_CONTROL_REQUEST, only for the operator's
+                               ~/arm_control, once the guard says it is due
+                               (A4, K6, REQ-SAF-023)
   poll(now)                    the valid drone states received since the last call
   take_acks()                  the ESP's ARM / RESUME answers since the last call
                                (read-only, decision E2)
   close()                      release sockets or ports
 
 ARM_CONTROL_REQUEST goes out only through arm_control(), and the node calls
-that only from the ~/arm_control service (decision A4): ARM is always an
-operator action, never the node's (REQ-SAF-023). Tests check both: the node
+that only for a request the operator made with ~/arm_control, once the guard
+says it is due (decisions A4, K6): ARM is always an operator action, never the
+node's (REQ-SAF-023). Tests check both: the node
 calls nothing else on its own, and no other code builds the frame.
 
 Backends: `loopback` (tests and dry runs, no drone) and `esp` (sd_protocol over
@@ -51,14 +53,17 @@ class Backend:
 
     def arm_control(self, mask, now):
         """Send ARM_CONTROL_REQUEST with `mask`. Returns True if it went out.
-        Called by the node only from the operator's ~/arm_control (A4)."""
+        Called by the node only for the operator's ~/arm_control, once the
+        guard says it is due (A4, K6)."""
         raise NotImplementedError
 
     def poll(self, now):
         """Return the valid drone states received since the last call (a list of
-        dicts with esp_state, override_active, mask, airborne, and optionally
-        failsafe_output and rx_time, the monotonic receive time). Invalid frames
-        are dropped by the backend and never reach the node."""
+        dicts with esp_state, override_active, mask, airborne, fc_link_ok, and
+        optionally failsafe_output, armed, session_id, esp_rx_rejected,
+        fc_values, fc_ages and rx_time, the monotonic receive time). Invalid
+        frames are dropped by the backend and never reach the node.
+        fc_link_ok must be True for anything to engage (decision E6.1)."""
         raise NotImplementedError
 
     def take_acks(self):
@@ -76,8 +81,10 @@ class LoopbackBackend(Backend):
     """No drone: keeps what was sent and reports a fixed drone state.
 
     The reported state is conservative by default (SESSION_IDLE, no override,
-    no mask), so a dry run never lets mission_node engage. Set `state` to
-    something else on purpose for a test.
+    no mask), so a dry run never lets mission_node engage. It reports the FC
+    link alive (fc_link_ok true, decision E6.1), so a dry run still shows
+    link_ok true while active. Set `state` to something else on purpose for a
+    test.
     """
 
     name = "loopback"
@@ -90,6 +97,7 @@ class LoopbackBackend(Backend):
                 "override_active": False,
                 "mask": None,
                 "airborne": False,
+                "fc_link_ok": True,
             }
         )
         self.connected = connected

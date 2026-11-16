@@ -37,6 +37,7 @@ STREAMING = {
     "override_active": True,
     "mask": 11,
     "airborne": True,
+    "fc_link_ok": True,  # E6.1
 }
 
 

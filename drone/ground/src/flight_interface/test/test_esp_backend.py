@@ -19,8 +19,6 @@ try:
 
     from flight_interface import esp_backend
     from flight_interface.esp_backend import (
-        FC_LINK_LOST,
-        FC_LINK_RESTORED,
         HANDSHAKE_TIMEOUT,
         RECONNECT_AFTER,
         RECONNECT_EVERY,
@@ -29,14 +27,19 @@ try:
     )
     from sd_protocol.frame import MsgType
     from sd_protocol.messages import (
+        AGE_UNKNOWN,
         AckResult,
         ByeReason,
         EspState,
         EventCode,
         encode_u8_payload,
     )
-except ImportError:  # no sd_protocol. A module-level skip would stop the
-    esp_backend = None  # collection of the whole folder under the ROS plugins.
+except ModuleNotFoundError as error:  # no sd_protocol; any other import error fails
+    if not (error.name or "").startswith("sd_protocol"):
+        raise
+    # A module-level skip would stop the collection of the whole folder
+    # under the ROS plugins.
+    esp_backend = None
     RECONNECT_AFTER = RECONNECT_EVERY = HANDSHAKE_TIMEOUT = TICK = 0.0
 
 from flight_interface.backends import make_backend
@@ -122,12 +125,15 @@ def test_the_static_check_also_sees_module_and_class_level_code():
 
 
 def test_arm_is_built_and_sent_only_on_the_operator_path():
-    """Decision A4: the package never names ARM_CONTROL_REQUEST; the session's
-    arm() is called only in EspBackend.arm_control(), and arm_control() only
-    in the node's ~/arm_control callback."""
+    """Decisions A4, K6: the package never names ARM_CONTROL_REQUEST; the
+    session's arm() is called only in EspBackend.arm_control();
+    arm_control() only where the node sends the request the guard says is
+    due; and the guard holds an ARM only from the node's ~/arm_control
+    callback (its request_arm())."""
     assert _uses("ARM_CONTROL_REQUEST") == []
     assert _uses("arm") == [("esp_backend.py", "arm_control")]
-    assert _uses("arm_control") == [("link_node.py", "_on_arm_control")]
+    assert _uses("arm_control") == [("link_node.py", "_send_due_request")]
+    assert _uses("request_arm") == [("link_node.py", "_on_arm_control")]
 
 
 # ---------- session ----------
@@ -349,13 +355,15 @@ def test_a_new_session_is_confirmed_even_when_nothing_is_sent(clock, fake, backe
     assert fake.arm_requests == 0
 
 
-# ---------- #179: FC link health ----------
+# ---------- #179: FC link health (events, FC_HEALTH; E6, E6.1, E6.2) ----------
 def test_fc_link_events_set_fc_link_ok(clock, fake, backend):
+    fake.send_health = False  # the events alone
     clock.run(0.3)
-    fake.send_event(FC_LINK_LOST)
+    assert backend.fc_link_ok is None  # nothing said yet: unknown
+    fake.send_event(EventCode.FC_LINK_LOST)
     state = clock.run(0.1)
     assert backend.fc_link_ok is False and state["fc_link_ok"] is False
-    fake.send_event(FC_LINK_RESTORED)
+    fake.send_event(EventCode.FC_LINK_RESTORED)
     state = clock.run(0.1)
     assert state["fc_link_ok"] is True
     fake.restart()  # a new session starts unknown again
@@ -363,16 +371,114 @@ def test_fc_link_events_set_fc_link_ok(clock, fake, backend):
     assert backend.sessions_opened == 2 and clock.states[-1]["fc_link_ok"] is None
 
 
-def test_fc_health_without_a_layout_is_ignored(clock, fake, backend):
-    """FC_HEALTH (0x81, #179 D3) is not decoded yet: dropped, no error, and it
-    never counts as a STATE for the watchdog."""
+def test_fc_health_gives_the_fc_state_in_a_new_session(clock, fake, backend):
+    """E6: a session that starts while the FC is steady gets no event, but
+    FC_HEALTH (5 Hz) says it. E6.2: alive only after FC_RESTORE_AFTER of
+    fc_alive 1, so about 0.4 s after the first setpoint."""
+    clock.run(0.15)
+    assert backend.fc_link_ok is None
+    clock.run(0.25)
+    assert backend.fc_link_ok is None  # one or two FC_HEALTH: not 250 ms yet
+    clock.run(0.4)
+    assert backend.fc_link_ok is True and clock.states[-1]["fc_link_ok"] is True
+
+
+def test_fc_alive_0_is_lost_at_once_and_alive_again_only_after_250_ms(
+    clock, fake, backend
+):
+    clock.run(0.8)
+    fake.fc_health["fc_alive"] = 0
+    clock.run(0.22)  # the next FC_HEALTH says it
+    assert backend.fc_link_ok is False
+    fake.fc_health["fc_alive"] = 1
+    clock.run(0.22)
+    assert backend.fc_link_ok is False  # one fc_alive 1 is not enough (E6.2)
+    clock.run(0.4)
+    assert backend.fc_link_ok is True
+
+
+def test_a_lost_event_wins_over_an_older_alive_fc_health(clock, fake, backend):
+    """FC_LINK_LOST (TCP) restarts the 250 ms: an FC_HEALTH that still says
+    alive does not undo it at once."""
+    clock.run(0.8)
+    fake.send_event(EventCode.FC_LINK_LOST)
+    clock.run(0.1)
+    assert backend.fc_link_ok is False
+    clock.run(0.1)
+    assert backend.fc_link_ok is False
+
+
+def test_no_fc_health_for_a_second_makes_the_fc_state_unknown(clock, fake, backend):
+    clock.run(0.8)
+    assert backend.fc_link_ok is True
+    fake.send_health = False
+    clock.run(0.5)
+    assert backend.fc_link_ok is True
+    clock.run(1.0)
+    assert backend.fc_link_ok is None  # E6.1: unknown, so not OK
+
+
+@pytest.mark.parametrize("raw, armed", [(1, True), (0, False), (0xFF, None)])
+def test_armed_comes_from_fc_health(clock, fake, backend, raw, armed):
+    """D1: armed true / false / null; airborne = armed is true."""
+    fake.fc_health["armed"] = raw
+    state = clock.run(0.5)
+    assert state["armed"] is armed
+    assert state["airborne"] is (armed is True)
+
+
+def test_armed_is_unknown_without_fc_health(clock, fake, backend):
+    fake.send_health = False
+    state = clock.run(0.5)
+    assert state["armed"] is None and state["airborne"] is False
+
+
+def test_fc_ages_from_fc_health(clock, fake, backend):
+    """D2.1: each value's age = its age in FC_HEALTH + the time since."""
+    fake.fc_health["attitude_age_ms"] = 30
+    fake.fc_health["analog_age_ms"] = AGE_UNKNOWN
+    state = clock.run(0.5)
+    assert 0.03 <= state["fc_ages"]["attitude"] <= 0.03 + 0.2 + TICK
+    assert state["fc_ages"]["analog"] is None
+    fake.send_health = False
+    state = clock.run(1.2)
+    assert state["fc_ages"] == {"attitude": None, "analog": None}
+
+
+def test_a_malformed_fc_health_is_dropped_and_never_a_state(clock, fake, backend):
+    """A wrong-size FC_HEALTH is rejected by the receive checks (counted),
+    raises nothing and never counts as a STATE for the watchdog."""
     clock.run(0.3)
     fake.send_state = False
-    before, errors = len(clock.states), backend.errors
+    fake.send_health = False
+    before, rejected = len(clock.states), backend.rx_rejected
     for _ in range(5):
         fake.send_udp_frame(0x81, bytes(24))
         clock.run(TICK)
-    assert len(clock.states) == before and backend.errors == errors
+    assert len(clock.states) == before
+    assert backend.rx_rejected == rejected + 5
+
+
+def test_fc_health_alone_never_refreshes_the_watchdog(clock, fake, backend):
+    clock.run(0.3)
+    fake.send_state = False  # FC_HEALTH goes on
+    before = len(clock.states)
+    clock.run(1.0)
+    assert len(clock.states) == before
+
+
+def test_the_esps_rx_rejected_wraps_are_counted_per_session(clock, fake, backend):
+    """#149: STATE.rx_rejected is a u16 that wraps; the total goes through
+    WrapCounter and starts again in every session."""
+    fake.rx_rejected = 65530
+    assert clock.run(0.2)["esp_rx_rejected"] == 65530
+    fake.rx_rejected = 5  # wrapped
+    assert clock.run(0.2)["esp_rx_rejected"] == 65536 + 5
+    fake.restart()
+    fake.rx_rejected = 3  # a reboot, not a wrap
+    clock.run(RECONNECT_AFTER + RECONNECT_EVERY + 1.0)
+    assert backend.sessions_opened == 2
+    assert clock.states[-1]["esp_rx_rejected"] == 3
 
 
 def test_arm_refused_fc_not_answering_is_kept_raw(clock, fake, backend):
@@ -382,6 +488,19 @@ def test_arm_refused_fc_not_answering_is_kept_raw(clock, fake, backend):
     fake.send_tcp_message(MsgType.ARM_CONTROL_ACK, encode_u8_payload(4))
     clock.run(0.1)
     assert backend.last_ack == ("ARM_CONTROL_ACK", 4)
+
+
+@pytest.mark.parametrize("streamed, result", [(0.6, 4), (1.5, 0)])
+def test_the_esp_wants_1_s_of_streaming_before_arm(
+    clock, fake, backend, streamed, result
+):
+    """#188 as the fake ESP models it: after 0.6 s of setpoints (the old K6
+    window) ARM is refused with result 4; after 1.5 s (K6 now) it is OK."""
+    fake.rc_ack_needed = 1.0
+    clock.run(streamed)
+    assert backend.arm_control(8, clock.now)
+    clock.run(0.1)
+    assert backend.last_ack == ("ARM_CONTROL_ACK", result)
 
 
 # ---------- A4: ARM on the operator's request; B1: the mask from the ACK ----------
