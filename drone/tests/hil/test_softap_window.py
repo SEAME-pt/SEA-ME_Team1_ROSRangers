@@ -127,6 +127,7 @@ def test_joins_runs_and_rejoins_the_lab(env):
     # No DHCP wait inside the window (#207)
     assert "ipv4.method manual ipv4.addresses 192.168.4.2/24" in add
     assert "ipv6.method disabled" in add
+    assert "802-11-wireless.band bg 802-11-wireless.channel 6" in add  # (#207)
     assert up.startswith(f"--wait 25 connection up hil-softap-{env['GITHUB_RUN_ID']}-")
     assert "passwd-file" in up
     assert delete.startswith("connection delete hil-softap-")

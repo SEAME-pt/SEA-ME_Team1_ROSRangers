@@ -133,10 +133,14 @@ step sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect 
 # NetworkManager config sets it too; this keeps it off without that file.
 # Static address, as the ground PC has (scripts/setup_production.py): the
 # ESP's DHCP took 16 s of the 25 s join on 2026-11-16 (#207). No gateway, so
-# the SoftAP never becomes the Pi's default route
+# the SoftAP never becomes the Pi's default route.
+# Band and channel pinned: the Pi skips the 5 GHz scan and tunes straight to
+# the SoftAP, coming from the lab's 5 GHz network (#207). The channel is the
+# firmware's AP_CHANNEL (secrets.py, default 6)
 step sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con" \
   ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk \
   802-11-wireless.powersave 2 \
+  802-11-wireless.band bg 802-11-wireless.channel "${HIL_AP_CHANNEL:-6}" \
   ipv4.method manual ipv4.addresses 192.168.4.2/24 ipv6.method disabled >/dev/null
 step sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
 # What the driver really does, in the log of every run
