@@ -151,12 +151,14 @@ def payload_fields(fields: dict) -> dict:
     return {k: v for k, v in fields.items() if k != "type" and k not in _HEADER_FIELDS}
 
 
-def result_name(key: bytes, buf: bytes, rx: Receiver | None) -> str:
+def result_name(
+    key: bytes, buf: bytes, rx: Receiver | None, rx_us: int | None = None
+) -> str:
     """'accept' or the README reject reason, which matches the enum names."""
     if rx is None:
         error, _ = decode_frame(buf, key)
         return "accept" if error is RxError.OK else f"reject:{error.name.lower()}"
-    result, _ = rx.receive(buf)
+    result, _ = rx.receive(buf, rx_us)
     return "accept" if is_accepted(result) else f"reject:{result.name.lower()}"
 
 
@@ -173,6 +175,11 @@ def receivers_for(vector: dict, key: bytes) -> Receivers | None:
     rxs = {(r, t): Receiver(r, t) for r in Role for t in Transport}
     for rx in rxs.values():
         assert rx.start_session(state["current_session"], key)
+    late = vector.get("late")  # spec §4 rule 3a, #204: the ESP side only
+    if late is not None:
+        for t in Transport:
+            rxs[Role.ESP, t].set_late_bound(late["bound_us"])
+            rxs[Role.ESP, t].seed_lag(late["hello_t_send_us"], late["hello_rx_us"])
     return rxs
 
 
@@ -210,7 +217,8 @@ def test_vector(vector):
             role = Role[step.get("role", "esp").upper()]
             transport = Transport[step.get("transport", "udp").upper()]
             assert (
-                result_name(key, buf, rxs[role, transport]) == step["expect"]
+                result_name(key, buf, rxs[role, transport], step.get("rx_us"))
+                == step["expect"]
             ), f"step {i} ({role.name}, {transport.name})"
         final = vector.get("final", {})
         if "last_ctrl_seq" in final:

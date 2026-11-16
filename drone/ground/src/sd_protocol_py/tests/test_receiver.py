@@ -513,3 +513,122 @@ def test_session_id_u32_bounds_accepted():
     assert rx.start_session(1, TEST_KEY)
     assert rx.start_session(0xFFFFFFFF, TEST_KEY)
     assert rx.session_id == 0xFFFFFFFF
+
+
+# --- Late check (spec §4 rule 3a, #171, #204); same cases as test_receiver.cpp
+
+
+BOUND = 200_000  # 200 ms
+
+
+def late_frame(msg_type: MsgType, seq: int, t_send_us: int) -> bytes:
+    payload = {
+        MsgType.SETPOINT: bytes(SETPOINT_SIZE),
+        MsgType.ARM_CONTROL_REQUEST: bytes([8]),
+        MsgType.CONFIG_GET: bytes(5),
+    }[msg_type]
+    header = Header(
+        type=msg_type, session_id=SESSION, seq=seq, t_send_us=t_send_us & 0xFFFFFFFF
+    )
+    return encode_frame(header, payload, TEST_KEY)
+
+
+def late_rx(transport: Transport = Transport.UDP) -> Receiver:
+    """The ground clock is 5 s behind the ESP's and the HELLO took 10 ms."""
+    rx = open_receiver(transport)
+    rx.set_late_bound(BOUND)
+    rx.seed_lag(0, 5_010_000)
+    return rx
+
+
+def at(rx: Receiver, buf: bytes, rx_us: int) -> RxResult:
+    return rx.receive(buf, rx_us & 0xFFFFFFFF)[0]
+
+
+def test_late_on_time_accepted_held_back_rejected():
+    assert RxResult.LATE == 17  # same number as the C++ kLate
+    rx = late_rx()
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_015_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_270_000) is RxResult.LATE
+    )
+    assert rx.counters.late == 1 and rx.counters.rejected == 1
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 3, 1_100_000), 6_295_000))
+
+
+def test_late_frame_uses_up_nothing():
+    rx = late_rx()
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, 0), 5_300_000) is RxResult.LATE
+    assert rx.last_seq == 0
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 300_000), 5_305_000))
+
+
+def test_late_hello_seed_catches_a_delay_from_the_start():
+    rx = late_rx()
+    for i in range(1, 6):
+        got = at(
+            rx,
+            late_frame(MsgType.SETPOINT, i, i * 20_000),
+            5_000_000 + i * 20_000 + 300_000,
+        )
+        assert got is RxResult.LATE, i
+
+
+def test_late_faster_path_lowers_the_floor():
+    rx = late_rx()
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_002_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_227_000) is RxResult.LATE
+    )
+
+
+@pytest.mark.parametrize("ppm, refused", [(190, False), (500, True)])
+def test_late_drift(ppm, refused):
+    # 190 ppm is followed for 1 h; an NTP-slewed clock (500 ppm) ends up refused,
+    # which is why the spec fixes CLOCK_MONOTONIC_RAW (#171).
+    rx = late_rx()
+    got_late = False
+    for i, t in enumerate(range(100_000, 3600 * 1_000_000 + 1, 100_000), start=1):
+        r = at(
+            rx,
+            late_frame(MsgType.SETPOINT, i, t),
+            5_000_000 + t + t * ppm // 1_000_000 + 10_000,
+        )
+        if r is RxResult.LATE:
+            got_late = True
+            break
+        assert is_accepted(r)
+    assert got_late is refused
+
+
+def test_late_both_clocks_wrap():
+    rx = open_receiver()
+    rx.set_late_bound(BOUND)
+    rx.seed_lag(0xFFFF0000, 0xFFFFF000)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 0xFFFFC000), 0x00000100))
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 2, 0x00001000), 0x00011100))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 3, 0x00002000), 0x00012100 + 250_000)
+        is RxResult.LATE
+    )
+
+
+def test_late_arm_is_checked_config_is_not():
+    tcp = late_rx(Transport.TCP)
+    assert (
+        at(tcp, late_frame(MsgType.ARM_CONTROL_REQUEST, 2, 0), 5_300_000)
+        is RxResult.LATE
+    )
+    assert is_accepted(at(tcp, late_frame(MsgType.CONFIG_GET, 2, 0), 5_300_000))
+
+
+def test_late_without_a_receive_time_fails_closed():
+    assert late_rx().receive(SEQ1)[0] is RxResult.LATE
+    assert is_accepted(open_receiver().receive(SEQ1)[0])  # check off
+
+
+def test_late_new_session_needs_a_new_seed():
+    rx = late_rx()
+    assert rx.start_session(SESSION, TEST_KEY)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 0), 9_000_000))
+    assert at(rx, late_frame(MsgType.SETPOINT, 2, 20_000), 9_250_000) is RxResult.LATE

@@ -3,7 +3,7 @@ title: Requirements
 type: plan
 status: active
 date: 2026-10-21
-updated: 2026-11-10
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - plan
@@ -98,6 +98,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-021 | E-stop: when a fault is detected (the list in [[Testing Strategy]] §2), the system brings the drone to a safe stop, in the air or on the ground. Time to the safe state is measured per fault. | [[Safety Rules]] §3 · [[Study Plan v2]] §11 | test + demo | SITL + HIL, then cage | draft |
 | REQ-SAF-022 | Kill switch: releasing SA on the radio disarms the FC and stops the motors, whatever the ESP and the ground send. | [[ADR-010 MSP Override\|ADR-010]] (update 2026-10-23) · [[Radio Link Tests]] RL-12 | test | bench props off (done 2026-10-22, #22), then cage | verified (bench, #22) |
 | REQ-SAF-023 | The ground never sends `ARM_CONTROL_REQUEST` on its own, also not after a reconnect or a session switch: ARM is always an operator action. Added 2026-11-09 (safety pilot's condition, review of PR #170). One dated exception for the HIL bench only: see *HIL bench exception to REQ-SAF-023* below the table. | [[ESP Link State Machine]] §1.1 | test | unit + ROS node (#103) | accepted |
+| REQ-SAF-024 | The ground accepts a `HELLO_ACK` only if it arrives within 100 ms of its `HELLO`; a later one is dropped and the ground starts a new handshake. The ESP seeds its late-check offset from the `HELLO` ([[Protocol Spec v0]] §4 rule 3a), so this bound keeps an attacker who delays the handshake from moving that offset. Added 2026-11-16 (safety pilot's condition on spike #171, #204). | [[Protocol Spec v0]] §1, §4 | test | unit + HIL | accepted |
 
 > [!warning] HIL bench exception to REQ-SAF-023 (2026-11-10, approved by the safety pilot, #106)
 > The automated HIL tests may send `ARM_CONTROL_REQUEST` on their own, under these conditions only (BrunoBMFT on #106, 2026-11-10):

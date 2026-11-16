@@ -162,5 +162,77 @@
       "rx_rejected": 1,
       "gaps": 0
     }
+  },
+  {
+    "name": "late_setpoint_rejected",
+    "description": "Ground clock 5 s behind, HELLO 10 ms: seq 1 15 ms on its way is accepted, seq 2 held back 250 ms is refused, then seq 2 sent again on time is accepted (the late frame used up nothing)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "late": {
+      "bound_us": 200000,
+      "hello_t_send_us": 0,
+      "hello_rx_us": 5010000
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a00785634120100000040420f000000000000000000000015a0404b718ced29",
+        "rx_us": 6015000,
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a00785634120200000060900f0000000000000000000000991648cd7dce75b1",
+        "rx_us": 6270000,
+        "expect": "reject:late"
+      },
+      {
+        "bytes": "5344016000000a00785634120200000080de0f00000000000000000000000ca869e1356beaf6",
+        "rx_us": 6050000,
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 2,
+      "rx_rejected": 1,
+      "gaps": 0
+    }
+  },
+  {
+    "name": "late_across_both_wraps",
+    "description": "t_send_us and the ESP clock both wrap (u32 us): on-time frames are accepted, one 250 ms late is refused",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "late": {
+      "bound_us": 200000,
+      "hello_t_send_us": 4294901760,
+      "hello_rx_us": 4294963200
+    },
+    "steps": [
+      {
+        "bytes": "5344016000000a00785634120100000000c0ffff0000000000000000000069f8300f577e3687",
+        "rx_us": 256,
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a0078563412020000000010000000000000000000000000e7de899bd4bb2fef",
+        "rx_us": 69888,
+        "expect": "accept"
+      },
+      {
+        "bytes": "5344016000000a0078563412030000000020000000000000000000000000f6cce46305269f64",
+        "rx_us": 323984,
+        "expect": "reject:late"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 2,
+      "rx_rejected": 1,
+      "gaps": 0
+    }
   }
 ]

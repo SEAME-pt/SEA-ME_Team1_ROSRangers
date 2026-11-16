@@ -65,12 +65,14 @@ from sd_protocol.messages import (
     transport_of,
 )
 from sd_protocol.receiver import (
+    LATE_DRIFT_PPM,
     PAYLOAD_SIZES,
     HandshakeResult,
     Receiver,
     RxCounters,
     RxResult,
     is_accepted,
+    is_control_type,
     receive_handshake,
 )
 from sd_protocol.seq_window import SeqCounters, SeqResult, SeqWindow
@@ -100,6 +102,7 @@ __all__ = [
     "HELLO_ACK_SIZE",
     "HELLO_SIZE",
     "NONCE_SIZE",
+    "LATE_DRIFT_PPM",
     "PAYLOAD_SIZES",
     "RC_CHANNELS",
     "RC_MAX",
@@ -161,6 +164,7 @@ __all__ = [
     "frame_size",
     "hmac_sha256",
     "is_accepted",
+    "is_control_type",
     "protocol_version",
     "receive_handshake",
     "receives",

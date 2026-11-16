@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <map>
 #include <string>
 #include <vector>
@@ -114,6 +115,8 @@ std::string result_name(sd::RxResult r) {
     return "reject:wrong_transport";
   case sd::RxResult::kWrongDirection:
     return "reject:wrong_direction";
+  case sd::RxResult::kLate:
+    return "reject:late";
   case sd::RxResult::kBadPayloadSize:
     return "reject:bad_payload_size";
   case sd::RxResult::kBadMode:
@@ -446,6 +449,14 @@ TEST_P(Vector, Check) {
       ASSERT_TRUE(rx->start_session(state.at("current_session"), key));
     }
   }
+  // Late check (spec §4 rule 3a, #204): the ESP side only, seeded from HELLO.
+  if (v.contains("late")) {
+    const json &late = v["late"];
+    for (sd::Receiver *rx : {&esp_udp, &esp_tcp}) {
+      rx->set_late_bound(late.at("bound_us"));
+      rx->seed_lag(late.at("hello_t_send_us"), late.at("hello_rx_us"));
+    }
+  }
 
   // Groups 5, 6 and 8: several frames, the result after each one.
   if (v.contains("steps")) {
@@ -460,8 +471,12 @@ TEST_P(Vector, Check) {
                transport == "tcp" ? sd::Transport::kTcp : sd::Transport::kUdp);
       const Bytes buf = from_hex(step.at("bytes"));
       sd::Frame f{};
-      EXPECT_EQ(result_name(to.receive(buf.data(), buf.size(), f)),
-                step.at("expect"))
+      const sd::RxResult got =
+          step.contains("rx_us")
+              ? to.receive(buf.data(), buf.size(), f,
+                           step.at("rx_us").get<std::uint32_t>())
+              : to.receive(buf.data(), buf.size(), f);
+      EXPECT_EQ(result_name(got), step.at("expect"))
           << "step " << i++ << " (" << role << ", " << transport << ")";
     }
     const json final = v.value("final", json::object());
