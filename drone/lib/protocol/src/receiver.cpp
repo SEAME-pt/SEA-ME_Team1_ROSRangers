@@ -186,9 +186,13 @@ RxResult Receiver::check(const std::uint8_t *buf, std::size_t len, Frame &out,
       const std::uint64_t drift =
           static_cast<std::uint64_t>(rx_us - offset_rx_us_) * kLateDriftPpm /
           1000000U;
+      // `early`: below the offset, without the drift allowance. Far below is
+      // a frame held back past 35.8 min, its u32 difference wrapped.
+      const std::int32_t early = static_cast<std::int32_t>(lag - offset_us_);
       const std::int32_t excess = static_cast<std::int32_t>(
           lag - offset_us_ - static_cast<std::uint32_t>(drift));
-      if (excess > static_cast<std::int32_t>(late_bound_us_)) {
+      if (excess > static_cast<std::int32_t>(late_bound_us_) ||
+          early < -static_cast<std::int32_t>(kLateMaxEarlyUs)) {
         return reject(RxResult::kLate);
       }
       new_floor = excess < 0; // a faster path, or allowed drift

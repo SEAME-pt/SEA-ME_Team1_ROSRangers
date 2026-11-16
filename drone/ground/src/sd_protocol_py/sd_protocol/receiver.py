@@ -129,6 +129,9 @@ _SEQ_RESULTS = {
 # Late check (spec §4 rule 3a, #171, #204): the offset between the ground's
 # t_send_us clock and this side's receive clock may rise by at most this much.
 LATE_DRIFT_PPM = 200
+# A lag this far below the offset is a frame held back 35.8-71.6 min whose u32
+# difference wrapped, not a faster path: refused as late too (#205 review).
+LATE_MAX_EARLY_US = 1_000_000
 _CONTROL_TYPES = (MsgType.SETPOINT, MsgType.ARM_CONTROL_REQUEST, MsgType.RESUME_REQUEST)
 _U32 = 0xFFFFFFFF
 
@@ -300,8 +303,9 @@ class Receiver:
                 drift = (
                     ((rx_us - self._offset_rx_us) & _U32) * LATE_DRIFT_PPM // 1_000_000
                 )
+                early = _int32(lag - self._offset_us)
                 excess = _int32(lag - self._offset_us - drift)
-                if excess > self._late_bound_us:
+                if excess > self._late_bound_us or early < -LATE_MAX_EARLY_US:
                     return self._reject(RxResult.LATE)
                 new_floor = excess < 0  # a faster path, or allowed drift
 

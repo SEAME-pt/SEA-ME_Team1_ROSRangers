@@ -205,11 +205,11 @@ Example: the ESP's session is `0x12345678`, the frame says `0x12345679`, tag val
 }
 ```
 
-### Group 5: Sequence, ADR-003 (8 vectors)
+### Group 5: Sequence, ADR-003 (9 vectors)
 
 `seq_in_order`, `seq_duplicate`, `seq_older`, `seq_gap` (accepted, gap counted), `seq_zero` (never accepted), `seq_too_high` (`seq ≥ 2^31` → new session).
 
-Late check (spec §4 rule 3a, #204), on the ESP's Receivers only: `late_setpoint_rejected` (held back 250 ms → `reject:late`, then the same seq on time is accepted: the late frame used up nothing) and `late_across_both_wraps` (`t_send_us` and the ESP clock both wrap). These carry `late` (`bound_us`, and `hello_t_send_us` / `hello_rx_us`, the HELLO that seeds the offset), and each step an `rx_us` (the ESP receive time, u32 µs).
+Late check (spec §4 rule 3a, #204), on the ESP's Receivers only: `late_setpoint_rejected` (held back 250 ms → `reject:late`, then the same seq on time is accepted: the late frame used up nothing) `late_across_both_wraps` (`t_send_us` and the ESP clock both wrap) and `late_held_40_min` (the u32 lag difference wraps negative: still late, #205 review). These carry `late` (`bound_us`, and `hello_t_send_us` / `hello_rx_us`, the HELLO that seeds the offset), and each step an `rx_us` (the ESP receive time, u32 µs).
 
 Proves: old or replayed control messages are refused (anti-replay). These are **behaviour** vectors: several frames in order, with the result after each one.
 

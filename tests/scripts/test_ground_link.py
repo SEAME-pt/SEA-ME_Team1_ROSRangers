@@ -44,6 +44,7 @@ def esp_ack() -> bytes:
 
 def open_link() -> ground_link.GroundLink:
     link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+    link.hello()  # REQ-SAF-024: a HELLO_ACK is only taken after our HELLO
     assert link.take_ack(esp_ack())
     return link
 
@@ -136,6 +137,7 @@ def test_frames_after_the_ack_in_the_same_read_are_kept():
     # The ESP sends EVENT 0x0104 right after HELLO_ACK; both can arrive in one
     # TCP read, and the EVENT must not be lost.
     link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+    link.hello()
     keys = derive_keys(PSK, bytes([0x11] * 16), ESP_NONCE)
     event = encode_frame(
         Header(type=MsgType.EVENT, session_id=SESSION, seq=2),
@@ -256,3 +258,81 @@ def test_acks_are_shown_by_name():
         link.keys.esp_to_ground,
     )
     assert link.describe_tcp(ack) == "ARM_CONTROL_ACK 4 FC_NOT_ANSWERING"
+
+
+def test_t_send_us_comes_from_clock_monotonic_raw(monkeypatch):
+    # Protocol Spec §1 (#204): NTP can slew CLOCK_MONOTONIC, not RAW.
+    import time
+
+    asked = []
+
+    def fake(clock):
+        asked.append(clock)
+        return 5_000_123_456_789
+
+    monkeypatch.setattr(time, "clock_gettime_ns", fake)
+    assert ground_link.now_us() == 5_000_123_456_789 // 1000 & 0xFFFFFFFF
+    assert asked == [time.CLOCK_MONOTONIC_RAW]
+
+
+def test_hello_ack_later_than_100_ms_is_dropped():
+    # REQ-SAF-024 (#204): the ESP seeds its late-check offset from the HELLO, so
+    # a delayed handshake must not open a session.
+    link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+    link.hello()
+    sent = link.hello_sent_us
+    assert not link.take_ack(esp_ack(), rx_us=sent + 100_001)
+    assert link.late_acks == 1 and link.keys is None
+    assert link.take_ack(esp_ack(), rx_us=sent + 100_000)  # exactly 100 ms: ok
+    assert link.session_id == SESSION
+
+
+def test_hello_ack_bound_survives_the_clock_wrap():
+    link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+    link.hello()
+    link.hello_sent_us = 0xFFFFFFF0
+    assert link.take_ack(esp_ack(), rx_us=0x00000100)  # 272 us across the wrap
+
+
+def test_hello_ack_without_our_hello_is_dropped():
+    assert not ground_link.GroundLink(PSK).take_ack(esp_ack())
+
+
+def test_a_late_ack_starts_a_new_handshake(monkeypatch):
+    # connect(): the first HELLO_ACK comes 150 ms late, the second on time.
+    sent = []
+    acks = iter([150_000, 20_000])
+
+    class FakeTcp:
+        def setsockopt(self, *a):
+            pass
+
+        def sendall(self, data):
+            sent.append(data)
+            self.delay = next(acks)
+
+        def recv(self, n):
+            link.hello_sent_us = 1_000_000
+            monkeypatch.setattr(ground_link, "now_us", lambda: 1_000_000 + self.delay)
+            return esp_ack()
+
+        def setblocking(self, flag):
+            pass
+
+        def close(self):
+            pass
+
+    link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+    first_nonce = link.nonce
+    monkeypatch.setattr(
+        ground_link.socket, "create_connection", lambda *a, **k: FakeTcp()
+    )
+    monkeypatch.setattr(ground_link.time, "sleep", lambda s: None)
+
+    class Args:
+        host, port = "192.0.2.1", 5760
+
+    got = ground_link.connect(Args, link, 0.0)
+    assert got is not None and link.session_id == SESSION
+    assert len(sent) == 2 and link.late_acks == 1
+    assert link.nonce != first_nonce  # a nonce never repeats (spec §1)

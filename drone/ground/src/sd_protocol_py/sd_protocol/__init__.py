@@ -66,6 +66,7 @@ from sd_protocol.messages import (
 )
 from sd_protocol.receiver import (
     LATE_DRIFT_PPM,
+    LATE_MAX_EARLY_US,
     PAYLOAD_SIZES,
     HandshakeResult,
     Receiver,
@@ -103,6 +104,7 @@ __all__ = [
     "HELLO_SIZE",
     "NONCE_SIZE",
     "LATE_DRIFT_PPM",
+    "LATE_MAX_EARLY_US",
     "PAYLOAD_SIZES",
     "RC_CHANNELS",
     "RC_MAX",

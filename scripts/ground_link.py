@@ -93,8 +93,21 @@ SECRETS = CONFIG_DIR / "secrets.json"
 NONCE_SIZE = 16
 
 
+# t_send_us comes from CLOCK_MONOTONIC_RAW (Protocol Spec §1, #204): NTP/chrony
+# can slew CLOCK_MONOTONIC by up to 500 ppm, which the ESP's late check (200 ppm
+# drift allowance) would refuse after a few minutes. Linux only; elsewhere the
+# plain monotonic clock, for tests.
+_RAW = getattr(time, "CLOCK_MONOTONIC_RAW", None)
+# REQ-SAF-024: a HELLO_ACK more than this after our HELLO is dropped and a new
+# handshake starts, so a delayed handshake cannot move the ESP's late-check
+# offset (seeded from the HELLO).
+HELLO_ACK_MAX_US = 100_000
+HELLO_TRIES = 3
+
+
 def now_us() -> int:
-    return time.monotonic_ns() // 1000 & 0xFFFFFFFF
+    ns = time.clock_gettime_ns(_RAW) if _RAW is not None else time.monotonic_ns()
+    return ns // 1000 & 0xFFFFFFFF
 
 
 PSK_RE = re.compile(r"[0-9a-f]{64}")
@@ -159,19 +172,39 @@ class GroundLink:
         self.rx_tcp = Receiver(Role.GROUND, Transport.TCP)
         self.rx_udp = Receiver(Role.GROUND, Transport.UDP)
         self.last_setpoint: bytes = b""
+        self.hello_sent_us: int | None = None
+        self.late_acks = 0  # HELLO_ACKs dropped for REQ-SAF-024
 
     def hello(self) -> bytes:
         payload = encode_hello(Hello(proto=1, ground_nonce=self.nonce))
+        self.hello_sent_us = now_us()
         return encode_frame(
-            Header(type=MsgType.HELLO, seq=1, t_send_us=now_us()), payload, self.psk
+            Header(type=MsgType.HELLO, seq=1, t_send_us=self.hello_sent_us),
+            payload,
+            self.psk,
         )
 
-    def take_ack(self, frame: bytes) -> bool:
+    def new_nonce(self) -> None:
+        """For a new handshake: a nonce never repeats (spec §1)."""
+        self.nonce = secrets.token_bytes(NONCE_SIZE)
+
+    def take_ack(self, frame: bytes, rx_us: int | None = None) -> bool:
+        """Takes a HELLO_ACK and opens the session. A valid one that arrives more
+        than HELLO_ACK_MAX_US after our HELLO is dropped (REQ-SAF-024): counted
+        in late_acks, no session."""
         result, f = receive_handshake(Role.GROUND, frame, self.psk)
         if result != HandshakeResult.ACCEPTED or f is None:
             return False
         ack = decode_hello_ack(f.payload)
         if ack is None:
+            return False
+        if rx_us is None:
+            rx_us = now_us()
+        if (
+            self.hello_sent_us is None
+            or (rx_us - self.hello_sent_us) & 0xFFFFFFFF > HELLO_ACK_MAX_US
+        ):
+            self.late_acks += 1
             return False
         self.session_id = ack.session_id
         self.keys = derive_keys(self.psk, self.nonce, ack.esp_nonce)
@@ -355,25 +388,36 @@ def needs_new_session(stale_s: float, tcp_open: bool, esp_state: int | None) -> 
 def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: float = 3):
     """Opens a session: (tcp, reader, frames that came after HELLO_ACK). On
     failure it exits, or returns None when `fatal` is False (reconnect)."""
+    why = "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
     try:
-        tcp = socket.create_connection((args.host, args.port), timeout=timeout)
-        tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        hello = link.hello()
-        tcp.sendall(hello)
-        reader = TcpReader()
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            data = tcp.recv(512)
-            if not data:
-                break
-            rest = take_ack(link, reader.feed(data))
-            if rest is not None:
-                log(t0, f"session 0x{link.session_id:08x} open")
-                tcp.setblocking(False)
-                link.recorded_hello = hello
-                return tcp, reader, rest
-        tcp.close()
-        why = "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
+        for attempt in range(HELLO_TRIES):
+            if attempt:
+                # REQ-SAF-024: a new handshake with a new nonce; the ESP takes
+                # at most one HELLO per 500 ms
+                link.new_nonce()
+                time.sleep(0.5)
+            late_before = link.late_acks
+            tcp = socket.create_connection((args.host, args.port), timeout=timeout)
+            tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            hello = link.hello()
+            tcp.sendall(hello)
+            reader = TcpReader()
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline and link.late_acks == late_before:
+                data = tcp.recv(512)
+                if not data:
+                    break
+                rest = take_ack(link, reader.feed(data))
+                if rest is not None:
+                    log(t0, f"session 0x{link.session_id:08x} open")
+                    tcp.setblocking(False)
+                    link.recorded_hello = hello
+                    return tcp, reader, rest
+            tcp.close()
+            if link.late_acks == late_before:
+                break  # no HELLO_ACK at all: retrying will not help
+            why = f"HELLO_ACK came more than {HELLO_ACK_MAX_US // 1000} ms after HELLO {link.late_acks} time(s) (REQ-SAF-024)"
+            log(t0, why + ": new handshake")
     except (OSError, ValueError) as e:
         why = f"cannot open a session with {args.host}:{args.port}: {e}"
     if fatal:

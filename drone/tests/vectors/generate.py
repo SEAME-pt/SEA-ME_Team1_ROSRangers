@@ -480,6 +480,13 @@ def group5() -> list[dict]:
              [(1, 0xFFFFC000, 0x00000100, a), (2, 0x00001000, 0x00011100, a),
               (3, 0x00002000, 0x00012100 + 250_000, "reject:late")],
              {"last_ctrl_seq": 2, "rx_rejected": 1, "gaps": 0}),
+        late("late_held_40_min",
+             "Held back 40 min: the u32 lag difference wraps negative and must not pass as a faster path; "
+             "then the same seq on time is accepted",
+             (0, 5_010_000),
+             [(1, 1_000_000, 6_000_000 + 40 * 60 * 1_000_000, "reject:late"),
+              (1, 40 * 60 * 1_000_000 + 1_000_000, 6_000_000 + 40 * 60 * 1_000_000 + 10, a)],
+             {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
     ]  # fmt: skip
 
 

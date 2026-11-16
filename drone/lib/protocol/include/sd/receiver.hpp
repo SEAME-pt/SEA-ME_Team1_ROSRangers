@@ -67,6 +67,10 @@ struct RxCounters {
 // t_send_us clock and this side's receive clock may rise by at most this much
 // (clock drift, BrunoBMFT on #171).
 constexpr std::uint32_t kLateDriftPpm = 200;
+// A lag this far below the offset is not a faster path but a frame held back
+// so long (35.8-71.6 min) that the u32 difference wrapped: refused as late too
+// (#205 review). A real faster path is at most ~100 ms (REQ-SAF-024) below.
+constexpr std::uint32_t kLateMaxEarlyUs = 1000000;
 // The types the late check applies to: the frames that start or keep control.
 bool is_control_type(std::uint8_t type);
 

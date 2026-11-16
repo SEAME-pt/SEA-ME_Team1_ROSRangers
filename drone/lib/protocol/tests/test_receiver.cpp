@@ -662,6 +662,29 @@ TEST(LateCheck, BothClocksWrap) {
             sd::RxResult::kLate);
 }
 
+TEST(LateCheck, HeldBackLongEnoughToWrapIsStillRefused) {
+  // Held back 40 min and 60 min: the u32 lag difference wraps negative, which
+  // must not pass as a faster path (#205 review). Only a frame held back
+  // 71.58 min (2^32 µs) give or take ~1.2 s can pass: the u32 limit, spec §4.
+  for (const std::uint64_t held_min : {40ULL, 60ULL}) {
+    LateRx rx;
+    const std::uint32_t sent = 1000000;
+    const auto rx_us =
+        static_cast<std::uint32_t>(5000000ULL + sent + held_min * 60 * 1000000);
+    EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, sent), rx_us),
+              sd::RxResult::kLate)
+        << held_min;
+    // and the offset did not move: an on-time frame right after is fine,
+    // one 250 ms late is refused
+    EXPECT_TRUE(sd::is_accepted(
+        at(rx, late_frame(sd::MsgType::kSetpoint, 2, rx_us - 5000000),
+           rx_us + 10)));
+    EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 3, rx_us - 5000000),
+                 rx_us + 260000),
+              sd::RxResult::kLate);
+  }
+}
+
 TEST(LateCheck, ArmIsCheckedConfigIsNot) {
   sd::Receiver tcp(sd::Role::kEsp, sd::Transport::kTcp);
   ASSERT_TRUE(tcp.start_session(kSession, test_key()));
@@ -744,13 +767,23 @@ ReplayResult replay(const std::string &name, std::uint32_t bound_us) {
 } // namespace
 
 TEST(LateReplay, TheS109CageRunsGetNoExtraFailsafe) {
-  for (const char *run :
-       {"s1-09_cage_run1.csv", "s1-09_cage_run2.csv", "s1-09_cage_run3.csv"}) {
+  const struct {
+    const char *run;
+    std::size_t frames;
+    std::uint32_t late;
+    int silences;
+  } runs[] = {{"s1-09_cage_run1.csv", 29944, 0, 0},
+              {"s1-09_cage_run2.csv", 29672, 292, 14},
+              {"s1-09_cage_run3.csv", 29962, 8, 0}};
+  for (const auto &e : runs) {
+    const char *run = e.run;
     const ReplayResult off = replay(run, 0);
     const ReplayResult on = replay(run, kBound);
-    EXPECT_GT(on.frames, 29000U) << run;
+    EXPECT_EQ(on.frames, e.frames) << run;
     EXPECT_EQ(off.late, 0U) << run;
-    EXPECT_EQ(on.silences, off.silences) << run;
+    EXPECT_EQ(on.late, e.late) << run;
+    EXPECT_EQ(off.silences, e.silences) << run;
+    EXPECT_EQ(on.silences, off.silences) << run; // no extra failsafe
     std::cout << run << ": " << on.frames << " frames, " << on.late
               << " late, silences >= T_loss " << off.silences << " -> "
               << on.silences << "\n";

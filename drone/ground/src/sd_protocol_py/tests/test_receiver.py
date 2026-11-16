@@ -613,6 +613,21 @@ def test_late_both_clocks_wrap():
     )
 
 
+@pytest.mark.parametrize("held_min", [40, 60])
+def test_late_held_back_long_enough_to_wrap_is_still_refused(held_min):
+    rx = late_rx()
+    sent = 1_000_000
+    rx_us = (5_000_000 + sent + held_min * 60 * 1_000_000) & 0xFFFFFFFF
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, sent), rx_us) is RxResult.LATE
+    assert is_accepted(
+        at(rx, late_frame(MsgType.SETPOINT, 2, rx_us - 5_000_000), rx_us + 10)
+    )
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 3, rx_us - 5_000_000), rx_us + 260_000)
+        is RxResult.LATE
+    )
+
+
 def test_late_arm_is_checked_config_is_not():
     tcp = late_rx(Transport.TCP)
     assert (
