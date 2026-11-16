@@ -55,6 +55,15 @@ class EspState(IntEnum):
     LINK_FAILSAFE = 4
 
 
+class OverrideActive(IntEnum):
+    """STATE.override_active (spec §3.1, #176). Only ON means the FC takes the
+    ESP's RC channels: treat UNKNOWN like OFF."""
+
+    OFF = 0
+    ON = 1
+    UNKNOWN = 2  # box list not read, no MSP OVERRIDE box, or MSP_STATUS > 500 ms old
+
+
 class EventCode(IntEnum):
     """EVENT.code, grouped by range: 0x00xx system, 0x01xx link, 0x02xx FC / MSP."""
 

@@ -3,7 +3,7 @@ title: ESP Link State Machine
 type: architecture
 status: draft
 date: 2026-10-12
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - architecture
@@ -81,7 +81,7 @@ Rules the code (`drone/lib/protocol/include/sd/link.hpp`) follows where this not
 | BOOT | nothing | Wi-Fi sleep disabled, static IP. Safe at power-up and after a watchdog reset (REQ-SAF-016 (was REQ-FS-04)). |
 | NO_SESSION | **neutral frames** (1500, throttle 1000) at 50 Hz | An early override switch-on never sees empty channels. 2026-11-09: the ADR-004 output instead, if control was on before (§1.1) |
 | SESSION_IDLE | neutral frames | Telemetry flowing. 2026-11-09: the ADR-004 output instead, after a switch or `BYE` from control, until ARM OK (§1.1) |
-| STREAMING | ground setpoints | `override_active` read from `MSP_STATUS` and reported (REQ-SAF-007 (was SAF-07)) |
+| STREAMING | ground setpoints | `override_active` read from `MSP_STATUS` and reported (REQ-SAF-007 (was SAF-07)). 2026-11-16 (#176): 0 off, 1 on, 2 unknown, in every state ([[Protocol Spec v0]] §3.1) |
 | LINK_FAILSAFE | per [[ADR-004 ESP Failsafe\|ADR-004]] (4.5.1: neutral forever; 2026.6: neutral 1 s then stop; neutral again while a live ground streams, §2.6) | Event over TCP when possible (REQ-SAF-015 (was REQ-FS-03)) |
 
 > [!important] Neutral throttle
