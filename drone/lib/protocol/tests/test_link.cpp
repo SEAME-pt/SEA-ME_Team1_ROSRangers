@@ -340,6 +340,38 @@ TEST_F(LinkTest, BadFramesOnTheSessionConnection) {
   EXPECT_EQ(link.rx_rejected(), 2U);
 }
 
+// Spec §7.5 (#149): STATE.rx_rejected counts no-session frames and wraps to 0
+// after 65535, so new rejects always show; the ground counts the wraps.
+TEST_F(LinkTest, StateRxRejectedCountsNoSessionAndWraps) {
+  link.boot_done(0);
+  Ground g;
+  g.session = 0x1234;
+  ASSERT_EQ(udp(g.setpoint(0), 0), sd::RxResult::kNoSession);
+  ASSERT_TRUE(handshake(g, 0, 0));
+  auto last_state = [&](std::uint16_t &out) {
+    sd::Frame f{};
+    ASSERT_TRUE(g.open(io.udp.back(), f));
+    ASSERT_EQ(f.header.type, static_cast<std::uint8_t>(MsgType::kState));
+    sd::State st{};
+    ASSERT_TRUE(sd::decode_state(f.payload, f.header.payload_len, st));
+    out = st.rx_rejected;
+  };
+  std::uint16_t got = 0;
+  link.send_state(10, sd::FcView{});
+  last_state(got);
+  EXPECT_EQ(got, 1U); // the no-session frame counts
+
+  Bytes bad_tag = g.setpoint(0);
+  bad_tag.back() ^= 1;
+  for (std::uint32_t i = 0; i < 0x10000U; ++i) {
+    udp(bad_tag, 20);
+  }
+  EXPECT_EQ(link.rx_rejected(), 0x10001U);
+  link.send_state(30, sd::FcView{});
+  last_state(got);
+  EXPECT_EQ(got, 1U); // 65537 mod 65536: wrapped, not stuck at 65535
+}
+
 TEST_F(LinkTest, ForeignFrameOnThePendingConnectionIsRejected) {
   Ground g;
   stream(g);

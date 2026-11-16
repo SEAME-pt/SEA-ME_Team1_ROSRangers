@@ -177,7 +177,8 @@ public:
   std::uint8_t event_level() const { return event_level_; }
   const LinkCounters &counters() const { return counters_; }
   // Every rejected frame since boot: all Receivers, handshake rejects and
-  // unrouted frames. STATE.rx_rejected saturates it at 0xFFFF (#149).
+  // unrouted frames. STATE.rx_rejected carries its low 16 bits: it wraps
+  // to 0 after 65535 and the ground counts the wraps (#149).
   std::uint32_t rx_rejected() const;
 
 private:
