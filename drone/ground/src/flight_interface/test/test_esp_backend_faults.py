@@ -76,7 +76,7 @@ def clock(fake, backend):
 def streaming(clock, fake, backend):
     """An operator ARM with mask 8: the ESP is STREAMING, the mask confirmed."""
     clock.run(0.3)
-    assert backend.arm_control(8, clock.now)
+    assert backend.arm_control(8, clock.now, backend.session_id)
     state = clock.run(0.2)
     assert fake.state == EspState.STREAMING and state["mask"] == 8
     return state
@@ -248,7 +248,7 @@ def test_forged_tcp_frames_change_nothing(clock, fake, backend):
     clock.run(0.1)
     fake.force_state(EspState.LINK_FAILSAFE)  # the real ESP will refuse ARM
     first = backend.session_id
-    assert backend.arm_control(8, clock.now)
+    assert backend.arm_control(8, clock.now, backend.session_id)
     fake.forge_tcp(MsgType.ARM_CONTROL_ACK, encode_u8_payload(AckResult.OK))
     fake.forge_tcp(MsgType.EVENT, encode_event(Event(code=EventCode.FC_LINK_RESTORED)))
     fake.forge_tcp(MsgType.EVENT, encode_event(Event(code=EventCode.LINK_RESUMED)))
@@ -281,7 +281,9 @@ def test_an_ack_from_an_old_session_is_rejected_in_a_new_one(clock, fake, backen
     fake.restart()
     clock.run(RECONNECT_AFTER + RECONNECT_EVERY + 1.0)
     assert backend.sessions_opened == 2 and clock.states[-1]["mask"] is None
-    assert backend.arm_control(8, clock.now)  # ARM pending in session 2
+    assert backend.arm_control(
+        8, clock.now, backend.session_id
+    )  # ARM pending in session 2
     fake.replay_tcp(ack_ok)
     backend.poll(clock.now)  # the replay arrives before the ESP's real ACK
     assert backend.armed_mask is None and backend.rx_rejected == 1
@@ -363,12 +365,15 @@ def test_a_tcp_reset_while_streaming_keeps_the_session_on_udp(clock, fake, backe
 def test_arm_on_a_reset_connection_is_refused_not_raised(clock, fake, backend):
     clock.run(0.3)
     fake.reset_tcp()
-    sent = backend.arm_control(8, clock.now)
+    sent = backend.arm_control(8, clock.now, backend.session_id)
     if sent:  # the RST may not be seen by the first send: the second fails
-        sent = backend.arm_control(8, clock.now)
+        sent = backend.arm_control(8, clock.now, backend.session_id)
     assert sent is False and not backend.tcp_open
     assert "tcp send" in backend.last_error
-    assert backend.request_resume(clock.now) is False and backend.errors >= 1
+    assert (
+        backend.request_resume(clock.now, backend.session_id) is False
+        and backend.errors >= 1
+    )
     clock.run(0.1)
     assert fake.arm_requests == 0
 
@@ -411,7 +416,9 @@ def test_a_refused_second_arm_keeps_the_confirmed_mask(clock, fake, backend):
     the mask was cleared, the gate stayed closed while the ESP streamed, and
     the operator could not ARM again (not SESSION_IDLE)."""
     clock.run(0.3)
-    assert backend.arm_control(8, clock.now) and backend.arm_control(8, clock.now)
+    assert backend.arm_control(
+        8, clock.now, backend.session_id
+    ) and backend.arm_control(8, clock.now, backend.session_id)
     state = clock.run(0.2)
     assert fake.arm_requests == 2 and fake.state == EspState.STREAMING
     assert backend.last_ack == ("ARM_CONTROL_ACK", AckResult.WRONG_STATE)
@@ -420,7 +427,7 @@ def test_a_refused_second_arm_keeps_the_confirmed_mask(clock, fake, backend):
 
 def test_a_mask_the_gateway_does_not_run_is_refused(clock, fake, backend):
     clock.run(0.3)
-    assert backend.arm_control(11, clock.now)
+    assert backend.arm_control(11, clock.now, backend.session_id)
     state = clock.run(0.2)
     assert backend.last_ack == ("ARM_CONTROL_ACK", AckResult.MASK_MISMATCH)
     assert fake.state == EspState.SESSION_IDLE and state["mask"] is None

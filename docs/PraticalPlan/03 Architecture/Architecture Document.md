@@ -148,7 +148,7 @@ Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The
 
 | Service | What it does |
 |---|---|
-| `~/estop` | Latches the E-stop, sends one neutral setpoint (if setpoints were going out) and `BYE`, then nothing. Kept through deactivate, cleanup and configure. |
+| `~/estop` | Latches the E-stop, sends one neutral setpoint (if setpoints were going out) and `BYE`, then nothing. Kept through deactivate, cleanup and configure. An unexpected error in the node's tick latches the same E-stop, with `BYE` only (ADR-025 A7). |
 | `~/reset_estop` | Clears the latch. Control then needs a new target and, after a new session, an operator ARM. |
 | `~/arm_control` | ARM with the `mask` parameter (8, 11, 15), only in `SESSION_IDLE` with a fresh link and the FC link alive. Held until 1.5 s of neutral setpoints went out, then sent once; dropped after 3 s or when its conditions go. |
 | `~/resume` | RESUME after the ESP's link failsafe (`LINK_FAILSAFE`), with the same conditions and the same 1.5 s hold. |

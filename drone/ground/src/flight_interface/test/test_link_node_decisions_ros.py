@@ -98,14 +98,46 @@ class RecordingBackend(LoopbackBackend):
             object.__getattribute__(self, "calls").add(name)
         return object.__getattribute__(self, name)
 
-    def request_resume(self, now):
-        super().request_resume(now)
+    def request_resume(self, now, session):
+        super().request_resume(now, session)
         return self.resume_ok
 
 
 class FailingByeBackend(LoopbackBackend):
     def end_session(self, now):
         raise OSError("socket gone")
+
+
+class BrokenPollBackend(LoopbackBackend):
+    """poll() raises once `broken` is set, like a bad decode in a backend."""
+
+    broken = False
+
+    def poll(self, now):
+        if self.broken:
+            raise ValueError("bad frame")
+        return super().poll(now)
+
+
+class FailingNeutralBackend(LoopbackBackend):
+    def send_neutral(self, now):
+        raise OSError("udp gone")
+
+
+class NoTcpBackend(LoopbackBackend):
+    """No TCP: BYE cannot go out (the ESP fails over after T_loss)."""
+
+    def end_session(self, now):
+        super().end_session(now)
+        return False
+
+
+class NothingGoesOutBackend(LoopbackBackend):
+    """Between sessions: every setpoint is refused (K6 must not count them)."""
+
+    def send_setpoint(self, command, now):
+        super().send_setpoint(command, now)
+        return False
 
 
 class LateStateBackend(LoopbackBackend):
@@ -207,6 +239,54 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(len(self.backend.log), n)
         self.assertTrue(self.states[-1]["estop"])
 
+    def test_estop_says_what_went_out(self):
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        self.assertEqual(
+            self.call("estop").message, "estop latched, neutral + BYE sent"
+        )
+
+    def test_a_failed_neutral_never_skips_bye(self):
+        self.replace(FailingNeutralBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        response = self.call("estop")
+        self.assertTrue(response.success and self.node.guard.estop)
+        self.assertEqual(self.log()[-1], "bye")
+        self.assertEqual(response.message, "estop latched, BYE sent")
+
+    def test_estop_without_tcp_says_bye_did_not_go_out(self):
+        self.replace(NoTcpBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        response = self.call("estop")
+        self.assertTrue(response.success and self.node.guard.estop)
+        self.assertIn("BYE NOT sent", response.message)
+        self.assertIn("T_loss", response.message)
+
+    # ---------- A7 ----------
+    def test_a_tick_error_latches_the_estop_and_the_node_stays_alive(self):
+        self.replace(BrokenPollBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        self.backend.broken = True
+        self.spin(0.3, yaw=0.3)
+        guard = self.node.guard
+        self.assertTrue(guard.estop)
+        self.assertEqual(guard.estop_reason, "internal error: ValueError('bad frame')")
+        # BYE once, no neutral (the state it would come from may be broken),
+        # then nothing while the error repeats every tick.
+        self.assertEqual(self.log()[-1], "bye")
+        self.assertEqual(self.log().count("bye"), 1)
+        self.assertNotIn("neutral", self.log())
+        n = len(self.backend.log)
+        self.spin(0.2, yaw=0.3)
+        self.assertEqual(len(self.backend.log), n)
+        self.assertTrue(self.states[-1]["estop"])  # the node still publishes
+        self.backend.broken = False  # the operator clears it as any E-stop
+        self.assertTrue(self.call("reset_estop").success)
+        self.assertFalse(guard.estop)
+
     def test_estop_while_inactive_sends_only_bye(self):
         self.node.trigger_configure()
         self.call("estop")
@@ -289,9 +369,26 @@ class DecisionTests(unittest.TestCase):
         self.assertFalse(self.call("arm_control").success)
         self.assertNotIn("arm", self.log())
 
+    def test_setpoints_that_did_not_go_out_never_fill_the_window(self):
+        """K6: between sessions the backend sends nothing, so a held ARM must
+        not become due on setpoints that never left this PC."""
+        self.replace(NothingGoesOutBackend(state=IDLE))
+        self.activate()
+        self.spin(0.2)
+        self.assertTrue(self.call("arm_control").success)  # held
+        self.spin(3.3)  # past REQUEST_TIMEOUT
+        self.assertNotIn("arm", self.log())
+        self.assertFalse(self.node.guard.arm_pending)  # dropped, never sent
+
+    def test_a_rate_under_20_hz_is_raised_to_20(self):
+        """K6 allows gaps under 0.1 s: at 10 Hz no request would become due."""
+        self.node.set_parameters([rclpy.parameter.Parameter("rate_hz", value=10.0)])
+        self.node.trigger_configure()
+        self.assertAlmostEqual(self.node.guard.tick_period, 1.0 / 20.0)
+
     def test_arm_control_reports_a_failed_send(self):
         class NoTcp(LoopbackBackend):
-            def arm_control(self, mask, now):
+            def arm_control(self, mask, now, session):
                 return False
 
         lines = []
@@ -310,7 +407,8 @@ class DecisionTests(unittest.TestCase):
         self.assertIn(
             (
                 "error",
-                "ARM_CONTROL_REQUEST mask 8 not sent: no TCP to the ESP; ask again",
+                "ARM_CONTROL_REQUEST mask 8 not sent: no TCP to the ESP or not "
+                "the session it was asked in; ask again",
             ),
             lines,
         )

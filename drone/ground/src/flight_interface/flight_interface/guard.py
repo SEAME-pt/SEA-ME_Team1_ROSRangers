@@ -294,8 +294,9 @@ class Guard:
         self._pending = None
 
     def note_sent(self, command, now):
-        """The node tells the guard what it just handed to the backend, so the
-        neutral window counts only setpoints really sent. A non-neutral
+        """The node tells the guard what the backend really sent (it is not
+        called when nothing went out, e.g. between sessions), so the neutral
+        window counts only setpoints that left this PC. A non-neutral
         command or a gap of NEUTRAL_MAX_GAP or more restarts the window."""
         neutral = command is not None and tuple(command) == ZERO
         gap_ok = (
@@ -310,10 +311,15 @@ class Guard:
 
     def request_due(self, now):
         """The pending request that may be sent now, at most once: None,
-        (ARM, mask) or (RESUME, None). A pending request whose conditions no
-        longer hold (not active, E-stop, link lost, FC link not alive, the
-        drone left the state it needs, a new session) or that waited longer
-        than REQUEST_TIMEOUT is dropped: the operator has to ask again."""
+        (ARM, mask, session) or (RESUME, None, session). `session` is the
+        drone's session_id when the operator asked: the backend sends the
+        request only if that session is still its open, confirmed one (K6),
+        because the last STATE here can be up to link_timeout old while the
+        backend already runs a new session. A pending request whose
+        conditions no longer hold (not active, E-stop, link lost, FC link not
+        alive, the drone left the state it needs, a new session) or that
+        waited longer than REQUEST_TIMEOUT is dropped: the operator has to ask
+        again."""
         pending = self._pending
         if pending is None:
             return None
@@ -339,7 +345,7 @@ class Guard:
         if not window_full:
             return None
         self.cancel_request()
-        return pending["kind"], pending["mask"]
+        return pending["kind"], pending["mask"], pending["session"]
 
     # ---------- checks ----------
     @staticmethod

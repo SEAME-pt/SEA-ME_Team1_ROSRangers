@@ -279,6 +279,11 @@ class FailingCloseBackend(LoopbackBackend):
         raise RuntimeError("socket error")
 
 
+class FailingDestroyBackend(LoopbackBackend):
+    """close() works: on_error must still call it when the release failed
+    earlier, so BYE goes out instead of waiting for T_loss."""
+
+
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
 class FlightInterfaceErrorTests(unittest.TestCase):
     @classmethod
@@ -298,6 +303,24 @@ class FlightInterfaceErrorTests(unittest.TestCase):
             self.assertIsNone(node.guard)
             self.assertIsNone(node.backend)
             self.assertEqual(node._entities, [])
+            self.assertEqual(node._state_machine.current_state[1], "unconfigured")
+        finally:
+            node.destroy_node()
+
+    def test_on_error_still_closes_the_backend_when_the_release_fails(self):
+        backend = FailingDestroyBackend(state=STREAMING)
+        node = FlightInterface(backend=backend)
+        try:
+            node.trigger_configure()
+
+            def broken_destroy(entity):
+                raise RuntimeError("destroy failed")
+
+            node._entities.insert(0, (broken_destroy, None))
+            node.trigger_cleanup()  # _release raises before close -> on_error
+            self.assertTrue(backend.closed)  # BYE through close()
+            self.assertIsNone(node.backend)
+            self.assertIsNone(node.guard)
             self.assertEqual(node._state_machine.current_state[1], "unconfigured")
         finally:
             node.destroy_node()

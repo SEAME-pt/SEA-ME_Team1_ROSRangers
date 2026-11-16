@@ -104,7 +104,7 @@ tags:
 
 ## 9. What changed on 2026-11-16
 
-- New [[ADR-025 flight_interface Ground Node|ADR-025]] (#103, PR #187): the decisions for the `flight_interface` node, taken by the safety pilot on 2026-11-09 / 2026-11-10 and by the team on PR #187 (2026-11-12), moved here from the PR's `DECISIONS.md`. K6 follows the safety pilot's change on PR #191 (ARM and RESUME held for 1.5 s of neutral, 3 s timeout); E6.2 (how `FC_HEALTH` and the events give the FC state) and E1.2 (simulation on `SUBNET` discovery) were added on 2026-11-16.
+- New [[ADR-025 flight_interface Ground Node|ADR-025]] (#103, PR #187): the decisions for the `flight_interface` node, taken by the safety pilot on 2026-11-09 / 2026-11-10 and by the team on PR #187 (2026-11-12), moved here from the PR's `DECISIONS.md`. K6 follows the safety pilot's change on PR #191 (ARM and RESUME held for 1.5 s of neutral, 3 s timeout); E6.2 (how `FC_HEALTH` and the events give the FC state) and E1.2 (simulation on `SUBNET` discovery) were added on 2026-11-16. A7 (an error in the node's tick latches the E-stop) was decided by the safety pilot on the PR #187 review, the same day.
 
 ## 10. Still open
 

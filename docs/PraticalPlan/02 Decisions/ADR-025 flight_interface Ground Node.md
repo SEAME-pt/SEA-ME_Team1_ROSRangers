@@ -14,7 +14,7 @@ tags:
 # ADR-025 — flight_interface Ground Node
 
 > [!success] Status: ACCEPTED (#103, PR #187)
-> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187).
+> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
 > This ADR replaces the `DECISIONS.md` file that PR #187 carried at the repository root.
 
 ## 1. Context
@@ -33,18 +33,19 @@ tags:
 
 | ID | Decision | Why |
 |---|---|---|
-| A1 | E-stop (`~/estop`): latch first, then one neutral setpoint (only if setpoints were going out), then `BYE`, then nothing until `~/reset_estop`. Afterwards control needs a new session, an operator ARM and a new target. | `BYE` starts the ESP's failsafe output at once instead of after `T_loss`. |
+| A1 | E-stop (`~/estop`): latch first, then one neutral setpoint (only if setpoints were going out), then `BYE`, then nothing until `~/reset_estop`. Afterwards control needs a new session, an operator ARM and a new target. A failed neutral never skips `BYE`. Without TCP `BYE` cannot go out: the ESP then fails over after `T_loss`, and the service answer says which happened (PR #187 review, 2026-11-16). | `BYE` starts the ESP's failsafe output at once instead of after `T_loss`. |
 | K4 | E-stop while inactive: `BYE` only. | No setpoint is ever sent while inactive. |
 | A2 | Link loss: zero setpoints and `link_ok` false, no latch. | The ESP's link failsafe plus the operator's RESUME already gate the way back. |
 | A3 | RESUME: operator-only `~/resume`, accepted only in `LINK_FAILSAFE`. | Control never returns without someone deciding. |
 | A4 | ARM: `std_srvs/Trigger` `~/arm_control`, mask from the `mask` parameter (8 / 11 / 15, checked at configure). Accepted only when the node is active, not in E-stop, the link is fresh, the FC link is alive and the ESP reports `SESSION_IDLE`. | No new interface package; a topic could be replayed into an accidental ARM. |
-| K6 | ARM and RESUME are **held** until 1.5 s of neutral setpoints went out with no gap of 0.1 s, then sent once; a request still pending after 3 s, or whose conditions go (state, link, FC, E-stop, a new session), is dropped. Changed by the safety pilot on PR #191 (2026-11-13); before: RESUME only, 0.6 s / 2 s. | Since #188 the ESP refuses both until the FC has acknowledged RC for 1 s, and after a failsafe RC only flows while the ground streams ([[ADR-004 ESP Failsafe|ADR-004]] §2.6). 0.6 s was refused with result 4 on the bench. |
+| K6 | ARM and RESUME are **held** until 1.5 s of neutral setpoints went out with no gap of 0.1 s, then sent once; a request still pending after 3 s, or whose conditions go (state, link, FC, E-stop, a new session), is dropped. Changed by the safety pilot on PR #191 (2026-11-13); before: RESUME only, 0.6 s / 2 s. Only setpoints that really went out count, and the request goes out only in the session it was asked in, once the ESP has confirmed that session (E4); the node runs at 20 Hz at least, so the 0.1 s gap can hold (PR #187 review, 2026-11-16). | Since #188 the ESP refuses both until the FC has acknowledged RC for 1 s, and after a failsafe RC only flows while the ground streams ([[ADR-004 ESP Failsafe|ADR-004]] §2.6). 0.6 s was refused with result 4 on the bench. |
 | A5 | The ESP backend opens a new session by itself (at most one attempt every 2 s), never with ARM. | Otherwise the ground is blind after every Wi-Fi drop. |
 | K2 | Each new session is confirmed at once with a read-only `CONFIG_GET 0x01`. | A new session that arrives while another is current stays pending and is dropped after 2 s without a frame (#156). |
 | K5 | "No `STATE` for 3 s" means a lost session only while setpoints are going out. | The ESP sends `STATE` only to the sender of the last setpoint. |
 | K3 | `cleanup` and `shutdown` send `BYE`. | Starts the ESP's failsafe at once. |
 | K1 | FC link lost: zero setpoints and `link_ok` false; no E-stop. | `mission_node` goes IDLE; a short FC hiccup should not cost a reset and an ARM. |
 | A6 | A process restart clears the E-stop latch; the launch file has no respawn (a test checks it). | Saving the latch adds code and failure modes to the safety path. |
+| A7 | An unexpected error in the node's tick latches the E-stop with reason `internal error: …`: `BYE` at once, no neutral (the state it would come from may be what broke), and the node stays alive. Cleared like any E-stop, with `~/reset_estop`. Decided on the PR #187 review (2026-11-16). | `BYE` starts the ESP's failsafe output at once; a crashed node leaves the ESP waiting for `T_loss`, and a node that went on after an unknown error might keep sending from a broken state. |
 | B1 | `mask` on `/flight/state` = the mask this session sent and the ESP confirmed with `ARM_CONTROL_ACK` OK; reset every session; a refused ARM does not change it. | No wire change; the ground already has the data. |
 | B2 | One ground session implementation: `sd_protocol.ground`. | Two copies had already drifted. |
 | B3 | The PX4 backend gets its own issue, together with the controller. | #103 would otherwise wait on C1. |

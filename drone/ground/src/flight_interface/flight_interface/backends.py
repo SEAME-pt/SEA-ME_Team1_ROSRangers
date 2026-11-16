@@ -3,13 +3,21 @@ where the drone state comes from.
 
 A backend has these methods and no others the node may call:
 
-  send_setpoint(command, now)  one setpoint (vx, vy, vz, wz), body FLU
-  send_neutral(now)            one neutral setpoint (SETPOINT mode 0)
-  end_session(now)             BYE: ends the session (E-stop, decision A1)
-  request_resume(now)          RESUME_REQUEST, only when the operator asked (A3)
-  arm_control(mask, now)       ARM_CONTROL_REQUEST, only for the operator's
+  send_setpoint(command, now)  one setpoint (vx, vy, vz, wz), body FLU;
+                               True if it went out
+  send_neutral(now)            one neutral setpoint (SETPOINT mode 0); True if
+                               it went out
+  end_session(now)             BYE: ends the session (E-stop, decision A1);
+                               True if BYE went out
+  request_resume(now, session) RESUME_REQUEST, only when the operator asked (A3)
+  arm_control(mask, now, session)
+                               ARM_CONTROL_REQUEST, only for the operator's
                                ~/arm_control, once the guard says it is due
                                (A4, K6, REQ-SAF-023)
+
+`session` is the drone's session_id when the operator asked: a backend sends
+RESUME or ARM only while that session is still its open, confirmed one (K6),
+never on a session opened after the request.
   poll(now)                    the valid drone states received since the last call
   take_acks()                  the ESP's ARM / RESUME answers since the last call
                                (read-only, decision E2)
@@ -33,28 +41,32 @@ class Backend:
     name = "base"
 
     def send_setpoint(self, command, now):
-        """Send one velocity setpoint (vx, vy, vz, wz), body FLU."""
+        """Send one velocity setpoint (vx, vy, vz, wz), body FLU. Returns True
+        if it went out (the node counts only those for the K6 window)."""
         raise NotImplementedError
 
     def send_neutral(self, now):
-        """Send one neutral setpoint: SETPOINT mode 0 on the ESP."""
+        """Send one neutral setpoint: SETPOINT mode 0 on the ESP. Returns True
+        if it went out."""
         raise NotImplementedError
 
     def end_session(self, now):
         """End the session with BYE, so the ESP starts its ADR-004 output at once
-        instead of after T_loss. A backend may open a new session later (A5),
-        never with ARM."""
+        instead of after T_loss. Returns True if BYE went out (False with no
+        session or no TCP: then only T_loss ends control). A backend may open
+        a new session later (A5), never with ARM."""
         raise NotImplementedError
 
-    def request_resume(self, now):
+    def request_resume(self, now, session):
         """Send RESUME_REQUEST. Returns True if it went out. Called by the node
-        only after the operator asked and the guard said it is due (A3)."""
+        only after the operator asked and the guard said it is due (A3), for
+        the session the operator asked in (K6)."""
         raise NotImplementedError
 
-    def arm_control(self, mask, now):
+    def arm_control(self, mask, now, session):
         """Send ARM_CONTROL_REQUEST with `mask`. Returns True if it went out.
         Called by the node only for the operator's ~/arm_control, once the
-        guard says it is due (A4, K6)."""
+        guard says it is due (A4, K6), for the session the operator asked in."""
         raise NotImplementedError
 
     def poll(self, now):
@@ -110,19 +122,22 @@ class LoopbackBackend(Backend):
     def send_setpoint(self, command, now):
         self.sent.append((now, tuple(command)))
         self.log.append((now, "setpoint"))
+        return True
 
     def send_neutral(self, now):
         self.sent.append((now, (0.0, 0.0, 0.0, 0.0)))
         self.log.append((now, "neutral"))
+        return True
 
     def end_session(self, now):
         self.log.append((now, "bye"))
+        return True
 
-    def request_resume(self, now):
+    def request_resume(self, now, session):
         self.log.append((now, "resume"))
         return True
 
-    def arm_control(self, mask, now):
+    def arm_control(self, mask, now, session):
         self.log.append((now, "arm"))
         self.armed_masks.append(mask)
         return True

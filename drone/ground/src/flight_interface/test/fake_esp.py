@@ -9,7 +9,10 @@ the resume condition, EVENT 0x0102 / 0x0103 / 0x0104 and STATE at 25 Hz.
 A HELLO while a session exists opens a PENDING session, as the gateway does
 (ESP Link State Machine §1, #156): it takes over only when its first valid
 frame arrives (BYE reason 3 to the old one), and is dropped after 2 s
-without one. CONFIG_GET is answered (value 1 for any key). ARM is refused with
+without one. At most one HELLO is accepted per 500 ms; a refused one gets no
+answer and does not restart the window (ADR-005 entry 2026-11-06). CONFIG_GET
+is answered as the gateway does: key 0x01 (config_table_version) OK with
+value 1, any other key UNKNOWN_KEY with value 0. ARM is refused with
 MASK_MISMATCH unless the mask is `override_mask` (8, like the gateway's fixed
 kOverrideMask, sd::Link::handle_arm).
 
@@ -50,6 +53,7 @@ from sd_protocol.messages import (
     AckResult,
     ByeReason,
     ConfigAck,
+    ConfigResult,
     EspState,
     Event,
     EventCode,
@@ -81,6 +85,8 @@ RESUME_NEUTRAL = 0.5
 STATE_PERIOD = 0.04  # 25 Hz
 HEALTH_PERIOD = 0.2  # FC_HEALTH, 5 Hz
 PENDING_MAX = 2.0
+HELLO_MIN_GAP = 0.5  # sd::Link kHelloMinGapMs
+CONFIG_KEYS = {0x01: 1}  # the Info key the ground reads (config_table_version)
 
 TEST_PSK = bytes(range(32))
 
@@ -118,6 +124,8 @@ class FakeEsp:
         self._conns = {}  # socket -> receive buffer
         self.received = []  # (transport, msg_type, session_id) of every frame
         self.hellos = 0
+        self.hellos_rate_limited = 0
+        self._last_hello_t = None  # last ACCEPTED HELLO
         self.setpoint_modes = []  # mode of every accepted SETPOINT
         self.byes_received = 0
         self.switches = 0  # pending sessions confirmed
@@ -393,7 +401,12 @@ class FakeEsp:
             self._handle_resume(now)
         elif t == MsgType.CONFIG_GET and self.answer_config:
             kv = decode_config_kv(f.payload)
-            ack = ConfigAck(key=kv.key, result=0, value=1)
+            known = kv.key in CONFIG_KEYS
+            ack = ConfigAck(
+                key=kv.key,
+                result=ConfigResult.OK if known else ConfigResult.UNKNOWN_KEY,
+                value=CONFIG_KEYS.get(kv.key, 0),
+            )
             self._send_tcp(MsgType.CONFIG_ACK, encode_config_ack(ack))
         elif t == MsgType.BYE:
             self.byes_received += 1
@@ -478,6 +491,10 @@ class FakeEsp:
         hello = decode_hello(f.payload)
         if hello is None or hello.proto != 1:
             return
+        if self._last_hello_t is not None and now - self._last_hello_t < HELLO_MIN_GAP:
+            self.hellos_rate_limited += 1  # no answer; the window is not restarted
+            return
+        self._last_hello_t = now
         self.hellos += 1
         if self.hello_fault == "hang_up":
             self._close_conn(conn)

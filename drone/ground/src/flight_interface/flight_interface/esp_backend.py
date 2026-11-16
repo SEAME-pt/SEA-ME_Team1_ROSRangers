@@ -194,34 +194,54 @@ class EspBackend(Backend):
 
     # ---------- the node's interface ----------
     def send_setpoint(self, command, now):
-        """Until decision C1 every setpoint is sent as mode 0 (neutral)."""
-        self._send_neutral(now)
+        """Until decision C1 every setpoint is sent as mode 0 (neutral).
+        Returns True if it went out."""
+        return self._send_neutral(now)
 
     def send_neutral(self, now):
-        self._send_neutral(now)
+        return self._send_neutral(now)
 
     def end_session(self, now):
         """BYE (decision A1), then the session is dropped. The next session is
-        opened after RECONNECT_EVERY (decision A5), never with ARM. Without TCP
-        BYE cannot go out (it is a TCP message): the ESP then sees the setpoints
-        stop and enters its failsafe after T_loss."""
+        opened after RECONNECT_EVERY (decision A5), never with ARM. Returns
+        True if BYE went out. Without TCP BYE cannot go out (it is a TCP
+        message): the ESP then sees the setpoints stop and enters its failsafe
+        after T_loss."""
+        sent = False
         if self._session is not None and self._tcp is not None:
-            self._send_tcp(self._session.bye(now))
+            sent = self._send_tcp(self._session.bye(now))
+            if sent:
+                self._finish_tcp()
         self._drop(now, retry_after=RECONNECT_EVERY)
+        return sent
 
-    def arm_control(self, mask, now):
+    def _session_ready(self, session):
+        """K6: `session` (the one the operator asked in) is still the open
+        session, the ESP has confirmed it (E4) and TCP is up. A request held
+        across a reconnect must never go out on the new session."""
+        return (
+            self.phase == OPEN
+            and self._session is not None
+            and self._tcp is not None
+            and self._confirmed
+            and session == self.session_id
+        )
+
+    def arm_control(self, mask, now, session):
         """ARM_CONTROL_REQUEST with `mask` (decision A4). Only the node's
         ~/arm_control service calls this: ARM is always an operator action
-        (REQ-SAF-023). Returns True if it went out."""
-        if mask not in MASKS or self._session is None or self._tcp is None:
+        (REQ-SAF-023). Returns True if it went out; False also when `session`
+        is no longer the open, confirmed session (K6)."""
+        if mask not in MASKS or not self._session_ready(session):
             return False
         if not self._send_tcp(self._session.arm(mask, now)):
             return False
         self._arm_requested = mask
         return True
 
-    def request_resume(self, now):
-        if self._session is None or self._tcp is None:
+    def request_resume(self, now, session):
+        """RESUME_REQUEST (decision A3), only in `session` (K6)."""
+        if not self._session_ready(session):
             return False
         return self._send_tcp(self._session.resume_request(now))
 
@@ -456,6 +476,21 @@ class EspBackend(Backend):
             return False
         return True
 
+    def _finish_tcp(self):
+        """After BYE: FIN after the queued bytes, and read what the ESP had
+        already sent, so the close that follows is not a reset (Linux sends
+        RST when unread bytes are left, and lwIP may then drop the BYE)."""
+        try:
+            self._tcp.shutdown(socket.SHUT_WR)
+        except OSError:
+            return
+        for _ in range(MAX_TCP_READS):
+            try:
+                if not self._tcp.recv(4096):
+                    return
+            except OSError:  # BlockingIOError: nothing more queued
+                return
+
     def _close_tcp(self):
         if self._tcp is not None:
             self._tcp.close()
@@ -520,6 +555,9 @@ class EspBackend(Backend):
                 self.fc_link_ok = True  # after the ESP's 250 ms (#188)
         elif t in (MsgType.ARM_CONTROL_ACK, MsgType.RESUME_ACK):
             result = decode_u8_payload(f.payload)
+            if result is None:  # wrong size: not an answer, the request stands
+                self._error("tcp", f"malformed {MsgType(t).name} ignored")
+                return
             self.last_ack = (MsgType(t).name, result)
             self._acks.append((MsgType(t).name, result, ack_reason(result)))
             if result == AckResult.OK:
@@ -536,15 +574,20 @@ class EspBackend(Backend):
 
     # ---------- UDP ----------
     def _send_neutral(self, now):
+        """One SETPOINT mode 0. True if it went out; False with no session
+        (e.g. a reconnect gap) or a send error."""
         if self._session is None or self._udp is None:
-            return
+            return False
+        sent = True
         try:
             self._udp.send(self._session.neutral(now))
         except OSError as error:  # e.g. ICMP refused: the ESP sees a link loss
             self._error("udp send", error)
+            sent = False
         if self._waiting_since is None:
             self._waiting_since = now
         self._last_udp_t = now
+        return sent
 
     def _read_udp(self, now):
         """The newest accepted STATE as a drone-state dict, or None. FC_HEALTH
@@ -581,6 +624,14 @@ class EspBackend(Backend):
             return None  # not a valid state: the watchdog keeps counting
         self._last_state_t = now
         self._waiting_since = None
+        if (
+            self.esp_state == EspState.STREAMING.name
+            and name == EspState.SESSION_IDLE.name
+        ):
+            # Control ended inside the session (e.g. a disarm): the mask the
+            # ESP confirmed no longer applies. Only on this change, so a STATE
+            # sent just before an ARM_CONTROL_ACK OK cannot clear its mask.
+            self.armed_mask = None
         self.esp_state = name
         if name == EspState.LINK_FAILSAFE.name:
             self.failsafe_output = True

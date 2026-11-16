@@ -43,7 +43,7 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     RECONNECT_AFTER = RECONNECT_EVERY = HANDSHAKE_TIMEOUT = TICK = 0.0
 
 from flight_interface.backends import make_backend
-from flight_interface.guard import ZERO
+from flight_interface.guard import NEUTRAL_WINDOW, ZERO, Guard
 
 pytestmark = pytest.mark.skipif(esp_backend is None, reason="sd_protocol not installed")
 PACKAGE = pathlib.Path(esp_backend.__file__).parent if esp_backend else None
@@ -184,7 +184,7 @@ def test_no_gateway_is_an_error_not_an_exception(fake):
         assert backend.poll(i * TICK) == []
         backend.send_setpoint(ZERO, i * TICK)
     assert backend.errors >= 1 and not backend.session_open
-    assert backend.request_resume(0.2) is False
+    assert backend.request_resume(0.2, backend.session_id) is False
     backend.close()
     assert backend.poll(1.0) == []
 
@@ -217,7 +217,9 @@ def test_tcp_drop_while_streaming_keeps_the_session_on_udp(clock, fake, backend)
     state = clock.run(1.0)
     assert backend.sessions_opened == 1 and not backend.tcp_open  # ADR-005
     assert state["esp_state"] == "STREAMING"
-    assert backend.request_resume(clock.now) is False  # RESUME needs TCP
+    assert (
+        backend.request_resume(clock.now, backend.session_id) is False
+    )  # RESUME needs TCP
 
 
 def test_the_esp_ending_the_session_gives_a_new_one(clock, fake, backend):
@@ -264,7 +266,7 @@ def test_link_failsafe_then_resume_on_request(clock, fake, backend):
     assert fake.state == EspState.LINK_FAILSAFE
     assert state["esp_state"] == "LINK_FAILSAFE" and state["failsafe_output"] is True
     clock.run(0.7)  # 0.7 s of neutral
-    assert backend.request_resume(clock.now) is True
+    assert backend.request_resume(clock.now, backend.session_id) is True
     state = clock.run(0.2)
     assert backend.last_ack == ("RESUME_ACK", 0)
     assert fake.state == EspState.STREAMING
@@ -278,7 +280,7 @@ def test_resume_too_early_is_refused_by_the_esp(clock, fake, backend):
     clock.run(0.2)
     clock.run(0.4, send=False)
     clock.run(0.1)
-    assert backend.request_resume(clock.now) is True
+    assert backend.request_resume(clock.now, backend.session_id) is True
     clock.run(0.1)
     assert backend.last_ack == ("RESUME_ACK", 3)  # RESUME_CONDITION_NOT_MET
     assert fake.state == EspState.LINK_FAILSAFE
@@ -323,7 +325,7 @@ def test_frames_sent_are_only_hello_setpoint_bye_resume(clock, fake, backend):
     clock.run(0.2)
     clock.run(0.4, send=False)
     clock.run(0.8)
-    backend.request_resume(clock.now)
+    backend.request_resume(clock.now, backend.session_id)
     clock.run(0.2)
     backend.end_session(clock.now)
     clock.run(RECONNECT_EVERY + 0.5)
@@ -498,7 +500,7 @@ def test_the_esp_wants_1_s_of_streaming_before_arm(
     window) ARM is refused with result 4; after 1.5 s (K6 now) it is OK."""
     fake.rc_ack_needed = 1.0
     clock.run(streamed)
-    assert backend.arm_control(8, clock.now)
+    assert backend.arm_control(8, clock.now, backend.session_id)
     clock.run(0.1)
     assert backend.last_ack == ("ARM_CONTROL_ACK", result)
 
@@ -507,7 +509,7 @@ def test_the_esp_wants_1_s_of_streaming_before_arm(
 def test_arm_on_request_streams_and_reports_the_confirmed_mask(clock, fake, backend):
     state = clock.run(0.3)
     assert state["mask"] is None  # nothing confirmed yet
-    assert backend.arm_control(8, clock.now) is True
+    assert backend.arm_control(8, clock.now, backend.session_id) is True
     state = clock.run(0.2)
     assert fake.arm_requests == 1 and fake.state == EspState.STREAMING
     assert backend.last_ack == ("ARM_CONTROL_ACK", 0)
@@ -519,22 +521,22 @@ def test_arm_on_request_streams_and_reports_the_confirmed_mask(clock, fake, back
 def test_arm_refused_by_the_esp_gives_no_mask(clock, fake, backend):
     clock.run(0.3)
     fake.force_state(EspState.LINK_FAILSAFE)
-    backend.arm_control(11, clock.now)
+    backend.arm_control(11, clock.now, backend.session_id)
     state = clock.run(0.2)
     assert backend.last_ack == ("ARM_CONTROL_ACK", 1)  # WRONG_STATE
     assert state["mask"] is None
 
 
 def test_arm_refused_locally(clock, fake, backend):
-    assert backend.arm_control(8, 0.0) is False  # no session yet
+    assert backend.arm_control(8, 0.0, backend.session_id) is False  # no session yet
     clock.run(0.3)
-    assert backend.arm_control(9, clock.now) is False  # not a mask
+    assert backend.arm_control(9, clock.now, backend.session_id) is False  # not a mask
     assert fake.arm_requests == 0
 
 
 def test_a_new_session_forgets_the_mask_and_never_re_arms(clock, fake, backend):
     clock.run(0.3)
-    backend.arm_control(8, clock.now)
+    backend.arm_control(8, clock.now, backend.session_id)
     assert clock.run(0.2)["mask"] == 8
     fake.restart()
     state = clock.run(RECONNECT_AFTER + RECONNECT_EVERY + 1.0)
@@ -643,7 +645,7 @@ def test_a_short_tcp_write_closes_tcp_and_the_cut_frame_never_lands(
     clock.run(0.3)
     errors = backend.errors
     backend._tcp = ShortSend(backend._tcp)
-    assert backend.arm_control(8, clock.now) is False
+    assert backend.arm_control(8, clock.now, backend.session_id) is False
     assert not backend.tcp_open
     assert backend.errors == errors + 1
     match = re.fullmatch(
@@ -662,19 +664,21 @@ def test_a_short_tcp_write_closes_tcp_and_the_cut_frame_never_lands(
 def test_take_acks_gives_every_answer_once_with_its_reason(clock, fake, backend):
     clock.run(0.3)
     assert backend.take_acks() == []
-    assert backend.arm_control(11, clock.now)  # the gateway runs mask 8 only
+    assert backend.arm_control(
+        11, clock.now, backend.session_id
+    )  # the gateway runs mask 8 only
     clock.run(0.1)
     assert backend.take_acks() == [
         ("ARM_CONTROL_ACK", AckResult.MASK_MISMATCH, "MASK_MISMATCH")
     ]
     assert backend.take_acks() == []  # each answer once
-    assert backend.request_resume(clock.now)  # not in LINK_FAILSAFE
+    assert backend.request_resume(clock.now, backend.session_id)  # not in LINK_FAILSAFE
     clock.run(0.1)
     # Codes this ESP never sends to an idle request (4 comes with PR #183).
     fake.send_tcp_message(MsgType.ARM_CONTROL_ACK, encode_u8_payload(4))
     fake.send_tcp_message(MsgType.ARM_CONTROL_ACK, encode_u8_payload(9))
     clock.run(0.1)
-    assert backend.arm_control(8, clock.now)
+    assert backend.arm_control(8, clock.now, backend.session_id)
     clock.run(0.1)
     assert backend.take_acks() == [
         ("RESUME_ACK", AckResult.WRONG_STATE, "WRONG_STATE"),
@@ -715,3 +719,149 @@ def test_every_state_carries_the_fc_values_as_the_gateway_sent_them(
     fake.fc_values = dict(fake.fc_values, roll=5, vbat=0)
     state = clock.run(0.1)
     assert state["fc_values"]["roll"] == 5 and state["fc_values"]["vbat"] == 0
+
+
+# ---------- K6: a held request stays in the session it was asked in ----------
+def node_tick(guard, backend, fake, now):
+    """The node's _tick() without ROS: poll, guard, send, held request."""
+    fake.step(now)
+    for state in backend.poll(now):
+        guard.on_drone_state(state, state.get("rx_time", now))
+    command = guard.command(now)
+    if command is not None and backend.send_setpoint(command, now):
+        guard.note_sent(command, now)
+    due = guard.request_due(now)
+    if due is not None:
+        kind, mask, session = due
+        if kind == "arm":
+            backend.arm_control(mask, now, session)
+        else:
+            backend.request_resume(now, session)
+    fake.step(now)
+
+
+def run_node(guard, backend, fake, start, end):
+    t = start
+    while t < end - 1e-9:
+        node_tick(guard, backend, fake, t)
+        t = round(t + TICK, 6)
+    return t
+
+
+def test_a_held_arm_never_goes_out_on_a_session_opened_after_it(fake, backend):
+    """Review of PR #187: TCP drops just before the neutral window is full,
+    the backend reconnects at once (the last attempt was over RECONNECT_EVERY
+    ago) while the guard's last STATE still shows the old session. The held
+    ARM must not go out on the new session."""
+    guard = Guard(tick_period=TICK)
+    guard.activate()
+    t = run_node(guard, backend, fake, 0.0, RECONNECT_EVERY + 0.5)
+    first = backend.session_id
+    ok, _ = guard.request_arm(8, t)
+    assert ok
+    t = run_node(guard, backend, fake, t, t + NEUTRAL_WINDOW - 0.1)
+    fake.close_tcp()
+    # Worst case: the new session's first STATE is late, so the guard's last
+    # STATE (the old session) is still fresh when the window fills.
+    fake.send_state = False
+    run_node(guard, backend, fake, t, t + 0.6)
+    assert backend.sessions_opened == 2
+    fake.send_state = True
+    run_node(guard, backend, fake, t + 0.6, t + 2.0)
+    assert backend.sessions_opened == 2 and backend.session_id != first
+    assert fake.arm_requests == 0
+    assert not guard.arm_pending  # dropped, the operator asks again
+
+
+def test_arm_and_resume_only_in_the_session_they_were_asked_in(clock, fake, backend):
+    clock.run(0.3)
+    old = backend.session_id
+    fake.close_tcp()
+    clock.run(RECONNECT_EVERY + 0.5)
+    assert backend.session_open and backend.session_id != old
+    assert backend.arm_control(8, clock.now, old) is False
+    assert backend.request_resume(clock.now, old) is False
+    clock.run(0.1)
+    assert fake.arm_requests == 0 and fake.count(MsgType.RESUME_REQUEST) == 0
+
+
+def test_no_arm_on_a_session_the_esp_has_not_confirmed(clock, fake, backend):
+    """E4 as a second line for K6: before the CONFIG_ACK or a STATE proves
+    the session, ARM and RESUME stay on the ground."""
+    fake.answer_config = False
+    clock.run(0.2, send=False)  # inactive: no STATE either
+    assert backend.session_open
+    assert backend.arm_control(8, clock.now, backend.session_id) is False
+    assert backend.request_resume(clock.now, backend.session_id) is False
+    assert fake.arm_requests == 0
+
+
+def test_a_setpoint_counts_only_when_it_went_out(clock, fake, backend):
+    assert backend.send_setpoint(ZERO, 0.0) is False  # no session yet
+    clock.run(0.3)
+    assert backend.send_setpoint(ZERO, clock.now) is True
+    assert backend.send_neutral(clock.now) is True
+
+
+def test_end_session_says_whether_bye_went_out(clock, fake, backend):
+    clock.run(0.3)
+    assert backend.end_session(clock.now) is True
+    fake.step(clock.now)
+    assert fake.byes_received == 1
+    assert backend.end_session(clock.now) is False  # no session left
+
+
+def test_bye_after_unread_bytes_still_reaches_the_esp(clock, fake, backend):
+    """An EVENT the ground has not read yet must not turn the close after BYE
+    into a reset that loses the BYE."""
+    clock.run(0.3)
+    fake.send_event(EventCode.FC_LINK_LOST)
+    fake.step(clock.now)  # queued on the ground's socket, not read
+    assert backend.end_session(clock.now) is True
+    for _ in range(5):
+        fake.step(clock.now)
+    assert fake.byes_received == 1
+
+
+def test_a_malformed_ack_is_ignored(clock, fake, backend, monkeypatch):
+    """A wrong-size ACK is dropped by the receive checks (BAD_PAYLOAD_SIZE);
+    one that would still decode to None is logged and ignored: no answer is
+    recorded and the ARM stays requested."""
+    clock.run(0.3)
+    rejected = backend.rx_rejected
+    fake._send_tcp(MsgType.ARM_CONTROL_ACK, b"")
+    clock.run(0.04)
+    assert backend.rx_rejected == rejected + 1 and backend.take_acks() == []
+    monkeypatch.setattr(esp_backend, "decode_u8_payload", lambda payload: None)
+    assert backend.arm_control(8, clock.now, backend.session_id)
+    clock.run(0.1)  # the fake's real ACK arrives and "decodes" to None
+    assert "malformed ARM_CONTROL_ACK" in backend.last_error
+    assert backend.take_acks() == [] and backend.last_ack is None
+    assert backend._arm_requested == 8
+
+
+def test_the_confirmed_mask_goes_when_the_esp_leaves_streaming(clock, fake, backend):
+    clock.run(0.3)
+    backend.arm_control(8, clock.now, backend.session_id)
+    assert clock.run(0.2)["mask"] == 8
+    fake.force_state(EspState.SESSION_IDLE)  # e.g. a disarm ended control
+    state = clock.run(0.2)
+    assert state["esp_state"] == "SESSION_IDLE" and state["mask"] is None
+    assert backend.armed_mask is None
+
+
+def test_the_fake_rate_limits_hello_like_the_gateway(fake):
+    """ADR-005 entry 2026-11-06: a second HELLO within 500 ms is not answered."""
+    first = EspBackend(*fake.addr, TEST_PSK)
+    second = EspBackend(*fake.addr, TEST_PSK)
+    try:
+        for b in (first, second):
+            for _ in range(5):
+                fake.step(0.0)
+                b.poll(0.0)
+                fake.step(0.0)
+        assert first.session_open and fake.hellos == 1
+        assert fake.hellos_rate_limited == 1 and not second.session_open
+    finally:
+        first.close()
+        second.close()

@@ -20,6 +20,9 @@ afterwards control needs a new session (the ESP backend opens one by itself,
 decision A5), an operator ARM and a NEW target. A process restart starts
 without the latch (decision A6): the launch file has no respawn, and after a
 restart nothing is sent before configure, activate and an operator ARM.
+An unexpected error in the node's tick (decision A7) latches the same E-stop:
+BYE at once (no neutral: the state it would come from may be what broke),
+reason "internal error: ...", and the node stays alive.
 
 Link loss (decision A2): zero setpoints and link_ok false, no latch. The way
 back after the ESP's link failsafe is the operator's ~/resume (decision A3):
@@ -65,6 +68,7 @@ import signal
 import sys
 import threading
 import time
+import traceback
 
 import rclpy
 from geometry_msgs.msg import TwistStamped, Vector3Stamped
@@ -87,7 +91,10 @@ from flight_interface.telemetry import (
 )
 
 NODE_NAME = "flight_interface"
-MIN_RATE_HZ, MAX_RATE_HZ = 10.0, 100.0
+# 20 Hz at least: the K6 window allows a gap under NEUTRAL_MAX_GAP (0.1 s)
+# between setpoints, so at 10 Hz jitter alone would keep ARM / RESUME from
+# ever becoming due.
+MIN_RATE_HZ, MAX_RATE_HZ = 20.0, 100.0
 # mission_node calls a /flight/state older than 0.5 s lost: publish well above 2 Hz.
 MIN_STATE_RATE_HZ = 5.0
 ATTITUDE_TOPIC = "/fc/attitude"  # the same topics as fc_telemetry (D2)
@@ -272,7 +279,13 @@ class FlightInterface(Node):
             self._release()
         except Exception as error:  # the backend may fail again
             self.get_logger().error(f"release failed: {error}")
-            self._entities, self.backend, self.guard = [], None, None
+            backend, self.backend = self.backend, None
+            if backend is not None:
+                try:  # BYE if it can, so the ESP need not wait for T_loss
+                    backend.close()
+                except Exception as close_error:
+                    self.get_logger().error(f"backend close failed: {close_error}")
+            self._entities, self.guard = [], None
         return TransitionCallbackReturn.SUCCESS
 
     def _release(self):
@@ -293,6 +306,23 @@ class FlightInterface(Node):
         )
 
     def _tick(self):
+        """A7: an unexpected error latches the E-stop (BYE at once) instead
+        of killing the node and leaving the ESP to wait for T_loss."""
+        if self.guard is None or self.backend is None:  # released
+            return
+        try:
+            self._tick_once()
+        except Exception as error:
+            if self.guard.estop:  # already latched: BYE went out, just report
+                self.get_logger().error(
+                    f"tick error while the E-stop holds: {error!r}",
+                    throttle_duration_sec=1.0,
+                )
+                return
+            self.get_logger().error(f"tick error:\n{traceback.format_exc()}")
+            self._estop(f"internal error: {error!r}", with_neutral=False)
+
+    def _tick_once(self):
         now = time.monotonic()
         for drone_state in self.backend.poll(now):
             # The backend's receive time when it gives one (never in the future).
@@ -313,28 +343,32 @@ class FlightInterface(Node):
                 )
             self._link_was_fresh = fresh
         command = self.guard.command(now)
-        if command is not None:
-            self.backend.send_setpoint(command, now)
+        # K6: only a setpoint that went out counts for the neutral window.
+        if command is not None and self.backend.send_setpoint(command, now):
             self.guard.note_sent(command, now)
         due = self.guard.request_due(now)
         if due is not None:
             self._send_due_request(*due, now)
 
-    def _send_due_request(self, kind, mask, now):
+    def _send_due_request(self, kind, mask, session, now):
         """The operator's held ARM or RESUME, now that the guard says it is
-        due (K6). The ONLY place that calls arm_control(): the guard holds an
-        ARM only from ~/arm_control (REQ-SAF-023)."""
+        due (K6), only in the session it was asked in. The ONLY place that
+        calls arm_control(): the guard holds an ARM only from ~/arm_control
+        (REQ-SAF-023)."""
         # One call site per severity: rclpy refuses to change it between calls.
         if kind == "arm":
             what = f"ARM_CONTROL_REQUEST mask {mask}"
-            sent = self.backend.arm_control(mask, now)
+            sent = self.backend.arm_control(mask, now, session)
         else:
             what = "RESUME_REQUEST"
-            sent = self.backend.request_resume(now)
+            sent = self.backend.request_resume(now, session)
         if sent:
             self.get_logger().warning(f"{what} sent (operator request)")
         else:
-            self.get_logger().error(f"{what} not sent: no TCP to the ESP; ask again")
+            self.get_logger().error(
+                f"{what} not sent: no TCP to the ESP or not the session it "
+                "was asked in; ask again"
+            )
 
     @staticmethod
     def _fresh_value(drone_state, which, limit):
@@ -387,25 +421,50 @@ class FlightInterface(Node):
         self._state_pub.publish(String(data=json.dumps(state, separators=(",", ":"))))
 
     def _on_estop(self, request, response):
-        """A1: latch first, then one neutral (if setpoints were going out) and
-        BYE. A backend error cannot undo the latch."""
-        was_sending = self.guard.active and not self.guard.estop
-        self._estop_reason = "service"
-        self.guard.trigger_estop(self._estop_reason)
-        now = time.monotonic()
-        try:
-            if was_sending:
-                self.backend.send_neutral(now)  # one neutral, then nothing
-            self.backend.end_session(now)  # BYE: the ESP's failsafe output at once
-        except Exception as error:  # the latch holds whatever the backend does
-            self.get_logger().error(f"E-STOP: backend error after the latch: {error}")
-        self._publish_state()
-        self.get_logger().error(
-            "E-STOP: neutral + BYE sent, setpoints stopped; ~/reset_estop to clear"
-        )
-        response.success = True
-        response.message = "estop latched"
+        """A1: the operator's E-stop."""
+        sent = self._estop("service")
+        response.success = True  # the latch holds either way
+        response.message = "estop latched, " + sent
         return response
+
+    def _estop(self, reason, with_neutral=True):
+        """A1 (and A7 with with_neutral=False): latch first, then one neutral (if
+        setpoints were going out) and BYE, each in its own try: a failed
+        neutral never skips BYE. A backend error cannot undo the latch.
+        Returns what really went out: without TCP BYE cannot be sent and the
+        ESP's failsafe follows T_loss."""
+        was_sending = with_neutral and self.guard.active and not self.guard.estop
+        self._estop_reason = reason
+        self.guard.trigger_estop(reason)
+        now = time.monotonic()
+        neutral = False
+        if was_sending:
+            try:
+                neutral = self.backend.send_neutral(now)  # one neutral, then nothing
+            except Exception as error:  # the latch holds whatever the backend does
+                self.get_logger().error(
+                    f"E-STOP: neutral failed after the latch: {error}"
+                )
+        bye = False
+        try:
+            bye = self.backend.end_session(
+                now
+            )  # BYE: the ESP's failsafe output at once
+        except Exception as error:
+            self.get_logger().error(f"E-STOP: BYE failed after the latch: {error}")
+        try:
+            self._publish_state()
+        except Exception as error:  # the latch is set; the next timer tries again
+            self.get_logger().error(f"E-STOP: /flight/state failed: {error}")
+        sent = ("neutral + " if neutral else "") + (
+            "BYE sent"
+            if bye
+            else "BYE NOT sent (no TCP: the ESP fails over after T_loss)"
+        )
+        self.get_logger().error(
+            f"E-STOP ({reason}): {sent}, setpoints stopped; ~/reset_estop to clear"
+        )
+        return sent
 
     def _on_arm_control(self, request, response):
         """A4, K6: the operator's ARM. The ONLY place that asks the guard to

@@ -138,7 +138,7 @@ def test_resume_due_after_the_neutral_window_and_only_once():
     seen = []
     due_at = send_neutral_until(g, 0.0, 2.0, seen=seen)
     assert due_at == pytest.approx(NEUTRAL_WINDOW, abs=1.5 * TICK)
-    assert seen == [(RESUME, None)]  # once
+    assert seen == [(RESUME, None, None)]  # once; FAILSAFE has no session_id
     assert g.resume_pending is False
     assert send_neutral_until(g, 2.1, 4.0) is None  # never again by itself
 
@@ -226,10 +226,10 @@ def test_flight_state_reports_failsafe_output_only_when_fresh():
 # ---------- backends (A1: neutral and BYE, A3: resume) ----------
 def test_loopback_records_neutral_bye_and_resume_in_order():
     b = LoopbackBackend()
-    b.send_setpoint((0.1, 0, 0, 0), 0.0)
-    b.send_neutral(0.1)
-    b.end_session(0.1)
-    assert b.request_resume(0.2) is True
+    assert b.send_setpoint((0.1, 0, 0, 0), 0.0) is True
+    assert b.send_neutral(0.1) is True
+    assert b.end_session(0.1) is True
+    assert b.request_resume(0.2, None) is True
     assert [what for _, what in b.log] == ["setpoint", "neutral", "bye", "resume"]
     assert b.sent[-1] == (0.1, ZERO)
 
@@ -240,7 +240,7 @@ def test_base_backend_new_methods_are_only_an_interface():
     for call in (
         lambda: b.send_neutral(0.0),
         lambda: b.end_session(0.0),
-        lambda: b.request_resume(0.0),
+        lambda: b.request_resume(0.0, 1),
     ):
         with pytest.raises(NotImplementedError):
             call()
@@ -288,7 +288,7 @@ def test_arm_is_held_and_due_after_the_neutral_window_once():
     seen = []
     due_at = send_neutral_until(g, 0.0, 2.5, state=IDLE, seen=seen)
     assert due_at == pytest.approx(NEUTRAL_WINDOW, abs=1.5 * TICK)
-    assert seen == [(ARM, 8)]
+    assert seen == [(ARM, 8, 5)]  # K6: with the session it was asked in
     assert g.arm_pending is False
 
 
@@ -359,10 +359,10 @@ def test_arm_refused_when_the_link_is_lost():
 
 def test_loopback_records_arm():
     b = LoopbackBackend()
-    assert b.arm_control(11, 0.0) is True
+    assert b.arm_control(11, 0.0, None) is True
     assert b.armed_masks == [11] and b.log == [(0.0, "arm")]
     with pytest.raises(NotImplementedError):
-        Backend().arm_control(8, 0.0)
+        Backend().arm_control(8, 0.0, 1)
 
 
 def test_loopback_hands_queued_acks_over_once():
