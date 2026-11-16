@@ -222,7 +222,9 @@ def test_garbage_is_rejected_and_never_reaches_the_fc(fake_fc, session):
         session.udp.sendto(frame, ESP)
     states = session.stream(1.0)
     # The bad mode passes the tag check, so it may not count as a reject
-    assert states[-1].rx_rejected - before >= len(garbage) - 1, [n for n, _ in garbage]
+    # rx_rejected is a wrapping u16 (spec §7.5, #149): subtract mod 65536
+    rejected = (states[-1].rx_rejected - before) & 0xFFFF
+    assert rejected >= len(garbage) - 1, [n for n, _ in garbage]
     assert states[-1].esp_state == EspState.SESSION_IDLE
     check_frames(*fake_fc.snapshot())
 

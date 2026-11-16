@@ -10,6 +10,13 @@ class WrapCounter:
     if the counter moves by 65536 or more between two values the ground
     receives (STATE comes at 25 Hz). Wraps before the first value are not
     known: the total starts at the first value received.
+
+    Call reset() on every new session (each HELLO_ACK). STATE carries no boot
+    id, so the ground cannot tell an ESP reboot from a reconnect; without the
+    reset, a reboot (e.g. 500 -> 3) would look like a wrap, a false jump of
+    65,536 rejects. A reboot always ends the session, so this covers it; the
+    wraps of an earlier session on the same boot are forgotten (the total is
+    for diagnostics only).
     """
 
     MODULUS = 0x10000
@@ -37,6 +44,6 @@ class WrapCounter:
         return self._wraps * self.MODULUS + (self._last or 0)
 
     def reset(self) -> None:
-        """Forget everything, e.g. when the ESP rebooted (new boot, new count)."""
+        """Forget everything. Call it on every new session (HELLO_ACK)."""
         self._last = None
         self._wraps = 0

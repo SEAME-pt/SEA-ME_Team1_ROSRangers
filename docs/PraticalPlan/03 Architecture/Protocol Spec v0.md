@@ -284,11 +284,13 @@ Found while writing the C++ library (#99) and decided on 2026-11-16 (GitHub #149
 
 | Item | Decision |
 |---|---|
-| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only |
+| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only. The ground calls `reset()` on **every new session** (each `HELLO_ACK`): `STATE` has no boot id, so a reboot (e.g. 500 → 3) would otherwise look like a wrap, a false jump of 65,536 rejects. A reboot always ends the session; wraps of an earlier session on the same boot are forgotten |
 | Frames with no session open | Counted in `rx_rejected` (`reject:no_session`, UDP with no session, bad `HELLO`) |
 | Per-reason and ADR-003 counters (`bad_tag`, `duplicate_seq`, `old_seq`, gaps, …) | Not sent to the ground in v0: `STATE` carries the total only. The per-reason counters stay in the library, where the unit tests and the golden vectors check them. Revisit in Module 2 (a `CONFIG_GET` Info key or an `EVENT` per counter) |
 
 Unit tests: `LinkTest.StateRxRejectedCountsNoSessionAndWraps` (C++), `test_counters.py` (Python). No wire change: same field, same size. Saturating at 65,535 was considered and dropped, because the ground would stop seeing new rejects once it got there.
+
+Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating at 65,535 on purpose: they describe the ESP↔FC link, which no one on the network can drive, and a value stuck at 65,535 already says "this link is broken". `rx_rejected` is the one counter an attacker can drive (a flood of forged frames), so it must keep moving. Code that subtracts two raw `rx_rejected` values does it mod 65,536 (`(after - before) & 0xFFFF`).
 
 ## 8. Changelog
 
