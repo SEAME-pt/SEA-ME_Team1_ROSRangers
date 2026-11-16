@@ -14,6 +14,8 @@
 #   docker compose run --rm --build echo   # terminal 3: live table (gesture, intent, mode, velocity)
 #   docker compose up --build mission flight  # terminal 4: mode changes in the log
 #   docker compose down                    # stop everything
+# flight_interface (the real /flight/state, #103) has its own profile and is
+# never started by these: see its service below.
 # PX4 SITL instead of the pretend /flight/state (simulation only): make sim,
 # make sim-smoke, make sim-down (Makefile; services px4 and sim_smoke below).
 #
@@ -28,8 +30,8 @@
 # A host terminal that talks to these nodes needs the same:
 #   export ROS_DOMAIN_ID=42 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 
-# Shared by every service. Build context is this folder so the Dockerfiles can
-# COPY src/ and docker/entrypoint.sh.
+# Shared by every service. Build context is this folder so the Dockerfiles
+# (src/<component>/Dockerfile) can COPY src/ and docker/entrypoint.sh.
 x-ros: &ros
   network_mode: host   # DDS discovery between containers (and with a host ROS install)
   ipc: host            # Fast DDS shared-memory transport
@@ -60,7 +62,7 @@ services:
     <<: *node
     build:
       context: .
-      dockerfile: docker/gesture/Dockerfile
+      dockerfile: src/gesture/Dockerfile
     image: rosrangers/gesture:jazzy
     devices:
       - /dev/video0:/dev/video0
@@ -79,7 +81,7 @@ services:
     <<: *node
     build:
       context: .
-      dockerfile: docker/intent/Dockerfile
+      dockerfile: src/intent/Dockerfile
     image: rosrangers/intent:jazzy
     environment:
       <<: *node-env
@@ -89,7 +91,7 @@ services:
     <<: *node
     build:
       context: .
-      dockerfile: docker/mission/Dockerfile
+      dockerfile: src/mission/Dockerfile
     image: rosrangers/mission:jazzy
     environment:
       <<: *node-env
@@ -103,7 +105,7 @@ services:
     <<: *node
     build:
       context: .
-      dockerfile: docker/mission/Dockerfile
+      dockerfile: src/mission/Dockerfile
     image: rosrangers/mission:jazzy
     environment:
       <<: *node-env
@@ -120,9 +122,41 @@ services:
     <<: *ros
     build:
       context: .
-      dockerfile: docker/echo/Dockerfile
+      dockerfile: src/echo/Dockerfile
     image: rosrangers/echo:jazzy
     tty: true   # the live table, also inside `docker compose up`
+
+  # The real /flight/state (#103, ADR-025). Its own profile, so `docker compose
+  # up` (make) never starts it next to `flight`: /flight/state must have one
+  # publisher. Starts unconfigured with the loopback backend; the drone needs
+  #   docker compose --profile flight_interface run --rm flight_interface \
+  #     /ws/install/flight_interface/lib/flight_interface/flight_interface \
+  #     --ros-args -p backend:=esp
+  # Configure, activate and ARM are operator steps (ros2 lifecycle / service).
+  # No restart (A6): a dead node stays dead, the ESP's failsafe takes over.
+  # The PSK: the host's secrets file mounted read-only, never SEAME_PSK in
+  # the environment and never in the image (E3). A missing file is an error,
+  # not an empty folder. SEAME_SECRETS_FILE=path uses another file.
+  flight_interface:
+    <<: *node
+    profiles: [flight_interface]
+    restart: "no"
+    build:
+      context: .
+      dockerfile: src/flight_interface/Dockerfile
+    image: rosrangers/flight_interface:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: flight_interface
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${GROUND_LOG_DIR:-./logs}:/logs
+      - type: bind
+        source: ${SEAME_SECRETS_FILE:-${HOME}/.config/seame-drone/secrets.json}
+        target: /root/.config/seame-drone/secrets.json
+        read_only: true
+        bind:
+          create_host_path: false
 
   # ---------- SIMULATION ONLY (#86): make sim, make sim-smoke ----------
   # Profiles, so `docker compose up` (make) never starts them. The bridge
@@ -130,7 +164,7 @@ services:
   # Makefile lists the services by name). Never use with the real drone.
 
   # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent + px4_offboard_bridge.
-  # docker/px4/sim_start.sh arms, takes off and switches to Offboard, then the
+  # src/simulation/sim_start.sh arms, takes off and switches to Offboard, then the
   # healthcheck turns healthy. MASK=8|11|15 (default 15; make sim-smoke takes
   # 11|15 only). GUI=1 opens Gazebo: the default here is 0, make sim passes 1
   # (its own default), so plain `docker compose --profile sim up` is headless.
@@ -139,9 +173,10 @@ services:
     profiles: [sim, sim-smoke]
     build: &px4-build
       context: .
-      dockerfile: docker/px4/Dockerfile
-      additional_contexts:
-        sim: ../simulation/px4/ros
+      dockerfile: src/simulation/Dockerfile
+      # The PX4 stage comes from the image make px4-image builds
+      args:
+        PX4_IMAGE: seame-px4-sim:jazzy-1.17
     image: rosrangers/px4-sim:jazzy
     # GPU (Mesa) for Gazebo rendering. This image runs as uid 1000, so it also
     # needs the host's render group: the Makefile sets RENDER_GID from

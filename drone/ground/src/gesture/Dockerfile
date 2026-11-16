@@ -14,11 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The container is throwaway, so install straight into it.
 ENV PIP_BREAK_SYSTEM_PACKAGES=1 \
     PIP_NO_CACHE_DIR=1
-COPY src/gesture_node/requirements.txt /tmp/requirements.txt
+COPY src/gesture/gesture_node/requirements.txt /tmp/requirements.txt
 RUN pip3 install -r /tmp/requirements.txt
 
 WORKDIR /ws
-COPY src/gesture_node src/gesture_node
+COPY src/gesture/gesture_node src/gesture_node
 RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select gesture_node
 
 COPY docker/entrypoint.sh /entrypoint.sh

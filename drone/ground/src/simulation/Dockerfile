@@ -1,5 +1,16 @@
-# PX4 SITL + Gazebo Harmonic + ROS 2 Jazzy on Ubuntu 24.04 (issue #29, ADR-018/019)
-FROM ros:jazzy
+# SIMULATION ONLY (#29, #86, ADR-018/019). Never use with the real drone.
+# Build context is drone/ground/. Two stages:
+#   px4  PX4 SITL + Gazebo Harmonic + ROS 2 Jazzy (Ubuntu 24.04), px4_msgs and the
+#        Micro XRCE-DDS agent. Long to build (several GB). The Makefile builds it
+#        alone (make px4-image: --target px4, tagged seame-px4-sim:jazzy-1.17),
+#        so make clean and fclean keep it.
+#   sim  (final) PX4_IMAGE + intent_node, mission_node and px4_offboard_bridge
+#        (it imports mission_node.spin; the smoke scenario runs intent_node),
+#        started by sim_start.sh (make sim, make sim-smoke). Compose sets
+#        PX4_IMAGE to the tagged image; without it the px4 stage is built here.
+ARG PX4_IMAGE=px4
+
+FROM ros:jazzy AS px4
 ARG PX4_REF=v1.17.0
 ARG PX4_MSGS_REF=release/1.17
 ARG XRCE_REF=v2.4.3
@@ -33,3 +44,21 @@ RUN cd PX4-Autopilot && make px4_sitl_default
 
 RUN echo 'source /opt/ros/jazzy/setup.bash; source ~/ros2_px4_ws/install/setup.bash' >> ~/.bashrc
 CMD ["bash"]
+
+FROM ${PX4_IMAGE} AS sim
+USER root
+COPY docker/entrypoint.sh /entrypoint.sh
+COPY src/simulation/sim_start.sh /sim_start.sh
+RUN mkdir -p /ws && chown dev:dev /ws
+USER dev
+WORKDIR /ws
+
+COPY --chown=dev:dev src/intent/intent_node src/intent_node
+COPY --chown=dev:dev src/mission/mission_node src/mission_node
+COPY --chown=dev:dev src/simulation/px4_offboard_bridge src/px4_offboard_bridge
+# On top of the PX4 workspace (px4_msgs), so /ws/install/setup.bash sources both
+RUN . /opt/ros/jazzy/setup.sh && . /home/dev/ros2_px4_ws/install/setup.sh \
+    && colcon build --packages-select intent_node mission_node px4_offboard_bridge
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/sim_start.sh"]

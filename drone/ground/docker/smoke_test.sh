@@ -1,16 +1,17 @@
 #!/bin/bash
 # Docker smoke test for the ground images (CI job ground-docker, `make smoke`).
 #
-#   1. Build gesture, intent, mission and echo.
+#   1. Build gesture, intent, mission, echo and flight_interface.
 #   2. Run each package's tests inside its own image, none skipped: the
-#      image's own OpenCV, MediaPipe and ROS must work, not only CI's install.
+#      image's own OpenCV, MediaPipe, sd_protocol and ROS must work, not only
+#      CI's install.
 #   3. Across containers: gesture_node's real main() with a fake camera
-#      (src/gesture_node/test/fake_camera.py) in the gesture image publishes
+#      (src/gesture/gesture_node/test/fake_camera.py) in the gesture image publishes
 #      L:INDEX_RIGHT+R:NONE -> intent container -> MOVE_RIGHT on
 #      /gesture/intent ->
 #      mission container (pretend /flight/state from the flight container)
 #      sees MOVE_RIGHT on /mission/state but never engages: nobody showed
-#      ENGAGE. The echo image's own command (docker/echo/monitor.py,
+#      ENGAGE. The echo image's own command (src/echo/monitor.py,
 #      the table of `docker compose up`, here one line per change) shows it.
 #   4. docker stop the gesture container: it exits 0 at once, intent falls
 #      back to NEUTRAL (reason no_packets) and mission, airborne, stays
@@ -23,6 +24,11 @@
 #      by compose, wrote logs/smoke/<service>/latest.log, every line
 #      timestamped. A container stopped with docker stop keeps every line its
 #      command prints while stopping (the entrypoint is PID 1 there).
+#   7. flight_interface, from its compose service (loopback backend, a dummy
+#      secrets file mounted, no PSK): configure + activate, its /flight/state
+#      reaches mission, which stays IDLE (not_streaming): the loopback drone
+#      has no override, so nothing can engage. Never backend:=esp, never ARM.
+#      docker stop: it exits 0 at once.
 #
 # Own compose project, ROS domain and log folder (logs/smoke), so a running
 # `make up` stack (or teammates on the network) is neither stopped nor mixed
@@ -43,17 +49,28 @@ export GROUND_LOG_DIR=./logs/smoke
 rm -rf "$GROUND_LOG_DIR"
 mkdir -p "$GROUND_LOG_DIR"
 PROJECT=ground-smoke
-COMPOSE="docker compose -p $PROJECT -f docker-compose.yml"
+# --profile flight_interface: build (step 1) and start (step 7) it too
+COMPOSE="docker compose -p $PROJECT -f docker-compose.yml --profile flight_interface"
 INTENT=$PROJECT-intent-1
 GESTURE=$PROJECT-gesture
 MISSION=$PROJECT-mission-1
 FLIGHT=$PROJECT-flight-1
+FLIGHT_INTERFACE=$PROJECT-flight_interface-1
 ECHO=$PROJECT-echo
 MISSION_ECHO=$PROJECT-mission-echo
+FI_MISSION_ECHO=$PROJECT-fi-mission-echo
+LIFECYCLE=$PROJECT-lifecycle
 MONITOR=$PROJECT-monitor
 STOPPER=$PROJECT-stopper
 CONTAINERS=("$INTENT" "$MISSION" "$FLIGHT" "$GESTURE" "$ECHO" "$MISSION_ECHO"
-    "$MONITOR" "$STOPPER")
+    "$MONITOR" "$STOPPER" "$FLIGHT_INTERFACE" "$FI_MISSION_ECHO" "$LIFECYCLE")
+# flight_interface's service mounts the PSK file read-only and refuses to
+# start without one. The smoke test only runs the loopback backend, which
+# never reads it: an empty dummy, never a real key.
+SEAME_SECRETS_FILE=$(mktemp)
+export SEAME_SECRETS_FILE
+echo '{}' >"$SEAME_SECRETS_FILE"
+chmod 600 "$SEAME_SECRETS_FILE"
 # A line as entrypoint.sh writes it to a log file: wall-clock time first
 STAMP='^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6} '
 # Talk ROS with the intent service: host network and IPC, same domain
@@ -117,8 +134,9 @@ cleanup() {
         done
     fi
     docker rm -f "$GESTURE" "$ECHO" "$MISSION_ECHO" "$MONITOR" "$STOPPER" \
-        >/dev/null 2>&1 || true
+        "$FI_MISSION_ECHO" "$LIFECYCLE" >/dev/null 2>&1 || true
     $COMPOSE down >/dev/null 2>&1 || true
+    rm -f "$SEAME_SECRETS_FILE"
     summary "$code"
 }
 trap cleanup EXIT
@@ -155,6 +173,32 @@ run_tests() {
     echo "    $2: $(grep -E '^Ran ' <<<"$out")"
 }
 
+# run_pytest IMAGE PACKAGE [PYTEST ARGS]: as run_tests, for a package whose
+# tests are pytest functions (unittest discover would not see them)
+run_pytest() {
+    local image=$1 pkg=$2 out code=0 last p f e k
+    shift 2
+    out=$(docker run --rm -e REQUIRE_ROS_TESTS=1 -w "/ws/src/$pkg" "$image" \
+        python3 -m pytest test -q -p no:cacheprovider "$@" 2>&1) || code=$?
+    last=$(grep -E '^=*.*[0-9]+ (passed|failed|error)' <<<"$out" | tail -n 1 || true)
+    p=$(grep -oE '[0-9]+ passed' <<<"$last" | grep -oE '[0-9]+' || true)
+    f=$(grep -oE '[0-9]+ failed' <<<"$last" | grep -oE '[0-9]+' || true)
+    e=$(grep -oE '[0-9]+ errors?' <<<"$last" | grep -oE '[0-9]+' || true)
+    k=$(grep -oE '[0-9]+ skipped' <<<"$last" | grep -oE '[0-9]+' || true)
+    p=${p:-0} f=${f:-0} e=${e:-0} k=${k:-0}
+    ROWS+=("$(row "$pkg (in its image)" $((code || k)) "$p" $((p + f + e + k)) \
+        "$(notes "$k" "skipped (not allowed here)" "$f" failed "$e" errors)")")
+    if ((code)); then
+        echo "$out"
+        fail "$pkg tests failed inside $image"
+    fi
+    if ((k)); then
+        echo "$out"
+        fail "$pkg tests were skipped inside $image"
+    fi
+    echo "    $pkg: $last"
+}
+
 # wait_for CONTAINER TEXT SECONDS [SKIP_LINES]: TEXT appears in its log.
 # Not grep -q: it exits at the first match, tail then dies of SIGPIPE, and
 # pipefail turns the match into a failure.
@@ -180,13 +224,17 @@ stop_and_check() {
     echo "    $1 stopped cleanly (exit code $code)"
 }
 
-step 1 "build gesture, intent, mission, echo"
+step 1 "build gesture, intent, mission, echo, flight_interface"
 $COMPOSE build
 
 step 2 "package tests inside their images"
 run_tests rosrangers/gesture:jazzy gesture_node
 run_tests rosrangers/intent:jazzy intent_node
 run_tests rosrangers/mission:jazzy mission_node
+# Deselected: the cross-package check needs mission_node, which this image
+# does not have. CI's ground-ros2 runs it with both packages installed.
+run_pytest rosrangers/flight_interface:jazzy flight_interface \
+    --deselect test/test_guard.py::test_masks_and_ceilings_match_mission_node
 
 step 3 "gesture container -> intent container -> mission container"
 $COMPOSE up -d intent mission flight
@@ -266,5 +314,42 @@ log=$GROUND_LOG_DIR/stopper/latest.log
     fail "$log lost lines printed during docker stop ($(wc -l <"$log") of 5002)"
 echo "    all 5000 lines printed during docker stop, and the last one, are in the log file"
 
+step 7 "flight_interface (loopback) -> /flight/state -> mission stays IDLE"
+# lifecycle TRANSITION: ros2 lifecycle set, retried until the node is
+# discovered (at most 30 s). Configure and activate only: never ARM.
+lifecycle() {
+    local end=$((SECONDS + 30))
+    while ((SECONDS < end)); do
+        if docker run --rm --name "$LIFECYCLE" "${ROS[@]}" rosrangers/flight_interface:jazzy \
+            timeout 20 ros2 lifecycle set /flight_interface "$1" 2>&1 |
+            grep -F "Transitioning successful" >/dev/null; then
+            echo "    ros2 lifecycle set /flight_interface $1: done"
+            return 0
+        fi
+        sleep 1
+    done
+    fail "ros2 lifecycle set /flight_interface $1 did not succeed within 30 s"
+}
+# mission alone: flight (the pretend /flight/state) stopped in step 5, so
+# flight_interface is the only /flight/state publisher here
+$COMPOSE up -d mission flight_interface
+docker run -d --name "$FI_MISSION_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
+    ros2 topic echo --field data /mission/state std_msgs/msg/String >/dev/null
+wait_for "$FLIGHT_INTERFACE" "unconfigured: use ros2 lifecycle set" 30 ||
+    fail "flight_interface did not start within 30 s"
+lifecycle configure
+lifecycle activate
+# not_streaming, not no_flight_state: mission got flight_interface's state
+# (link_ok while active), and the loopback drone is not STREAMING
+wait_for "$FI_MISSION_ECHO" '"mode":"IDLE","mode_reason":"not_streaming"' 15 ||
+    fail "mission did not report IDLE (not_streaming) from flight_interface's /flight/state within 15 s"
+echo "    mission reads flight_interface's /flight/state and stays IDLE (not_streaming)"
+! docker logs "$FI_MISSION_ECHO" 2>&1 | grep -E '"mode":"(WAITING|ENGAGED|LOCKED)"' >/dev/null ||
+    fail "mission left IDLE with the loopback drone"
+stop_and_check "$FLIGHT_INTERFACE"
+stop_and_check "$MISSION"
+docker kill "$FI_MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instrument
+check_log flight_interface "active: setpoints go out from the next fresh target"
+
 echo "PASS: images, in-image tests, gesture -> intent -> mission across containers," \
-    "monitor, clean stops, node logs"
+    "monitor, clean stops, node logs, flight_interface -> mission"
