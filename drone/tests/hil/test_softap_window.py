@@ -124,6 +124,9 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert add.startswith("connection add save no ")  # in memory: gone on reboot
     assert "autoconnect yes" in add and "ssid seame-hil-test" in add
     assert "802-11-wireless.powersave 2" in add  # power save off (#106)
+    # No DHCP wait inside the window (#207)
+    assert "ipv4.method manual ipv4.addresses 192.168.4.2/24" in add
+    assert "ipv6.method disabled" in add
     assert up.startswith(f"--wait 25 connection up hil-softap-{env['GITHUB_RUN_ID']}-")
     assert "passwd-file" in up
     assert delete.startswith("connection delete hil-softap-")
