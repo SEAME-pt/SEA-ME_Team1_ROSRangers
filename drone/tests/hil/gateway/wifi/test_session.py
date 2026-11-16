@@ -34,7 +34,7 @@ from bench import (
     setpoint_to_rc,
     skip_or_fail,
 )
-from ground_link import GroundLink, TcpReader, take_ack
+from ground_link import HELLO_ACK_MAX_US, GroundLink, TcpReader, take_ack
 
 from sd_protocol.frame import MsgType
 from sd_protocol.messages import (
@@ -97,10 +97,13 @@ class Ground:
             except OSError:  # not associated yet, or the ESP restarting
                 time.sleep(0.5)
                 continue
+            # A new nonce for every HELLO: a nonce never repeats (spec §1, #204)
+            self.link.new_nonce()
+            late_before = self.link.late_acks
             try:
                 tcp.sendall(self.link.hello())
                 self.reader = TcpReader()
-                while True:
+                while self.link.late_acks == late_before:
                     data = tcp.recv(512)
                     if not data:
                         break
@@ -109,6 +112,13 @@ class Ground:
                         return tcp
             except OSError:
                 pass
+            if self.link.late_acks != late_before:
+                # REQ-SAF-024 (#204): shown in the failure output, so a late
+                # HELLO_ACK is not mistaken for the #194 TCP stall
+                print(
+                    f"HELLO_ACK more than {HELLO_ACK_MAX_US // 1000} ms after "
+                    f"HELLO, dropped ({self.link.late_acks} so far): new handshake"
+                )
             tcp.close()
             time.sleep(0.6)  # HELLO is rate-limited to one per 500 ms
         return None
@@ -179,7 +189,7 @@ def session(fake_fc):
     fake_fc.check()
     assert (
         ground.tcp is not None
-    ), "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
+    ), f"no HELLO_ACK: wrong PSK, or not the gateway firmware? ({ground.link.late_acks} late HELLO_ACKs dropped)"
     yield ground
     ground.close()
 
@@ -312,7 +322,9 @@ LOSS_RC = msp.encode_rc(setpoint_to_rc(Setpoint(1, 500, 0, 0, 0)))
 def armed(fake_fc):
     """A new session, armed with the gateway's override mask: STREAMING."""
     ground = Ground(psk())
-    assert ground.tcp is not None, "no HELLO_ACK for the armed session"
+    assert (
+        ground.tcp is not None
+    ), f"no HELLO_ACK for the armed session ({ground.link.late_acks} late HELLO_ACKs dropped)"
     # Confirms the session (first UDP frame) and the peer. 1.5 s: after the
     # previous armed test's ADR-004 output stopped, neutral RC restarts with
     # this stream, and ARM needs 1 s of RC acks (#188); the same margin as
