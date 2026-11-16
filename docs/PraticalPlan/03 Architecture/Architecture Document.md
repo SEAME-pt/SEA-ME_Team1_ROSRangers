@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: draft
 date: 2026-11-02
-updated: 2026-11-09
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - architecture
@@ -173,6 +173,20 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 
 Still to measure: the end-to-end gesture → motors latency and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
 
+### Real-time profile (REQ-SW-005, #146)
+
+Plotted by `scripts/rt_profile.py` from two logs, never by hand. Commands and log format are in the script's docstring.
+
+| Log | How it is captured | Plot |
+|---|---|---|
+| Betaflight `tasks` | `fc_cli.py dump` (FC on USB, props off) writes it into `drone/config/betaflight/<ver>/cli_read_<date>.txt` | `rt-profile/betaflight_tasks.png` |
+| ESP gateway `loop()` period | env `esp_loop_timing` (gateway + a histogram of every `loop()` period, sent once a second to UDP 5770), recorded with `rt_profile.py listen` during a UDP control stream, props off | `rt-profile/esp_loop_period.png` (median, p99, max) |
+
+![[betaflight_tasks.png]]
+
+- **Betaflight 4.5.1, 2026-10-16 capture (before the 2026.6.2 upgrade):** PID loop 8 kHz, PID max load 57.9 % (avg 35.5 %), FILTER 30.5 % (13.7 %), total 51.5 % excluding SERIAL. SERIAL's 2161 µs max is the CLI session itself. To redo on 2026.6.2 once the USB connector is repaired (#189).
+- **ESP loop jitter:** not captured yet. Needs the bench (gateway on the drone, props off). Commit the CSV next to the plots in `rt-profile/` and add median / p99 / max here. What matters for this budget: the `loop()` period must stay well below the 20 ms RC period (`MSP_SET_RAW_RC` at 50 Hz).
+
 ## 5. Related pages
 
 [[System Overview]] · [[Protocol Spec v0]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Wiring and Pinout]] · [[Decision Register]] · [[00 Gesture Pipeline]]
@@ -191,6 +205,7 @@ Still to measure: the end-to-end gesture → motors latency and the failsafe-tim
 | **ESP8266** | The Wi-Fi microcontroller on the drone that bridges the ground to the FC over UART4. |
 | **FC** | Flight Controller: the OddityRC F7 AIO running Betaflight. |
 | **HMAC** | Hash-based Message Authentication Code: a keyed tag proving the sender holds the key. |
+| **Jitter** | Variation of a period around its nominal value; here, how much the ESP `loop()` period varies. |
 | **MCAP** | The default rosbag file format in ROS 2 Jazzy. |
 | **MSP** | MultiWii Serial Protocol, used to talk to Betaflight. |
 | **MSP Override** | Betaflight feature that lets MSP replace selected RC channels while the pilot's switch is on. |
