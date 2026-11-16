@@ -1,5 +1,6 @@
 """Python twin of lib/protocol (ADR-007)."""
 
+from sd_protocol.counters import WrapCounter
 from sd_protocol.crypto import (
     DirectionKeys,
     derive_keys,
@@ -16,11 +17,15 @@ from sd_protocol.frame import (
     frame_size,
 )
 from sd_protocol.messages import (
+    AGE_MAX,
+    AGE_UNKNOWN,
+    ARMED_UNKNOWN,
     CONFIG_ACK_SIZE,
     CONFIG_KV_SIZE,
     EVENT_MAX_SIZE,
     EVENT_MIN_SIZE,
     EVENT_TEXT_MAX,
+    FC_HEALTH_SIZE,
     FW_VERSION_SIZE,
     HELLO_ACK_SIZE,
     HELLO_SIZE,
@@ -34,6 +39,7 @@ from sd_protocol.messages import (
     EspState,
     Event,
     EventCode,
+    FcHealth,
     Hello,
     HelloAck,
     Role,
@@ -42,6 +48,7 @@ from sd_protocol.messages import (
     decode_config_ack,
     decode_config_kv,
     decode_event,
+    decode_fc_health,
     decode_hello,
     decode_hello_ack,
     decode_state,
@@ -49,6 +56,7 @@ from sd_protocol.messages import (
     encode_config_ack,
     encode_config_kv,
     encode_event,
+    encode_fc_health,
     encode_hello,
     encode_hello_ack,
     encode_state,
@@ -80,6 +88,9 @@ from sd_protocol.setpoint import (
 from sd_protocol.version import protocol_version
 
 __all__ = [
+    "AGE_MAX",
+    "AGE_UNKNOWN",
+    "ARMED_UNKNOWN",
     "CONFIG_ACK_SIZE",
     "CONFIG_KV_SIZE",
     "EVENT_MAX_SIZE",
@@ -96,6 +107,7 @@ __all__ = [
     "RC_MIN",
     "SETPOINT_SIZE",
     "STATE_SIZE",
+    "FC_HEALTH_SIZE",
     "AckResult",
     "ByeReason",
     "ConfigAck",
@@ -105,6 +117,7 @@ __all__ = [
     "EspState",
     "Event",
     "EventCode",
+    "FcHealth",
     "Frame",
     "HandshakeResult",
     "Header",
@@ -122,9 +135,11 @@ __all__ = [
     "Setpoint",
     "State",
     "Transport",
+    "WrapCounter",
     "decode_config_ack",
     "decode_config_kv",
     "decode_event",
+    "decode_fc_health",
     "decode_frame",
     "decode_hello",
     "decode_hello_ack",
@@ -135,6 +150,7 @@ __all__ = [
     "encode_config_ack",
     "encode_config_kv",
     "encode_event",
+    "encode_fc_health",
     "encode_frame",
     "encode_hello",
     "encode_hello_ack",

@@ -95,7 +95,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.SessionIdZeroOutsideHelloRejected` | A normal frame with session 0 is refused | Same reason as above |
 | `Receiver.SeqDuplicateExample` | Sends seq 1, 2, 2, 3: the second 2 is refused (duplicate), the others are accepted | A copied message can never act twice |
 | `Receiver.OlderAndTooHighRejected` | After seq 7, seq 3 is refused (old) and seq 2³¹ is refused (too high, new session needed) | A late message never moves the drone back to an old stick position |
-| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`; the rest is open in #149), and a refused frame leaves no trace |
+| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`, spec §7.5, #149), and a refused frame leaves no trace |
 | `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | The sender's and the receiver's key for that direction must match, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
@@ -219,6 +219,20 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.StopRcSendsNothing` | `stop_rc()` after `set_rc()`: no RC frame | The ADR-004 "stop" really stops |
 | `FcLink.RcAt50HzLeavesTheAdr009Polls` | One simulated second with RC at 50 Hz and an FC that answers at once: 50 RC frames, 25 ATTITUDE, no timeouts | RC and telemetry fit on one UART (the real budget is spike #123) |
 | `FcLink.ASilentFcDoesNotStarveThePolls` | The FC stops answering for 3 s with RC at 50 Hz: polls still go out between the RC timeouts, and when the FC answers again its values come back | A silent FC is seen coming back; RC timeouts never lock out telemetry (safety review of #102 PR 2) |
+| `FcLink.AliveWhileTheFcAnswersLostAfter250Ms` | `fc_alive()` is false before any reply, true after one, still true at 249 ms of silence and false at 250 ms | The FC-lost threshold of #179 (D1) |
+| `FcLink.AnErrorReplyStillMeansAlive` | An error reply ('!') to our request keeps the FC alive | A refusing FC is still there; only silence is "lost" |
+| `FcLink.AReplyNobodyAskedForIsNotAlive` | A reply with no request in flight is counted as unexpected and does not make the FC alive | Stray bytes never fake a live FC |
+| `FcLink.AliveNeverComesBackAcrossTheMillisWrap` | After 10 s of silence "alive" is forgotten, and 2^32 ms later the old reply time does not make it alive again | No false "FC restored" after a long uptime |
+| `FcLink.RcAcceptedAfterOneSecondOfGoodAcks` | RC at 50 Hz, every ack good: not accepted before 1 s, accepted after, not any more 100 ms after the last ack | ARM/RESUME only once the FC has taken RC for 1 s (#188 rules 1–2) |
+| `FcLink.PollsAnsweredButRcNotIsNeverAccepted` | The FC answers every poll but no RC: alive, never RC-accepted | The gap #183 left: alive alone no longer lets ARM through (#188) |
+| `FcLink.RcRefusedWithErrorIsNeverAccepted` | Every RC answered with `!`: alive, never RC-accepted | An FC that refuses RC can't be armed (#188) |
+| `FcLink.OneMissedRcAckRestartsTheSecond` | One RC request unanswered after 1.5 s of good acks: not accepted at once, accepted again after another 1 s | "Continuously good" means no RC timeout (#188 rule 2) |
+| `FcLink.RcStoppedThenRestartedNeedsAnotherSecond` | RC stops for 1.5 s (ADR-004 output), then restarts: not accepted after 0.5 s, accepted after 1 s | Old acks never count after a gap (#188) |
+| `FcLink.FcComesBackOnlyAfter250MsOfReplies` | `fc_up()`: down → up only after 250 ms of replies; up stays up while alive | `FC_LINK_RESTORED` hysteresis (#188 rule 3) |
+| `FcLink.AHalfAnsweringFcNeverComesBack` | Every other request of each kind unanswered for 3 s: `fc_up()` never changes, RC never accepted | No LOST/RESTORED flapping, no ARM in a short good window (#188) |
+| `FcLink.ASilenceWithoutATimeoutStillNeeds250MsToComeBack` | No request in flight for 400 ms (no timeout counted): `fc_up()` comes back only after 250 ms of replies again | A stalled loop cannot skip the RESTORED hysteresis (#188 pre-review) |
+| `FcLink.OneRefusedRcRestartsTheSecond` | One `!` reply to RC after 1.5 s of good acks: not accepted at once, accepted again after 1 s | A refused RC frame breaks "continuously good" (#188) |
+| `FcLink.APollTimeoutDoesNotRestartTheRcSecond` | One poll unanswered, every RC acked: RC stays accepted | Only RC problems restart the RC second (#188) |
 
 ## Link: the ESP link state machine (#102)
 
@@ -234,6 +248,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.BadFramesOnTheSessionConnection` | On the session's connection, a bad tag is dropped and the connection stays; a bad version closes it; no failsafe | Spec §4 rule 5 for session frames |
 | `LinkTest.NonHelloOnAConnectionWithoutSessionClosesIt` | A valid session frame sent on another connection closes that connection | A connection with no session carries HELLO only (ADR-005) |
 | `LinkTest.UdpWithoutASessionIsDroppedAndCounted` | UDP with no session open: dropped as `no session` and counted | Nothing reaches control without a session |
+| `LinkTest.StateRxRejectedCountsNoSessionAndWraps` | One no-session frame shows as 1 in `STATE.rx_rejected`; after 65,536 more bad-tag frames (65,537 in all) the field reads 1 | Spec §7.5 (#149): the field wraps, so new rejects always show; the ground counts the wraps (`WrapCounter`) |
 | `LinkTest.SessionIdsComeFromTheRngAndAreNeverZero` | An RNG that gives only zeros: the HELLO is refused, no session opens | `session_id` 0 is reserved for HELLO |
 | `LinkTest.ArmWithTheWrongMaskIsRefused` | ARM with mask 15 on a drone set to 8: result 2, state unchanged | The ground must not fly with the wrong override mask |
 | `LinkTest.ArmOkEntersStreamingAndForwardsFreshSetpoints` | ARM OK → STREAMING; a mode-1 setpoint becomes RC values, a mode-0 one neutral | The basic control path |
@@ -247,7 +262,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.FailsafeOn2026SendsNeutralForOneSecondThenStops` | In LINK_FAILSAFE: neutral for 1 s, then nothing | ADR-004 on Betaflight 2026.6: the FC falls back to the radio sticks |
 | `LinkTest.FailsafeOn451SendsNeutralForever` | With the 4.5.1 setting: neutral frames forever | ADR-004 on 4.5.1, where overrides are held |
 | `LinkTest.FailsafeStopSurvivesAClockWrap` | Once the output has stopped, a 2^32 ms clock wrap does not restart the neutral | No surprise output after a long uptime |
-| `LinkTest.PacketsComingBackDoNotResumeControl` | Mode-1 setpoints arrive again for 1 s after the loss: still LINK_FAILSAFE, only the ADR-004 output | Control never comes back by itself |
+| `LinkTest.PacketsComingBackDoNotResumeControl` | Mode-1 setpoints arrive again for 1 s after the loss: still LINK_FAILSAFE, only neutral RC (the ADR-004 output, then neutral while the ground streams, §2.6) | Control never comes back by itself |
 | `LinkTest.ResumeNeedsFiveHundredMsOfNeutralStream` | RESUME after 460 ms of neutral: result 3; after 500 ms: OK, STREAMING, EVENT | The resume rule of ADR-004 |
 | `LinkTest.AGapOrANonNeutralSetpointRestartsTheNeutralStream` | A mode-1 setpoint or a 150 ms gap restarts the 500 ms | The neutral stream must be continuous |
 | `LinkTest.ResumeNeedsAFreshSetpoint` | RESUME when the last neutral setpoint is 150 ms old: result 3 | The link must be alive right now |
@@ -276,11 +291,46 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.ByeOfTheOldSessionKeepsASharedConnectionOpen` | A pending session on the current session's connection, then BYE of the old session: the connection stays open and the pending session takes over on it | A BYE never closes the connection another session needs |
 | `LinkTest.ReplacingASharedPendingSessionKeepsTheConnection` | A pending session on the current connection is replaced by a HELLO on another connection: the current connection stays open | Dropping a pending session never cuts the live one |
 | `LinkTest.NewSessionIsToldTheFailsafeOutputStillRuns` | A new session opened after a BYE from control, or confirmed by a switch from STREAMING, gets EVENT 0x0104; a session with no ADR-004 output running gets none | The ground never shows SESSION_IDLE as if the output were neutral (safety pilot, review of #170) |
+| `LinkTest.ArmIsRefusedWhileTheFcIsSilent` | FC silent: ARM gets result 4 (FC not answering) and the state stays SESSION_IDLE; FC back: ARM OK | #179 D2: no control that nothing would apply |
+| `LinkTest.WrongStateAndMaskAreCheckedBeforeTheFc` | FC silent and the wrong mask: result 2, not 4 | One fixed check order, as for CONFIG (spec §3.1) |
+| `LinkTest.TheSessionIsToldWhenTheFcIsLostAndRestored` | While streaming, FC lost: EVENT 0x0201 once, state kept; FC back: EVENT 0x0202; no event without a change | #179 D1 (ESP-S2-06: the ground hears it within 500 ms) |
+| `LinkTest.FcHealthGoesToTheSessionAndSharesTheUdpSeq` | FC_HEALTH: nothing without a session; with one it is sealed for the ground, takes the next UDP seq after STATE, and the ground's Receiver accepts it | #179 D3, spec v1.4 |
+| `LinkTest.ResumeIsRefusedWhileTheFcIsSilent` | In LINK_FAILSAFE with 500 ms of neutral, FC silent: RESUME gets result 4 and the failsafe stays; FC back: RESUME OK | Control never comes back while nothing would apply it (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10) |
+| `LinkTest.ArmNeedsRcAcksGoodForOneSecond` | SESSION_IDLE, FC alive but RC not accepted: ARM gets result 4; RC accepted: ARM OK | #188 rules 1–2 for ARM |
+| `LinkTest.ResumeNeedsRcAcksGoodForOneSecond` | LINK_FAILSAFE with 500 ms of neutral, RC not accepted: RESUME gets 4 and the failsafe stays; RC accepted: RESUME OK | #188 rules 1–2 for RESUME |
+| `LinkTest.StoppedFailsafeOutputIsNeutralAgainWhileTheGroundStreams` | After the 1 s of ADR-004 neutral: nothing while the ground is quiet, neutral (never the ground's sticks) while it streams, nothing again when it stops | ADR-004 §2.6 (#188): RC acks can exist before RESUME |
+| `LinkTest.NewSessionAfterAStoppedOutputGetsNeutralWhileItStreams` | BYE while STREAMING, output stopped, new session: nothing before its first SETPOINT, neutral after it, still SESSION_IDLE | ADR-004 §2.6 (#188): ARM possible in a new session after a crashed ground |
+| `LinkTest.ANewLinkStartsWithTheFcNotAlive` | A new Link counts the FC as not alive until told otherwise | No ARM before the FC has been seen |
 | `LinkTest.ByeWhileStreamingKeepsTheFailsafeOutput` | BYE while streaming: NO_SESSION with the ADR-004 output; a new session does not clear it, only its ARM | A BYE is never an instant neutral |
 | `LinkTest.ConfigGetAnswersKnownAndUnknownKeys` | CONFIG_GET on every spec §7.3 key gives its value; unknown keys give result 1 and value 0 | The key table of the spec |
 | `LinkTest.ConfigSetChecksStateFirstThenTheKey` | CONFIG_SET while streaming: result 5 for any key; then unknown 1, read-only 2, safety 3, out of range 4 (never clamped), OK | The check order of spec §3.1 |
 | `LinkTest.StateCarriesTheLinkFieldsAndTheFcView` | STATE has the link state, last control seq, rejected count and the FC values; seq counts up | What the ground sees |
 | `LinkTest.EspFramesAreAcceptedByTheGroundReceiver` | Every TCP frame the ESP sent passes a ground-side Receiver | Both ends agree on keys, seq and direction |
+
+## OtaLock / OtaGate: the ADR-024 OTA gate and upload lock (#102)
+
+A fake FC answers like Betaflight: MSP_STATUS, and MSP_SET_ARMING_DISABLED setting or clearing ARMING_DISABLED_MSP.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `OtaLock.ArmingDisabledHasItsOwnEncoderOnly` | MSP 99 is not on the allow-list (the generic encoder refuses it with any payload); only its own encoder builds it, byte for byte | Nothing from the network can ever build the command that disarms the FC |
+| `OtaLock.LocksADisarmedFcAndReadsTheLockBack` | Disarmed FC: buffered input discarded, then STATUS, SET_ARMING_DISABLED 1, STATUS, in that order; the lock bit is read back | ADR-024 lock steps 1 and 2 |
+| `OtaLock.NeverSendsTheLockToAnArmedFc` | Armed FC: result "armed" and value 1 is never sent | Betaflight disarms an armed FC on value 1 (ADR-024: never without step 1) |
+| `OtaLock.NeverSendsTheLockWithoutAFreshStatus` | A buffered old "disarmed" reply, then a silent FC: result "no reply", value 1 never sent, gives up within the timeout | Only a fresh status counts; a dead FC never gets the lock |
+| `OtaLock.ALateOldReplyIsNeverTakenAsFresh` | An old "disarmed" reply to an earlier poll arrives 20 ms after the discard while the FC is armed: the lock waits for 60 ms of quiet, asks again, sees "armed", never sends value 1 | Only the reply to the lock's own request counts (ADR-024 step 1; review of #102 part 3) |
+| `OtaLock.AnFcThatNeverGoesQuietGetsNoLock` | The UART never goes quiet: no request at all, "no reply" within 500 ms | A babbling line never leads to a lock |
+| `OtaLock.FailsWhenTheFcDoesNotConfirmTheLock` | An error reply to the lock, or an ack without the flag: result "not locked" | The upload is aborted unless the lock is really set |
+| `OtaLock.ReleaseSendsValueZero` | Release sends value 0 (no status check needed) and clears the flag; a silent FC returns false | Value 0 is harmless at any time (ADR-024) |
+| `OtaGate.OpenOnlyWithNoSessionAndAFreshDisarmedStatus` | Closed in BOOT; open in NO_SESSION with a disarmed status younger than 500 ms; closed at 500 ms | ADR-024 D2 |
+| `OtaGate.ClosedWhenArmedOrUnknown` | No status yet, or an armed status: closed | An unknown arm state refuses OTA |
+| `OtaGate.ClosedWhileASessionIsOpen` | SESSION_IDLE: closed; after the session ends (NO_SESSION): open again | No update while a ground session is open |
+
+## FcHealth: the FC_HEALTH message (0x81, spec v1.4, #179)
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `FcHealth.BytesAndRoundTrip` | A FC_HEALTH with distinct values gives the 42 spec bytes (little-endian) and decodes back; a short buffer is refused | The Python twin and the ground must read the same bytes |
+| `FcHealth.ReceiveChecks` | Size 42 only, UDP (telemetry range), received by the ground only | Spec §2 and §3 checks for the new type |
 
 ## Version: protocol version
 | Test | What it does | Why it matters |

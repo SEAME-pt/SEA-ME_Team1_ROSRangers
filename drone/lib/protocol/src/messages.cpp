@@ -173,6 +173,54 @@ bool decode_state(const std::uint8_t *payload, std::size_t len, State &out) {
   return true;
 }
 
+std::size_t encode_fc_health(const FcHealth &m, std::uint8_t *out,
+                             std::size_t out_cap) {
+  if (out == nullptr || out_cap < kFcHealthSize) {
+    return 0;
+  }
+  out[0] = m.fc_alive;
+  out[1] = m.armed;
+  put_u32(out + 2, m.arming_disable_flags);
+  put_u16(out + 6, m.status_age_ms);
+  put_u16(out + 8, m.attitude_age_ms);
+  put_u16(out + 10, m.analog_age_ms);
+  put_u16(out + 12, m.reply_age_ms);
+  put_u32(out + 14, m.requests);
+  put_u32(out + 18, m.replies);
+  put_u32(out + 22, m.timeouts);
+  put_u16(out + 26, m.bad_checksum);
+  put_u16(out + 28, m.too_long);
+  put_u16(out + 30, m.error_replies);
+  put_u16(out + 32, m.unexpected);
+  put_u32(out + 34, m.rc_sent);
+  put_u32(out + 38, m.rc_replaced);
+  return kFcHealthSize;
+}
+
+bool decode_fc_health(const std::uint8_t *payload, std::size_t len,
+                      FcHealth &out) {
+  if (payload == nullptr || len != kFcHealthSize) {
+    return false;
+  }
+  out.fc_alive = payload[0];
+  out.armed = payload[1];
+  out.arming_disable_flags = get_u32(payload + 2);
+  out.status_age_ms = get_u16(payload + 6);
+  out.attitude_age_ms = get_u16(payload + 8);
+  out.analog_age_ms = get_u16(payload + 10);
+  out.reply_age_ms = get_u16(payload + 12);
+  out.requests = get_u32(payload + 14);
+  out.replies = get_u32(payload + 18);
+  out.timeouts = get_u32(payload + 22);
+  out.bad_checksum = get_u16(payload + 26);
+  out.too_long = get_u16(payload + 28);
+  out.error_replies = get_u16(payload + 30);
+  out.unexpected = get_u16(payload + 32);
+  out.rc_sent = get_u32(payload + 34);
+  out.rc_replaced = get_u32(payload + 38);
+  return true;
+}
+
 PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
                            std::size_t len) {
   std::size_t min = 0;
@@ -209,6 +257,9 @@ PayloadCheck check_payload(std::uint8_t type, const std::uint8_t *payload,
   case MsgType::kState:
     min = max = kStateSize;
     break;
+  case MsgType::kFcHealth:
+    min = max = kFcHealthSize;
+    break;
   default:
     return PayloadCheck::kUnknownType;
   }
@@ -230,6 +281,7 @@ bool receives(Role role, std::uint8_t type) {
   case MsgType::kConfigSet:
     return role == Role::kEsp;
   case MsgType::kState:
+  case MsgType::kFcHealth:
   case MsgType::kArmControlAck:
   case MsgType::kResumeAck:
   case MsgType::kConfigAck:

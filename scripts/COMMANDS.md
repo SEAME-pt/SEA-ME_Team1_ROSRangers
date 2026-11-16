@@ -321,7 +321,7 @@ python3 scripts/seame.py msp cycle1a \
 
 ### Gateway session: `ground_link.py` (#102)
 
-Bench ground for the gateway firmware (`esp_gateway`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
+Bench ground for the gateway firmware (env `esp` / `esp_ota`, Protocol Spec v0 on 5759). It opens a session (HELLO / HELLO_ACK), streams SETPOINT at 50 Hz, shows STATE, and checks every ESP frame with the protocol's Receiver rules.
 
 | Command | What it does |
 |---|---|
@@ -336,15 +336,25 @@ Keys while it runs (type, then Enter):
 
 | Key | Fault or action | Expected (ESP-S2-08) |
 |---|---|---|
-| `a` | ARM_CONTROL_REQUEST (operator only, REQ-SAF-023) | `ARM_CONTROL_ACK 0`, STREAMING |
+| `a` | ARM_CONTROL_REQUEST (operator only, REQ-SAF-023) | `ARM_CONTROL_ACK 0`, STREAMING. `4 FC_NOT_ANSWERING` if the FC is silent or has not acknowledged RC for 1 s (#188): after a failsafe or a new session, stream about 1 s first |
 | `m R` / `n` | Mode 1 with roll R (−1000..1000) / neutral sticks | `last_ctrl_seq` grows; a bad value is refused with `bad command`, and the tool keeps running |
 | `g` | Garbage: bad tag, replay, old seq, bad mode, random bytes | still STREAMING, `rx_rejected` +5 |
 | `h` | Replay the recorded HELLO on a second connection | that connection closed after 2 s, session unchanged |
 | `s` / `u` | Stop / restart UDP (link loss) | `LINK_FAILSAFE_ENTERED` about 250 ms after the last SETPOINT (printed) |
-| `r` | RESUME_REQUEST (after `u`, `n` and 1 s) | `RESUME_ACK 0`, `LINK_RESUMED` |
+| `r` | RESUME_REQUEST (`n`, `u`, then wait 1.5 s) | `RESUME_ACK 0`, `LINK_RESUMED`. The 1.5 s covers 500 ms of neutral and, if the failsafe output had stopped, 1 s of RC acks after `u` (#188) |
 | `c KEY` | CONFIG_GET (hex key, e.g. `c 40`) | `CONFIG_ACK` with the value |
+| `t` | Drop only TCP (no BYE) | still STREAMING on UDP, `last_ctrl_seq` grows (ADR-005) |
+| `R` | Reconnect: new TCP + HELLO, then ARM as the first frame under the new keys (operator action) | `ARM_CONTROL_ACK 0` on the new session, STREAMING throughout (one 20 ms neutral tick at the switch). The tool has one loop, so the SETPOINT stream pauses while it connects (up to 1 s each for the TCP connect and the HELLO): on a slow link `R` can cause `SETPOINT_STALE` or `LINK_FAILSAFE` by itself |
 | `k` | Kill: close everything without BYE | the ESP fails safe; the next session gets `FAILSAFE_OUTPUT_ACTIVE` |
 | `b` / `q` | BYE, then quit | – |
+
+**Health line** (2026-11-10, #179, `FC_HEALTH`, spec v1.4), printed under each STATE line:
+`fc=alive armed=0 flags=0x00000020 age status=40ms attitude=12ms analog=90ms reply=3ms req=… rep=… timeouts=0 errors=0 rc_sent=… rc_replaced=0`.
+- `fc=LOST`: no FC reply for 250 ms. `armed=?`, `flags=?` and `status=?`: unknown (no status under 500 ms old), so never read as a value.
+- `errors`: bad checksums, oversize frames, error replies and unexpected replies. Timeouts are counted only in `timeouts` (2026-11-13, #183 review).
+- `no FC_HEALTH for N s`: no health message for over 1 s; the old line is not shown as current.
+- `rc_replaced` growing: the FC UART can't keep up with RC at 50 Hz (#123).
+- Replies show their code by name, for example `ARM_CONTROL_ACK 4 FC_NOT_ANSWERING` (ARM refused while the FC is silent or has not acknowledged RC continuously for 1 s, #188).
 
 **When the Wi-Fi drops** (2026-11-09):
 - **No old values:** the tool never reprints old values. After 1 s without STATE it prints `no STATE for N s`.

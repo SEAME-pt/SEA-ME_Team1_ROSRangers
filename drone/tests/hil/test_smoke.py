@@ -1,9 +1,9 @@
-"""HIL smoke test: the spare ESP boots the flashed firmware and stays up.
+"""HIL smoke test: the spare ESP boots the gateway (env esp) from flash, and
+the FC's UART never sees MSP in the boot ROM output.
 
 The spare ESP sits on the Pi's USB (/dev/hil-esp, FTDI auto-reset on
-DTR/RTS). The firmware prints nothing on UART0, so after the boot ROM banner
-(74880 baud) the line must stay silent at 115200: any bytes there are a crash
-dump or a reboot.
+DTR/RTS). That it stays up after boot (only allow-listed MSP frames on UART0,
+no crash dump, no reboot) is checked in gateway/test_uart.py.
 
 Without the board the hardware test is skipped, unless HIL_REQUIRED=1 (set in
 hil.yaml) turns the skip into a failure.
@@ -13,14 +13,15 @@ from bench import (
     APP_BAUD,
     ROM_BAUD,
     boot_mode,
+    check_frames,
     crash_markers,
+    msp,
     open_esp,
     pulse_reset,
     read_for,
 )
 
 ROM_WINDOW_S = 2.0
-SILENT_WINDOW_S = 10.0
 BOOT_RESETS = 3
 BOOT_WINDOW_S = 3.0
 # MSP v1 and v2 frame starts, in every direction. Every valid MSP frame
@@ -51,34 +52,13 @@ def test_msp_like_finds_headers_and_frames():
     assert msp_like(b"$X>") == [b"$X>"]
 
 
-def test_esp_boots_from_flash_and_stays_up():
-    port = open_esp()
-    try:
-        pulse_reset(port)
-
-        rom = read_for(port, ROM_WINDOW_S)
-        assert boot_mode(rom) == 3, f"no normal flash boot in ROM output: {rom[:300]!r}"
-        assert not crash_markers(rom), f"crash in ROM output: {rom!r}"
-
-        port.baudrate = APP_BAUD
-        port.reset_input_buffer()
-        after = read_for(port, SILENT_WINDOW_S)
-        assert after == b"", (
-            f"UART0 should be silent after boot, got {len(after)} bytes "
-            f"(markers {crash_markers(after)}): {after[:300]!r}"
-        )
-    finally:
-        port.close()
-
-
 def test_boot_bytes_never_look_like_msp():
     """ESP-S1-03: what the FC's UART sees at 115200 from the reset edge.
 
     The ROM banner at 74880 reads as noise at 115200, and Betaflight's MSP
-    parser must never find a frame start in it (ADR-012, REQ-SAF-016). With
-    the gateway firmware (#101) the ESP sends MSP_API_VERSION requests at
-    boot on purpose: this test is then replaced by a check of the BOOT and
-    NO_SESSION output (#106).
+    parser must never find a frame start in it (ADR-012, REQ-SAF-016). After
+    the banner the gateway polls the FC on purpose (BOOT, nothing answers
+    here): those must be allow-listed frames, with nothing between them.
     """
     port = open_esp()
     try:
@@ -91,11 +71,23 @@ def test_boot_bytes_never_look_like_msp():
             pulse_reset(port)
             rom = read_for(port, ROM_WINDOW_S)
             assert boot_mode(rom) == 3, f"reset {reset}: no flash boot: {rom[:300]!r}"
+            assert not crash_markers(
+                rom
+            ), f"reset {reset}: crash in ROM output: {rom!r}"
 
             port.baudrate = APP_BAUD
             pulse_reset(port)
             boot = read_for(port, BOOT_WINDOW_S)
             assert boot, f"reset {reset}: no boot output at all, did the reset work?"
-            assert msp_like(boot) == [], f"reset {reset}: MSP in boot output: {boot!r}"
+            parser = msp.Parser()
+            frames = [(0, f) for f in parser.feed(boot)]
+            stream = b"".join(msp.encode_request(f.cmd, f.payload) for _, f in frames)
+            start = boot.find(stream) if frames else len(boot)
+            assert start >= 0, f"reset {reset}: bytes between MSP frames: {boot!r}"
+            banner = boot[:start]
+            assert (
+                msp_like(banner) == []
+            ), f"reset {reset}: MSP in boot ROM output: {banner!r}"
+            check_frames(boot[start:], frames, parser.bad_checksums)
     finally:
         port.close()

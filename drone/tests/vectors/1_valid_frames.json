@@ -249,5 +249,36 @@
     "bytes": "5344018000001c00785634122a00000010a4000003012900000020830c00f1ff1e0067015604d4fe2c01c8020700050092d3464325e800bc",
     "expect": "accept",
     "note": "esp_state 3 = STREAMING (spec §3.1)."
+  },
+  {
+    "name": "fc_health_fc_lost",
+    "description": "FC_HEALTH after the FC went silent: not alive, armed unknown, ages saturated or unknown",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "fields": {
+      "type": "FC_HEALTH",
+      "flags": 0,
+      "session_id": 305419896,
+      "seq": 43,
+      "t_send_us": 43000,
+      "fc_alive": 0,
+      "armed": 255,
+      "arming_disable_flags": 0,
+      "status_age_ms": 65535,
+      "attitude_age_ms": 65534,
+      "analog_age_ms": 9876,
+      "reply_age_ms": 260,
+      "requests": 120000,
+      "replies": 119990,
+      "timeouts": 10,
+      "bad_checksum": 1,
+      "too_long": 0,
+      "error_replies": 2,
+      "unexpected": 3,
+      "rc_sent": 60000,
+      "rc_replaced": 17
+    },
+    "bytes": "5344018100002a00785634122b000000f8a7000000ff00000000fffffeff94260401c0d40100b6d401000a000000010000000200030060ea00001100000050f8c0b74f2d3aff",
+    "expect": "accept",
+    "note": "Spec v1.4 (#179): ages in ms, 0xFFFE saturated, 0xFFFF never received or expired; armed 0xFF = unknown."
   }
 ]

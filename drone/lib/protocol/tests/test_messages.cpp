@@ -251,7 +251,7 @@ TEST(CheckPayload, EveryTypeHasItsSize) {
 TEST(CheckPayload, UnknownTypesAndModesRefused) {
   using sd::PayloadCheck;
   std::uint8_t sp[sd::kSetpointSize] = {};
-  for (const int type : {0x00, 0x08, 0x23, 0x41, 0x61, 0x81, 0x99, 0xff}) {
+  for (const int type : {0x00, 0x08, 0x23, 0x41, 0x61, 0x82, 0x99, 0xff}) {
     EXPECT_EQ(sd::check_payload(static_cast<std::uint8_t>(type), sp, 1),
               PayloadCheck::kUnknownType)
         << type;
@@ -293,6 +293,10 @@ TEST(Codes, MatchSpecSection31) {
   EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkFailsafeEntered), 0x0102);
   EXPECT_EQ(static_cast<int>(sd::EventCode::kLinkResumed), 0x0103);
   EXPECT_EQ(static_cast<int>(sd::EventCode::kFailsafeOutputActive), 0x0104);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kFcLinkLost), 0x0201);
+  EXPECT_EQ(static_cast<int>(sd::EventCode::kFcLinkRestored), 0x0202);
+  EXPECT_EQ(static_cast<int>(sd::AckResult::kFcNotAnswering), 4);
+  EXPECT_EQ(static_cast<int>(sd::MsgType::kFcHealth), 0x81);
   EXPECT_EQ(static_cast<int>(sd::MsgType::kConfigAck), 0x22);
 }
 
@@ -335,4 +339,40 @@ TEST(Role, ReceivesOnlyWhatTheOtherSideSends) {
     EXPECT_FALSE(sd::receives(Role::kEsp, static_cast<std::uint8_t>(type)));
     EXPECT_FALSE(sd::receives(Role::kGround, static_cast<std::uint8_t>(type)));
   }
+}
+
+// FC_HEALTH (0x81, spec v1.4, #179): byte layout, round trip, receive checks.
+TEST(FcHealth, BytesAndRoundTrip) {
+  sd::FcHealth m{1,    0, 0x00010020, 12, 40, 180, 3,   1234,
+                 1233, 5, 2,          1,  0,  7,   600, 9};
+  std::uint8_t buf[sd::kFcHealthSize + 4] = {};
+  ASSERT_EQ(sd::encode_fc_health(m, buf, sizeof buf), sd::kFcHealthSize);
+  const std::uint8_t expected[sd::kFcHealthSize] = {
+      1,    0,    0x20, 0x00, 0x01, 0x00, 12,   0,    40, 0, 180, 0, 3, 0,
+      0xd2, 0x04, 0,    0,    0xd1, 0x04, 0,    0,    5,  0, 0,   0, 2, 0,
+      1,    0,    0,    0,    7,    0,    0x58, 0x02, 0,  0, 9,   0, 0, 0};
+  EXPECT_EQ(std::memcmp(buf, expected, sd::kFcHealthSize), 0);
+  sd::FcHealth back{};
+  ASSERT_TRUE(sd::decode_fc_health(buf, sd::kFcHealthSize, back));
+  EXPECT_EQ(back.arming_disable_flags, 0x00010020U);
+  EXPECT_EQ(back.reply_age_ms, 3);
+  EXPECT_EQ(back.requests, 1234U);
+  EXPECT_EQ(back.rc_sent, 600U);
+  EXPECT_EQ(back.rc_replaced, 9U);
+  EXPECT_FALSE(sd::decode_fc_health(buf, sd::kFcHealthSize - 1, back));
+  EXPECT_EQ(sd::encode_fc_health(m, buf, sd::kFcHealthSize - 1), 0U);
+}
+
+TEST(FcHealth, ReceiveChecks) {
+  const auto t = static_cast<std::uint8_t>(sd::MsgType::kFcHealth);
+  std::uint8_t buf[sd::kFcHealthSize] = {};
+  EXPECT_EQ(sd::check_payload(t, buf, sd::kFcHealthSize),
+            sd::PayloadCheck::kOk);
+  EXPECT_EQ(sd::check_payload(t, buf, sd::kFcHealthSize - 1),
+            sd::PayloadCheck::kBadSize);
+  sd::Transport tr{};
+  ASSERT_TRUE(sd::transport_of(t, tr));
+  EXPECT_EQ(tr, sd::Transport::kUdp); // telemetry range 0x80-0x9F
+  EXPECT_TRUE(sd::receives(sd::Role::kGround, t));
+  EXPECT_FALSE(sd::receives(sd::Role::kEsp, t)); // the ESP never takes it back
 }

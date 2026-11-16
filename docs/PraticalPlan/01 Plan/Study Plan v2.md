@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-11-09
+updated: 2026-11-13
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -119,6 +119,7 @@ tags: [plan]
 - **C:** Python implementation of the same spec. Shared **golden test vectors** pass in both languages.
 - **D:** extend the Betaflight SITL tests (the job itself is done, week 2). Extend the registered Pi 4 HIL runner ([[HIL Runner]] §3.1, #48): a USB Wi-Fi dongle for the Wi-Fi tests, since the Pi has only its built-in Wi-Fi. *Changed 2026-10-26: no dongle. The Pi time-slices its Wi-Fi ([[ADR-020 HIL Runner|ADR-020]], #48).*
 - **E:** ThoneFlow **sensor-alone characterisation** ([[ThoneFlow]] §9.2): serial framing, frame rate (66 Hz datasheet vs 25 Hz ArduPilot), byte order, checksum. Write the parser.
+- **E:** *Added 2026-11-13: the PX4 SITL smoke test of the gesture chain (gesture → intent → mission → `px4_offboard_bridge` → PX4) moved forward from week 5 to catch topic, message, QoS, frame and rate mismatches early. Done: `make sim-smoke` ([[PX4 SITL Setup]] §7.3, #86).*
 
 ## 6. Week 4 · 9–13 Nov · Failsafe and sessions · *Sprint 2 demo Fri*
 
@@ -132,7 +133,7 @@ tags: [plan]
 
 ## 7. Week 5 · 16–20 Nov · Control in simulation and first override flight
 
-- **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]).
+- **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.*
 - **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights.
 - **A + B (cage):** first override **flight**, only if FC-15 passed and the upgrade to 2026.6.2 is done, with the failsafe re-tested and a new `diff all` committed ([[ADR-014 Betaflight Version|ADR-014]], [[Safety Rules]] #14): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.

@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.3.3
+version: 1.4.2
 date: 2026-10-12
-updated: 2026-11-09
+updated: 2026-11-16
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.3.3. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.4.2. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -55,7 +55,7 @@ Every later message is tagged with the key of its direction (2026-11-05, #150): 
 
 A type that arrives on the other transport is rejected as `reject:wrong_transport`, with its own counter, counted in `rx_rejected`, after the type check and before rule 3. Both transports use the same direction keys and count `seq` apart, so without this check a frame captured on one transport could be replayed on the other (added 2026-11-05, #99).
 
-Each side also accepts only the types the **other** side sends (2026-11-05, #152): the ESP receives `SETPOINT`, `ARM_CONTROL_REQUEST`, `RESUME_REQUEST`, `BYE`, `CONFIG_GET` and `CONFIG_SET`; the ground receives `STATE`, `ARM_CONTROL_ACK`, `RESUME_ACK`, `BYE`, `CONFIG_ACK` and `EVENT`. Any other type is `reject:wrong_direction`, with its own counter, counted in `rx_rejected`, after the transport check. The direction keys (§1) already refuse a node's own frames; this check still does if both ends got the keys wrong, except for `BYE`, which both sides send: a reflected `BYE` can then end the session (never inject control). The direction keys stop it.
+Each side also accepts only the types the **other** side sends (2026-11-05, #152): the ESP receives `SETPOINT`, `ARM_CONTROL_REQUEST`, `RESUME_REQUEST`, `BYE`, `CONFIG_GET` and `CONFIG_SET`; the ground receives `STATE`, `FC_HEALTH` (v1.4), `ARM_CONTROL_ACK`, `RESUME_ACK`, `BYE`, `CONFIG_ACK` and `EVENT`. Any other type is `reject:wrong_direction`, with its own counter, counted in `rx_rejected`, after the transport check. The direction keys (§1) already refuse a node's own frames; this check still does if both ends got the keys wrong, except for `BYE`, which both sides send: a reflected `BYE` can then end the session (never inject control). The direction keys stop it.
 
 ## 3. Messages v0
 
@@ -73,10 +73,13 @@ Each side also accepts only the types the **other** side sends (2026-11-05, #152
 | 0x40 | EVENT | 2–66 | code u16 (§3.1), text[≤64] |
 | 0x60 | SETPOINT | 10 | mode u8 (0 neutral, 1 attitude), roll i16, pitch i16, yaw_rate i16 (−1000..1000), throttle i16 (0..1000), flags u8 (reserved in v0: sent as 0, ignored) |
 | 0x80 | STATE | 28 | esp_state u8 (§3.1), override_active u8, last_ctrl_seq u32, last_ctrl_t_send_us u32, roll i16 (0.1°), pitch i16 (0.1°), heading u16 (°), vbat u16 (0.01 V), flow_x i16, flow_y i16, flow_quality u8, flow_status u8, rx_rejected u16, msp_errors u16 |
+| 0x81 | FC_HEALTH | 42 | fc_alive u8, armed u8 (0, 1, `0xFF` unknown), arming_disable_flags u32, status_age_ms u16, attitude_age_ms u16, analog_age_ms u16, reply_age_ms u16, requests u32, replies u32, timeouts u32, bad_checksum u16, too_long u16, error_replies u16, unexpected u16, rc_sent u32, rc_replaced u32. ESP → ground at 5 Hz (added 2026-11-10, v1.4, #179) |
 
 Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order of §4 (type → transport → direction → size → `mode` → `seq`), so they change no state (REQ-COM-001, REQ-COM-004).
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
+
+`FC_HEALTH` (2026-11-10, v1.4, #179, team decision D3) is the ESP↔FC link as the ESP sees it. `fc_alive` is 1 while an FC reply to one of the ESP's requests came less than 250 ms ago (an error reply counts; a reply nobody asked for does not). `armed` is 0 or 1 from an `MSP_STATUS` under 500 ms old, else `0xFF`; `arming_disable_flags` come from the same fresh status, else 0. `rc_sent` counts the `MSP_SET_RAW_RC` frames written to the FC UART since boot. Ages are ms since the value arrived, saturated at `0xFFFE`; `0xFFFF` means never received or expired (10 s), so an unknown value never looks like a reading. The counters are the ESP's own since boot; the u16 ones saturate at 65535. `rc_replaced` counts RC frames overwritten by a newer one before they were sent (the UART budget, #123). It shares the UDP `seq` with `STATE` (one counter per transport, §1).
 
 Every TCP request has its own reply: `HELLO` → `HELLO_ACK`, `ARM_CONTROL_REQUEST` → `ARM_CONTROL_ACK`, `RESUME_REQUEST` → `RESUME_ACK`, `CONFIG_GET` / `CONFIG_SET` → `CONFIG_ACK`. `BYE` ends the session and gets no reply. `EVENT` is sent by the ESP on its own.
 
@@ -102,6 +105,7 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 1 | wrong state | both | `ARM_CONTROL_REQUEST` while `STREAMING` or in `LINK_FAILSAFE` (which needs `RESUME_REQUEST`); `RESUME_REQUEST` outside `LINK_FAILSAFE` |
 | 2 | override mask mismatch | `ARM_CONTROL_ACK` | The ground expects mask 15 (throttle included) but the drone is set up for 7 ([[ADR-010 MSP Override\|ADR-010]]). The ground must not fly |
 | 3 | resume condition not met | `RESUME_ACK` | Fewer than 500 ms of neutral `SETPOINT` before the request ([[ESP Link State Machine]]) |
+| 4 | FC not answering | both | No FC reply for 250 ms: nothing would apply the ground's sticks (added 2026-11-10, v1.4, #179 D2). Since 2026-11-13 (v1.4.1, #188) also when the FC has not acknowledged RC continuously for 1 s. After a failsafe, or in a new session after one, RC flows only while the ground streams `SETPOINT`s, so the ground streams neutral for ≥ 1 s before ARM or RESUME; on result 4 it keeps streaming and the **operator** retries (or `flight_interface` holds the operator's request until it has streamed long enough). The ground never sends ARM or RESUME on its own (REQ-SAF-023). `ARM_CONTROL_ACK`: checked after codes 1 and 2. `RESUME_ACK`: checked after codes 1 and 3 (D2 extended to RESUME, confirmed by the safety pilot 2026-11-10 on the #179 PR) |
 
 `CONFIG_ACK.result`. A `CONFIG_SET` is checked in this order, and the first refusal that applies is returned, so both implementations give the same answer: **5** (state, OD-16), then 1, 2, 3, 4 (per key). The ground hears "not while streaming" whatever the key or value. `CONFIG_GET` skips the state check.
 
@@ -131,7 +135,7 @@ Info and Safety keys are both read-only from the ground, but they get separate c
 |---|---|---|
 | `0x00xx` | System (boot, watchdog, memory) | defined with the gateway firmware (#101) |
 | `0x01xx` | Link | `0x0101` setpoint stale (`T_fresh` expired, neutral sticks), `0x0102` `LINK_FAILSAFE` entered, `0x0103` resumed, `0x0104` failsafe output active (a new session starts while the [[ADR-004 ESP Failsafe\|ADR-004]] output still runs; added 2026-11-09, #102) |
-| `0x02xx` | FC / MSP | defined with the gateway firmware (#101) |
+| `0x02xx` | FC / MSP | `0x0201` FC link lost (no FC reply for 250 ms), `0x0202` FC link restored (after 250 ms of replies with no timeout since 2026-11-13, v1.4.1, #188; before that, the first reply); added 2026-11-10, v1.4, #179 D1. Sent to the current session on each change; a ground that connects later reads `FC_HEALTH` |
 
 ## 4. Receive rules
 
@@ -276,7 +280,17 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 | Wi-Fi re-association (REQ-COM-023) | To be settled with the gateway firmware (#101). Still open, tracked in [[Open Questions]] |
 | `telemetry_rate_hz` default | 25 Hz, not 20 (§7.3) |
 
-Still open, found while writing the C++ library (#99), tracked in GitHub #149 and [[Open Questions]]: whether `STATE.rx_rejected` (u16) saturates or wraps and whether a frame with no session open counts in it, and how the per-reason and ADR-003 counters reach the ground.
+Found while writing the C++ library (#99) and decided on 2026-11-16 (GitHub #149):
+
+| Item | Decision |
+|---|---|
+| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only. The ground calls `reset()` on **every new session** (each `HELLO_ACK`): `STATE` has no boot id, so a reboot (e.g. 500 → 3) would otherwise look like a wrap, a false jump of 65,536 rejects. A reboot always ends the session; wraps of an earlier session on the same boot are forgotten |
+| Frames with no session open | Counted in `rx_rejected` (`reject:no_session`, UDP with no session, bad `HELLO`) |
+| Per-reason and ADR-003 counters (`bad_tag`, `duplicate_seq`, `old_seq`, gaps, …) | Not sent to the ground in v0: `STATE` carries the total only. The per-reason counters stay in the library, where the unit tests and the golden vectors check them. Revisit in Module 2 (a `CONFIG_GET` Info key or an `EVENT` per counter) |
+
+Unit tests: `LinkTest.StateRxRejectedCountsNoSessionAndWraps` (C++), `test_counters.py` (Python). No wire change: same field, same size. Saturating at 65,535 was considered and dropped, because the ground would stop seeing new rejects once it got there.
+
+Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating at 65,535 on purpose: they describe the ESP↔FC link, which no one on the network can drive, and a value stuck at 65,535 already says "this link is broken". `rx_rejected` is the one counter an attacker can drive (a flood of forged frames), so it must keep moving. Code that subtracts two raw `rx_rejected` values does it mod 65,536 (`(after - before) & 0xFFFF`).
 
 ## 8. Changelog
 
@@ -291,12 +305,17 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-06 | 1.3.1 | Diagnostic ports moved as planned in §7.4 (#101). UDP 5770 is also the gateway's read-only FC status view in diagnostic builds, until #102 sends `STATE` (§7.1). No wire change. |
 | 2026-11-06 | 1.3.2 | A new `HELLO` does not end the current session: the new one is pending until its first valid frame (#156, ADR-005 entry; §3.1 `BYE` reason 3). No wire change. |
 | 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
+| 2026-11-10 | 1.4 | New message `FC_HEALTH` (0x81, UDP, ESP → ground, 5 Hz, §3), `ARM_CONTROL_ACK.result` 4 "FC not answering" and `EVENT` codes `0x0201` / `0x0202` (§3.1). Team decision on #179 (D1–D3). `STATE` is unchanged; a v1.3 ground that receives `FC_HEALTH` rejects it as `bad_type` and nothing else changes. Golden vector `fc_health_fc_lost` (§6, group 1) |
+| 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
+| 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` wraps to 0 after 65,535 and the ground counts the wraps (`WrapCounter`); it counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The ESP used to saturate at 65,535. |
 
 ## 9. Glossary
 
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
+| **FC_HEALTH** | Telemetry message 0x81 (v1.4, #179): the ESP↔FC link as the ESP sees it, at 5 Hz: FC alive, armed, arming flags, value ages, request/reply counts, RC frames sent and replaced. |
+| **FC alive** | An FC reply to one of the ESP's requests came less than 250 ms ago; otherwise the FC is lost (EVENT 0x0201). |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
@@ -314,7 +333,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
-| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` wraps, and the ground counts the wraps (§7.5, #149). |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
 | **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (§3.1, #156). |

@@ -15,6 +15,7 @@ add_library(sd_protocol
   src/link.cpp
   src/messages.cpp
   src/msp.cpp
+  src/ota_lock.cpp
   src/seq_window.cpp
   src/setpoint.cpp
   src/version.cpp
@@ -55,6 +56,7 @@ add_executable(sd_protocol_tests
   tests/test_receiver.cpp
   tests/test_messages.cpp
   tests/test_msp.cpp
+  tests/test_ota_lock.cpp
   tests/test_seq_window.cpp
   tests/test_setpoint.cpp
   tests/test_vectors.cpp

@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "px4_offboard_bridge = px4_offboard_bridge.bridge_node:main",
+            "sim_smoke_scenario = px4_offboard_bridge.smoke_scenario:main",
         ],
     },
 )

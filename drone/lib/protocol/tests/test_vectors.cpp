@@ -67,6 +67,7 @@ const std::map<std::string, sd::MsgType> kTypes = {
     {"EVENT", sd::MsgType::kEvent},
     {"SETPOINT", sd::MsgType::kSetpoint},
     {"STATE", sd::MsgType::kState},
+    {"FC_HEALTH", sd::MsgType::kFcHealth},
 };
 
 // README §5 reject reasons.
@@ -239,6 +240,24 @@ Bytes encode_payload(const json &f) {
                       get<std::uint16_t>(f, "rx_rejected"),
                       get<std::uint16_t>(f, "msp_errors")};
     n = sd::encode_state(m, buf, sizeof(buf));
+  } else if (type == "FC_HEALTH") {
+    const sd::FcHealth m{get<std::uint8_t>(f, "fc_alive"),
+                         get<std::uint8_t>(f, "armed"),
+                         get<std::uint32_t>(f, "arming_disable_flags"),
+                         get<std::uint16_t>(f, "status_age_ms"),
+                         get<std::uint16_t>(f, "attitude_age_ms"),
+                         get<std::uint16_t>(f, "analog_age_ms"),
+                         get<std::uint16_t>(f, "reply_age_ms"),
+                         get<std::uint32_t>(f, "requests"),
+                         get<std::uint32_t>(f, "replies"),
+                         get<std::uint32_t>(f, "timeouts"),
+                         get<std::uint16_t>(f, "bad_checksum"),
+                         get<std::uint16_t>(f, "too_long"),
+                         get<std::uint16_t>(f, "error_replies"),
+                         get<std::uint16_t>(f, "unexpected"),
+                         get<std::uint32_t>(f, "rc_sent"),
+                         get<std::uint32_t>(f, "rc_replaced")};
+    n = sd::encode_fc_health(m, buf, sizeof(buf));
   } else if (type != "RESUME_REQUEST") {
     ADD_FAILURE() << "unknown type " << type;
   }
@@ -313,6 +332,25 @@ json decode_payload(const std::string &type, const std::uint8_t *p,
     f["flow_status"] = m.flow_status;
     f["rx_rejected"] = m.rx_rejected;
     f["msp_errors"] = m.msp_errors;
+  } else if (type == "FC_HEALTH") {
+    sd::FcHealth m{};
+    ok = sd::decode_fc_health(p, len, m);
+    f["fc_alive"] = m.fc_alive;
+    f["armed"] = m.armed;
+    f["arming_disable_flags"] = m.arming_disable_flags;
+    f["status_age_ms"] = m.status_age_ms;
+    f["attitude_age_ms"] = m.attitude_age_ms;
+    f["analog_age_ms"] = m.analog_age_ms;
+    f["reply_age_ms"] = m.reply_age_ms;
+    f["requests"] = m.requests;
+    f["replies"] = m.replies;
+    f["timeouts"] = m.timeouts;
+    f["bad_checksum"] = m.bad_checksum;
+    f["too_long"] = m.too_long;
+    f["error_replies"] = m.error_replies;
+    f["unexpected"] = m.unexpected;
+    f["rc_sent"] = m.rc_sent;
+    f["rc_replaced"] = m.rc_replaced;
   }
   EXPECT_TRUE(ok) << "payload of " << type << " not decoded";
   return f;

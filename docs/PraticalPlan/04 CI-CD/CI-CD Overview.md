@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-11-09
+updated: 2026-11-13
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -41,7 +41,7 @@ flowchart LR
 |---|---|
 | 1 Unit | GitHub-hosted: GoogleTest, pytest |
 | 2 Integration | GitHub-hosted: golden vectors C++ ⇄ Python, Betaflight SITL |
-| 3 Simulation | Team laptops: PX4 SITL + Gazebo (manual, later nightly) |
+| 3 Simulation | Team laptops: PX4 SITL + Gazebo (manual, later nightly): `make sim-smoke` ([[PX4 SITL Setup]] §7.3) |
 | 4 Hardware / bench | **HIL runner** (automated) + manual props-off bench |
 | 5 Flight | Cage, with a flight-test report in Obsidian |
 
@@ -52,6 +52,8 @@ Each job is gated by `check-components` and turns on when its component exists (
 - `ground-docker` runs `drone/ground/docker/smoke_test.sh`.
 - They turn on when the `gesture_node` and `intent_node` `package.xml` files exist (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
 - On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why.
+
+**Simulation bridge job.** `sim-bridge-python` runs the pytest tests of the sim-only `px4_offboard_bridge` that need no ROS and no `px4_msgs` (`bridge_logic.py`, and `smoke_checks.py`, the pass/fail rules of `make sim-smoke`), with a **90 % coverage gate**. It turns on when `drone/simulation/px4/ros/px4_offboard_bridge/setup.py` exists. The simulation itself is not run in CI.
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
 

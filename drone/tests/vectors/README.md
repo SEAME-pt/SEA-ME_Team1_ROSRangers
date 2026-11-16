@@ -83,6 +83,7 @@ Header fields are always `type`, `flags`, `session_id`, `seq`, `t_send_us`. Payl
 | CONFIG_ACK | `config_key`, `result`, `value` |
 | EVENT | `code`, `text` (ASCII) |
 | SETPOINT | `mode`, `roll`, `pitch`, `yaw_rate`, `throttle`, `sp_flags` |
+| FC_HEALTH | `fc_alive`, `armed`, `arming_disable_flags`, `status_age_ms`, `attitude_age_ms`, `analog_age_ms`, `reply_age_ms`, `requests`, `replies`, `timeouts`, `bad_checksum`, `too_long`, `error_replies`, `unexpected`, `rc_sent`, `rc_replaced` (spec v1.4, #179) |
 | STATE | `esp_state`, `override_active`, `last_ctrl_seq`, `last_ctrl_t_send_us`, `roll`, `pitch`, `heading`, `vbat`, `flow_x`, `flow_y`, `flow_quality`, `flow_status`, `rx_rejected`, `msp_errors` |
 
 Code values for results, BYE reasons, EVENT codes and `esp_state` are the ones in spec §3.1 (decided on #142, 2026-11-05).
@@ -134,6 +135,7 @@ One per message type, plus `bye_replaced` and `resume_ack_wrong_state` with non-
 | EVENT | `event_failsafe_entered` |
 | SETPOINT | `setpoint_attitude_basic` (the example below) |
 | STATE | `state_streaming` |
+| FC_HEALTH | `fc_health_fc_lost` (spec v1.4, #179: not alive, armed unknown, ages saturated or unknown) |
 
 Proves: the byte layout is the same on both sides.
 

@@ -15,8 +15,10 @@
 #   4. docker stop the gesture container: it exits 0 at once, intent falls
 #      back to NEUTRAL (reason no_packets) and mission, airborne, stays
 #      WAITING: no land request.
-#   5. docker stop the intent, mission, flight, echo and monitor containers:
-#      exit 0 at once.
+#   5. docker stop the intent, mission, flight and monitor containers: exit 0
+#      at once. The two `ros2 topic echo` probes are test instruments, not our
+#      nodes: they are killed without a check (the ROS 2 CLI sometimes hangs
+#      on SIGTERM, #181), and kept until cleanup() so their logs are saved.
 #   6. Node logs (docker/entrypoint.sh): intent, mission and flight, started
 #      by compose, wrote logs/smoke/<service>/latest.log, every line
 #      timestamped. A container stopped with docker stop keeps every line its
@@ -228,13 +230,13 @@ wait_for "$MONITOR" "intent: NEUTRAL no_packets" 15 ||
     fail "the echo image's monitor did not show NEUTRAL no_packets within 15 s"
 echo "    the monitor shows it too"
 
-step 5 "stop the intent, mission, flight, echo and monitor containers"
+step 5 "stop the intent, mission, flight and monitor containers"
 stop_and_check "$INTENT"
 stop_and_check "$MISSION"
 stop_and_check "$FLIGHT"
-stop_and_check "$ECHO" "0 15" # the ros2 CLI exits with the signal number
-stop_and_check "$MISSION_ECHO" "0 15"
-stop_and_check "$MONITOR"
+stop_and_check "$MONITOR" # monitor.py is ours, even though it runs in the echo image
+# The ros2 topic echo probes: kill, not rm, so cleanup() still saves their logs
+docker kill "$ECHO" "$MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instruments
 
 step 6 "node logs in $GROUND_LOG_DIR"
 # check_log SERVICE TEXT: latest.log exists, every line is timestamped, TEXT is in it

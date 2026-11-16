@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-09
+updated: 2026-11-13
 project: SEA autonomous drone
 tags:
   - ci
@@ -37,9 +37,12 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
-│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke
-│   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed)
-│   │   ├── docker/            # one Dockerfile per image, entrypoint.sh, smoke_test.sh, echo/monitor.py (live table)
+│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke;
+│   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
+│   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed);
+│   │   │                      #   px4 + sim_smoke behind the profiles sim / sim-smoke (SIM ONLY)
+│   │   ├── docker/            # one Dockerfile per image, entrypoint.sh, smoke_test.sh, echo/monitor.py (live table);
+│   │   │                      #   px4/: PX4 image + ground nodes + bridge, sim_start.sh (arms and takes off, sim only)
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/
 │   │       ├── sd_protocol_py/   # Python twin of lib/protocol
@@ -50,10 +53,11 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
 │   ├── simulation/
 │   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
-│   │       ├── sim_smoke.sh       # one command: PX4 SITL headless + intent/mission nodes + bridge (#86)
+│   │       ├── sim_smoke.sh       # by hand, one container: PX4 SITL headless + intent/mission nodes + bridge (#86)
 │   │       └── ros/px4_offboard_bridge/  # SIM ONLY stand-in for the PX4 backend of flight_interface (#86):
 │   │                                     # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
-│   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python
+│   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
+│   │                                     # smoke_scenario.py + smoke_checks.py: the make sim-smoke test
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp_check, fc_cli, seame ...
 │   └── tests/

@@ -144,7 +144,11 @@ Bytes config_kv(std::uint8_t key, std::int32_t value) {
 
 class LinkTest : public ::testing::Test {
 protected:
-  LinkTest() : link(make_config(sd::FailsafeOutput::kNeutralThenStop), io) {}
+  LinkTest() : link(make_config(sd::FailsafeOutput::kNeutralThenStop), io) {
+    link.set_fc_alive(true, 0); // a healthy FC; the #179 tests turn it off
+    // RC acks good (#188); its own tests turn it off
+    link.set_rc_accepted(true);
+  }
 
   static sd::LinkConfig make_config(sd::FailsafeOutput fo) {
     g_rng = 1;
@@ -336,6 +340,38 @@ TEST_F(LinkTest, BadFramesOnTheSessionConnection) {
   EXPECT_EQ(link.rx_rejected(), 2U);
 }
 
+// Spec §7.5 (#149): STATE.rx_rejected counts no-session frames and wraps to 0
+// after 65535, so new rejects always show; the ground counts the wraps.
+TEST_F(LinkTest, StateRxRejectedCountsNoSessionAndWraps) {
+  link.boot_done(0);
+  Ground g;
+  g.session = 0x1234;
+  ASSERT_EQ(udp(g.setpoint(0), 0), sd::RxResult::kNoSession);
+  ASSERT_TRUE(handshake(g, 0, 0));
+  auto last_state = [&](std::uint16_t &out) {
+    sd::Frame f{};
+    ASSERT_TRUE(g.open(io.udp.back(), f));
+    ASSERT_EQ(f.header.type, static_cast<std::uint8_t>(MsgType::kState));
+    sd::State st{};
+    ASSERT_TRUE(sd::decode_state(f.payload, f.header.payload_len, st));
+    out = st.rx_rejected;
+  };
+  std::uint16_t got = 0;
+  link.send_state(10, sd::FcView{});
+  last_state(got);
+  EXPECT_EQ(got, 1U); // the no-session frame counts
+
+  Bytes bad_tag = g.setpoint(0);
+  bad_tag.back() ^= 1;
+  for (std::uint32_t i = 0; i < 0x10000U; ++i) {
+    udp(bad_tag, 20);
+  }
+  EXPECT_EQ(link.rx_rejected(), 0x10001U);
+  link.send_state(30, sd::FcView{});
+  last_state(got);
+  EXPECT_EQ(got, 1U); // 65537 mod 65536: wrapped, not stuck at 65535
+}
+
 TEST_F(LinkTest, ForeignFrameOnThePendingConnectionIsRejected) {
   Ground g;
   stream(g);
@@ -507,6 +543,8 @@ TEST_F(LinkTest, FailsafeOn2026SendsNeutralForOneSecondThenStops) {
 TEST_F(LinkTest, FailsafeOn451SendsNeutralForever) {
   Io io451;
   sd::Link l(make_config(sd::FailsafeOutput::kNeutralForever), io451);
+  l.set_fc_alive(true, 0);
+  l.set_rc_accepted(true);
   l.boot_done(0);
   Ground g;
   ASSERT_EQ(l.on_tcp_frame(0, g.hello().data(), g.hello().size(), 0),
@@ -528,12 +566,10 @@ TEST_F(LinkTest, PacketsComingBackDoNotResumeControl) {
   for (std::uint32_t t = 400; t < 1400; t += 20) {
     ASSERT_EQ(udp(g.setpoint(1, 1000), t), sd::RxResult::kAccepted);
     EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
-    if (t < 1300) { // the ADR-004 output, never the ground's sticks
-      ASSERT_TRUE(link.fc_output(t, ch));
-      EXPECT_TRUE(is_neutral(ch));
-    } else {
-      EXPECT_FALSE(link.fc_output(t, ch));
-    }
+    // The ADR-004 output, never the ground's sticks. After its 1 s it stays
+    // neutral while this ground streams (ADR-004 entry 2026-11-13, #188).
+    ASSERT_TRUE(link.fc_output(t, ch));
+    EXPECT_TRUE(is_neutral(ch));
   }
 }
 
@@ -1012,6 +1048,163 @@ TEST_F(LinkTest, NewSessionIsToldTheFailsafeOutputStillRuns) {
   const Bytes hello = g.hello();
   quiet.on_tcp_frame(0, hello.data(), hello.size(), 0);
   EXPECT_EQ(io2.tcp.size(), 1U); // only the HELLO_ACK
+}
+
+// --- FC link health (#179) ------------------------------------------------
+
+TEST_F(LinkTest, ArmIsRefusedWhileTheFcIsSilent) {
+  link.boot_done(0);
+  Ground g;
+  ASSERT_TRUE(handshake(g, 0, 0));
+  link.set_fc_alive(false, 5);
+  tcp(0, g.tcp(MsgType::kArmControlRequest, u8(kMask)), 10);
+  EXPECT_EQ(last_ack(g, MsgType::kArmControlAck),
+            static_cast<std::uint8_t>(sd::AckResult::kFcNotAnswering));
+  EXPECT_EQ(link.state(), EspState::kSessionIdle);
+  link.set_fc_alive(true, 20);
+  tcp(0, g.tcp(MsgType::kArmControlRequest, u8(kMask)), 30);
+  EXPECT_EQ(last_ack(g, MsgType::kArmControlAck),
+            static_cast<std::uint8_t>(sd::AckResult::kOk));
+}
+
+TEST_F(LinkTest, WrongStateAndMaskAreCheckedBeforeTheFc) {
+  link.boot_done(0);
+  Ground g;
+  ASSERT_TRUE(handshake(g, 0, 0));
+  link.set_fc_alive(false, 5);
+  tcp(0, g.tcp(MsgType::kArmControlRequest, u8(15)), 10);
+  EXPECT_EQ(last_ack(g, MsgType::kArmControlAck),
+            static_cast<std::uint8_t>(sd::AckResult::kMaskMismatch));
+}
+
+TEST_F(LinkTest, TheSessionIsToldWhenTheFcIsLostAndRestored) {
+  Ground g;
+  stream(g);
+  link.set_fc_alive(true, 20); // no change: no event
+  EXPECT_EQ(events(g, sd::EventCode::kFcLinkRestored), 0);
+  link.set_fc_alive(false, 30);
+  EXPECT_EQ(events(g, sd::EventCode::kFcLinkLost), 1);
+  EXPECT_EQ(link.state(), EspState::kStreaming); // D2: the state is kept
+  link.set_fc_alive(false, 40);
+  EXPECT_EQ(events(g, sd::EventCode::kFcLinkLost), 1); // once per change
+  link.set_fc_alive(true, 50);
+  EXPECT_EQ(events(g, sd::EventCode::kFcLinkRestored), 1);
+}
+
+TEST_F(LinkTest, FcHealthGoesToTheSessionAndSharesTheUdpSeq) {
+  link.boot_done(0);
+  link.send_fc_health(0, sd::FcHealth{});
+  EXPECT_TRUE(io.udp.empty()); // no session: nothing
+  Ground g;
+  ASSERT_TRUE(handshake(g, 0, 0));
+  link.send_state(10, sd::FcView{});
+  sd::FcHealth h{};
+  h.fc_alive = 1;
+  h.rc_replaced = 3;
+  link.send_fc_health(20, h);
+  ASSERT_EQ(io.udp.size(), 2U);
+  sd::Frame f{};
+  ASSERT_TRUE(g.open(io.udp.back(), f));
+  EXPECT_EQ(f.header.type, static_cast<std::uint8_t>(MsgType::kFcHealth));
+  EXPECT_EQ(f.header.seq, 2U); // after STATE's 1: one seq per transport
+  sd::FcHealth back{};
+  ASSERT_TRUE(sd::decode_fc_health(f.payload, f.header.payload_len, back));
+  EXPECT_EQ(back.rc_replaced, 3U);
+  // The ground's Receiver accepts it (type, size, direction).
+  sd::Receiver rx(sd::Role::kGround, sd::Transport::kUdp);
+  ASSERT_TRUE(rx.start_session(g.session, g.keys.esp_to_ground));
+  EXPECT_TRUE(sd::is_accepted(
+      rx.receive(io.udp.back().data(), io.udp.back().size(), f)));
+}
+
+TEST_F(LinkTest, ResumeIsRefusedWhileTheFcIsSilent) {
+  Ground g;
+  stream(g);
+  link.tick(300); // LINK_FAILSAFE
+  for (std::uint32_t t = 400; t <= 1000; t += 20) {
+    udp(g.setpoint(0), t); // the 500 ms of neutral a resume needs
+  }
+  link.set_fc_alive(false, 1005);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1010);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kFcNotAnswering));
+  EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
+  link.set_fc_alive(true, 1015);
+  udp(g.setpoint(0), 1020);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1025);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kOk));
+}
+
+// --- RC accepted by the FC (#188) -------------------------------------------
+
+TEST_F(LinkTest, ArmNeedsRcAcksGoodForOneSecond) {
+  link.boot_done(0);
+  Ground g;
+  ASSERT_TRUE(handshake(g, 0, 0));
+  link.set_rc_accepted(false); // FC answers polls, but RC acks not good (yet)
+  tcp(0, g.tcp(MsgType::kArmControlRequest, u8(kMask)), 10);
+  EXPECT_EQ(last_ack(g, MsgType::kArmControlAck),
+            static_cast<std::uint8_t>(sd::AckResult::kFcNotAnswering));
+  EXPECT_EQ(link.state(), EspState::kSessionIdle);
+  link.set_rc_accepted(true);
+  tcp(0, g.tcp(MsgType::kArmControlRequest, u8(kMask)), 20);
+  EXPECT_EQ(last_ack(g, MsgType::kArmControlAck),
+            static_cast<std::uint8_t>(sd::AckResult::kOk));
+}
+
+TEST_F(LinkTest, ResumeNeedsRcAcksGoodForOneSecond) {
+  Ground g;
+  stream(g);
+  link.tick(300); // LINK_FAILSAFE
+  for (std::uint32_t t = 400; t <= 1000; t += 20) {
+    udp(g.setpoint(0), t);
+  }
+  link.set_rc_accepted(false);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1010);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kFcNotAnswering));
+  EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
+  link.set_rc_accepted(true);
+  udp(g.setpoint(0), 1020);
+  tcp(0, g.tcp(MsgType::kResumeRequest), 1025);
+  EXPECT_EQ(last_ack(g, MsgType::kResumeAck),
+            static_cast<std::uint8_t>(sd::AckResult::kOk));
+}
+
+TEST_F(LinkTest, StoppedFailsafeOutputIsNeutralAgainWhileTheGroundStreams) {
+  // ADR-004 entry 2026-11-13 (#188): after the 1 s of neutral, nothing goes to
+  // the FC while the ground is quiet; neutral again while it streams, so the
+  // RC acks can show the FC takes RC before RESUME.
+  Ground g;
+  stream(g);
+  link.tick(300); // LINK_FAILSAFE at ~255 ms, output stops at ~1255 ms
+  EXPECT_FALSE(link.fc_output(1400, ch));
+  udp(g.setpoint(1, 1000), 1500); // the ground is back (not neutral)
+  ASSERT_TRUE(link.fc_output(1510, ch));
+  EXPECT_TRUE(is_neutral(ch)); // never the ground's sticks
+  EXPECT_EQ(link.state(), EspState::kLinkFailsafe);
+  EXPECT_FALSE(link.fc_output(1500 + sd::kTFreshMs, ch)); // quiet again
+}
+
+TEST_F(LinkTest, NewSessionAfterAStoppedOutputGetsNeutralWhileItStreams) {
+  Ground g;
+  stream(g);
+  tcp(0, g.tcp(MsgType::kBye, u8(0)), 30); // ADR-004 output from now
+  EXPECT_FALSE(link.fc_output(1100, ch));  // stopped: no ground
+  Ground g2(0x33);
+  ASSERT_TRUE(handshake(g2, 1, 1200));
+  EXPECT_FALSE(link.fc_output(1205, ch)); // no SETPOINT yet
+  ASSERT_EQ(udp(g2.setpoint(0), 1210), sd::RxResult::kAccepted);
+  ASSERT_TRUE(link.fc_output(1220, ch));
+  EXPECT_TRUE(is_neutral(ch));
+  EXPECT_EQ(link.state(), EspState::kSessionIdle);
+}
+
+TEST_F(LinkTest, ANewLinkStartsWithTheFcNotAlive) {
+  Io io2;
+  sd::Link fresh(make_config(sd::FailsafeOutput::kNeutralThenStop), io2);
+  EXPECT_FALSE(fresh.fc_alive()); // no ARM before the FC has been seen
 }
 
 TEST_F(LinkTest, ByeWhileStreamingKeepsTheFailsafeOutput) {

@@ -8,6 +8,7 @@ SITL_REQUIRED=1 (set in ci.yaml) turns the skip into a failure.
 import os
 import socket
 import time
+from collections import Counter
 
 import pytest
 from msp_frames import MSP_API_VERSION, Frame, decode, encode_v1
@@ -65,13 +66,17 @@ def skip_or_fail(reason: str):
     pytest.skip(reason)
 
 
-def connect_when_ready() -> MspLink | None:
-    """Retry the TCP connect and an MSP_API_VERSION request until SITL answers."""
-    deadline = time.monotonic() + TIMEOUT_S
+def connect_when_ready(
+    tries: Counter, port: int = PORT, timeout_s: float = TIMEOUT_S
+) -> MspLink | None:
+    """Retry the TCP connect and an MSP_API_VERSION request until SITL answers.
+    Counts each failed try by what happened, so a timeout says why (#181)."""
+    deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         try:
-            sock = socket.create_connection((HOST, PORT), timeout=1.0)
-        except OSError:
+            sock = socket.create_connection((HOST, port), timeout=1.0)
+        except OSError as e:
+            tries[f"connect: {type(e).__name__}"] += 1
             time.sleep(0.5)
             continue
         link = MspLink(sock)
@@ -80,8 +85,9 @@ def connect_when_ready() -> MspLink | None:
             if link.read_frame() is not None:
                 link.drain()
                 return link
-        except OSError:
-            pass
+            tries["connected, no MSP answer within 1 s"] += 1
+        except OSError as e:
+            tries[f"connected, then {type(e).__name__}"] += 1
         sock.close()
         time.sleep(0.5)
     return None
@@ -89,10 +95,12 @@ def connect_when_ready() -> MspLink | None:
 
 @pytest.fixture(scope="session")
 def sitl_session():
-    link = connect_when_ready()
+    tries = Counter()
+    link = connect_when_ready(tries)
     if link is None:
         skip_or_fail(
             f"no MSP answer from SITL on {HOST}:{PORT} within {TIMEOUT_S:.0f} s"
+            f" (tries: {dict(tries)})"
         )
     yield link
     link.sock.close()

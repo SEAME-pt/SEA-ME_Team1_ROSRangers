@@ -3,7 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-27
+updated: 2026-11-13
 project: SEA autonomous drone
 tags:
   - gestures
@@ -23,7 +23,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Topic names, `/flight/state` fields and every number are **proposals** (§12). The design decisions to review are in §10.
-> - `/flight/state` comes from the **pretend** `fake_flight_state` (§7) until `flight_interface` exists. Never use it with a real drone.
+> - `/flight/state` comes from the **pretend** `fake_flight_state` (§7) until `flight_interface` exists, or in the simulator from `px4_offboard_bridge` (§8.4). Never use either with a real drone.
 > - Not run yet with the real webcam, a controller or a drone.
 
 ---
@@ -33,7 +33,7 @@ aliases:
 ```mermaid
 flowchart LR
   GN[intent_node] -->|"/gesture/intent<br/>JSON, 20 Hz"| M["<b>mission_node</b>"]
-  FFS["fake_flight_state<br/>(pretend, for now)"] -->|"/flight/state"| M
+  FFS["fake_flight_state (pretend)<br/>or px4_offboard_bridge (sim)"] -->|"/flight/state"| M
   M -->|"/mission/velocity_target<br/>TwistStamped, 20 Hz"| C["velocity controller<br/>(planned)"]
   M -->|"/mission/state<br/>JSON"| LOG["live table, logs"]
 ```
@@ -254,6 +254,10 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 ### 8.3 With `intent_node`, no camera
 
 `docker compose up -d --build intent mission flight`, then publish gestures on `/gesture/raw` with `ros2 topic pub` (one at a time, `null` first so the engage counts).
+
+### 8.4 In the simulator
+
+`make sim` runs `mission_node` against PX4 SITL + Gazebo: `px4_offboard_bridge` flies its velocity target and publishes `/flight/state` from PX4. `make sim-smoke` checks it headless. Both: [[PX4 SITL Setup]] §7.
 
 ---
 

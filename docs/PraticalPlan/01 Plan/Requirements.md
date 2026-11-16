@@ -3,7 +3,7 @@ title: Requirements
 type: plan
 status: active
 date: 2026-10-21
-updated: 2026-11-09
+updated: 2026-11-10
 project: SEA autonomous drone
 tags:
   - plan
@@ -97,7 +97,15 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 | REQ-SAF-020 | `intent_node` changes the intent only for a known gesture seen in 5 consecutive packets; no gesture maps to arm, disarm or the override switch. Since 2026-10-27 (#81, two-hand gestures): the hand left when one hand of a two-hand gesture drops never maps to a command. | [[03 Intent Node]] §9 | test + inspection | unit + ROS node | draft |
 | REQ-SAF-021 | E-stop: when a fault is detected (the list in [[Testing Strategy]] §2), the system brings the drone to a safe stop, in the air or on the ground. Time to the safe state is measured per fault. | [[Safety Rules]] §3 · [[Study Plan v2]] §11 | test + demo | SITL + HIL, then cage | draft |
 | REQ-SAF-022 | Kill switch: releasing SA on the radio disarms the FC and stops the motors, whatever the ESP and the ground send. | [[ADR-010 MSP Override\|ADR-010]] (update 2026-10-23) · [[Radio Link Tests]] RL-12 | test | bench props off (done 2026-10-22, #22), then cage | verified (bench, #22) |
-| REQ-SAF-023 | The ground never sends `ARM_CONTROL_REQUEST` on its own, also not after a reconnect or a session switch: ARM is always an operator action. Added 2026-11-09 (safety pilot's condition, review of PR #170). | [[ESP Link State Machine]] §1.1 | test | unit + ROS node (#103) | accepted |
+| REQ-SAF-023 | The ground never sends `ARM_CONTROL_REQUEST` on its own, also not after a reconnect or a session switch: ARM is always an operator action. Added 2026-11-09 (safety pilot's condition, review of PR #170). One dated exception for the HIL bench only: see *HIL bench exception to REQ-SAF-023* below the table. | [[ESP Link State Machine]] §1.1 | test | unit + ROS node (#103) | accepted |
+
+> [!warning] HIL bench exception to REQ-SAF-023 (2026-11-10, approved by the safety pilot, #106)
+> The automated HIL tests may send `ARM_CONTROL_REQUEST` on their own, under these conditions only (BrunoBMFT on #106, 2026-11-10):
+> 1. **Scope:** only the tests under `drone/tests/hil/gateway/`, running on the `hil-drone` runner. Nothing else in the repo gets the exception.
+> 2. **The bench stays as it is:** the Pi plays the FC, and there is no real FC, no props and no battery ([[HIL Runner]]). If a real FC is ever connected to that bench, the exception lapses: the three ARM tests (passthrough, failsafe timing, resume) go back to skipped until the safety pilot reviews again.
+> 3. **Production stays operator-only:** the ground node (#103) and `scripts/ground_link.py` never send ARM on their own; REQ-SAF-023 is unchanged for them, and #103 keeps its own test that ARM only goes out after an operator action.
+>
+> Each line in those tests that sends ARM carries a comment pointing here.
 
 ### Navigation (`REQ-NAV`)
 

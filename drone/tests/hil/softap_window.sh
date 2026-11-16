@@ -128,9 +128,15 @@ trap 'exit 143' TERM
 # The password goes through a file, not the command line (ps shows arguments).
 printf '802-11-wireless-security.psk:%s\n' "$SEAME_AP_PASS" >"$psk_file"
 step sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect no
+# Power save off (2 = disable): a dozing Pi makes the ESP's SoftAP hold its
+# packets, which stalled TCP connects and EVENTs (#106, 2026-11-13). The Pi's
+# NetworkManager config sets it too; this keeps it off without that file
 step sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con" \
-  ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk >/dev/null
+  ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk \
+  802-11-wireless.powersave 2 >/dev/null
 step sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
+# What the driver really does, in the log of every run
+iw dev "$IFACE" get power_save 2>/dev/null || echo "Power save: unknown (no iw)"
 
 echo "On $SEAME_AP_SSID, running for at most ${test_s} s: $*"
 step timeout -k "$KILL_GRACE_S" "$test_s" "$@"
