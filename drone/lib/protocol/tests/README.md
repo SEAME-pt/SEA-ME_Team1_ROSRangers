@@ -248,7 +248,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.BadFramesOnTheSessionConnection` | On the session's connection, a bad tag is dropped and the connection stays; a bad version closes it; no failsafe | Spec §4 rule 5 for session frames |
 | `LinkTest.NonHelloOnAConnectionWithoutSessionClosesIt` | A valid session frame sent on another connection closes that connection | A connection with no session carries HELLO only (ADR-005) |
 | `LinkTest.UdpWithoutASessionIsDroppedAndCounted` | UDP with no session open: dropped as `no session` and counted | Nothing reaches control without a session |
-| `LinkTest.StateRxRejectedCountsNoSessionAndSaturates` | One no-session frame shows as 1 in `STATE.rx_rejected`; after 65,536 more bad-tag frames the field reads 65,535, not 1 | Spec §7.5 (#149): the counter saturates, so a high count never looks low |
+| `LinkTest.StateRxRejectedCountsNoSessionAndWraps` | One no-session frame shows as 1 in `STATE.rx_rejected`; after 65,536 more bad-tag frames (65,537 in all) the field reads 1 | Spec §7.5 (#149): the field wraps, so new rejects always show; the ground counts the wraps (`WrapCounter`) |
 | `LinkTest.SessionIdsComeFromTheRngAndAreNeverZero` | An RNG that gives only zeros: the HELLO is refused, no session opens | `session_id` 0 is reserved for HELLO |
 | `LinkTest.ArmWithTheWrongMaskIsRefused` | ARM with mask 15 on a drone set to 8: result 2, state unchanged | The ground must not fly with the wrong override mask |
 | `LinkTest.ArmOkEntersStreamingAndForwardsFreshSetpoints` | ARM OK → STREAMING; a mode-1 setpoint becomes RC values, a mode-0 one neutral | The basic control path |

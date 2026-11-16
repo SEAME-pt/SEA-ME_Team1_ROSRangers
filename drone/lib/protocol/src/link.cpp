@@ -245,8 +245,8 @@ void Link::send_state(std::uint32_t now_ms, const FcView &fc) {
   st.flow_y = fc.flow_y;
   st.flow_quality = fc.flow_quality;
   st.flow_status = fc.flow_status;
-  st.rx_rejected =
-      rejected > 0xFFFFU ? 0xFFFFU : static_cast<std::uint16_t>(rejected);
+  // Wraps after 65535 (#149): the ground adds 65536 when it goes down.
+  st.rx_rejected = static_cast<std::uint16_t>(rejected);
   st.msp_errors = fc.msp_errors;
   std::uint8_t payload[kStateSize];
   const std::size_t n = encode_state(st, payload, sizeof payload);

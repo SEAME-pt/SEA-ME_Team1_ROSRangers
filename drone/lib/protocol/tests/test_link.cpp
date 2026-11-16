@@ -340,9 +340,9 @@ TEST_F(LinkTest, BadFramesOnTheSessionConnection) {
   EXPECT_EQ(link.rx_rejected(), 2U);
 }
 
-// Spec §7.5 (#149): STATE.rx_rejected counts no-session frames and stops at
-// 65535 instead of wrapping, so a high count never looks like a low one.
-TEST_F(LinkTest, StateRxRejectedCountsNoSessionAndSaturates) {
+// Spec §7.5 (#149): STATE.rx_rejected counts no-session frames and wraps to 0
+// after 65535, so new rejects always show; the ground counts the wraps.
+TEST_F(LinkTest, StateRxRejectedCountsNoSessionAndWraps) {
   link.boot_done(0);
   Ground g;
   g.session = 0x1234;
@@ -369,7 +369,7 @@ TEST_F(LinkTest, StateRxRejectedCountsNoSessionAndSaturates) {
   EXPECT_EQ(link.rx_rejected(), 0x10001U);
   link.send_state(30, sd::FcView{});
   last_state(got);
-  EXPECT_EQ(got, 0xFFFFU); // saturated, not wrapped to 1
+  EXPECT_EQ(got, 1U); // 65537 mod 65536: wrapped, not stuck at 65535
 }
 
 TEST_F(LinkTest, ForeignFrameOnThePendingConnectionIsRejected) {

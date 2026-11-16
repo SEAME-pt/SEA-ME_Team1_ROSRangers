@@ -284,11 +284,11 @@ Found while writing the C++ library (#99) and decided on 2026-11-16 (GitHub #149
 
 | Item | Decision |
 |---|---|
-| `STATE.rx_rejected` width | The ESP counts in 32 bits; the u16 field **saturates** at 65,535 and never wraps, so a high count never looks like a low one. It is the total over every receiver since boot, so it never goes down within one boot |
+| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only |
 | Frames with no session open | Counted in `rx_rejected` (`reject:no_session`, UDP with no session, bad `HELLO`) |
 | Per-reason and ADR-003 counters (`bad_tag`, `duplicate_seq`, `old_seq`, gaps, …) | Not sent to the ground in v0: `STATE` carries the total only. The per-reason counters stay in the library, where the unit tests and the golden vectors check them. Revisit in Module 2 (a `CONFIG_GET` Info key or an `EVENT` per counter) |
 
-Unit test: `LinkTest.StateRxRejectedCountsNoSessionAndSaturates`. No wire change.
+Unit tests: `LinkTest.StateRxRejectedCountsNoSessionAndWraps` (C++), `test_counters.py` (Python). No wire change: same field, same size. Saturating at 65,535 was considered and dropped, because the ground would stop seeing new rejects once it got there.
 
 ## 8. Changelog
 
@@ -305,7 +305,7 @@ Unit test: `LinkTest.StateRxRejectedCountsNoSessionAndSaturates`. No wire change
 | 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 | 2026-11-10 | 1.4 | New message `FC_HEALTH` (0x81, UDP, ESP → ground, 5 Hz, §3), `ARM_CONTROL_ACK.result` 4 "FC not answering" and `EVENT` codes `0x0201` / `0x0202` (§3.1). Team decision on #179 (D1–D3). `STATE` is unchanged; a v1.3 ground that receives `FC_HEALTH` rejects it as `bad_type` and nothing else changes. Golden vector `fc_health_fc_lost` (§6, group 1) |
 | 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
-| 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` saturates at 65,535 and counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The C++ library already did this; a unit test now checks it. |
+| 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` wraps to 0 after 65,535 and the ground counts the wraps (`WrapCounter`); it counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The ESP used to saturate at 65,535. |
 
 ## 9. Glossary
 
@@ -331,7 +331,7 @@ Unit test: `LinkTest.StateRxRejectedCountsNoSessionAndSaturates`. No wire change
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
-| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` saturates at 65,535 (§7.5, #149). |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` wraps, and the ground counts the wraps (§7.5, #149). |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
 | **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (§3.1, #156). |
