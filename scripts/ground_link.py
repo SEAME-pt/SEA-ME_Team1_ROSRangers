@@ -67,6 +67,7 @@ from sd_protocol.messages import (  # noqa: E402
     EventCode,
     FcHealth,
     Hello,
+    OverrideActive,
     Role,
     State,
     Transport,
@@ -291,13 +292,22 @@ def health_line(h) -> str:
     )
 
 
+def override_name(value: int) -> str:
+    """STATE.override_active (spec §3.1, #176): ON only for 1."""
+    try:
+        return OverrideActive(value).name
+    except ValueError:
+        return f"?{value}"
+
+
 def state_line(st) -> str:
     try:
         name = EspState(st.esp_state).name
     except ValueError:
         name = str(st.esp_state)
     return (
-        f"state={name} last_ctrl_seq={st.last_ctrl_seq} rx_rejected={st.rx_rejected} "
+        f"state={name} override={override_name(st.override_active)} "
+        f"last_ctrl_seq={st.last_ctrl_seq} rx_rejected={st.rx_rejected} "
         f"msp_errors={st.msp_errors} roll={st.roll / 10:.1f} pitch={st.pitch / 10:.1f} "
         f"vbat={st.vbat / 100:.2f}V"
     )

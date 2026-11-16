@@ -256,3 +256,20 @@ def test_acks_are_shown_by_name():
         link.keys.esp_to_ground,
     )
     assert link.describe_tcp(ack) == "ARM_CONTROL_ACK 4 FC_NOT_ANSWERING"
+
+
+def test_state_line_shows_override_active():
+    # #176: the bench reads the takeover switch from this line.
+    from sd_protocol.messages import EspState, State
+
+    def line(override):
+        st = State(
+            EspState.STREAMING, override, 7, 0, 10, -20, 90, 1234, 0, 0, 0, 0, 3, 0
+        )
+        return ground_link.state_line(st)
+
+    assert "state=STREAMING override=OFF " in line(0)
+    assert "override=ON " in line(1)
+    assert "override=UNKNOWN " in line(2)
+    assert "override=?7 " in line(7)  # a value from a newer ESP is never ON
+    assert "rx_rejected=3" in line(0)
