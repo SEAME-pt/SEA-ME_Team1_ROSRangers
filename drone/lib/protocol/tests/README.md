@@ -95,7 +95,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.SessionIdZeroOutsideHelloRejected` | A normal frame with session 0 is refused | Same reason as above |
 | `Receiver.SeqDuplicateExample` | Sends seq 1, 2, 2, 3: the second 2 is refused (duplicate), the others are accepted | A copied message can never act twice |
 | `Receiver.OlderAndTooHighRejected` | After seq 7, seq 3 is refused (old) and seq 2³¹ is refused (too high, new session needed) | A late message never moves the drone back to an old stick position |
-| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`; the rest is open in #149), and a refused frame leaves no trace |
+| `Receiver.EveryFrameRejectIsCounted` | Five broken frames (short, magic, version, extra byte, bit flip) are each counted under their own reason; then the good frame is still accepted | Each reason has its own counter; only the total reaches the ground (`STATE.rx_rejected`, spec §7.5, #149), and a refused frame leaves no trace |
 | `Receiver.WrongKeyRejected` | A session opened with a different key refuses our frames (bad seal) | The sender's and the receiver's key for that direction must match, or nothing works |
 | `Receiver.NewSessionResetsTheWindowAndEndSessionClosesIt` | A new session starts seq again from 1; after closing the session, everything is refused | Clean start for each connection, and nothing gets through after it closes |
 | `Receiver.RejectedFrameNeverReachesTheOutput` | A correctly sealed but old frame (seq 2 after 3) is refused, and the output frame stays empty | The firmware can never use the content of a refused or replayed frame by mistake |
@@ -257,6 +257,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `LinkTest.BadFramesOnTheSessionConnection` | On the session's connection, a bad tag is dropped and the connection stays; a bad version closes it; no failsafe | Spec §4 rule 5 for session frames |
 | `LinkTest.NonHelloOnAConnectionWithoutSessionClosesIt` | A valid session frame sent on another connection closes that connection | A connection with no session carries HELLO only (ADR-005) |
 | `LinkTest.UdpWithoutASessionIsDroppedAndCounted` | UDP with no session open: dropped as `no session` and counted | Nothing reaches control without a session |
+| `LinkTest.StateRxRejectedCountsNoSessionAndWraps` | One no-session frame shows as 1 in `STATE.rx_rejected`; after 65,536 more bad-tag frames (65,537 in all) the field reads 1 | Spec §7.5 (#149): the field wraps, so new rejects always show; the ground counts the wraps (`WrapCounter`) |
 | `LinkTest.SessionIdsComeFromTheRngAndAreNeverZero` | An RNG that gives only zeros: the HELLO is refused, no session opens | `session_id` 0 is reserved for HELLO |
 | `LinkTest.ArmWithTheWrongMaskIsRefused` | ARM with mask 15 on a drone set to 8: result 2, state unchanged | The ground must not fly with the wrong override mask |
 | `LinkTest.ArmOkEntersStreamingAndForwardsFreshSetpoints` | ARM OK → STREAMING; a mode-1 setpoint becomes RC values, a mode-0 one neutral | The basic control path |

@@ -1,5 +1,6 @@
 """Python twin of lib/protocol (ADR-007)."""
 
+from sd_protocol.counters import WrapCounter
 from sd_protocol.crypto import (
     DirectionKeys,
     derive_keys,
@@ -136,6 +137,7 @@ __all__ = [
     "Setpoint",
     "State",
     "Transport",
+    "WrapCounter",
     "decode_config_ack",
     "decode_config_kv",
     "decode_event",

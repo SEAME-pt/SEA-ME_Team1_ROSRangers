@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.4.1; v1.5 (`override_active` values, #176) is **proposed** until the team agrees to put `MSP_BOXIDS` on the allow-list. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1).
+> [!success] Status: ACCEPTED v1.5. v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149). `override_active` values and `MSP_BOXIDS` on the allow-list accepted by the team on 2026-11-16 (#176).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -288,7 +288,17 @@ Left open by the review for lack of time, decided in writing on #142. Applied in
 | Wi-Fi re-association (REQ-COM-023) | To be settled with the gateway firmware (#101). Still open, tracked in [[Open Questions]] |
 | `telemetry_rate_hz` default | 25 Hz, not 20 (§7.3) |
 
-Still open, found while writing the C++ library (#99), tracked in GitHub #149 and [[Open Questions]]: whether `STATE.rx_rejected` (u16) saturates or wraps and whether a frame with no session open counts in it, and how the per-reason and ADR-003 counters reach the ground.
+Found while writing the C++ library (#99) and decided on 2026-11-16 (GitHub #149):
+
+| Item | Decision |
+|---|---|
+| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only. The ground calls `reset()` on **every new session** (each `HELLO_ACK`): `STATE` has no boot id, so a reboot (e.g. 500 → 3) would otherwise look like a wrap, a false jump of 65,536 rejects. A reboot always ends the session; wraps of an earlier session on the same boot are forgotten |
+| Frames with no session open | Counted in `rx_rejected` (`reject:no_session`, UDP with no session, bad `HELLO`) |
+| Per-reason and ADR-003 counters (`bad_tag`, `duplicate_seq`, `old_seq`, gaps, …) | Not sent to the ground in v0: `STATE` carries the total only. The per-reason counters stay in the library, where the unit tests and the golden vectors check them. Revisit in Module 2 (a `CONFIG_GET` Info key or an `EVENT` per counter) |
+
+Unit tests: `LinkTest.StateRxRejectedCountsNoSessionAndWraps` (C++), `test_counters.py` (Python). No wire change: same field, same size. Saturating at 65,535 was considered and dropped, because the ground would stop seeing new rejects once it got there.
+
+Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating at 65,535 on purpose: they describe the ESP↔FC link, which no one on the network can drive, and a value stuck at 65,535 already says "this link is broken". `rx_rejected` is the one counter an attacker can drive (a flood of forged frames), so it must keep moving. Code that subtracts two raw `rx_rejected` values does it mod 65,536 (`(after - before) & 0xFFFF`).
 
 ## 8. Changelog
 
@@ -305,7 +315,8 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | 2026-11-09 | 1.3.3 | `flow_status` numbers 0–4 in the ThoneFlow §8.1 order, to be confirmed (§3). `EVENT` code `0x0104` failsafe output active (§3.1), required by the safety pilot in the review of PR #170: the ground sees that the ADR-004 output still runs although `esp_state` is NO_SESSION or SESSION_IDLE. The gateway's 5770 status view is dropped (§7.1). Codes only added: no other wire change. |
 | 2026-11-10 | 1.4 | New message `FC_HEALTH` (0x81, UDP, ESP → ground, 5 Hz, §3), `ARM_CONTROL_ACK.result` 4 "FC not answering" and `EVENT` codes `0x0201` / `0x0202` (§3.1). Team decision on #179 (D1–D3). `STATE` is unchanged; a v1.3 ground that receives `FC_HEALTH` rejects it as `bad_type` and nothing else changes. Golden vector `fc_health_fc_lost` (§6, group 1) |
 | 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
-| 2026-11-16 | 1.5 (proposed) | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. Needs `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3, proposed). |
+| 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` wraps to 0 after 65,535 and the ground counts the wraps (`WrapCounter`); it counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The ESP used to saturate at 65,535. |
+| 2026-11-16 | 1.5 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
 
 ## 9. Glossary
 
@@ -331,7 +342,7 @@ Still open, found while writing the C++ library (#99), tracked in GitHub #149 an
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
-| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (§7.5, #149). |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` wraps, and the ground counts the wraps (§7.5, #149). |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
 | **Pending session** | A new session after a `HELLO`, not yet confirmed by a valid frame under its keys; the current session keeps running meanwhile (§3.1, #156). |
