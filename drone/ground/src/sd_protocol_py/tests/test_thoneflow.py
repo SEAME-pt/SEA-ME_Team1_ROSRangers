@@ -12,10 +12,11 @@ import pytest
 
 from sd_protocol.thoneflow import (
     FRAME_SIZE,
+    QUALITY_MIN_FLOOR,
     Status,
     ThoneflowParser,
     checksum,
-    decode_frame,
+    decode_thoneflow_frame,
 )
 
 DATA = Path(__file__).parent / "data" / "thoneflow"
@@ -39,16 +40,18 @@ def parser(**kw) -> ThoneflowParser:
 
 def test_real_bench_frames_decode():
     # Captured 2026-11-10: 01 00 = +1, fe ff = -2 (low byte first)
-    assert decode_frame(bytes.fromhex("fe040100feff00a0aa")) is None  # bad sum
+    assert (
+        decode_thoneflow_frame(bytes.fromhex("fe040100feff00a0aa")) is None
+    )  # bad sum
     f = bytes.fromhex("fe040100feff") + bytes([(1 + 0 + 0xFE + 0xFF) & 0xFF])
     f += bytes([0xA0, 0xAA])
-    assert decode_frame(f) == (1, -2, 0xA0)
+    assert decode_thoneflow_frame(f) == (1, -2, 0xA0)
 
 
 def test_decode_refuses_short_or_wrong_header():
     f = make_frame(1, 2, 150)
-    assert decode_frame(f[:8]) is None
-    assert decode_frame(b"\x00" + f[1:]) is None
+    assert decode_thoneflow_frame(f[:8]) is None
+    assert decode_thoneflow_frame(b"\x00" + f[1:]) is None
 
 
 def test_latest_returns_the_fresh_frame():
@@ -59,7 +62,7 @@ def test_latest_returns_the_fresh_frame():
 
 @pytest.mark.parametrize("x,y", [(0, 0), (1, -1), (32767, -32768), (-300, 1079)])
 def test_round_trip(x, y):
-    assert decode_frame(make_frame(x, y, 150)) == (x, y, 150)
+    assert decode_thoneflow_frame(make_frame(x, y, 150)) == (x, y, 150)
 
 
 def test_status_ok_and_low_quality():
@@ -84,10 +87,31 @@ def test_bad_frame_is_dropped_and_counted(index, value, counter):
         value ^= 1
     bad[index] = value
     p = parser()
-    out = p.feed(bytes(bad) + make_frame(1, 2, 150), 0.0)
-    assert [(m.x, m.y) for m in out] == [(1, 2)]
+    out = p.feed(make_frame(5, 5, 150) + bytes(bad) + make_frame(1, 2, 150), 0.0)
+    assert [(m.x, m.y) for m in out] == [(5, 5), (1, 2)]
     assert getattr(p.counters, counter) == 1
-    assert p.counters.accepted == 1
+    assert p.counters.accepted == 2
+    assert p.counters.resyncs == 1
+
+
+def test_bad_header_where_a_frame_was_expected():
+    p = parser()
+    out = p.feed(make_frame(1, 1, 150) + b"\x00\x13" + make_frame(2, 2, 150), 0.0)
+    assert [m.x for m in out] == [1, 2]
+    c = p.counters
+    assert (c.bad_header, c.skipped_bytes, c.resyncs) == (1, 2, 1)
+
+
+def test_opening_mid_stream_counts_no_reject():
+    # X = -2 is "fe ff": a reader that opens right at that byte sees a false
+    # header first. Nothing went wrong on the line, so no reject is counted.
+    f = make_frame(-2, 3, 150)
+    p = parser()
+    out = p.feed(f[2:] + f * 3, 0.0)
+    assert len(out) == 3
+    c = p.counters
+    assert (c.bad_header, c.bad_length, c.bad_footer, c.bad_checksum) == (0, 0, 0, 0)
+    assert c.resyncs == 0 and c.skipped_bytes == 7
 
 
 # --- stream handling (PAR-01) ----------------------------------------------
@@ -111,7 +135,8 @@ def test_leading_garbage_and_truncated_frame():
     out = p.feed(b"\x00\x13\xaa" + make_frame(3, 4, 150) + make_frame(9, 9, 150)[:5], 0)
     assert [(m.x, m.y) for m in out] == [(3, 4)]
     assert p.counters.skipped_bytes == 3
-    assert p.counters.resyncs == 1
+    assert p.counters.resyncs == 0  # the first sync is not a resync
+    assert p.counters.bad_header == 0
 
 
 # --- false headers and resync (PAR-03, PAR-04) -------------------------------
@@ -129,8 +154,9 @@ def test_resync_after_corruption_finds_a_frame_hidden_after_a_header():
     # A cut frame (fe 04 01) right before a good one: the parser must step one
     # byte at a time, not skip 9, or it loses the good frame.
     p = parser()
-    out = p.feed(b"\xfe\x04\x01" + make_frame(11, 12, 150), 0.0)
-    assert [(m.x, m.y) for m in out] == [(11, 12)]
+    good = make_frame(11, 12, 150)
+    out = p.feed(make_frame(1, 1, 150) + b"\xfe\x04\x01" + good, 0.0)
+    assert [(m.x, m.y) for m in out] == [(1, 1), (11, 12)]
     assert p.counters.resyncs == 1
 
 
@@ -151,7 +177,7 @@ def test_garbage_between_frames_loses_no_valid_frame():
         n = rng.randint(1, 20)
         out += p.feed(bytes(stream[i : i + n]), i / 1000)
         i += n
-    assert [(m.x, m.y) for m in out] == [decode_frame(f)[:2] for f in frames]
+    assert [(m.x, m.y) for m in out] == [decode_thoneflow_frame(f)[:2] for f in frames]
 
 
 def test_fuzz_never_crashes_and_buffer_stays_small():
@@ -191,15 +217,39 @@ def test_covered_lens_is_low_quality_not_zero_motion():
     assert p.status(0.0) is Status.LOW_QUALITY
 
 
-def test_reset_forgets_values_but_keeps_counters():
+def test_reset_forgets_values_but_keeps_counters_and_seq():
     p = parser()
     p.feed(b"\x00" + make_frame(1, 1, 150), 0.0)
     p.reset()
     assert p.status(0.0) is Status.NO_DATA
     assert p.counters.accepted == 1 and p.counters.skipped_bytes == 1
+    (m,) = p.feed(b"\x00" + make_frame(2, 2, 150), 1.0)
+    assert m.seq == 2  # never repeated
+    assert p.counters.resyncs == 0  # a restart is a new first sync
 
 
-@pytest.mark.parametrize("q,s", [(-1, 0.05), (256, 0.05), (100, 0), (100, -1)])
+def test_stale_events_counted_once_per_loss():
+    p = parser()  # stale_s 0.05
+    p.feed(make_frame(1, 1, 150), 1.0)
+    assert p.status(1.04) is Status.OK
+    assert p.status(1.10) is Status.NO_DATA
+    assert p.status(1.20) is Status.NO_DATA
+    assert p.counters.stale_events == 1
+    p.feed(make_frame(1, 1, 150), 1.30)  # data back: not a new event
+    assert p.counters.stale_events == 1
+    p.feed(make_frame(1, 1, 150), 1.50)  # a gap nobody asked status() about
+    assert p.counters.stale_events == 2
+
+
+def test_no_stale_event_before_the_first_frame():
+    p = parser()
+    assert p.status(5.0) is Status.NO_DATA
+    assert p.counters.stale_events == 0
+
+
+@pytest.mark.parametrize(
+    "q,s", [(0, 0.05), (QUALITY_MIN_FLOOR - 1, 0.05), (256, 0.05), (100, 0), (100, -1)]
+)
 def test_bad_settings_refused(q, s):
     with pytest.raises(ValueError):
         ThoneflowParser(quality_min=q, stale_s=s)
@@ -248,8 +298,10 @@ def test_carpet_forward_move_is_seen_as_plus_y():
     assert all(m.status is Status.OK for m in out)
 
 
-def test_covered_lens_is_all_low_quality_and_zero():
-    out = replay(DATA / "lens_covered.csv")
+@pytest.mark.parametrize("q", [QUALITY_MIN_FLOOR, 100])
+def test_covered_lens_is_all_low_quality_and_zero(q):
+    # Even at the lowest quality_min allowed, "no image" is never "not moving"
+    out = replay(DATA / "lens_covered.csv", quality_min=q)
     assert {(m.x, m.y) for m in out} == {(0, 0)}
     assert all(m.status is Status.LOW_QUALITY for m in out)
 

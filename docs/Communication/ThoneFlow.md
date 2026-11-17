@@ -128,7 +128,7 @@ If the serial format is 8N1 (**assumed, not stated**), then:
 
 - one bit ≈ 52 µs at 19200 baud;
 - one 9-byte frame = 90 bit times ≈ 4.7 ms;
-- at ~66 frames/s the nominal frame period ≈ 15 ms, so the line is busy roughly 31% of the time.
+- at the datasheet's ~66 frames/s the frame period would be ≈ 15 ms, so the line would be busy roughly 31% of the time (measured: ~95 Hz and ~45 %, below).
 
 These numbers matter for the software-serial discussion in §6, but must be confirmed by measurement.
 
@@ -221,7 +221,7 @@ Observations that follow directly from the table:
 - **PAR-08**: The parser shall never emit "zero motion" to represent "no valid data" (see §8).
 - **PAR-09**: No silent clamping or sign assumptions; signedness and scaling follow §3.2 once established.
 
-> [!success] Implemented 2026-11-16 (#107): a Python parser, `sd_protocol.thoneflow` (`drone/ground/src/sd_protocol_py/`), with the status outputs of §8.1 (`OK`, `LOW_QUALITY`, `STALE`, `NO_DATA`; a bad frame is dropped and counted, never emitted). The quality threshold and the stale interval are required settings with no default, because the bench found no safe value (§2.4). Tests cover the §9.1 table, including false headers, resync, fuzzing and a replay of the bench captures. A C++ version for the ESP is only needed if Option B goes ahead (#108).
+> [!success] Implemented 2026-11-16 (#107): a Python parser, `sd_protocol.thoneflow` (`drone/ground/src/sd_protocol_py/`), with the status outputs of §8.1 (`OK`, `LOW_QUALITY`, `STALE`, `NO_DATA`; a bad frame is dropped and counted, never emitted) and the PAR-07/VAL-03 counters (accepted, header/length/footer/checksum rejects, skipped bytes, resyncs, stale events). The quality threshold and the stale interval are required settings with no default, because the bench found no safe value (§2.4). The threshold cannot be set below 18, so the covered-lens frames (X = Y = 0, quality 5–17) are never `OK` (PAR-08). Tests cover the §9.1 table, including false headers, resync, fuzzing and a replay of the bench captures. A C++ version for the ESP is only needed if Option B goes ahead (#108).
 
 ---
 
@@ -255,7 +255,7 @@ Key consequences:
 
 ```mermaid
 flowchart LR
-    SENS["ThoneFlow-3901U<br/>UART 19200 baud · ~66 Hz · 3.3–3.6 V<br/>(NOT INSTALLED)"]
+    SENS["ThoneFlow-3901U<br/>UART 19200 baud · ~95 Hz measured · 3.3–3.6 V<br/>(NOT INSTALLED)"]
 
     subgraph DRONE["Drone"]
         FC["Flight controller<br/>Betaflight 4.5.1<br/>(sensor support UNCONFIRMED)"]
@@ -415,7 +415,7 @@ Each measurement should carry a status, so consumers never guess:
 | **Stale frames** | No valid frame within a staleness interval (TBD, chosen from the measured rate, not assumed) | Mark `STALE`; stop publishing last values as current |
 | **Duplicate / repeated frames** | Same content could be genuine (no motion) or a repeat; datasheet gives no frame counter | Do not infer staleness from identical values; use arrival timing and sequence counters on the reader's side |
 | **Sensor disconnection** | No bytes (`NO_DATA`), or only invalid bytes for a period (TBD) | Report fault; do not output motion; require valid frames again before resuming |
-| **Frame-rate drop** | Measured rate falls well below nominal ~66 Hz (limit TBD) | Report degraded data; log |
+| **Frame-rate drop** | Measured rate falls well below the measured ~95 Hz (§2.4; limit TBD, TF-07). A limit set against the datasheet's 66 Hz would miss a ~30 % drop | Report degraded data; log |
 | **Reader overload** (e.g. dropped bytes under load) | Rising reject counters, rate drop | Surface in diagnostics; may indicate unsuitable reception method (§6.3) |
 | **Power fault / brown-out** | Sensor stops or restarts | Treat as disconnection; do not use data until valid frames resume |
 | **Reader restart** | Reader reboots | Start with `NO_DATA`/`STALE`; no carried-over values |
@@ -432,7 +432,7 @@ Each measurement should carry a status, so consumers never guess:
 ## 9. Testing plan
 
 > [!important]
-> No test below has been written or run. This is a plan. All tests are **bench** tests; no flight testing is proposed. Do not connect anything to the FC until the team has approved wiring (see the FC-interface page).
+> Done so far (#107): the §9.1 parser tests are written and pass (`sd_protocol.thoneflow`), and the §9.2 bench characterisation was run on 2026-11-10 and 2026-11-16. Everything from §9.3 on is still a plan. All tests are **bench** tests; no flight testing is proposed. Do not connect anything to the FC until the team has approved wiring (see the FC-interface page).
 
 ### 9.1 Hardware-independent tests (parser and logic)
 
