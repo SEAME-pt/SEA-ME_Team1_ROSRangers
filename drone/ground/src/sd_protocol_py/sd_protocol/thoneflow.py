@@ -11,17 +11,34 @@ Frame (9 bytes), as measured on the bench on 2026-11-10 and 2026-11-16:
 
 - X/Y are signed 16-bit, LOW byte first (the datasheet says high byte first;
   the bench shows the opposite).
-- checksum = (b2 + b3 + b4 + b5) & 0xFF (0 mismatches in 66,297 frames).
+- checksum = (b2 + b3 + b4 + b5) & 0xFF (0 mismatches in 66,297 frames). It
+  does not cover the quality byte, and it is a plain sum: it catches most
+  line errors, not all.
 - ~95.4 frames/s (the datasheet says 66).
 - With no usable image (lens covered) the sensor sends X = Y = 0 with
   quality 5-17, so zero motion and "no data" look the same in X/Y. Only the
   quality field tells them apart (PAR-08), hence QUALITY_MIN_FLOOR.
+
+For a consumer:
+- t is the time the caller read the bytes, not the time the sensor made the
+  frame. All frames completed by one feed() share it, so do not take dt
+  between frames from t: count frames (~10.5 ms each) or use timestamps
+  taken by the reader per frame. Choose stale_s above the read period plus
+  its jitter. t and now must come from one monotonic clock.
+- X/Y are per-frame deltas: to integrate, sum every Measurement feed()
+  returns (seq tells repeats apart). latest() is for status and quality,
+  and it may return a LOW_QUALITY frame with X = Y = 0: check .status.
+- A frame lost whole on the line leaves no trace in the counters; only the
+  timing shows it.
+- Quality is not a safety check: on a black EVA mat the motion was reversed
+  with quality ~130 (ThoneFlow.md §2.4).
 
 Not exported from sd_protocol/__init__.py: import it as sd_protocol.thoneflow.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -30,10 +47,10 @@ HEADER = 0xFE
 LENGTH = 0x04
 FOOTER = 0xAA
 
-# Highest quality seen with the lens covered on 2026-11-16 was 17. A lower
-# quality_min would let "no image" (X = Y = 0) out as OK, i.e. as "not
-# moving" (PAR-08, VAL-01), so it is refused.
-QUALITY_MIN_FLOOR = 18
+# Below 25 the sensor sends X = Y = 0 in 2,749 of 2,789 bench frames (the lens
+# covered gave 5-17), so such a frame is "no image", not "not moving". A lower
+# quality_min would let it out as OK (PAR-08, VAL-01), so it is refused.
+QUALITY_MIN_FLOOR = 25
 
 
 class Status(Enum):
@@ -55,7 +72,7 @@ class Measurement:
     quality: int  # 0..255
     status: Status  # OK or LOW_QUALITY
     t: float  # receive time, caller's clock (s)
-    seq: int  # local counter of valid frames, from 1, never reset
+    seq: int  # valid frames of this parser object, from 1; reset() keeps it
 
 
 @dataclass
@@ -64,6 +81,7 @@ class Counters:
     expected (the parser was aligned); bytes thrown away while hunting for
     the next frame show in skipped_bytes."""
 
+    bytes_in: int = 0
     accepted: int = 0
     bad_header: int = 0  # a frame was expected, the byte there was not 0xFE
     bad_length: int = 0
@@ -106,12 +124,13 @@ class ThoneflowParser:
     """Byte-stream parser with status logic.
 
     quality_min: frames below it are LOW_QUALITY. At least QUALITY_MIN_FLOOR
-        (18). There is no safe default: on 2026-11-16 the carpet gave correct
+        (25). There is no safe default: on 2026-11-16 the carpet gave correct
         motion with quality 125-180, while a black EVA mat gave wrong motion
         with quality up to ~135. Pick it per surface and height, and do not
         trust it alone.
-    stale_s: with no valid frame for longer than this, status() is STALE
-        (frames come every ~10.5 ms).
+    stale_s: with no valid frame for longer than this, status() is STALE.
+        Frames come every ~10.5 ms, but t is the read time: see the module
+        notes.
     """
 
     def __init__(self, quality_min: int, stale_s: float) -> None:
@@ -119,8 +138,8 @@ class ThoneflowParser:
             raise ValueError(
                 f"quality_min must be {QUALITY_MIN_FLOOR}..255, got {quality_min}"
             )
-        if stale_s <= 0:
-            raise ValueError(f"stale_s must be > 0, got {stale_s}")
+        if not (math.isfinite(stale_s) and stale_s > 0):
+            raise ValueError(f"stale_s must be finite and > 0, got {stale_s}")
         self.quality_min = quality_min
         self.stale_s = stale_s
         self.counters = Counters()
@@ -139,21 +158,23 @@ class ThoneflowParser:
         the valid frames completed by them, in order."""
         if data:
             self._last_byte_t = t
+            self.counters.bytes_in += len(data)
         self._buf += data
         buf = self._buf
         out: list[Measurement] = []
         i = 0
-        while True:
-            start = buf.find(HEADER, i)
-            if start < 0:
-                self._skip(len(buf) - i)
-                i = len(buf)
-                break
-            if start > i:
+        while i < len(buf):
+            if buf[i] != HEADER:
+                # Counted here, at the first byte where a frame was expected,
+                # so the count does not depend on how the reads split the
+                # stream.
                 if self._aligned:
                     self.counters.bad_header += 1
-                self._skip(start - i)
-                i = start
+                start = buf.find(HEADER, i)
+                end = len(buf) if start < 0 else start
+                self._skip(end - i)
+                i = end
+                continue
             if len(buf) - i < FRAME_SIZE:
                 break
             frame = bytes(buf[i : i + FRAME_SIZE])
@@ -177,9 +198,9 @@ class ThoneflowParser:
 
     def status(self, now: float) -> Status:
         """§8.1. Never zero motion for "no data" (PAR-08, VAL-01)."""
-        if self._last_byte_t is None or now - self._last_byte_t > self.stale_s:
+        if self._last_byte_t is None or not self._fresh(self._last_byte_t, now):
             st = Status.NO_DATA
-        elif self._last is None or now - self._last.t > self.stale_s:
+        elif self._last is None or not self._fresh(self._last.t, now):
             st = Status.STALE
         else:
             return self._last.status
@@ -188,7 +209,9 @@ class ThoneflowParser:
         return st
 
     def latest(self, now: float) -> Measurement | None:
-        """The last frame, only while it is fresh (VAL-02)."""
+        """The last frame, only while it is fresh (VAL-02). Not for
+        integrating motion (sum what feed() returns), and it can be a
+        LOW_QUALITY frame with X = Y = 0: check .status."""
         if self.status(now) in (Status.OK, Status.LOW_QUALITY):
             return self._last
         return None
@@ -203,6 +226,10 @@ class ThoneflowParser:
         self._synced = False
         self._stale_counted = False
 
+    def _fresh(self, t0: float, now: float) -> bool:
+        # A clock that went back (now < t0) proves nothing about freshness.
+        return 0 <= now - t0 <= self.stale_s
+
     def _count_stale(self) -> None:
         # One event per loss of fresh data, whether status() sees it or the
         # next frame shows the gap.
@@ -211,12 +238,11 @@ class ThoneflowParser:
             self._stale_counted = True
 
     def _skip(self, n: int) -> None:
-        if n:
-            self.counters.skipped_bytes += n
-            self._aligned = False
+        self.counters.skipped_bytes += n
+        self._aligned = False
 
     def _emit(self, frame: bytes, t: float) -> Measurement:
-        if self._last is not None and t - self._last.t > self.stale_s:
+        if self._last is not None and not self._fresh(self._last.t, t):
             self._count_stale()
         self._stale_counted = False
         x, y, q = _fields(frame)

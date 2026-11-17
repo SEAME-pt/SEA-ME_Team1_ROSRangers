@@ -248,11 +248,112 @@ def test_no_stale_event_before_the_first_frame():
 
 
 @pytest.mark.parametrize(
-    "q,s", [(0, 0.05), (QUALITY_MIN_FLOOR - 1, 0.05), (256, 0.05), (100, 0), (100, -1)]
+    "q,s",
+    [
+        (0, 0.05),
+        (QUALITY_MIN_FLOOR - 1, 0.05),
+        (256, 0.05),
+        (100, 0),
+        (100, -1),
+        (100, float("nan")),
+        (100, float("inf")),
+    ],
 )
 def test_bad_settings_refused(q, s):
     with pytest.raises(ValueError):
         ThoneflowParser(quality_min=q, stale_s=s)
+
+
+def test_quality_floor_is_the_bench_value():
+    # Below 25 the bench frames are X = Y = 0 in 2,749 of 2,789 (thoneflow.py)
+    assert QUALITY_MIN_FLOOR == 25
+    ThoneflowParser(quality_min=QUALITY_MIN_FLOOR, stale_s=0.05)
+
+
+def test_quality_equal_to_the_threshold_is_ok():
+    (m,) = parser(quality_min=100).feed(make_frame(1, 1, 100), 0.0)
+    assert m.status is Status.OK
+
+
+def test_fresh_up_to_and_including_stale_s():
+    p = ThoneflowParser(quality_min=100, stale_s=0.25)
+    p.feed(make_frame(1, 1, 150), 0.0)
+    assert p.status(0.25) is Status.OK
+    assert p.status(0.2500001) is Status.NO_DATA
+
+
+def test_clock_going_back_is_not_fresh():
+    p = parser()
+    p.feed(make_frame(1, 1, 150), 1000.0)
+    assert p.status(10.0) is Status.NO_DATA
+    assert p.latest(10.0) is None
+
+
+def test_reset_starts_unaligned_and_forgets_the_stale_flag():
+    f = make_frame(-2, 3, 150)  # "fe ff" inside
+    p = parser()
+    p.feed(f, 0.0)
+    assert p.status(1.0) is Status.NO_DATA
+    p.reset()
+    out = p.feed(f[2:] + f, 2.0)  # restart opens mid-frame
+    assert len(out) == 1
+    c = p.counters
+    assert (c.bad_header, c.bad_length, c.bad_footer, c.bad_checksum) == (0, 0, 0, 0)
+    assert p.status(3.0) is Status.NO_DATA
+    assert c.stale_events == 2
+
+
+def test_bytes_in_counts_everything_fed():
+    p = parser()
+    p.feed(b"\x00\x01", 0.0)
+    p.feed(make_frame(1, 1, 150), 0.0)
+    p.feed(b"", 0.0)
+    assert p.counters.bytes_in == 11
+
+
+def test_lost_header_is_counted_with_one_frame_per_read():
+    # The Pico forwards one frame per message: the counters must not depend
+    # on that.
+    a, b = make_frame(1, 1, 150), make_frame(2, 2, 150)
+    p = parser()
+    for chunk in (a, b[1:], b):
+        p.feed(chunk, 0.0)
+    c = p.counters
+    assert (c.bad_header, c.skipped_bytes, c.resyncs, c.accepted) == (1, 8, 1, 2)
+
+
+def corrupted_stream(rng: random.Random) -> bytes:
+    out = bytearray()
+    for _ in range(200):
+        f = bytearray(make_frame(rng.randint(-300, 300), rng.randint(-300, 300), 150))
+        roll = rng.random()
+        if roll < 0.05:
+            f = f[1:]  # header lost
+        elif roll < 0.10:
+            f[rng.randrange(1, 9)] ^= 0x10  # bit error
+        elif roll < 0.15:
+            f += bytes([0xFE, rng.randrange(256)])  # junk with a false header
+        elif roll < 0.18:
+            f = f[: rng.randint(1, 8)]  # cut frame
+        out += f
+    return bytes(out)
+
+
+@pytest.mark.parametrize("seed", range(20))
+def test_counters_do_not_depend_on_how_reads_split(seed):
+    rng = random.Random(seed)
+    stream = corrupted_stream(rng)
+    whole = parser()
+    want = whole.feed(stream, 0.0)
+    split = parser()
+    got = []
+    i = 0
+    while i < len(stream):
+        n = rng.choice([1, 9, rng.randint(1, 40)])
+        got += split.feed(stream[i : i + n], 0.0)
+        i += n
+    assert [(m.x, m.y) for m in got] == [(m.x, m.y) for m in want]
+    assert split.counters == whole.counters
 
 
 # --- replay of the bench captures (§9.1 "Replay", §2.4) ---------------------

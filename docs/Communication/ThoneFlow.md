@@ -145,7 +145,7 @@ Setup: sensor alone, off the drone, read by a Raspberry Pi Pico (MicroPython 1.2
 | Frame layout | `FE 04 X X Y Y CS Q AA`, as §3.1 | Same | All captures |
 | X/Y byte order | **Low byte first**, signed 16-bit (`01 00` = +1, `fe ff` = −2) | High byte first | 2026-11-10; with high byte first the sums run away at rest |
 | X/Y meaning | **Per-frame deltas**: 0 at rest, and the sum over a move is proportional to the distance | Not stated | Rest and 30 cm moves |
-| Checksum | **(byte2 + byte3 + byte4 + byte5) & 0xFF** (the four motion bytes) | Not stated | 0 mismatches in 66,297 frames |
+| Checksum | **(byte2 + byte3 + byte4 + byte5) & 0xFF** (the four motion bytes). It does **not** cover the quality byte, and as a plain sum it misses some multi-bit errors | Not stated | 0 mismatches in 66,297 frames |
 | Axes (sensor on our base) | Forward = **+Y**, left = **+X**, right = **−X** | Not stated | 3–4 runs each. The direction relative to the module body is still to be recorded with a photo (TF-16) |
 | Scale | Carpet, 30 cm move: **~1015 counts at 15 cm** (~34 counts/cm), **~533 at 30 cm** (half). About **510–535 counts per radian** of flow (distance ÷ height) | Not stated | Hand-moved, height to the box top: rough (±10 %) |
 | At rest | ≤ 3 counts drift in 30 s, quality ~163 | — | 3 × 30 s on the carpet |
@@ -221,7 +221,13 @@ Observations that follow directly from the table:
 - **PAR-08**: The parser shall never emit "zero motion" to represent "no valid data" (see §8).
 - **PAR-09**: No silent clamping or sign assumptions; signedness and scaling follow §3.2 once established.
 
-> [!success] Implemented 2026-11-16 (#107): a Python parser, `sd_protocol.thoneflow` (`drone/ground/src/sd_protocol_py/`), with the status outputs of §8.1 (`OK`, `LOW_QUALITY`, `STALE`, `NO_DATA`; a bad frame is dropped and counted, never emitted) and the PAR-07/VAL-03 counters (accepted, header/length/footer/checksum rejects, skipped bytes, resyncs, stale events). The quality threshold and the stale interval are required settings with no default, because the bench found no safe value (§2.4). The threshold cannot be set below 18, so the covered-lens frames (X = Y = 0, quality 5–17) are never `OK` (PAR-08). Tests cover the §9.1 table, including false headers, resync, fuzzing and a replay of the bench captures. A C++ version for the ESP is only needed if Option B goes ahead (#108).
+> [!success] Implemented 2026-11-16 (#107): a Python parser, `sd_protocol.thoneflow` (`drone/ground/src/sd_protocol_py/`), with the status outputs of §8.1 (`OK`, `LOW_QUALITY`, `STALE`, `NO_DATA`; a bad frame is dropped and counted, never emitted) and the PAR-07/VAL-03 counters (bytes in, accepted, header/length/footer/checksum rejects, skipped bytes, resyncs, stale events). The counters do not depend on how the reads split the byte stream. The quality threshold and the stale interval are required settings with no default, because the bench found no safe value (§2.4). The threshold cannot be set below 25: below it the sensor sent X = Y = 0 in 2,749 of 2,789 bench frames (the lens covered gave 5–17), so those frames are never `OK` (PAR-08). Tests cover the §9.1 table, including false headers, resync, fuzzing and a replay of the bench captures. A C++ version for the ESP is only needed if Option B goes ahead (#108).
+>
+> Rules for a consumer (also in the module docstring):
+> - The receive time `t` is when the caller **read** the bytes. All frames from one read share it, so `dt` between frames must come from the frame count (~10.5 ms each) or from timestamps taken by the reader per frame, not from `t`. `stale_s` must be above the read period plus its jitter. `t` and `now` come from one monotonic clock; a clock that goes back reads as not fresh.
+> - X/Y are per-frame deltas: integrate by summing **every** frame `feed()` returns. `latest()` is for status and quality only, and it can return a `LOW_QUALITY` frame with X = Y = 0, so check its status.
+> - A frame lost whole on the line changes no counter; only the timing shows it.
+> - Not done here, for #200: a plausibility limit on the per-frame delta, a cross-check against the IMU (quality and checksum do not catch the black-mat case), and the cage floor at flight height as a gate before flow is used. For #108: the reader's own overflow count and per-frame timestamps.
 
 ---
 
@@ -401,7 +407,7 @@ Each measurement should carry a status, so consumers never guess:
 |---|---|
 | `OK` | Frame valid, quality acceptable, fresh |
 | `LOW_QUALITY` | Frame structurally valid, but surface quality is below the accepted threshold (threshold TBD) |
-| `INVALID_FRAME` | Header, length, footer or checksum failed |
+| `INVALID_FRAME` | Header, length, footer or checksum failed. *The #107 parser never emits it: such a frame is dropped and counted (§8.2).* |
 | `STALE` | No new valid frame within the allowed interval (interval TBD) |
 | `NO_DATA` | No bytes received at all (sensor absent or disconnected) |
 
@@ -443,7 +449,7 @@ Each measurement should carry a status, so consumers never guess:
 | Stream handling | Frames split across reads; several frames in one read; leading garbage; truncated frame |
 | False headers | `0xFE`/`0xAA` appearing inside payload/checksum/quality does not cause mis-alignment (PAR-03) |
 | Resync | Recovery after corruption without manual action (PAR-04) |
-| Endianness / signedness | High/low byte composition per datasheet; signedness per what is established (§3.2) |
+| Endianness / signedness | Low byte first, signed 16-bit, as measured (§2.4, TF-05), not the datasheet order |
 | Status logic | `OK`, `LOW_QUALITY`, `STALE`, `NO_DATA` transitions with a mock clock |
 | Robustness | Fuzzed random byte streams never crash, hang or over-read |
 | Replay | Parser output from recorded raw captures (§9.2) matches expectations |
@@ -535,7 +541,7 @@ Evidence (captures, logs, test records) is required for each.
 | TF-01 | Does Betaflight 4.5.1 / the ODDITYRCF7AIO target support this sensor, and in what form (UART frame, MSP, none)? | Option A |  | Resolved | **Unsupported.** Betaflight 4.5.1 has no optical-flow driver at all; 2026.6.2 supports MT and UPT1 only (not CX-OF); INAV has CX-OF but no `ODDITYRCF7AIO` target (source-verified). Option A dropped. [[ADR-016 Flow Sensor Path\|ADR-016]] |
 | TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, ADR-016 is re-opened (Option C, an extra MCU, was rejected on 2026-10-14, TF-11). [[ADR-016 Flow Sensor Path\|ADR-016]] |
 | TF-03 | Serial framing (data/parity/stop bits), TX logic level, whether the sensor RX pin is usable | Bench setup |  | Partly resolved | 2026-11-16 (§2.4): 19200, 8 data bits, no parity decode 66,297 frames with no error. Not measured: the TX logic level and stop-bit count (no scope), and the RX pin (not needed: the sensor only sends). |
-| TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Resolved | 2026-11-16 (§2.4): **(byte2 + byte3 + byte4 + byte5) & 0xFF**, the four motion bytes. 0 mismatches in 66,297 frames. |
+| TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Resolved | 2026-11-16 (§2.4): **(byte2 + byte3 + byte4 + byte5) & 0xFF**, the four motion bytes. 0 mismatches in 66,297 frames. The quality byte is not covered, so a corrupted quality can pass. |
 | TF-05 | X/Y signedness, units, scaling; delta vs. accumulated | Estimation |  | Resolved (scale rough) | 2026-11-16 (§2.4): signed 16-bit, **low byte first** (as ArduPilot's CX-OF driver, not the datasheet); per-frame deltas; ~510–535 counts per radian of flow, from hand-moved 30 cm runs at 15 and 30 cm. Calibrate properly in #200. |
 | TF-06 | Surface-quality meaning and threshold | Fault handling |  | Partly resolved | 2026-11-16 (§2.4): 5–17 with the lens covered, 125–180 on the carpet, 52–135 on surfaces where the motion is wrong. **No single threshold separates good from bad**; it is a required, per-surface setting of the parser, and quality is not a safety check on its own. Measure again at flight height and on the cage floor. |
 | TF-07 | Staleness interval, disconnection timeout, frame-rate-drop limit (from measurement) | Fault handling |  | Method recommended | Measured rate ~95.4 Hz (gap 10.5 ms, max ~16 ms). The stale interval is a required parser setting; choose it from this rate (for example a few frame periods) with the consumer (#200). |
