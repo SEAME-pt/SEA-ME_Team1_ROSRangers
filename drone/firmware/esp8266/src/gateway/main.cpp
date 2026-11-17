@@ -70,7 +70,11 @@ constexpr uint32_t kStateRetryMs = 3; // let the queue drain between tries
 // up to 300 ms for ACKs by default (firmware review of #102 PR 2).
 constexpr unsigned long kTcpWriteTimeoutMs = 1;
 constexpr unsigned int kTcpStopWaitMs = 1;
+#if WITH_LOOP_TIMING // "T": ground_link.py shows which build is on the ESP
+constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0T";
+#else
 constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0 ";
+#endif
 
 sd::FcLink fc;
 

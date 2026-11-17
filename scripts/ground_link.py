@@ -174,6 +174,7 @@ class GroundLink:
         if ack is None:
             return False
         self.session_id = ack.session_id
+        self.fw_version = ack.fw_version.decode("ascii", "replace").strip()
         self.keys = derive_keys(self.psk, self.nonce, ack.esp_nonce)
         self.seq_tcp, self.seq_udp = 1, 0
         self.rx_tcp.start_session(self.session_id, self.keys.esp_to_ground)
@@ -368,7 +369,10 @@ def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: floa
                 break
             rest = take_ack(link, reader.feed(data))
             if rest is not None:
-                log(t0, f"session 0x{link.session_id:08x} open")
+                log(
+                    t0,
+                    f"session 0x{link.session_id:08x} open, firmware '{link.fw_version}'",
+                )
                 tcp.setblocking(False)
                 link.recorded_hello = hello
                 return tcp, reader, rest
