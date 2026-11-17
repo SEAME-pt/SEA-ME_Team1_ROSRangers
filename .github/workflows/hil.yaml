@@ -4,6 +4,12 @@ on:
   push:
     branches: [dev, main]
   workflow_dispatch:
+    inputs:
+      env:
+        description: "Firmware env to flash on the spare ESP (esp_loop_timing: REQ-SW-005 profile, #146)"
+        type: choice
+        options: [esp, esp_loop_timing]
+        default: esp
 
 concurrency:
   group: hil-bench
@@ -41,6 +47,7 @@ jobs:
     timeout-minutes: 30
     env:
       HIL_ESP_PORT: /dev/hil-esp
+      HIL_FW_ENV: ${{ inputs.env || 'esp' }} # push runs: always esp
       HIL_REQUIRED: "1"
       # Read by drone/firmware/esp8266/secrets.py on every pio run, the
       # upload included, so they are set for the whole job
@@ -75,7 +82,7 @@ jobs:
       - name: Build firmware
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp
+          pio run -d drone/firmware/esp8266 -e "$HIL_FW_ENV"
 
       - name: Flash the spare ESP over USB
         run: |
@@ -84,7 +91,7 @@ jobs:
           # LD script on LIBPATH, and the esptool upload needs it for the
           # flash size ("Could not find LD script"). The build above is
           # reused, so nothing is recompiled.
-          pio run -d drone/firmware/esp8266 -e esp -t upload --upload-port "$HIL_ESP_PORT"
+          pio run -d drone/firmware/esp8266 -e "$HIL_FW_ENV" -t upload --upload-port "$HIL_ESP_PORT"
 
       - name: Bench tests (no battery, no props)
         run: |
