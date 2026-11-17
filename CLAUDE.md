@@ -100,7 +100,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 
 ## Code style
 
-- Write code a teammate can read at a glance: `if`/`else` with named intermediate variables, not nested or packed ternaries, chained assignments (`a = b = 0`) or bit tricks (`__builtin_clz`, shift-and-mask). When math is unavoidable, a comment shows it with a worked example.
+- Write code a teammate can read at a glance: `if`/`else` with named intermediate variables, not nested or packed ternaries or chained assignments (`a = b = 0`). Shifts are fine when they read plainly and are commented (byte packing in the protocol library, `16u << octave`); replace a bit trick that needs decoding (`__builtin_clz`, packed shift-and-mask expressions) with a loop or named steps. When math is unavoidable, a comment shows it with a worked example.
 
 ## Gotchas
 

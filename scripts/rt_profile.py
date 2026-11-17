@@ -87,6 +87,18 @@ def percentile(counts, q):
     return None
 
 
+def bucket_width(lo):
+    """Width of the firmware bucket that starts at lo (loop_bin() in main.cpp):
+    1 us below 32 us, then 16 buckets per octave, so [32, 64) is 2 us wide,
+    [64, 128) 4 us, ... Example: lo 60 is in [32, 64), width 2."""
+    octave_start = 16
+    width = 1
+    while lo >= 2 * octave_start:
+        octave_start *= 2
+        width *= 2
+    return width
+
+
 def esp_stats(rows):
     counts, max_us = merge(rows)
     windows = {r["window"] for r in rows}
@@ -134,7 +146,7 @@ def plot_esp(rows, out):
 
     counts, _ = merge(rows)
     s = esp_stats(rows)
-    widths = [max(1, lo // 16) for lo in counts]  # the firmware's bucket width
+    widths = [bucket_width(lo) for lo in counts]
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.bar(list(counts), list(counts.values()), widths, align="edge")
     for key, color in (

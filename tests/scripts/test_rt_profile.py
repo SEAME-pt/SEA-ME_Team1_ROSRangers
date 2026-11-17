@@ -57,6 +57,11 @@ def test_packet_to_stats():
     }
 
 
+def test_bucket_width_follows_the_firmware_octaves():
+    widths = [rt_profile.bucket_width(lo) for lo in (3, 16, 31, 32, 48, 60, 64, 1024)]
+    assert widths == [1, 1, 1, 2, 2, 2, 4, 64]
+
+
 def test_bad_lines_are_skipped():
     assert rt_profile.parse_packet(b"B,48,3\nL,x\n", 0.0) == []  # B before any L
 
