@@ -12,41 +12,107 @@ Lifecycle (ros2 lifecycle set /flight_interface <transition>):
   * deactivate: one last zero setpoint, then nothing more.
   * cleanup / shutdown: closes the backend.
 
-E-stop: service ~/estop (std_srvs/Trigger) sends one zero setpoint and then
-nothing more, at once; the ESP then enters its own 250 ms link failsafe
-(ADR-004). It is latched on the node: deactivate, cleanup and configure keep
-it, only ~/reset_estop clears it, and a NEW target is needed afterwards. A
-process restart starts without it.
+E-stop (decision A1): service ~/estop (std_srvs/Trigger) sends one neutral
+setpoint (mode 0) and then BYE, so the ESP ends the session and starts its
+ADR-004 output at once. Nothing more is sent. It is latched on the node:
+deactivate, cleanup and configure keep it, only ~/reset_estop clears it, and
+afterwards control needs a new session (the ESP backend opens one by itself,
+decision A5), an operator ARM and a NEW target. A process restart starts
+without the latch (decision A6): the launch file has no respawn, and after a
+restart nothing is sent before configure, activate and an operator ARM.
+An unexpected error in the node's tick (decision A7) latches the same E-stop:
+BYE at once (no neutral: the state it would come from may be what broke),
+reason "internal error: ...", and the node stays alive.
 
-The node never sends ARM_CONTROL_REQUEST (REQ-SAF-023): in this first part the
-backends have no way to send it, and arming is always an operator action.
+Link loss (decision A2): zero setpoints and link_ok false, no latch. The way
+back after the ESP's link failsafe is the operator's ~/resume (decision A3):
+it is refused unless the node is active, not in E-stop, the link is fresh,
+the FC link is reported alive and the ESP reports LINK_FAILSAFE. The node
+then holds it: RESUME_REQUEST goes out after 1.5 s of neutral setpoints
+(decision K6 as changed on PR #191), or the request is dropped after 3 s.
+The node never resumes by itself.
+
+ARM (decision A4): only the operator's ~/arm_control leads to
+ARM_CONTROL_REQUEST, with the `mask` parameter (8, 11 or 15, checked at
+configure). It is refused unless the node is active, not in E-stop, the link
+is fresh, the FC link is reported alive and the ESP reports SESSION_IDLE.
+Like RESUME it is held until 1.5 s of neutral setpoints went out (the ESP
+refuses ARM until the FC has acknowledged RC for 1 s, #188), and dropped if
+its conditions go, the session changes or 3 s pass. The node never sends ARM
+on its own, also not after a reconnect, a session switch or a reset
+(REQ-SAF-023).
+
+The ESP's answer to ARM and RESUME (decision E2): every ARM_CONTROL_ACK and
+RESUME_ACK is logged, a refusal as a warning with its reason (e.g.
+MASK_MISMATCH: the ground must not fly). The services answer when the request
+is accepted and held, so this log is where the operator sees what was sent
+and the ESP's verdict.
+
+FC telemetry (decisions D2, D2.1): with publish_fc true, /fc/attitude
+(Vector3Stamped, rad, REP-103) and /fc/battery (BatteryState) come from the
+FC values in every STATE, through the same conversion as fc_telemetry
+(telemetry.py), with the yaw zeroed at the first sample after each activate.
+STATE carries no age for them, so each is published only while FC_HEALTH says
+its value is fresh (attitude under ATTITUDE_MAX_AGE, battery under
+ANALOG_MAX_AGE): never a zero before the FC's first reply or a frozen value
+after it goes silent. Do not run fc_telemetry on the same graph.
 
 Freshness uses time.monotonic(). Logic: guard.py (no ROS). Backends: backends.py.
+The decisions (A1-A6, K1-K6, B1-B3, C-E) are in docs/PraticalPlan/02 Decisions/
+ADR-025 flight_interface Ground Node.md.
 """
 
 import json
+import math
 import signal
 import sys
 import threading
 import time
+import traceback
 
 import rclpy
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, Vector3Stamped
 from rclpy.exceptions import ParameterException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.lifecycle import Node, State, TransitionCallbackReturn
 from rclpy.logging import get_logger
 from rclpy.signals import SignalHandlerOptions
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from flight_interface.backends import make_backend
 from flight_interface.guard import LINK_TIMEOUT, MAX_TARGET_TIMEOUT, ZERO, Guard
+from flight_interface.telemetry import (
+    AttitudeConverter,
+    battery_fields,
+    state_analog,
+    state_attitude,
+)
 
 NODE_NAME = "flight_interface"
-MIN_RATE_HZ, MAX_RATE_HZ = 10.0, 100.0
+# 20 Hz at least: the K6 window allows a gap under NEUTRAL_MAX_GAP (0.1 s)
+# between setpoints, so at 10 Hz jitter alone would keep ARM / RESUME from
+# ever becoming due.
+MIN_RATE_HZ, MAX_RATE_HZ = 20.0, 100.0
 # mission_node calls a /flight/state older than 0.5 s lost: publish well above 2 Hz.
 MIN_STATE_RATE_HZ = 5.0
+ATTITUDE_TOPIC = "/fc/attitude"  # the same topics as fc_telemetry (D2)
+BATTERY_TOPIC = "/fc/battery"
+# D2.1: the oldest FC value published. The ESP polls MSP_ATTITUDE at 25 Hz and
+# MSP_ANALOG at 5 Hz; 250 ms is also its own "FC lost" limit.
+ATTITUDE_MAX_AGE = 0.25
+ANALOG_MAX_AGE = 1.0
+# Why the ESP refused ARM or RESUME (Protocol Spec v0 §3.1), for the log (E2).
+ACK_REASONS = {
+    "WRONG_STATE": "the ESP is not in the state this request needs",
+    "MASK_MISMATCH": "the ESP runs another override mask: the ground must not fly",
+    "RESUME_CONDITION_NOT_MET": "no unbroken neutral stream for 500 ms",
+    "FC_NOT_ANSWERING": (
+        "the FC does not answer the ESP, or has not acknowledged RC for 1 s "
+        "(#188): keep the node active and ask again"
+    ),
+}
 
 
 class FlightInterface(Node):
@@ -60,12 +126,24 @@ class FlightInterface(Node):
         self.declare_parameter("link_timeout_sec", LINK_TIMEOUT)
         self.declare_parameter("velocity_topic", "/mission/velocity_target")
         self.declare_parameter("state_topic", "/flight/state")
+        # backend:=esp only. The PSK is never a parameter: SEAME_PSK or
+        # ~/.config/seame-drone/secrets.json (esp_backend.load_psk).
+        self.declare_parameter("mask", 8)  # ARM mask (ADR-010: 8 yaw, 11, 15)
+        self.declare_parameter("esp_host", "192.168.4.1")
+        self.declare_parameter("esp_port", 5759)
+        # D2: /fc/attitude and /fc/battery from STATE (backend:=esp). False
+        # when fc_telemetry publishes them instead.
+        self.declare_parameter("publish_fc", True)
+        self.declare_parameter("frame_id", "base_link")  # as fc_telemetry
+        self.declare_parameter("cell_count", 4)  # CNHL 4S pack, as fc_telemetry
         self._injected_backend = backend
+        self._mask = 8
         self.backend = None
         self.guard = None
         self._entities = []
         self._link_was_fresh = False
         self._estop_reason = ""  # the latch lives here, so cleanup cannot clear it
+        self._attitude = None  # AttitudeConverter while /fc/* are published
         self.get_logger().info(
             "unconfigured: use ros2 lifecycle set /flight_interface configure"
         )
@@ -77,48 +155,88 @@ class FlightInterface(Node):
             state_rate = float(self.get_parameter("state_rate_hz").value)
             target_timeout = float(self.get_parameter("target_timeout_sec").value)
             link_timeout = float(self.get_parameter("link_timeout_sec").value)
+            mask = self.get_parameter("mask").value
+            if isinstance(mask, bool) or mask not in (8, 11, 15):
+                raise ValueError(f"mask must be 8, 11 or 15, got {mask!r}")
+            # Types: ROS refuses a value of another type for a declared parameter.
+            publish_fc = self.get_parameter("publish_fc").value
+            cell_count = self.get_parameter("cell_count").value
+            if cell_count < 1:
+                raise ValueError(f"cell_count must be 1 or more, got {cell_count}")
             backend = self._injected_backend or make_backend(
-                str(self.get_parameter("backend").value)
+                str(self.get_parameter("backend").value),
+                esp_host=str(self.get_parameter("esp_host").value),
+                esp_port=int(self.get_parameter("esp_port").value),
+                warn=self.get_logger().warning,  # E3: a secrets file others can read
             )
-        except (TypeError, ValueError) as error:
+        except (TypeError, ValueError, ImportError) as error:
+            # ImportError: backend:=esp without sd_protocol installed.
             self.get_logger().error(f"configure failed: {error}")
             return TransitionCallbackReturn.FAILURE
         rate = min(MAX_RATE_HZ, max(MIN_RATE_HZ, rate))
         state_rate = min(rate, max(MIN_STATE_RATE_HZ, state_rate))
         self.backend = backend
+        self._mask = mask
+        self._frame_id = str(self.get_parameter("frame_id").value)
+        self._cell_count = cell_count
         self.guard = Guard(target_timeout, link_timeout, tick_period=1.0 / rate)
         if self._estop_reason:
             self.guard.trigger_estop(self._estop_reason)  # still latched
         self._link_was_fresh = False
-        self._state_pub = self.create_publisher(
-            String, str(self.get_parameter("state_topic").value), 10
+        # (destroy function, entity), undone in _release(). Each entity is
+        # added as soon as it exists, so a failure half-way releases what was
+        # already created (on_error -> _release).
+        self._entities = []
+
+        def keep(destroy, entity):
+            self._entities.append((destroy, entity))
+            return entity
+
+        self._state_pub = keep(
+            self.destroy_publisher,
+            self.create_publisher(
+                String, str(self.get_parameter("state_topic").value), 10
+            ),
         )
-        # (destroy function, entity), undone in _release()
-        self._entities = [
-            (self.destroy_publisher, self._state_pub),
-            (
-                self.destroy_subscription,
-                self.create_subscription(
-                    TwistStamped,
-                    str(self.get_parameter("velocity_topic").value),
-                    self._on_target,
-                    10,
-                ),
+        keep(
+            self.destroy_subscription,
+            self.create_subscription(
+                TwistStamped,
+                str(self.get_parameter("velocity_topic").value),
+                self._on_target,
+                10,
             ),
-            (self.destroy_timer, self.create_timer(1.0 / rate, self._tick)),
-            (
-                self.destroy_timer,
-                self.create_timer(1.0 / state_rate, self._publish_state),
-            ),
-            (
-                self.destroy_service,
-                self.create_service(Trigger, "~/estop", self._on_estop),
-            ),
-            (
-                self.destroy_service,
-                self.create_service(Trigger, "~/reset_estop", self._on_reset_estop),
-            ),
-        ]
+        )
+        if publish_fc:
+            self._attitude = AttitudeConverter()
+            self._attitude_pub = keep(
+                self.destroy_publisher,
+                self.create_publisher(Vector3Stamped, ATTITUDE_TOPIC, 10),
+            )
+            self._battery_pub = keep(
+                self.destroy_publisher,
+                self.create_publisher(BatteryState, BATTERY_TOPIC, 10),
+            )
+        keep(self.destroy_timer, self.create_timer(1.0 / rate, self._tick))
+        keep(
+            self.destroy_timer, self.create_timer(1.0 / state_rate, self._publish_state)
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/estop", self._on_estop),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/reset_estop", self._on_reset_estop),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/resume", self._on_resume),
+        )
+        keep(
+            self.destroy_service,
+            self.create_service(Trigger, "~/arm_control", self._on_arm_control),
+        )
         self.get_logger().info(
             f"configured: backend {backend.name}, {rate:.0f} Hz, zero after "
             f"{self.guard.target_timeout:.2f} s, link lost after {self.guard.link_timeout:.2f} s"
@@ -127,6 +245,8 @@ class FlightInterface(Node):
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.guard.activate()
+        if self._attitude is not None:
+            self._attitude.reset_yaw()  # D2: yaw 0 at the first sample from now
         self.get_logger().info("active: setpoints go out from the next fresh target")
         return super().on_activate(state)
 
@@ -159,7 +279,13 @@ class FlightInterface(Node):
             self._release()
         except Exception as error:  # the backend may fail again
             self.get_logger().error(f"release failed: {error}")
-            self._entities, self.backend, self.guard = [], None, None
+            backend, self.backend = self.backend, None
+            if backend is not None:
+                try:  # BYE if it can, so the ESP need not wait for T_loss
+                    backend.close()
+                except Exception as close_error:
+                    self.get_logger().error(f"backend close failed: {close_error}")
+            self._entities, self.guard = [], None
         return TransitionCallbackReturn.SUCCESS
 
     def _release(self):
@@ -170,6 +296,7 @@ class FlightInterface(Node):
             self.backend.close()
         self.backend = None
         self.guard = None
+        self._attitude = None
 
     # ---------- callbacks ----------
     def _on_target(self, msg):
@@ -179,9 +306,32 @@ class FlightInterface(Node):
         )
 
     def _tick(self):
+        """A7: an unexpected error latches the E-stop (BYE at once) instead
+        of killing the node and leaving the ESP to wait for T_loss."""
+        if self.guard is None or self.backend is None:  # released
+            return
+        try:
+            self._tick_once()
+        except Exception as error:
+            if self.guard.estop:  # already latched: BYE went out, just report
+                self.get_logger().error(
+                    f"tick error while the E-stop holds: {error!r}",
+                    throttle_duration_sec=1.0,
+                )
+                return
+            self.get_logger().error(f"tick error:\n{traceback.format_exc()}")
+            self._estop(f"internal error: {error!r}", with_neutral=False)
+
+    def _tick_once(self):
         now = time.monotonic()
         for drone_state in self.backend.poll(now):
-            self.guard.on_drone_state(drone_state, now)
+            # The backend's receive time when it gives one (never in the future).
+            rx = drone_state.get("rx_time") if isinstance(drone_state, dict) else None
+            valid_rx = isinstance(rx, (int, float)) and math.isfinite(rx) and rx <= now
+            self.guard.on_drone_state(drone_state, rx if valid_rx else now)
+            self._publish_fc(drone_state)
+        for kind, code, reason in self.backend.take_acks():
+            self._log_ack(kind, code, reason)
         fresh = self.guard.link_fresh(now)
         if fresh != self._link_was_fresh:
             # One call site per severity: rclpy refuses to change it between calls.
@@ -193,23 +343,149 @@ class FlightInterface(Node):
                 )
             self._link_was_fresh = fresh
         command = self.guard.command(now)
-        if command is not None:
-            self.backend.send_setpoint(command, now)
+        # K6: only a setpoint that went out counts for the neutral window.
+        if command is not None and self.backend.send_setpoint(command, now):
+            self.guard.note_sent(command, now)
+        due = self.guard.request_due(now)
+        if due is not None:
+            self._send_due_request(*due, now)
+
+    def _send_due_request(self, kind, mask, session, now):
+        """The operator's held ARM or RESUME, now that the guard says it is
+        due (K6), only in the session it was asked in. The ONLY place that
+        calls arm_control(): the guard holds an ARM only from ~/arm_control
+        (REQ-SAF-023)."""
+        # One call site per severity: rclpy refuses to change it between calls.
+        if kind == "arm":
+            what = f"ARM_CONTROL_REQUEST mask {mask}"
+            sent = self.backend.arm_control(mask, now, session)
+        else:
+            what = "RESUME_REQUEST"
+            sent = self.backend.request_resume(now, session)
+        if sent:
+            self.get_logger().warning(f"{what} sent (operator request)")
+        else:
+            self.get_logger().error(
+                f"{what} not sent: no TCP to the ESP or not the session it "
+                "was asked in; ask again"
+            )
+
+    @staticmethod
+    def _fresh_value(drone_state, which, limit):
+        """D2.1: the value's age from FC_HEALTH is known and under `limit`."""
+        ages = drone_state.get("fc_ages")
+        age = ages.get(which) if isinstance(ages, dict) else None
+        return isinstance(age, (int, float)) and 0 <= age <= limit
+
+    def _publish_fc(self, drone_state):
+        """D2: /fc/attitude and /fc/battery from a STATE's FC values, each only
+        while FC_HEALTH says that value is fresh (D2.1, module docstring)."""
+        if self._attitude is None or not isinstance(drone_state, dict):
+            return
+        values = drone_state.get("fc_values")
+        if not isinstance(values, dict):
+            return
+        stamp = self.get_clock().now().to_msg()
+        if self._fresh_value(drone_state, "attitude", ATTITUDE_MAX_AGE):
+            attitude = Vector3Stamped()
+            attitude.header.stamp = stamp
+            attitude.header.frame_id = self._frame_id
+            x, y, z = self._attitude.convert(state_attitude(values))
+            attitude.vector.x, attitude.vector.y, attitude.vector.z = x, y, z
+            self._attitude_pub.publish(attitude)
+        if not self._fresh_value(drone_state, "analog", ANALOG_MAX_AGE):
+            return
+        battery = BatteryState()
+        battery.header.stamp = stamp
+        battery.header.frame_id = self._frame_id
+        for field, value in battery_fields(
+            state_analog(values), self._cell_count
+        ).items():
+            setattr(battery, field, value)
+        self._battery_pub.publish(battery)
+
+    def _log_ack(self, kind, code, reason):
+        """E2: the ESP's answer to ARM or RESUME, for the operator."""
+        # One call site per severity: rclpy refuses to change it between calls.
+        if code == 0:
+            self.get_logger().info(f"{kind}: OK")
+            return
+        why = ACK_REASONS.get(reason)
+        detail = f": {why}" if why else ""
+        self.get_logger().warning(
+            f"{kind} refused by the ESP, {reason} ({code}){detail}"
+        )
 
     def _publish_state(self):
         state = self.guard.flight_state(time.monotonic())
         self._state_pub.publish(String(data=json.dumps(state, separators=(",", ":"))))
 
     def _on_estop(self, request, response):
-        was_sending = self.guard.active and not self.guard.estop
-        self._estop_reason = "service"
-        self.guard.trigger_estop(self._estop_reason)
+        """A1: the operator's E-stop."""
+        sent = self._estop("service")
+        response.success = True  # the latch holds either way
+        response.message = "estop latched, " + sent
+        return response
+
+    def _estop(self, reason, with_neutral=True):
+        """A1 (and A7 with with_neutral=False): latch first, then one neutral (if
+        setpoints were going out) and BYE, each in its own try: a failed
+        neutral never skips BYE. A backend error cannot undo the latch.
+        Returns what really went out: without TCP BYE cannot be sent and the
+        ESP's failsafe follows T_loss."""
+        was_sending = with_neutral and self.guard.active and not self.guard.estop
+        self._estop_reason = reason
+        self.guard.trigger_estop(reason)
+        now = time.monotonic()
+        neutral = False
         if was_sending:
-            self.backend.send_setpoint(ZERO, time.monotonic())  # one zero, then silence
-        self._publish_state()
-        self.get_logger().error("E-STOP: setpoints stopped; ~/reset_estop to clear")
-        response.success = True
-        response.message = "estop latched"
+            try:
+                neutral = self.backend.send_neutral(now)  # one neutral, then nothing
+            except Exception as error:  # the latch holds whatever the backend does
+                self.get_logger().error(
+                    f"E-STOP: neutral failed after the latch: {error}"
+                )
+        bye = False
+        try:
+            bye = self.backend.end_session(
+                now
+            )  # BYE: the ESP's failsafe output at once
+        except Exception as error:
+            self.get_logger().error(f"E-STOP: BYE failed after the latch: {error}")
+        try:
+            self._publish_state()
+        except Exception as error:  # the latch is set; the next timer tries again
+            self.get_logger().error(f"E-STOP: /flight/state failed: {error}")
+        sent = ("neutral + " if neutral else "") + (
+            "BYE sent"
+            if bye
+            else "BYE NOT sent (no TCP: the ESP fails over after T_loss)"
+        )
+        self.get_logger().error(
+            f"E-STOP ({reason}): {sent}, setpoints stopped; ~/reset_estop to clear"
+        )
+        return sent
+
+    def _on_arm_control(self, request, response):
+        """A4, K6: the operator's ARM. The ONLY place that asks the guard to
+        hold one; _send_due_request() sends it when it is due."""
+        ok, why = self.guard.request_arm(self._mask, time.monotonic())
+        response.success, response.message = ok, why
+        # One call site per severity: rclpy refuses to change it between calls.
+        if ok:
+            self.get_logger().warning(f"ARM requested (operator): {why}")
+        else:
+            self.get_logger().info(f"ARM refused: {why}")
+        return response
+
+    def _on_resume(self, request, response):
+        """A3: the operator asks to resume after the ESP's link failsafe."""
+        response.success, response.message = self.guard.request_resume(time.monotonic())
+        # One call site per severity: rclpy refuses to change it between calls.
+        if response.success:
+            self.get_logger().warning(f"resume requested: {response.message}")
+        else:
+            self.get_logger().info(f"resume refused: {response.message}")
         return response
 
     def _on_reset_estop(self, request, response):

@@ -269,6 +269,10 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends python3-pip python3-pytest python3-pytest-cov python3-serial libgl1 libegl1 libglib2.0-0
           pip3 install -r drone/ground/src/gesture_node/requirements.txt
+          # flight_interface's ESP backend (#103) imports sd_protocol, a pip
+          # package (not a ROS one). Without it its tests skip and the
+          # coverage gate fails.
+          pip3 install drone/ground/src/sd_protocol_py
 
       - name: Build
         run: |

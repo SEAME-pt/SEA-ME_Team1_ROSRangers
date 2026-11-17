@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-16
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -47,6 +47,7 @@ tags:
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
+| [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16) | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -101,11 +102,15 @@ tags:
 
 - 2026-11-06, decision **extended**: [[ADR-005 TCP Session|ADR-005]]: a new `HELLO` does not end the current session; the new session is pending until its first valid frame (#156). No wire change.
 
-## 9. Still open
+## 9. What changed on 2026-11-16
+
+- New [[ADR-025 flight_interface Ground Node|ADR-025]] (#103, PR #187): the decisions for the `flight_interface` node, taken by the safety pilot on 2026-11-09 / 2026-11-10 and by the team on PR #187 (2026-11-12), moved here from the PR's `DECISIONS.md`. K6 follows the safety pilot's change on PR #191 (ARM and RESUME held for 1.5 s of neutral, 3 s timeout); E6.2 (how `FC_HEALTH` and the events give the FC state) and E1.2 (simulation on `SUBNET` discovery) were added on 2026-11-16. A7 (an error in the node's tick latches the E-stop) was decided by the safety pilot on the PR #187 review, the same day.
+
+## 10. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 10. Glossary
+## 11. Glossary
 
 | Term | Meaning |
 | --- | --- |

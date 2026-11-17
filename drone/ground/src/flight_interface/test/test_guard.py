@@ -22,6 +22,7 @@ STREAMING = {
     "override_active": True,
     "mask": 11,
     "airborne": True,
+    "fc_link_ok": True,  # E6.1: control needs the FC link reported alive
 }
 
 
@@ -163,9 +164,15 @@ def test_flight_state_follows_the_drone():
         "override_active": True,
         "mask": 11,
         "airborne": True,
+        "armed": None,
+        "failsafe_output": False,
+        "fc_link_ok": True,
+        "esp_rx_rejected": None,
         "active": True,
         "estop": False,
         "estop_reason": "",
+        "resume_pending": False,
+        "arm_pending": False,
     }
     # Only a real True counts (mission_node parses strictly).
     g.on_drone_state(
@@ -213,9 +220,17 @@ def test_estop_holds_across_deactivate_and_activate():
 
 
 # ---------- REQ-SAF-023: never arms ----------
-def test_guard_and_backends_have_no_way_to_arm():
-    names = {n.lower() for n in dir(Guard) + dir(Backend) + dir(LoopbackBackend)}
-    assert not [n for n in names if "arm" in n.replace("alarm", "")]
+def test_guard_and_backends_have_no_way_to_arm_but_the_operator_path():
+    # Decisions A4, K6: the backend's arm_control() is the one way to ARM,
+    # called only for a request the operator made with ~/arm_control (checked
+    # in the node tests); the guard only holds that request (request_arm,
+    # arm_pending). Nothing else may exist.
+    def arm_names(cls):
+        return {n for n in dir(cls) if "arm" in n.lower().replace("alarm", "")}
+
+    assert arm_names(Guard) == {"request_arm", "arm_pending"}
+    assert arm_names(Backend) == {"arm_control"}
+    assert arm_names(LoopbackBackend) == {"arm_control"}
 
 
 # ---------- backends ----------
@@ -227,6 +242,7 @@ def test_loopback_is_conservative_by_default_and_records_what_is_sent():
             "override_active": False,
             "mask": None,
             "airborne": False,
+            "fc_link_ok": True,
         }
     ]
     b.send_setpoint([0.1, 0, 0, 0], 0.0)
@@ -240,7 +256,9 @@ def test_loopback_is_conservative_by_default_and_records_what_is_sent():
 
 def test_unknown_backend_refused():
     with pytest.raises(ValueError):
-        make_backend("esp")
+        make_backend("px4")  # waits for decision C1
+    with pytest.raises(ValueError):
+        make_backend("nope")
 
 
 def test_base_backend_is_only_an_interface():
@@ -265,6 +283,8 @@ def test_base_backend_is_only_an_interface():
         {**STREAMING, "mask": 8.0},
         {**STREAMING, "mask": True},
         {"esp_state": "STREAMING"},
+        {**STREAMING, "fc_link_ok": None},  # E6.1: unknown is not alive
+        {**STREAMING, "fc_link_ok": False},
     ],
 )
 def test_zero_unless_the_drone_says_control_is_possible(drone):

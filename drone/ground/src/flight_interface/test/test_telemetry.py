@@ -1,7 +1,9 @@
 """Unit tests for telemetry.py: MSP replies -> /fc/* fields. No ROS, no drone.
 
 The replay tests read FC replies from a `msp_check --trace` log in test/data
-and run them through the same decode + conversion as the node.
+and run them through the same decode + conversion as the node. The D2 tests
+send the same replies through STATE, as the gateway does, and check that the
+flight_interface path gives the same /fc/* values as the fc_telemetry path.
 
 Run with:  python3 -m pytest test/test_telemetry.py   (package folder)
 """
@@ -18,8 +20,15 @@ from flight_interface.telemetry import (
     AttitudeConverter,
     battery_fields,
     midpoint_ns,
+    state_analog,
+    state_attitude,
     wrap_pi,
 )
+
+try:
+    from sd_protocol.messages import EspState, State, decode_state, encode_state
+except ImportError:  # no sd_protocol: the STATE wire round trip is skipped
+    State = None
 
 DEG = math.pi / 180
 
@@ -177,3 +186,93 @@ def test_real_bridge_trace_replay():
     frame, _ = client.request(msp.MSP_ANALOG, timeout=0.05)
     fields = battery_fields(msp.decode(frame.cmd, frame.payload), cell_count=4)
     assert fields["voltage"] == pytest.approx(15.52)
+
+
+# ---------- D2: the same values through STATE ----------
+def state_from_fc(attitude_payload, analog_payload):
+    """The FC values of a STATE as the gateway builds it from these MSP
+    replies, sent through the real STATE encoding. sd::msp::decode_attitude
+    reads roll and pitch as i16 and the heading as u16; decode_analog takes
+    the u16 voltage at offset 7 and refuses a reply under 9 bytes (then
+    has_analog stays false and fc_view() sends vbat 0)."""
+    roll, pitch, heading = struct.unpack_from("<hhH", attitude_payload)
+    vbat = (
+        struct.unpack_from("<H", analog_payload, 7)[0]
+        if len(analog_payload) >= 9
+        else 0
+    )
+    msg = State(
+        esp_state=int(EspState.STREAMING),
+        override_active=1,
+        last_ctrl_seq=0,
+        last_ctrl_t_send_us=0,
+        roll=roll,
+        pitch=pitch,
+        heading=heading,
+        vbat=vbat,
+        flow_x=0,
+        flow_y=0,
+        flow_quality=0,
+        flow_status=4,
+        rx_rejected=0,
+        msp_errors=0,
+    )
+    wire = decode_state(encode_state(msg))
+    return {
+        "roll": wire.roll,
+        "pitch": wire.pitch,
+        "heading": wire.heading,
+        "vbat": wire.vbat,
+    }
+
+
+def test_state_values_in_msp_units():
+    values = {"roll": -6, "pitch": 4, "heading": 17, "vbat": 1553}
+    assert state_attitude(values) == {"roll_deg": -0.6, "pitch_deg": 0.4, "yaw_deg": 17}
+    assert state_analog(values) == {"voltage_v": 15.53}
+    assert battery_fields(state_analog({"vbat": 0}), cell_count=4)["present"] is False
+
+
+@pytest.mark.skipif(State is None, reason="sd_protocol not installed")
+@pytest.mark.parametrize(
+    "trace", ["msp_trace_synthetic.txt", "msp_trace_bench_udp.txt"]
+)
+def test_the_state_path_gives_the_same_topics_as_the_msp_path(trace):
+    """Decision D2: /fc/attitude and /fc/battery made from STATE (the
+    flight_interface ESP backend) equal the ones fc_telemetry makes from the
+    same recorded FC replies, sample after sample (one yaw zero each)."""
+    answers = load_trace(trace)
+    pairs = list(zip(answers[msp.MSP_ATTITUDE], answers[msp.MSP_ANALOG]))
+    assert len(pairs) >= 2
+    msp_path, state_path = AttitudeConverter(), AttitudeConverter()
+    for attitude_payload, analog_payload in pairs:
+        fc = state_from_fc(attitude_payload, analog_payload)
+        expected = msp_path.convert(msp.decode(msp.MSP_ATTITUDE, attitude_payload))
+        assert state_path.convert(state_attitude(fc)) == pytest.approx(
+            expected, abs=1e-12
+        )
+        want = battery_fields(msp.decode(msp.MSP_ANALOG, analog_payload), cell_count=4)
+        got = battery_fields(state_analog(fc), cell_count=4)
+        assert got["present"] == want["present"]
+        assert got["voltage"] == pytest.approx(want["voltage"], nan_ok=True)
+        assert len(got["cell_voltage"]) == len(want["cell_voltage"]) == 4
+
+
+@pytest.mark.skipif(State is None, reason="sd_protocol not installed")
+def test_the_state_path_on_the_real_bench_capture():
+    """The 2026-11-06 capture through STATE: level, then ~38 deg clockwise
+    with the right side and the nose down (the values the MSP test checks)."""
+    answers = load_trace("msp_trace_bench_udp.txt")
+    conv = AttitudeConverter()
+    level, tilted = (
+        state_from_fc(a, b)
+        for a, b in zip(answers[msp.MSP_ATTITUDE], answers[msp.MSP_ANALOG])
+    )
+    assert conv.convert(state_attitude(level)) == pytest.approx(
+        (-0.6 * DEG, 0.4 * DEG, 0.0)
+    )
+    assert conv.convert(state_attitude(tilted)) == pytest.approx(
+        (18.7 * DEG, 21.7 * DEG, -38 * DEG)
+    )
+    assert battery_fields(state_analog(level), 4)["voltage"] == pytest.approx(15.53)
+    assert battery_fields(state_analog(tilted), 4)["voltage"] == pytest.approx(15.52)

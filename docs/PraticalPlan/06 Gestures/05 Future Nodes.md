@@ -3,7 +3,7 @@ title: Future nodes to add
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-10-27
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - gestures
@@ -23,7 +23,7 @@ Nodes the gesture chain will need later, or that would make it better. Nothing h
 | 3 | `camera_node` | camera frames as a ROS topic | ==🟣idea, optional== |
 | 4 | `drone_msgs` | typed messages instead of JSON strings | ==🟠proposed== |
 | 5 | controller + estimator | velocity target → attitude setpoints | ==🟠planned, Module 1== |
-| 6 | `flight_interface` | ground ↔ drone link | ==🟠planned, Module 1== |
+| 6 | `flight_interface` | ground ↔ drone link | ==🟢built (ESP backend), PX4 backend planned== |
 | 7 | motion tracker | wave / swipe gestures | ==⚪not planned== |
 | 8 | trained classifier | replace the rule-based `recognize()` | ==🟠Module 2== |
 | 9 | car / arm adapter | portability proof | ==🟠Module 2== |
@@ -50,7 +50,7 @@ Turns `/mission/velocity_target` and the estimated velocity (flow, IMU, baro) in
 
 ## 📡 6. `flight_interface`
 
-A lifecycle node that sends setpoints to the ESP8266 ([[Protocol Spec v0]]) or to PX4 SITL ([[ADR-019 Sim Backends|ADR-019]]), and publishes the real `/flight/state` that `fake_flight_state` stands in for today.
+A lifecycle node that sends setpoints to the ESP8266 ([[Protocol Spec v0]]) or, later, to PX4 SITL ([[ADR-019 Sim Backends|ADR-019]]), and publishes the real `/flight/state`. The ESP backend is built; it sends neutral sticks until the controller (§5) exists. Its rules are in [[ADR-025 flight_interface Ground Node|ADR-025]], its topics and services in [[Architecture Document]] §2.
 
 ## 👋 7. Motion tracker
 
