@@ -180,12 +180,14 @@ Plotted by `scripts/rt_profile.py` from two logs, never by hand. Commands and lo
 | Log | How it is captured | Plot |
 |---|---|---|
 | Betaflight `tasks` | `fc_cli.py dump` (FC on USB, props off) writes it into `drone/config/betaflight/<ver>/cli_read_<date>.txt` | `rt-profile/betaflight_tasks.png` |
-| ESP gateway `loop()` period | env `esp_loop_timing` (gateway + a histogram of every `loop()` period, sent once a second to UDP 5770), recorded with `rt_profile.py listen` during a UDP control stream, props off | `rt-profile/esp_loop_period.png` (median, p99, max) |
+| ESP gateway `loop()` period | env `esp_loop_timing_ota` on the drone (`esp_loop_timing` over USB on the HIL bench): the gateway + a histogram of every `loop()` period, sent once a second to UDP 5770), recorded with `rt_profile.py listen` during a UDP control stream, props off | `rt-profile/esp_loop_period.png` (median, p99, max) |
 
 ![[betaflight_tasks.png]]
 
 - **Betaflight 4.5.1, 2026-10-16 capture (before the 2026.6.2 upgrade):** PID loop 8 kHz, PID max load 57.9 % (avg 35.5 %), FILTER 30.5 % (13.7 %), total 51.5 % excluding SERIAL. SERIAL's 2161 µs max is the CLI session itself. To redo on 2026.6.2 once the USB connector is repaired (#189).
-- **ESP loop jitter:** not captured yet. Needs the bench (gateway on the drone, props off). Commit the CSV next to the plots in `rt-profile/` and add median / p99 / max here. What matters for this budget: the `loop()` period must stay well below the 20 ms RC period (`MSP_SET_RAW_RC` at 50 Hz).
+![[esp_loop_period.png]]
+
+- **ESP loop jitter, drone, 2026-11-17 capture (`sd-gw 0.2.0T`, 704 s UDP control stream, props off; CSV `rt-profile/esp_loop_2026-11-17.csv`):** 18 993 758 loops, median 31 µs, p99 88 µs, p99.9 1.47 ms, p99.99 1.98 ms, max 6.17 ms. 55 526 loops (0.3 %) took 1 ms or more; one took 5 ms or more; none reached the 20 ms RC period (`MSP_SET_RAW_RC` at 50 Hz). The worst stall is under a third of that period, so `loop()` keeps up with the control stream. The 0.4–0.6 ms and 1–2 ms bumps are loops that handle a packet or an MSP exchange (assumption, not measured per path).
 
 ## 5. Related pages
 
