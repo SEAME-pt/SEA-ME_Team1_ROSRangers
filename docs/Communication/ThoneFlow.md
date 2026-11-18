@@ -1,9 +1,9 @@
 ---
-title: ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
+title: ThoneFlow-3901U Optical-Flow Sensor Integration
 type: sensor-integration
 status: draft
 date: 2026-10-12
-updated: 2026-11-16
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -19,14 +19,14 @@ tags:
   - draft
 ---
 
-# ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
+# ThoneFlow-3901U Optical-Flow Sensor Integration
 
 > [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
 > [!success] Update 2026-11-16: bench characterisation done (#107)
 > The sensor was characterised **alone, on a bench Raspberry Pi Pico, off the drone** (2026-11-10 and 2026-11-16, 40 captures, 66,297 frames). The datasheet is wrong on two points that matter for the parser: the rate is **~95 Hz, not 66 Hz**, and X/Y come **low byte first**. The checksum is the sum of bytes 2–5. On the carpet the motion is correct and repeatable; on a plain white table and on a black EVA mat it is not, and on the mat it was once **reversed with good quality**. Results in §2.4, parser in §3.3, test log in §9.2, decisions TF-03 to TF-07 in §10.2. Still not on the drone.
 
-> [!warning] Status: DRAFT / PLANNED. Sensor NOT installed.
+> [!warning] Status: DRAFT. Sensor NOT installed on the drone; bench characterisation and the ground parser are done (#107, 2026-11-16).
 > The ThoneFlow-3901U is an unsoldered, separate module and is **not installed** on the drone. No wiring exists. It is **not confirmed** that Betaflight 4.5.1 supports this sensor. Everything under "Proposed" below is an architectural option, not a validated design. Datasheet facts are marked **[DS]**; proposals are marked **[PROPOSED]**; items the datasheet does not state are marked **[NOT STATED]**.
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
@@ -229,6 +229,25 @@ Observations that follow directly from the table:
 > - A frame lost whole on the line changes no counter; only the timing shows it.
 > - Not done here, for #200: a plausibility limit on the per-frame delta, a cross-check against the IMU (quality and checksum do not catch the black-mat case), and the cage floor at flight height as a gate before flow is used. For #108: the reader's own overflow count and per-frame timestamps.
 
+The parser's frame constants and checksum. It follows the measured byte order (X/Y low byte first, `thoneflow.py` L12–13), not the datasheet table in §3.1.
+
+```python
+# excerpt: frame constants, quality floor and checksum
+FRAME_SIZE = 9
+HEADER = 0xFE
+LENGTH = 0x04
+FOOTER = 0xAA
+
+# Below 25 the sensor sends X = Y = 0 in 2,749 of 2,789 bench frames (the lens
+# covered gave 5-17), so such a frame is "no image", not "not moving". A lower
+# quality_min would let it out as OK (PAR-08, VAL-01), so it is refused.
+QUALITY_MIN_FLOOR = 25
+...
+def checksum(frame: bytes) -> int:
+    return (frame[2] + frame[3] + frame[4] + frame[5]) & 0xFF
+```
+Source: [`thoneflow.py` L45–53](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L53) and [L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L95-L96) (`drone/ground/src/sd_protocol_py/sd_protocol/`) @ `b31960e`
+
 ---
 
 ## 4. Optical flow vs. video camera vs. position estimation
@@ -410,6 +429,8 @@ Each measurement should carry a status, so consumers never guess:
 | `INVALID_FRAME` | Header, length, footer or checksum failed. *The #107 parser never emits it: such a frame is dropped and counted (§8.2).* |
 | `STALE` | No new valid frame within the allowed interval (interval TBD) |
 | `NO_DATA` | No bytes received at all (sensor absent or disconnected) |
+
+Wire numbers in `STATE.flow_status`: 0 `OK`, 1 `LOW_QUALITY`, 2 `INVALID_FRAME`, 3 `STALE`, 4 `NO_DATA`, in the table order ([[Protocol Spec v0]] §3, 2026-11-09, marked "to confirm with the ThoneFlow work"). The gateway sends 4 while no sensor is fitted. The parser's `Status` uses names, not these numbers.
 
 ### 8.2 Conditions and handling
 
@@ -616,3 +637,8 @@ Evidence (captures, logs, test records) is required for each.
 | **Surface quality** | Byte 7 of the frame: how much detail the sensor sees. Low with no image; not a reliable validity check on its own (§2.4). |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **Header / footer byte** | The fixed first (`0xFE`) and last (`0xAA`) bytes of a sensor frame. The parser checks both, plus the length byte and the checksum (PAR-02). |
+| **PAR-xx / VAL-xx / EST-xx** | Parser, validity and estimator requirement IDs of this page (§3.3, §8.3, §7). |
+| **Software serial** | A UART receiver done in firmware on a spare GPIO; timing-sensitive under Wi-Fi load (§6). |
+| **DPS310** | The barometer on the FC, the height source chosen in [[ADR-016 Flow Sensor Path\|ADR-016]] (TF-12). |
+| **CX-OF** | A discontinued optical-flow module whose format the datasheet claims to match; ArduPilot has a driver for it (§3). |
