@@ -3,9 +3,9 @@
 # to logs/), or alone in its own terminal:
 #   docker compose run --rm echo
 # Nothing to build: rclpy, std_msgs and geometry_msgs ship with ros-base.
-# Build context is drone/ground/ (see docker-compose.yml).
-FROM ros:jazzy-ros-base
+# Build context is drone/ground/; FROM base is docker/base/Dockerfile (see
+# docker-compose.yml). Runs as the base's user `ros`.
+FROM base
 
-COPY docker/entrypoint.sh src/echo/monitor.py /
-ENTRYPOINT ["/entrypoint.sh"]
+COPY src/echo/monitor.py /monitor.py
 CMD ["python3", "/monitor.py"]

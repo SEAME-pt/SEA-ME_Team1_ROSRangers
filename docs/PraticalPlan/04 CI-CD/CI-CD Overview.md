@@ -48,8 +48,8 @@ flowchart LR
 Each job is gated by `check-components` and turns on when its component exists (details in [[GitHub Actions Starter]]). The workflow files are `ci.yaml`, `hil.yaml` and `close-linked-issues.yaml` in `.github/workflows/`.
 
 **Ground ROS 2 jobs.**
-- `ground-ros2` builds the packages in its `ROS_PKGS` (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`). Its first step finds each package's folder with `drone/ground/docker/pkg_dirs.sh` (`src/<component>/<package>/package.xml`, exactly one, with a matching `<name>`), the same lookup as the Makefile: a missing, doubled or misnamed package fails the job, it is never skipped with a notice. A new package joins by adding it to `ROS_PKGS` together with its tests. It builds them in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
-- `ground-docker` runs `drone/ground/docker/smoke_test.sh`: every ground image, including `flight_interface`, its package tests inside it, and the containers talking to each other.
+- `ground-ros2` builds the packages in its `ROS_PKGS` (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`). Its first step finds each package's folder with `drone/ground/tools/pkg_dirs.sh` (`src/<component>/<package>/package.xml`, exactly one, with a matching `<name>`), the same lookup as the Makefile: a missing, doubled or misnamed package fails the job, it is never skipped with a notice. A new package joins by adding it to `ROS_PKGS` together with its tests. It builds them in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
+- `ground-docker` runs `drone/ground/tools/smoke_test.sh`: every ground image, including `flight_interface`, its package tests inside it, and the containers talking to each other.
 - They turn on when `drone/ground/src` exists (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
 - On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why. The simulation lives in `drone/ground/src/simulation/`, so a PR that only changes the simulation runs them too: slower, but harmless.
 
@@ -88,7 +88,7 @@ pre-commit run --all-files
 | `ruff` | Python lint (Python ground nodes, protocol, tests). Rules are in `ruff.toml` at the repo root: `E`, `W` (style), `F` (pyflakes), `B` (bugbear: likely bugs) and `I` (import order). `E501` (long lines) is off because `ruff-format` owns line length. Fix import order with `ruff check --fix` (needs `pip install ruff==0.6.9`, the hook's version); the pre-commit hook only reports it. |
 | `ruff-format` | Python formatting (auto-fixes). |
 | `clang-format` | C/C++ formatting for the protocol library and firmware (auto-fixes). |
-| `shellcheck` | Lints every shell script (today `scripts/sync-labels.sh` and `drone/ground/docker/*.sh`), warnings and errors only. |
+| `shellcheck` | Lints every shell script (today `scripts/sync-labels.sh` and the `drone/ground/docker/` and `drone/ground/tools/` scripts), warnings and errors only. |
 
 **Requirements.**
 

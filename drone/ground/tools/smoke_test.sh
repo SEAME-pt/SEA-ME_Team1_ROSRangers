@@ -35,7 +35,7 @@
 # Own compose project, ROS domain and log folder (logs/smoke), so a running
 # `make up` stack (or teammates on the network) is neither stopped nor mixed
 # in, and its logs/<service>/latest.log stay as they were.
-# Run from anywhere:  drone/ground/docker/smoke_test.sh
+# Run from anywhere:  drone/ground/tools/smoke_test.sh
 # SMOKE_LOG_DIR=dir (CI sets it): save each container's full log there as
 # <container>.log, pass or fail. Unset (make smoke): only logs/smoke is written.
 set -euo pipefail
@@ -48,6 +48,12 @@ export ROS_DOMAIN_ID=86 # tests use 81-85 and 87-91: `grep -r TEST_DOMAIN_ID src
 # The compose services' log folder (docker-compose.yml). Made here, not by
 # Docker, so it belongs to the user and the next run can empty it.
 export GROUND_LOG_DIR=./logs/smoke
+# The images' user `ros` gets this user's uid and gid (docker/base/), so it
+# can write to the log folder made below (CI's runner is not uid 1000). The
+# Makefile sets them too; root: the image's default, 1000.
+uid=$(id -u) gid=$(id -g)
+export GROUND_UID=${GROUND_UID:-$( ((uid)) && echo "$uid" || echo 1000)}
+export GROUND_GID=${GROUND_GID:-$( ((gid)) && echo "$gid" || echo 1000)}
 rm -rf "$GROUND_LOG_DIR"
 mkdir -p "$GROUND_LOG_DIR"
 PROJECT=ground-smoke

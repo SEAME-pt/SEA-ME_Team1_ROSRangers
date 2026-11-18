@@ -233,7 +233,7 @@ jobs:
   # The ground ROS packages in ROS_PKGS: unit, node, process, launch and
   # pipeline tests in the ros:jazzy container (ADR-018). A new package joins
   # by adding it to ROS_PKGS, with its tests (the coverage gate applies at
-  # once). Each one is found by its folder (drone/ground/docker/pkg_dirs.sh,
+  # once). Each one is found by its folder (drone/ground/tools/pkg_dirs.sh,
   # the same lookup as the Makefile): a missing or doubled package fails the
   # job.
   # REQUIRE_ROS_TESTS makes a missing rclpy or package fail instead of
@@ -258,7 +258,7 @@ jobs:
       # Before the slow steps, so a moved or renamed package fails at once
       - name: Find the packages
         run: |
-          dirs=$(drone/ground/docker/pkg_dirs.sh drone/ground/src $ROS_PKGS)
+          dirs=$(drone/ground/tools/pkg_dirs.sh drone/ground/src $ROS_PKGS)
           echo "$dirs"
           echo "PKG_DIRS=$(tr '\n' ' ' <<<"$dirs")" >> "$GITHUB_ENV"
 
@@ -321,7 +321,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: drone/ground/docker/smoke_test.sh
+      - run: drone/ground/tools/smoke_test.sh
 
   esp-firmware:
     needs: [lint, check-components]

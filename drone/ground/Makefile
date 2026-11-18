@@ -57,10 +57,10 @@ ROS     := /opt/ros/jazzy/setup.bash
 VENV    := gesture-venv
 WS      := ros2_ws
 PKGS    := gesture_node intent_node mission_node
-# Each package's folder (src/<component>/<package>), found by docker/pkg_dirs.sh: one
+# Each package's folder (src/<component>/<package>), found by tools/pkg_dirs.sh: one
 # folder per package or it fails (#186). Looked up in the rules that use it, so
 # a missing package never breaks make down or make clean.
-FIND_PKG_DIRS := docker/pkg_dirs.sh src $(PKGS)
+FIND_PKG_DIRS := tools/pkg_dirs.sh src $(PKGS)
 E2E     := ../tests/ros
 TESTLOG := logs/test
 
@@ -73,8 +73,17 @@ SIM          := px4 gesture intent mission echo
 SIM_SMOKE    := px4 mission sim_smoke
 MASK         ?= 15
 GUI          ?= 1
-# Host group of the GPU render node, so the px4 container (uid 1000) can use it
-RENDER_GID   := $(shell stat -c %g /dev/dri/renderD128 2>/dev/null || echo 0)
+# Host group of the GPU render node, so the px4 and gesture containers (not
+# root) can use it. No render node: video, a harmless group both images have.
+RENDER_GID   := $(shell stat -c %g /dev/dri/renderD128 2>/dev/null || echo video)
+
+# The ground images' user `ros` gets the host user's uid and gid (docker/base/),
+# so the files it writes to logs/ are the host user's and it can read
+# psk.json (mode 600). Root on the host: 1000, the image's default.
+GROUND_UID := $(shell u=$$(id -u); [ "$$u" = 0 ] && echo 1000 || echo "$$u")
+GROUND_GID := $(shell g=$$(id -g); [ "$$g" = 0 ] && echo 1000 || echo "$$g")
+# compose reads them from the environment of every rule (gesture: RENDER_GID too)
+export GROUND_UID GROUND_GID RENDER_GID
 # Subnet discovery for the simulation only (ADR-025 E1.2): with the compose
 # default LOCALHOST the px4 container (uid 1000, UDP only) and the others never
 # see each other. The sim runs no flight_interface and no drone.
@@ -118,7 +127,7 @@ ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node
 
 # Symlinks, not copies, so --symlink-install picks up .py edits without a rebuild.
 # Redone when PKGS changes, so an existing workspace gets new packages too.
-$(WS)/.src: Makefile docker/pkg_dirs.sh
+$(WS)/.src: Makefile tools/pkg_dirs.sh
 	dirs=$$($(FIND_PKG_DIRS)) && mkdir -p $(WS)/src \
 		&& for d in $$dirs; do ln -sfn ../../$$d $(WS)/src/$${d##*/}; done
 	touch $@
@@ -249,10 +258,10 @@ unit:
 	rm -f $(TESTLOG)/unit.part; \
 	summary "make unit (no ROS needed)" $$code "$${rows[@]}"
 
-# Its summary comes from docker/smoke_test.sh itself
+# Its summary comes from tools/smoke_test.sh itself
 smoke:
 	@mkdir -p $(TESTLOG)
-	@docker/smoke_test.sh 2>&1 | tee $(TESTLOG)/smoke.log; exit $${PIPESTATUS[0]}
+	@tools/smoke_test.sh 2>&1 | tee $(TESTLOG)/smoke.log; exit $${PIPESTATUS[0]}
 
 # ---------- Docker ----------
 
@@ -378,7 +387,7 @@ sim-smoke: no-flight-interface sim-smoke-mask px4-image-present
 fclean: clean
 	rm -rf $(VENV) $(WS) ../.pytest_cache
 	find logs -mindepth 1 -maxdepth 1 ! -name .gitignore -exec rm -rf {} +
-	find src docker $(E2E) -path src/sd_protocol_py -prune -o \
+	find src docker tools $(E2E) -path src/sd_protocol_py -prune -o \
 		\( -name __pycache__ -o -name .pytest_cache -o -name '*.egg-info' \) -prune -exec rm -rf {} +
 	docker ps -aq --filter name=^ground-smoke- | xargs -r docker rm -fv
 	for p in $(DOCKER_PROJECTS); do \

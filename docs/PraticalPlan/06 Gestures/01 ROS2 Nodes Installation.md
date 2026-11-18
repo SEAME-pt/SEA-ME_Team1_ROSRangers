@@ -62,7 +62,7 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 
 ### 4.2 The services
 
-`drone/ground/docker-compose.yml` defines one service per piece, each built from `ros:jazzy-ros-base`:
+`drone/ground/docker-compose.yml` defines one service per piece. Each image builds `FROM` the shared base, `docker/base/Dockerfile` (`ros:jazzy-ros-base`, the entrypoint and a non-root user `ros`). That user gets your uid and gid (`make` sets `GROUND_UID` / `GROUND_GID`), so the files in `logs/` are yours. Compose builds the base first by itself (the build-only `base` service).
 
 | Service | Runs |
 | :--- | :--- |
@@ -180,7 +180,7 @@ Package tests in `drone/ground/src/<component>/<package>/test/`, tests of nodes 
 
 ### 7.3 The smoke test
 
-`docker/smoke_test.sh` builds the images (also `flight_interface`), runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs. Last, `flight_interface` (loopback) publishes `/flight/state` and mission stays `IDLE`.
+`tools/smoke_test.sh` builds the images (also `flight_interface`), runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs. Last, `flight_interface` (loopback) publishes `/flight/state` and mission stays `IDLE`.
 
 ### 7.4 Skipped tests
 

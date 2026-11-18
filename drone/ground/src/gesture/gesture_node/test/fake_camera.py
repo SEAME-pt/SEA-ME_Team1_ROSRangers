@@ -1,6 +1,6 @@
 """Run gesture_node's real main() with a fake camera.
 
-Used by test_gesture_node_process.py and docker/smoke_test.sh:
+Used by test_gesture_node_process.py and tools/smoke_test.sh:
 
     python3 fake_camera.py MODE [--ros-args ...]
 
