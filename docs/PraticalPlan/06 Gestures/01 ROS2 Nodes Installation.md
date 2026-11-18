@@ -69,8 +69,29 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 | `gesture` | `gesture_node`: webcam, "Gestures" window, `/gesture/raw` |
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
-| `flight` | `fake_flight_state`, a **pretend** `/flight/state` ([[04 Mission Node]] §7.1). Never with a real drone |
+| `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
 | `echo` | the live table of the chain, and the `ros2` CLI (§5) |
+| `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
+| `px4`, `sim_smoke` | the simulation and its test, sim modes only ([[PX4 SITL Setup]] §7) |
+
+Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.env`. The file sets the profile, the parameter file (`ground_bringup`'s `config/<mode>.yaml`), the ROS domain and the discovery range together:
+
+| Mode | Services | `/flight/state` from |
+| :--- | :--- | :--- |
+| `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
+| `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
+| `real` (`docker compose --env-file env/real.env ...`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+
+**Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
+
+```bash
+cd drone/ground
+mkdir -p env
+cp env.example/demo.env.example env/demo.env   # and sim, real when you need them
+cp .env.example .env                           # only for a plain `docker compose ...`
+```
+
+Until they are filled in, `make` and `docker compose` refuse to start, and say which value is missing.
 
 The **live table** shows the latest gesture, intent, mission mode and velocity target, and marks a topic `STALE` when it stops. Each node writes its output to `logs/<service>/latest.log` (`tail -f logs/intent/latest.log`).
 
@@ -81,14 +102,14 @@ From `drone/ground/`:
 | Target | Does |
 | :--- | :--- |
 | `make` | builds the images and starts all five services; the terminal shows the live table |
-| `make down` | stops them |
+| `make down` | stops the demo and the simulation; refuses while `flight_interface` runs |
 | `make unit` / `make smoke` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
 | `make fclean` / `make re` | `clean` + removes `logs/` and this project's other Docker objects / `fclean`, then `make` |
-| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `flight`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
+| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
 | `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
 
-`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). The pretend flight state's mask and airborne are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: edit it, then `docker compose restart flight` ([[04 Mission Node]] §8.1).
+`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). The pretend flight state's mask and airborne are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: edit it, then `docker compose restart fake_flight_state` ([[04 Mission Node]] §8.1).
 
 ### 4.4 Changing the code
 
@@ -96,7 +117,7 @@ The code is copied into the images, so run `make` again after an edit: it rebuil
 
 ### 4.5 `ROS_DOMAIN_ID`
 
-Nodes on the same network see each other. Export your own number (0–101) before `make` and use it in every terminal: `export ROS_DOMAIN_ID=42`.
+Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
 
 ---
 

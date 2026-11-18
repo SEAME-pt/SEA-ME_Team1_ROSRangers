@@ -39,8 +39,10 @@ SEA-ME_Team1_ROSRangers/
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke;
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
-│   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed);
-│   │   │                      #   flight_interface behind its own profile; px4 + sim_smoke behind sim / sim-smoke (SIM ONLY)
+│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
+│   │   │                      #   real (... + flight_interface), sim (... + px4; SIM ONLY), sim-smoke (the sim test)
+│   │   ├── env.example/       # demo|real|sim.env.example: each mode's env file, values empty (copy to env/, ignored by Git,
+│   │   │                      #   and fill in the safety pilot's values); .env.example likewise for .env
 │   │   ├── docker/            # what goes into the images: base/Dockerfile (the base every ground image builds FROM:
 │   │   │                      #   Jazzy, non-root user ros with the host's uid), entrypoint.sh (node logs)
 │   │   ├── tools/             # host helpers: smoke_test.sh (make smoke, CI ground-docker), pkg_dirs.sh (finds each

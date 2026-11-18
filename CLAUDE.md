@@ -17,6 +17,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | `drone/ground/src/gesture/` | Gesture recognition → flight interface |
 | `drone/config/betaflight/` | Betaflight `diff all` / `status` baselines per version |
 | `drone/ground/src/simulation/` | PX4 SITL / Gazebo image, sim scripts, `px4_offboard_bridge` (sim only) |
+| `drone/ground/env.example/` | Templates of the per-mode env files (`demo`, `real`, `sim`: compose profile, parameter file, ROS domain, discovery range; ADR-025 E1.3), values empty. The filled-in `env/<mode>.env` and `.env` are git-ignored: the safety pilot gives the values. Never commit them or put the values in a template |
 | `drone/ground/src/bringup/ground_bringup/` | The modes (demo, real, sim): launch files and parameter files (`config/<mode>.yaml`), no code. The containers read the same parameter files |
 | `drone/tests/{sitl,hil,vectors}/` | SITL tests, HIL bench tests, golden test vectors shared by C++ and Python |
 | `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review) |

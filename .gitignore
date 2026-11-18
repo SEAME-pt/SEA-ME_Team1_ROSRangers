@@ -14,6 +14,10 @@ config/
 drone/ground/gesture-venv/
 drone/ground/ros2_ws/
 drone/ground/logs
+# Env files: the real values (ROS domains, discovery), given by the safety
+# pilot, never committed. Templates with empty values: .env.example, env.example/
+.env
+env/
 results/
 .pio
 .vscode/

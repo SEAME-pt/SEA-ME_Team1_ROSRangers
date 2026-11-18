@@ -1,10 +1,10 @@
 # Ground nodes: native venv + colcon workspace, and the Docker containers.
 #
-#   make          venv + ros2_ws (only if ROS 2 Jazzy is installed), then
-#                 docker compose up --build (gesture, intent, echo, mission,
-#                 flight = pretend /flight/state): echo's live table in this
-#                 terminal, each node's output in logs/<service>/latest.log
-#   make down     stop the containers
+#   make          venv + ros2_ws (only if ROS 2 Jazzy is installed), then the
+#                 demo mode (env/demo.env): gesture, intent, echo, mission,
+#                 fake_flight_state (pretend /flight/state). echo's live table in
+#                 this terminal, each node's output in logs/<service>/latest.log
+#   make down     stop the demo and the simulation (never flight_interface)
 #   make clean    down + remove this project's Docker images
 #   make fclean   clean + remove the venv, the workspace, logs/, Python caches and
 #                 the rest of this project's Docker objects (make smoke's too),
@@ -21,16 +21,24 @@
 #                 psk.json next to it (mode 600), the only secret the
 #                 flight_interface container mounts (ADR-025 E3.2)
 #
+# Modes: one compose profile and env file each (env/<mode>.env: profile,
+# parameter file, ROS domain, ADR-025 E1.3). Git ignores env/: copy each
+# template from env.example/ and fill in the values the safety pilot gives you
+# (tools/env_check.sh checks them before a mode starts):
+#   mkdir -p env && cp env.example/demo.env.example env/demo.env
+#
 # make, make up, make sim and make sim-smoke refuse to start while a
 # flight_interface container is running: each starts its own /flight/state
-# publisher (flight or px4_offboard_bridge), and /flight/state must have one.
+# publisher (fake_flight_state or px4_offboard_bridge), and /flight/state
+# must have one. make down, sim-down and clean refuse too: they would stop the
+# chain (gesture, intent, mission) that flight_interface flies with.
 #
 # SIMULATION ONLY (#86): PX4 SITL + Gazebo instead of the pretend /flight/state.
 # The first run builds the PX4 image (long, several GB); later runs reuse it.
 #   make sim        PX4 SITL + Gazebo (headless) + XRCE agent + px4_offboard_bridge,
 #                   gesture (camera), intent, mission, echo. PX4 arms, takes off
 #                   and switches to Offboard by itself; then ENGAGE (both open
-#                   hands) and fly. Never flight (the bridge publishes /flight/state)
+#                   hands) and fly. Never fake_flight_state (the bridge publishes /flight/state)
 #   make sim-smoke  headless test, no camera: scripted gestures (ENGAGE, right,
 #                   climb, intent_node killed) and the checks of #86, then stops.
 #                   Rosbag + summary.md in logs/sim-smoke/<start time>/
@@ -68,7 +76,15 @@ TESTLOG := logs/test
 # with plain docker build, not by compose, so make clean and fclean keep it:
 # rebuilding it takes a long time. Remove it by hand: docker rmi $(PX4_IMAGE)
 PX4_IMAGE    := seame-px4-sim:jazzy-1.17
-SIM_PROFILES := --profile sim --profile sim-smoke
+# Every profile but real: the rules that stop containers. Never real, so they
+# never touch flight_interface (no-flight-interface also refuses while it runs).
+# Stopping needs no env file: stand-in values, which only satisfy compose's
+# check (a stop starts nothing, so no domain is used).
+STOP_PROFILES := --profile demo --profile sim --profile sim-smoke
+STOP_COMPOSE  := GROUND_MODE=demo GROUND_DOMAIN_ID=0 GROUND_DISCOVERY_RANGE=LOCALHOST \
+	$(COMPOSE) $(STOP_PROFILES)
+DEMO_COMPOSE  := $(COMPOSE) --env-file env/demo.env
+SIM_COMPOSE   := $(COMPOSE) --env-file env/sim.env
 SIM          := px4 gesture intent mission echo
 SIM_SMOKE    := px4 mission sim_smoke
 MASK         ?= 15
@@ -84,12 +100,9 @@ GROUND_UID := $(shell u=$$(id -u); [ "$$u" = 0 ] && echo 1000 || echo "$$u")
 GROUND_GID := $(shell g=$$(id -g); [ "$$g" = 0 ] && echo 1000 || echo "$$g")
 # compose reads them from the environment of every rule (gesture: RENDER_GID too)
 export GROUND_UID GROUND_GID RENDER_GID
-# Subnet discovery for the simulation only (ADR-025 E1.2): with the compose
-# default LOCALHOST the px4 container (uid 1000, UDP only) and the others never
-# see each other. The sim runs no flight_interface and no drone.
-SIM_DISCOVERY := ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
-SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
-SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
+# The sim's domain and subnet discovery (ADR-025 E1.2) come from env/sim.env
+SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
+SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
 
 # Compose projects: ground (make, make up: named after this folder) and
 # ground-smoke (make smoke). Compose labels their containers, images and
@@ -111,7 +124,7 @@ NATIVE  := no-ros
 TEST    := unit
 endif
 
-all: no-flight-interface $(NATIVE) up
+all: no-flight-interface env-demo $(NATIVE) up
 
 # ---------- native venv + workspace ----------
 
@@ -288,7 +301,8 @@ smoke:
 
 # /flight/state must have exactly one publisher (ADR-025 §1). A running
 # flight_interface container, from any compose project and started with up
-# or run, blocks every rule that starts another one (flight, the px4 bridge).
+# or run, blocks every rule that starts another one (fake_flight_state, the
+# px4 bridge), and every rule that would stop the chain it flies with.
 # Only running containers count; there is no override. A docker ps that fails
 # also refuses: no check, no start.
 no-flight-interface:
@@ -297,7 +311,8 @@ no-flight-interface:
 		"so cannot check that flight_interface is not running"; exit 1; }; \
 	if [[ -n $$names ]]; then \
 		echo "make $(or $(MAKECMDGOALS),all): refused, flight_interface is running:" $$names; \
-		echo "  This rule would start a second /flight/state publisher (ADR-025)."; \
+		echo "  This rule would start a second /flight/state publisher, or stop the"; \
+		echo "  gesture -> intent -> mission chain it flies with (ADR-025)."; \
 		echo "  If nobody is using it (ask the safety pilot), stop it first:"; \
 		echo "    docker stop" $$names; \
 		echo "  docker stop deactivates it cleanly: one last zero setpoint, then BYE."; \
@@ -347,17 +362,21 @@ psk-file:
 
 # logs/ made here, not by Docker (as root), so it stays the user's.
 # A running simulation is stopped first: its bridge also publishes /flight/state.
-up: no-flight-interface
+# env/<mode>.env filled in (from env.example/, values from the safety pilot)
+env-demo env-sim env-real:
+	@tools/env_check.sh $(@:env-%=%)
+
+up: no-flight-interface env-demo
 	-xhost +local: >/dev/null
 	mkdir -p logs
-	$(COMPOSE) $(SIM_PROFILES) stop px4 sim_smoke
-	$(COMPOSE) up --build
+	$(STOP_COMPOSE) stop px4 sim_smoke
+	$(DEMO_COMPOSE) up --build
 
-down:
-	$(COMPOSE) $(SIM_PROFILES) down
+down: no-flight-interface
+	$(STOP_COMPOSE) down
 
-clean:
-	$(COMPOSE) $(SIM_PROFILES) down --rmi all --remove-orphans
+clean: no-flight-interface
+	$(STOP_COMPOSE) down --rmi all --remove-orphans
 
 # ---------- Simulation (SIMULATION ONLY, #86) ----------
 
@@ -370,16 +389,16 @@ px4-image:
 px4-image-present:
 	@docker image inspect $(PX4_IMAGE) >/dev/null 2>&1 || $(MAKE) --no-print-directory px4-image
 
-# Every service listed by name: never flight (pretend /flight/state). Started
+# Every service listed by name: never fake_flight_state (pretend /flight/state). Started
 # from scratch: the other modes stopped, the containers recreated.
-sim: no-flight-interface px4-image-present
+sim: no-flight-interface env-sim px4-image-present
 	-xhost +local: >/dev/null
 	mkdir -p logs
-	$(COMPOSE) $(SIM_PROFILES) down
-	$(SIM_ENV) $(COMPOSE) --profile sim up --build --force-recreate $(SIM)
+	$(STOP_COMPOSE) down
+	$(SIM_ENV) $(SIM_COMPOSE) up --build --force-recreate $(SIM)
 
-sim-down:
-	$(COMPOSE) $(SIM_PROFILES) down
+sim-down: no-flight-interface
+	$(STOP_COMPOSE) down
 
 # sim_smoke waits for px4 to be healthy (armed, in Offboard); its exit code is
 # the result. Everything is stopped afterwards, pass or fail.
@@ -389,13 +408,13 @@ sim-smoke-mask:
 	@[[ "$(MASK)" == 11 || "$(MASK)" == 15 ]] || \
 		{ echo "make sim-smoke: MASK must be 11 or 15, got '$(MASK)'"; exit 2; }
 
-sim-smoke: no-flight-interface sim-smoke-mask px4-image-present
+sim-smoke: no-flight-interface env-sim sim-smoke-mask px4-image-present
 	@mkdir -p logs $(TESTLOG)
-	$(COMPOSE) $(SIM_PROFILES) down
-	@$(SMOKE_ENV) $(COMPOSE) --profile sim-smoke up --build --force-recreate \
+	$(STOP_COMPOSE) down
+	@$(SMOKE_ENV) $(SIM_COMPOSE) --profile sim-smoke up --build --force-recreate \
 		--exit-code-from sim_smoke $(SIM_SMOKE) 2>&1 | tee $(TESTLOG)/sim-smoke.log; \
 	code=$${PIPESTATUS[0]}; \
-	$(COMPOSE) $(SIM_PROFILES) down; \
+	$(STOP_COMPOSE) down; \
 	echo "full output: $(TESTLOG)/sim-smoke.log, PX4: logs/px4-sitl/px4.log"; \
 	exit $$code
 
@@ -422,4 +441,4 @@ re: fclean all
 
 .PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
 	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask \
-	no-flight-interface psk-file
+	no-flight-interface psk-file env-demo env-sim env-real

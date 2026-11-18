@@ -9,23 +9,24 @@
 #      (src/gesture/gesture_node/test/fake_camera.py) in the gesture image publishes
 #      L:INDEX_RIGHT+R:NONE -> intent container -> MOVE_RIGHT on
 #      /gesture/intent ->
-#      mission container (pretend /flight/state from the flight container)
+#      mission container (pretend /flight/state from the fake_flight_state container)
 #      sees MOVE_RIGHT on /mission/state but never engages: nobody showed
 #      ENGAGE. The echo image's own command (src/echo/monitor.py,
 #      the table of `docker compose up`, here one line per change) shows it.
 #   4. docker stop the gesture container: it exits 0 at once, intent falls
 #      back to NEUTRAL (reason no_packets) and mission, airborne, stays
 #      WAITING: no land request.
-#   5. docker stop the intent, mission, flight and monitor containers: exit 0
+#   5. docker stop the intent, mission, fake_flight_state and monitor containers: exit 0
 #      at once. The two `ros2 topic echo` probes are test instruments, not our
 #      nodes: they are killed without a check (the ROS 2 CLI sometimes hangs
 #      on SIGTERM, #181), and kept until cleanup() so their logs are saved.
-#   6. Node logs (docker/entrypoint.sh): intent, mission and flight, started
+#   6. Node logs (docker/entrypoint.sh): intent, mission and fake_flight_state, started
 #      by compose, wrote logs/smoke/<service>/latest.log, every line
 #      timestamped. A container stopped with docker stop keeps every line its
 #      command prints while stopping (the entrypoint is PID 1 there).
-#   7. flight_interface, from its compose service (loopback backend, a dummy
-#      secrets file mounted, no PSK): configure + activate, its /flight/state
+#   7. flight_interface, from its compose service (real.yaml, with
+#      -p backend:=loopback after it; a dummy secrets file mounted, no PSK):
+#      configure + activate, its /flight/state
 #      reaches mission, which stays IDLE (not_streaming) for 5 s: the
 #      loopback drone has no override, so nothing can engage. /flight/state
 #      has exactly one publisher (ros2 topic info). Never
@@ -44,7 +45,12 @@ SELF=$(realpath "$0")
 # Absolute before the cd below, so a relative SMOKE_LOG_DIR still works
 LOG_DIR=${SMOKE_LOG_DIR:+$(realpath -m "$SMOKE_LOG_DIR")}
 cd "$(dirname "$0")/.."
-export ROS_DOMAIN_ID=86 # tests use 81-85 and 87-91: `grep -r TEST_DOMAIN_ID src ../tests`
+export ROS_DOMAIN_ID=86 # tests use 81-85 and 87-97: `grep -r TEST_DOMAIN_ID src ../tests`
+# The compose services take their domain from GROUND_DOMAIN_ID (the modes'
+# env files), never from ROS_DOMAIN_ID: the same 86 for them. Their
+# parameters: the demo's (fake_flight_state and flight_interface use their
+# own file whatever the mode).
+export GROUND_DOMAIN_ID=$ROS_DOMAIN_ID GROUND_MODE=demo GROUND_DISCOVERY_RANGE=LOCALHOST
 # The compose services' log folder (docker-compose.yml). Made here, not by
 # Docker, so it belongs to the user and the next run can empty it.
 export GROUND_LOG_DIR=./logs/smoke
@@ -57,12 +63,13 @@ export GROUND_GID=${GROUND_GID:-$( ((gid)) && echo "$gid" || echo 1000)}
 rm -rf "$GROUND_LOG_DIR"
 mkdir -p "$GROUND_LOG_DIR"
 PROJECT=ground-smoke
-# --profile flight_interface: build (step 1) and start (step 7) it too
-COMPOSE="docker compose -p $PROJECT -f docker-compose.yml --profile flight_interface"
+# demo's services, and real's flight_interface: built in step 1, each started
+# by name (never the camera, never both /flight/state publishers at once)
+COMPOSE="docker compose -p $PROJECT -f docker-compose.yml --profile demo --profile real"
 INTENT=$PROJECT-intent-1
 GESTURE=$PROJECT-gesture
 MISSION=$PROJECT-mission-1
-FLIGHT=$PROJECT-flight-1
+FLIGHT=$PROJECT-fake_flight_state-1
 FLIGHT_INTERFACE=$PROJECT-flight_interface-1
 ECHO=$PROJECT-echo
 MISSION_ECHO=$PROJECT-mission-echo
@@ -142,7 +149,7 @@ cleanup() {
         done
     fi
     docker rm -f "$GESTURE" "$ECHO" "$MISSION_ECHO" "$MONITOR" "$STOPPER" \
-        "$FI_MISSION_ECHO" "$LIFECYCLE" >/dev/null 2>&1 || true
+        "$FI_MISSION_ECHO" "$LIFECYCLE" "$FLIGHT_INTERFACE" >/dev/null 2>&1 || true
     $COMPOSE down >/dev/null 2>&1 || true
     rm -f "$SEAME_SECRETS_FILE"
     summary "$code"
@@ -245,7 +252,7 @@ run_pytest rosrangers/flight_interface:jazzy flight_interface \
     --deselect test/test_guard.py::test_masks_and_ceilings_match_mission_node
 
 step 3 "gesture container -> intent container -> mission container"
-$COMPOSE up -d intent mission flight
+$COMPOSE up -d intent mission fake_flight_state
 docker run -d --name "$ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
     ros2 topic echo --field data /gesture/intent std_msgs/msg/String >/dev/null
 docker run -d --name "$MISSION_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
@@ -286,7 +293,7 @@ wait_for "$MONITOR" "intent: NEUTRAL no_packets" 15 ||
     fail "the echo image's monitor did not show NEUTRAL no_packets within 15 s"
 echo "    the monitor shows it too"
 
-step 5 "stop the intent, mission, flight and monitor containers"
+step 5 "stop the intent, mission, fake_flight_state and monitor containers"
 stop_and_check "$INTENT"
 stop_and_check "$MISSION"
 stop_and_check "$FLIGHT"
@@ -306,7 +313,7 @@ check_log() {
 }
 check_log intent "Intent -> MOVE_RIGHT (reason: ok"
 check_log mission "Intent -> NEUTRAL (reason: no_packets)"
-check_log flight "PRETEND flight state"
+check_log fake_flight_state "PRETEND flight state"
 # A pretend node that prints 5000 lines and "stopping" on SIGTERM. The
 # entrypoint is PID 1: when PID 1 exits the kernel kills the logger, so it
 # must wait for the logger. A plain `exec "$@"` keeps only the first few of
@@ -350,9 +357,14 @@ lifecycle() {
     done
     fail "/flight_interface did not reach $2 (ros2 lifecycle set $1) within 30 s"
 }
-# mission alone: flight (the pretend /flight/state) stopped in step 5, so
-# flight_interface is the only /flight/state publisher here
-$COMPOSE up -d mission flight_interface
+# mission alone: fake_flight_state (the pretend /flight/state) stopped in
+# step 5, so flight_interface is the only /flight/state publisher here. Its
+# service reads real.yaml (backend esp): the loopback backend replaces it here,
+# never the drone.
+$COMPOSE up -d mission
+$COMPOSE run -d --name "$FLIGHT_INTERFACE" flight_interface \
+    /ws/install/flight_interface/lib/flight_interface/flight_interface \
+    --ros-args --params-file /config/real.yaml -p backend:=loopback >/dev/null
 docker run -d --name "$FI_MISSION_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
     ros2 topic echo --field data /mission/state std_msgs/msg/String >/dev/null
 wait_for "$FLIGHT_INTERFACE" "unconfigured: use ros2 lifecycle set" 30 ||

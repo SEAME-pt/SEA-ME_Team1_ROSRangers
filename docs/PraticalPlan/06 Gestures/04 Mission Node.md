@@ -211,7 +211,7 @@ The velocity controller turns the target into attitude setpoints, and `flight_in
 
 ### 7.1 `fake_flight_state`
 
-The `flight` service. Publishes `/flight/state` at 10 Hz; every field is a parameter you can change live with `ros2 param set /fake_flight_state <field> <value>` ([[01 ROS2 Nodes Installation|01]] §5): `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`. `publish false` simulates a dead `flight_interface`; `raw` sends any text to try bad messages. Each fault drops the node to `IDLE`.
+The `fake_flight_state` service (demo mode only). Publishes `/flight/state` at 10 Hz; every field is a parameter you can change live with `ros2 param set /fake_flight_state <field> <value>` ([[01 ROS2 Nodes Installation|01]] §5): `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`. `publish false` simulates a dead `flight_interface`; `raw` sends any text to try bad messages. Each fault drops the node to `IDLE`.
 
 ### 7.2 `fake_intent`
 
@@ -241,7 +241,7 @@ Starting the services, the CLI and the logs: [[01 ROS2 Nodes Installation|01]] �
 
 ### 8.1 With the webcam
 
-`make` starts `mission` and `flight` with the rest of the chain. The pretend drone's settings are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: `mask: 15` gives the ground throttle, `airborne: false` puts it on the ground. Edit the file, then `docker compose restart flight` (no rebuild).
+`make` starts `mission` and `fake_flight_state` with the rest of the chain. The pretend drone's settings are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: `mask: 15` gives the ground throttle, `airborne: false` puts it on the ground. Edit the file, then `docker compose restart fake_flight_state` (no rebuild).
 
 Without Docker, the same mode: `ros2 launch ground_bringup demo.launch.py` (`camera:=false` leaves out `gesture_node`).
 
@@ -251,11 +251,11 @@ Without Docker, the same mode: `ros2 launch ground_bringup demo.launch.py` (`cam
 docker compose run --rm mission ros2 launch mission_node mission_demo.launch.py   # mask:=15, loop:=true also work
 ```
 
-Compare the output with the table in §7.2. Don't run it next to the `mission` and `flight` services.
+Compare the output with the table in §7.2. Don't run it next to the `mission` and `fake_flight_state` services.
 
 ### 8.3 With `intent_node`, no camera
 
-`docker compose up -d --build intent mission flight`, then publish gestures on `/gesture/raw` with `ros2 topic pub` (one at a time, `null` first so the engage counts).
+`docker compose up -d --build intent mission fake_flight_state`, then publish gestures on `/gesture/raw` with `ros2 topic pub` (one at a time, `null` first so the engage counts).
 
 ### 8.4 In the simulator
 
@@ -288,7 +288,7 @@ Attach `logs/intent/latest.log` and `logs/mission/latest.log` of a webcam run to
 
 | Symptom | Fix |
 | :--- | :--- |
-| Mode stays `IDLE` / `no_flight_state` | start the `flight` service |
+| Mode stays `IDLE` / `no_flight_state` | start the `fake_flight_state` service |
 | Mode stays `WAITING` with both open hands | lower both arms, then show them again (§5.1) |
 | Gestures do nothing, mode `LOCKED` | hold both fists 1 s to unlock |
 | `CLIMB_UP` does nothing | expected with mask 11; set `mask: 15` in `config/demo.yaml` (§8.1) |

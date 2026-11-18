@@ -125,9 +125,9 @@ The services, in `drone/ground/docker-compose.yml`:
 | `gesture`, `intent`, `mission`, `echo` | the usual ground services ([[01 ROS2 Nodes Installation\|01]] §4.2) |
 | `sim_smoke` | the scripted test (§7.3) |
 
-The `flight` service (pretend `/flight/state`) never runs with them: the bridge publishes the real one from PX4. `make sim` lists its services by name for that reason, and `make` / `make up` stop a running sim first. The sim services are behind the compose profiles `sim` and `sim-smoke`, so plain `make` never starts them.
+The `fake_flight_state` service (pretend `/flight/state`) never runs with them: the bridge publishes the real one from PX4. The sim is its own mode: profile `sim` and `drone/ground/env/sim.env` (parameters `config/sim.yaml`, its own ROS domain; copy it from `env.example/sim.env.example` and fill in the safety pilot's values first, [[01 ROS2 Nodes Installation|01]] §4.2). `fake_flight_state` is in the `demo` profile only, `make sim` also lists its services by name, and `make` / `make up` stop a running sim first. `make sim-smoke` adds the profile `sim-smoke` (the `sim_smoke` test container).
 
-**Discovery.** `make sim` and `make sim-smoke` run every container with `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`; the rest of the ground chain defaults to `LOCALHOST` ([[ADR-025 flight_interface Ground Node|ADR-025]] E1, E1.2). With `LOCALHOST` the `px4` container (uid 1000, UDP only) and the others never see each other. With `SUBNET` other PCs on the same network and `ROS_DOMAIN_ID` see the sim's topics: on a shared network, use your own domain (`export ROS_DOMAIN_ID=<n>` before `make sim`).
+**Discovery.** `make sim` and `make sim-smoke` run every container with `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET` (`env/sim.env`); the other modes use `LOCALHOST` ([[ADR-025 flight_interface Ground Node|ADR-025]] E1, E1.2, E1.3). With `LOCALHOST` the `px4` container (uid 1000, UDP only) and the others never see each other. With `SUBNET` other PCs on the same network and `ROS_DOMAIN_ID` see the sim's topics: on a shared network, the sim's domain in `env/sim.env` keeps it apart; a host terminal needs the same (`export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID>`).
 
 **`px4_offboard_bridge`** (`drone/ground/src/simulation/px4_offboard_bridge/`) turns `/mission/velocity_target` into PX4 offboard velocity setpoints at 20 Hz (body FLU → local NED, using the PX4 heading). It sends zero when the target is older than 0.25 s (REQ-SAF-017), zeroes the axes outside the mask (REQ-SAF-018) and clamps to the ceilings. It publishes `/flight/state` for `mission_node`: `override_active` is "armed and in Offboard", the sim's takeover switch. It never arms or changes mode. Details, the frame formulas and the parameters: its `README.md`.
 
@@ -210,7 +210,7 @@ To keep a run as evidence, zip its `sim-smoke/<start time>/` folder and attach i
 | `ENGAGE` does nothing | wait until the mission mode is `WAITING` (after `[sim] 5/5 Ready`); put both arms down first: `ENGAGE` must be a new gesture |
 | sluggish drone, `link_ok` or `airborne` flickering in `/flight/state` | Gazebo runs much slower than real time (software rendering): try `GUI=0`, check `/dev/dri` |
 | no Gazebo window | check `echo $DISPLAY`; `make sim` runs `xhost +local:` for you |
-| `make` stopped the sim | on purpose: the pretend `flight` and the bridge would both publish `/flight/state` |
+| `make` stopped the sim | on purpose: the pretend `fake_flight_state` and the bridge would both publish `/flight/state` |
 | `sim-smoke`: `chain ready` FAIL | `mission_node` was not `WAITING` with no hands within 60 s of PX4 being ready: see `logs/mission/latest.log` |
 
 ### 7.5 By hand: `sim_smoke.sh`

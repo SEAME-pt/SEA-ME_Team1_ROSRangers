@@ -101,33 +101,35 @@ Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
 ## ▶️ 7. Run (Docker)
 
-The service has its own profile, so `make` never starts it. Only one node may publish `/flight/state`: stop the pretend `flight` service first. The `ros2` CLI goes through `echo` ([[01 ROS2 Nodes Installation|01]] §5).
+The service belongs to the **real** mode only: profile `real`, `drone/ground/env/real.env` (its ROS domain and `LOCALHOST`; copy it from `env.example/real.env.example` and fill in the values the safety pilot gives you, [[01 ROS2 Nodes Installation|01]] §4.2) and `ground_bringup`'s `config/real.yaml` (backend `esp`). Without a filled-in `env/real.env`, compose refuses to start. `make` (demo) and `make sim` never start it, and refuse to start while it runs. The demo's `fake_flight_state` and the sim's bridge never run next to it, so `/flight/state` has one publisher. Every command below passes `--env-file env/real.env`, `echo` included (the `ros2` CLI, [[01 ROS2 Nodes Installation|01]] §5). Without it, `echo` is on the demo's domain and never sees the node.
 
 ### 7.1 Loopback (no drone)
 
+`-p backend:=loopback` after the parameter file replaces its `esp`:
+
 ```bash
-docker compose --profile flight_interface up -d --build flight_interface
-docker compose run --rm echo ros2 lifecycle set /flight_interface configure
-docker compose run --rm echo ros2 lifecycle set /flight_interface activate
+docker compose --env-file env/real.env run -d --name fi-loopback flight_interface \
+  /ws/install/flight_interface/lib/flight_interface/flight_interface \
+  --ros-args --params-file /config/real.yaml -p backend:=loopback
+docker compose --env-file env/real.env run --rm echo ros2 lifecycle set /flight_interface configure
+docker compose --env-file env/real.env run --rm echo ros2 lifecycle set /flight_interface activate
 ```
 
-`/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`; `mission_node` stays `IDLE`.
+`/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`; a `mission_node` on the same domain stays `IDLE`. Stop it with `docker stop fi-loopback`.
 
 ### 7.2 With the drone (ESP backend)
 
 Follow [[Safety Rules]]: props off on the bench, the safety pilot holds the radio.
 
 ```bash
-docker compose --profile flight_interface run --rm flight_interface \
-  /ws/install/flight_interface/lib/flight_interface/flight_interface \
-  --ros-args -p backend:=esp
+docker compose --env-file env/real.env run --rm flight_interface
 ```
 
 Then `configure`, `activate` as in §7.1, and ARM only by hand:
 
 ```bash
-docker compose run --rm echo ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger
-docker compose run --rm echo ros2 service call /flight_interface/estop std_srvs/srv/Trigger
+docker compose --env-file env/real.env run --rm echo ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger
+docker compose --env-file env/real.env run --rm echo ros2 service call /flight_interface/estop std_srvs/srv/Trigger
 ```
 
 The container mounts only the PSK, never the whole `secrets.json` (it also holds the Wi-Fi and OTA passwords, [[ADR-025 flight_interface Ground Node|ADR-025]] E3.2). Create that file once, and again after the PSK changes:
@@ -178,7 +180,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 | ARM and RESUME only from the operator | The ground never takes control by itself |
 | The container runs the node itself, not the launch file | `ros2 launch` ignores `docker stop`'s SIGTERM, so the last zero setpoint would be lost |
 | PSK mounted read-only, never in the environment or the image | The key stays a file only the operator can read |
-| One `/flight/state` publisher | `flight`, `px4_offboard_bridge` and `flight_interface` never run together |
+| One `/flight/state` publisher | `fake_flight_state` (demo), `px4_offboard_bridge` (sim) and `flight_interface` (real) are in different modes and never run together |
 
 ---
 
