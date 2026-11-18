@@ -35,7 +35,6 @@ jobs:
       esp: ${{ steps.check.outputs.esp }}
       sitl: ${{ steps.check.outputs.sitl }}
       ros: ${{ steps.check.outputs.ros }}
-      ros_pkgs: ${{ steps.check.outputs.ros_pkgs }}
       docker: ${{ steps.check.outputs.docker }}
     steps:
       - uses: actions/checkout@v4
@@ -112,30 +111,18 @@ jobs:
             fi
           fi
 
-          if [[ ! -f drone/ground/src/gesture/gesture_node/package.xml ||
-                ! -f drone/ground/src/intent/intent_node/package.xml ]]; then
+          # Runs whenever drone/ground/src exists: a listed package that is
+          # missing fails ground-ros2 (its "Find the packages" step), never
+          # skips it (#186).
+          if [[ ! -d drone/ground/src ]]; then
             echo "ros=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=ground-ros2 skipped::gesture_node or intent_node package.xml not found"
+            echo "::notice title=ground-ros2 skipped::drone/ground/src not found"
           elif [[ $ground_changed == false ]]; then
             echo "ros=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=ground-ros2 skipped::PR changes nothing in drone/ground, drone/tests/ros or ci.yaml"
           else
             echo "ros=true" >> "$GITHUB_OUTPUT"
           fi
-
-          # Packages ground-ros2 builds and tests. gesture_node + intent_node
-          # decide whether the job runs; mission_node and flight_interface
-          # join once they exist.
-          # Each package sits in src/<component>/ (component = name without _node).
-          ros_pkgs="gesture_node intent_node"
-          for pkg in mission_node flight_interface; do
-            if [[ -f drone/ground/src/${pkg%_node}/$pkg/package.xml ]]; then
-              ros_pkgs+=" $pkg"
-            else
-              echo "::notice title=ground-ros2 without $pkg::drone/ground/src/${pkg%_node}/$pkg/package.xml not found"
-            fi
-          done
-          echo "ros_pkgs=$ros_pkgs" >> "$GITHUB_OUTPUT"
 
           if [[ ! -f drone/ground/docker-compose.yml ]]; then
             echo "docker=false" >> "$GITHUB_OUTPUT"
@@ -243,11 +230,14 @@ jobs:
       - run: pip install "pytest==9.2.*" "pyserial==3.5"
       - run: pytest drone/tests/hil --ignore=drone/tests/hil/gateway/wifi -v
 
-  # gesture_node + intent_node, plus mission_node and flight_interface once
-  # their package.xml exists (list in check-components ros_pkgs): unit, node,
-  # process, launch and pipeline tests
-  # in the ros:jazzy container (ADR-018). REQUIRE_ROS_TESTS makes a missing
-  # rclpy or package fail instead of skipping the ROS tests.
+  # The ground ROS packages in ROS_PKGS: unit, node, process, launch and
+  # pipeline tests in the ros:jazzy container (ADR-018). A new package joins
+  # by adding it to ROS_PKGS, with its tests (the coverage gate applies at
+  # once). Each one is found by its folder (drone/ground/docker/pkg_dirs.sh,
+  # the same lookup as the Makefile): a missing or doubled package fails the
+  # job.
+  # REQUIRE_ROS_TESTS makes a missing rclpy or package fail instead of
+  # skipping the ROS tests.
   ground-ros2:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.ros == 'true' }}
@@ -258,12 +248,19 @@ jobs:
       PIP_BREAK_SYSTEM_PACKAGES: "1"
       REQUIRE_ROS_TESTS: "1"
       ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
-      ROS_PKGS: ${{ needs.check-components.outputs.ros_pkgs }}
+      ROS_PKGS: gesture_node intent_node mission_node flight_interface
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      # Before the slow steps, so a moved or renamed package fails at once
+      - name: Find the packages
+        run: |
+          dirs=$(drone/ground/docker/pkg_dirs.sh drone/ground/src $ROS_PKGS)
+          echo "$dirs"
+          echo "PKG_DIRS=$(tr '\n' ' ' <<<"$dirs")" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: |
@@ -297,8 +294,10 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           test_paths=() cov_flags=()
+          for dir in $PKG_DIRS; do
+            test_paths+=("$dir/test")
+          done
           for pkg in $ROS_PKGS; do
-            test_paths+=("drone/ground/src/${pkg%_node}/$pkg/test")
             cov_flags+=("--cov=$pkg")
           done
           python3 -m pytest "${test_paths[@]}" drone/tests/ros \

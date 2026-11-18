@@ -41,7 +41,8 @@ SEA-ME_Team1_ROSRangers/
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
 │   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed);
 │   │   │                      #   flight_interface behind its own profile; px4 + sim_smoke behind sim / sim-smoke (SIM ONLY)
-│   │   ├── docker/            # shared only: entrypoint.sh (node logs), smoke_test.sh (make smoke, CI ground-docker)
+│   │   ├── docker/            # shared only: entrypoint.sh (node logs), smoke_test.sh (make smoke, CI ground-docker),
+│   │   │                      #   pkg_dirs.sh (finds each ROS package's folder for the Makefile and CI ground-ros2)
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/               # one folder per component: its ROS 2 package and its Dockerfile
 │   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)

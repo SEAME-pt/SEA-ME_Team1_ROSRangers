@@ -57,8 +57,10 @@ ROS     := /opt/ros/jazzy/setup.bash
 VENV    := gesture-venv
 WS      := ros2_ws
 PKGS    := gesture_node intent_node mission_node
-# src/<component>/<package>: gesture_node lives in src/gesture/gesture_node
-PKG_DIRS := $(foreach p,$(PKGS),src/$(p:_node=)/$(p))
+# Each package's folder (src/<component>/<package>), found by docker/pkg_dirs.sh: one
+# folder per package or it fails (#186). Looked up in the rules that use it, so
+# a missing package never breaks make down or make clean.
+FIND_PKG_DIRS := docker/pkg_dirs.sh src $(PKGS)
 E2E     := ../tests/ros
 TESTLOG := logs/test
 
@@ -116,9 +118,9 @@ ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node
 
 # Symlinks, not copies, so --symlink-install picks up .py edits without a rebuild.
 # Redone when PKGS changes, so an existing workspace gets new packages too.
-$(WS)/.src: Makefile
-	mkdir -p $(WS)/src
-	$(foreach d,$(PKG_DIRS),ln -sfn ../../$(d) $(WS)/src/$(notdir $(d));)
+$(WS)/.src: Makefile docker/pkg_dirs.sh
+	dirs=$$($(FIND_PKG_DIRS)) && mkdir -p $(WS)/src \
+		&& for d in $$dirs; do ln -sfn ../../$$d $(WS)/src/$${d##*/}; done
 	touch $@
 
 $(WS)/.intent_node: $(WS)/.src src/intent/intent_node/setup.py src/intent/intent_node/package.xml
@@ -232,8 +234,9 @@ e2e-test: ws
 
 # Every suite runs even if one fails. One row per package, plus drone/tests/ros.
 unit:
-	@eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); : >$(TESTLOG)/unit.log; code=0; rows=(); \
-	for dir in $(PKG_DIRS) $(E2E); do \
+	@dirs=$$($(FIND_PKG_DIRS)) || exit 1; \
+	eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); : >$(TESTLOG)/unit.log; code=0; rows=(); \
+	for dir in $$dirs $(E2E); do \
 		( if [[ $$dir == $(E2E) ]]; then python3 -m unittest discover -s $$dir -v; \
 			else cd $$dir && python3 -m unittest discover -s test -v; fi ) 2>&1 | tee $(TESTLOG)/unit.part; \
 		c=$${PIPESTATUS[0]}; ((c)) && code=1; cat $(TESTLOG)/unit.part >>$(TESTLOG)/unit.log; \
