@@ -113,14 +113,9 @@ def radio(sitl_session):
     ranges = request(sitl_session, MSP_MODE_RANGES)
     # 4 bytes per range: box id, AUX index, start step, end step
     mapped = {(ranges[i], ranges[i + 1]) for i in range(0, len(ranges), 4)}
-    if (
-        BOX_MSP_OVERRIDE not in request(sitl_session, MSP_BOXIDS)
-        or (
-            BOX_MSP_OVERRIDE,
-            OVERRIDE - 4,
-        )
-        not in mapped
-    ):
+    has_box = BOX_MSP_OVERRIDE in request(sitl_session, MSP_BOXIDS)
+    on_aux4 = (BOX_MSP_OVERRIDE, OVERRIDE - 4) in mapped
+    if not (has_box and on_aux4):
         skip_or_fail(
             "SITL misprovisioned: no mask or no MSP OVERRIDE on AUX4, load override.cli"
         )
@@ -154,7 +149,8 @@ def test_arm_and_override_switch_cannot_be_set_over_msp(msp, radio):
     # leaked ARM would really arm: else "not armed" proves nothing.
     switch(radio, False)
     deadline = time.monotonic() + 10
-    while (status := arming(msp, radio))["arming_disable_flags"]:
+    while (status := arming(msp, radio)).get("arming_disable_flags", -1):
+        assert "arming_disable_flags" in status, f"MSP_STATUS too short: {status}"
         assert time.monotonic() < deadline, f"SITL cannot arm at all: {status}"
         time.sleep(0.1)
     switch(radio, True)
