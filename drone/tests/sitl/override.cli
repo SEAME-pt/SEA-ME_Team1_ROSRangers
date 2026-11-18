@@ -6,4 +6,7 @@ set msp_override_channels_mask = 11
 aux 0 0 0 1700 2100 0 0
 # MSP OVERRIDE (takeover switch) on AUX4. The drone's channel is not mapped yet.
 aux 1 50 3 1700 2100 0 0
+# No accelerometer: SITL gets no attitude without a simulator feed, and
+# "not upright" would block arming, so the ARM leak test would prove nothing
+set acc_hardware = NONE
 save
