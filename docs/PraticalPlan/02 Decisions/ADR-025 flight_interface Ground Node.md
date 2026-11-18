@@ -19,7 +19,7 @@ tags:
 
 ## 1. Context
 
-- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: `drone/ground/src/flight_interface/flight_interface/` (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
+- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: ROS package `drone/ground/src/flight_interface/flight_interface/`, modules in its `flight_interface/` folder (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
 - It is the innermost ground layer of the safety chain ([[ADR-004 ESP Failsafe|ADR-004]] §3): the radio and the safety pilot, Betaflight's failsafe and the ESP's link failsafe all act without it.
 - Fixed rules every decision respects:
   - The node never sends ARM or RESUME on its own (REQ-SAF-023). ARM only hands the masked stick channels to the ground; it never arms the motors (only the pilot's switch does).
@@ -119,7 +119,7 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 
 ## 3. Consequences
 
-- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the node starts streaming, also when no event came.
+- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the node starts streaming, also when no event came (`FC_RESTORE_AFTER` 0.25 s of `fc_alive`, checked on each 5 Hz `FC_HEALTH`, so on the third one).
 - **Negative:** ARM and RESUME answer 1.5 s later than before. Until `override_active` (#176) and the controller (C1) exist, the node only ever sends neutral sticks.
 - **Open:** the C1.4 roll / pitch cap value, E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
 
@@ -146,3 +146,9 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 | **ROS domain** | `ROS_DOMAIN_ID`: nodes only see nodes with the same number. Not a security boundary. |
 | **SROS2** | ROS 2's security layer: signed and encrypted DDS traffic with per-topic permissions. |
 | **Ceiling** | The guard's hard limit on a target: 0.5 m/s linear, 45 °/s yaw (`CEILING_LINEAR_MPS`, `CEILING_YAW_RPS` in `guard.py`). |
+| **BYE** | Message that ends a session; the ESP then starts its failsafe output at once instead of after `T_loss`. |
+| **FLU** | Body frame: x forward, y left, z up. |
+| **LINK_FAILSAFE / SESSION_IDLE / STREAMING** | ESP link states ([[ESP Link State Machine]]); STREAMING forwards ground setpoints to the FC. |
+| **SETPOINT / STATE** | Protocol messages: ground → ESP sticks (0x60, 50 Hz) and ESP → ground telemetry (0x80, 25 Hz) ([[Protocol Spec v0]] §3). |
+| **PX4 / SITL** | The simulated flight stack used in simulation only (`px4_offboard_bridge`); SITL = Software In The Loop. |
+| **HIL** | Hardware In The Loop: bench tests with the real ESP and FC, props off, no LiPo. |
