@@ -18,7 +18,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | `drone/config/betaflight/` | Betaflight `diff all` / `status` baselines per version |
 | `drone/ground/src/simulation/` | PX4 SITL / Gazebo image, sim scripts, `px4_offboard_bridge` (sim only) |
 | `drone/tests/{sitl,hil,vectors}/` | SITL tests, HIL bench tests, golden test vectors shared by C++ and Python |
-| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review) |
+| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review; `docs-code-snippets`: adds commit-pinned code excerpts to notes and checks them for drift) |
 
 ## Where to look in the docs
 
