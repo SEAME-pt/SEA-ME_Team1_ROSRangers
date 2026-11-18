@@ -1,0 +1,9 @@
+# MSP Override setup for test_msp_override.py (ADR-010, #105).
+# ci.yaml loads it before SITL boots: betaflight_SITL.elf --config override.cli
+# Mask 11 = roll + pitch + yaw (ADR-010 stage 2): throttle stays with the pilot.
+set msp_override_channels_mask = 11
+# ARM on AUX1, as on the drone (diff_all_2026-10-30.txt)
+aux 0 0 0 1700 2100 0 0
+# MSP OVERRIDE (takeover switch) on AUX4. The drone's channel is not mapped yet.
+aux 1 50 3 1700 2100 0 0
+save
