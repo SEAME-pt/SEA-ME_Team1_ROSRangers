@@ -47,6 +47,10 @@ jobs:
       SEAME_AP_SSID: ${{ secrets.SEAME_AP_SSID_HIL }}
       SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
       SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
+      # The SoftAP's channel: built into the firmware (AP_CHANNEL) and pinned
+      # in softap_window.sh's profile. One value, so they can never differ
+      # (a pinned channel that doesn't match fails every join, #207)
+      SEAME_AP_CHANNEL: "6"
       # Protocol PSK (ADR-002): built into the gateway (env esp) and used by
       # the session tests as the ground's key
       SEAME_PSK: ${{ secrets.SD_PSK_HIL }}

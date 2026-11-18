@@ -18,3 +18,7 @@ def test_summary_of_nothing():
     assert "0 bytes, 0 MSP frames" in text
     assert "bytes per second: [0]" in text
     assert "crash markers: none" in text
+
+
+def test_summary_when_the_window_never_came():
+    assert "window not reached" in summary([], None)

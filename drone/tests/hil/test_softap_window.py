@@ -137,6 +137,13 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert list(Path(env["RUNNER_TEMP"]).iterdir()) == [], "password file left"
 
 
+def test_channel_comes_from_the_firmware_build(env):
+    # The same SEAME_AP_CHANNEL secrets.py builds into the firmware (hil.yaml)
+    assert run(env | {"SEAME_AP_CHANNEL": "11"}, "10", "--", "true").returncode == 0
+    add = next(c for c in nmcli_calls(env) if c.startswith("connection add "))
+    assert "802-11-wireless.channel 11" in add
+
+
 def test_failing_command_still_rejoins_the_lab(env):
     result = run(env, "10", "--", "false")
     assert result.returncode == 1

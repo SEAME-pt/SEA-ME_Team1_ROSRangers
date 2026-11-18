@@ -19,8 +19,11 @@ import time
 from bench import APP_BAUD, crash_markers, msp, open_esp
 
 
-def summary(chunks, duration: float) -> str:
-    """`chunks`: (seconds since logging started, bytes) for each read."""
+def summary(chunks, duration: float | None) -> str:
+    """`chunks`: (seconds since logging started, bytes) for each read.
+    `duration` None: SIGUSR1 never came (an earlier step failed)."""
+    if duration is None:
+        return "ESP UART0: SoftAP window not reached, nothing logged"
     data = b"".join(c for _, c in chunks)
     per_s = [0] * (int(duration) + 1)
     for t, c in chunks:
@@ -48,6 +51,9 @@ def main():
 
     def on_usr1(*_):
         nonlocal start
+        # All handles on a port share its settings: a test may have left
+        # another baud (test_uart.py boots at 74880)
+        port.baudrate = APP_BAUD
         start = time.monotonic()
 
     signal.signal(signal.SIGUSR1, on_usr1)
@@ -62,7 +68,9 @@ def main():
                 chunks.append((time.monotonic() - start, data))
     finally:
         port.close()
-        duration = time.monotonic() - start if start is not None else 0.0
+        duration = None
+        if start is not None:
+            duration = time.monotonic() - start
         with open(out, "w") as f:
             f.write(summary(chunks, duration) + "\n")
 

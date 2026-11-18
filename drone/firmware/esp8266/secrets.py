@@ -3,6 +3,7 @@
 
 Same files as scripts/bridge_config.py, so nothing secret lives in the repo.
 Without that folder (CI), set SEAME_AP_SSID, SEAME_AP_PASS and SEAME_OTA_PASS.
+SEAME_AP_CHANNEL overrides the channel (hil.yaml sets it for the HIL window).
 
 The protocol PSK (ADR-002, 64 hex characters = 32 bytes) comes from
 SEAME_PSK or "psk" in secrets.json, the file scripts/ground_link.py reads
@@ -51,9 +52,10 @@ if psk:
         env.Exit("ERROR: the PSK must be 64 hex characters (32 bytes).")
     env.Append(CPPDEFINES=[("SD_PSK_HEX", env.StringifyMacro(psk))])
 
+channel = int(os.environ.get("SEAME_AP_CHANNEL") or profile.get("channel", 6))
 env.Append(
     CPPDEFINES=[(k, env.StringifyMacro(v)) for k, v in values.items()]
-    + [("AP_CHANNEL", int(profile.get("channel", 6)))]
+    + [("AP_CHANNEL", channel)]
 )
 if env.GetProjectOption("upload_protocol", "") == "espota":
     # UPLOAD_FLAGS, not UPLOADERFLAGS: the platform builder runs after this
