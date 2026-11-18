@@ -27,6 +27,38 @@ tags:
   - The gateway accepts only mask 8 today, and `override_active` is 0 until #176, so no non-zero setpoint passes the gate yet.
   - `px4_offboard_bridge` (simulation) and `flight_interface` both publish `/flight/state`: never run them together.
 
+The limits above and the K6 hold window (§2.1) are constants in `guard.py`:
+
+```python
+# excerpt: guard.py safety constants (seconds, m/s, rad/s)
+CEILING_LINEAR_MPS = 0.5
+CEILING_YAW_RPS = math.radians(45.0)
+
+# The zero must be out no later than this after the last target (the rule of
+# mission_node's REQ-SAF-017).
+MAX_TARGET_TIMEOUT = 0.25
+# The ESP sends STATE at 25 Hz (Protocol Spec v0 §3); mission_node calls a
+# /flight/state older than 0.5 s lost, so the watchdog uses the same 0.5 s.
+LINK_TIMEOUT = 0.5
+
+# esp_state values the drone may report (Protocol Spec v0 §3.1, STATE).
+ESP_STATES = ("BOOT", "NO_SESSION", "SESSION_IDLE", "STREAMING", "LINK_FAILSAFE")
+
+# ARM and RESUME (decision K6, changed by the safety pilot on PR #191,
+# 2026-11-13): the ESP refuses both until the FC has acknowledged RC for 1 s
+# (result 4, Protocol Spec v1.4.1, #188), and RESUME also needs >= 500 ms of
+# mode-0 setpoints with no gap of T_fresh (150 ms). The ground holds the
+# operator's request for a 1.5 s window and allows a smaller gap, so jitter on
+# the way does not make the ESP refuse it.
+NEUTRAL_WINDOW = 1.5
+NEUTRAL_MAX_GAP = 0.1
+# A pending request that never became due is dropped: the operator asks again.
+REQUEST_TIMEOUT = 3.0
+```
+Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py` L53–75](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py#L53-L75) @ `b31960e`
+
+`LINK_TIMEOUT` (0.5 s) and K5's 3 s are two different timers: the first zeroes the setpoints and sets `link_ok` false; the second (`RECONNECT_AFTER` in `esp_backend.py`) decides the session is gone and opens a new one.
+
 ## 2. Decision
 
 ### 2.1 Safety behaviour (safety pilot, 2026-11-09 / 2026-11-10)
@@ -113,3 +145,4 @@ tags:
 | **PSK** | The pre-shared key ([[ADR-002 Message Integrity\|ADR-002]]) from which every session key is derived. |
 | **ROS domain** | `ROS_DOMAIN_ID`: nodes only see nodes with the same number. Not a security boundary. |
 | **SROS2** | ROS 2's security layer: signed and encrypted DDS traffic with per-topic permissions. |
+| **Ceiling** | The guard's hard limit on a target: 0.5 m/s linear, 45 °/s yaw (`CEILING_LINEAR_MPS`, `CEILING_YAW_RPS` in `guard.py`). |

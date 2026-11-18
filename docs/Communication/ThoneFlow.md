@@ -229,6 +229,25 @@ Observations that follow directly from the table:
 > - A frame lost whole on the line changes no counter; only the timing shows it.
 > - Not done here, for #200: a plausibility limit on the per-frame delta, a cross-check against the IMU (quality and checksum do not catch the black-mat case), and the cage floor at flight height as a gate before flow is used. For #108: the reader's own overflow count and per-frame timestamps.
 
+The parser's frame constants and checksum. It follows the measured byte order (X/Y low byte first, `thoneflow.py` L11–13), not the datasheet table in §3.1.
+
+```python
+# excerpt: frame constants, quality floor and checksum
+FRAME_SIZE = 9
+HEADER = 0xFE
+LENGTH = 0x04
+FOOTER = 0xAA
+
+# Below 25 the sensor sends X = Y = 0 in 2,749 of 2,789 bench frames (the lens
+# covered gave 5-17), so such a frame is "no image", not "not moving". A lower
+# quality_min would let it out as OK (PAR-08, VAL-01), so it is refused.
+QUALITY_MIN_FLOOR = 25
+...
+def checksum(frame: bytes) -> int:
+    return (frame[2] + frame[3] + frame[4] + frame[5]) & 0xFF
+```
+Source: [`drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py` L45–53, L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L96) @ `b31960e`
+
 ---
 
 ## 4. Optical flow vs. video camera vs. position estimation
@@ -616,3 +635,4 @@ Evidence (captures, logs, test records) is required for each.
 | **Surface quality** | Byte 7 of the frame: how much detail the sensor sees. Low with no image; not a reliable validity check on its own (§2.4). |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **Header / footer byte** | The fixed first (`0xFE`) and last (`0xAA`) bytes of a sensor frame. The parser checks both, plus the length byte and the checksum (PAR-02). |

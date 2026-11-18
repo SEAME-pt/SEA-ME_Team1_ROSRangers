@@ -68,6 +68,17 @@ Same contract as `encode_setpoint` / `decode_setpoint`.
 
 - **One-byte codec**: four messages carry a single `u8`, so they share `encode_u8_payload` / `decode_u8_payload`. The message type in the header says what the byte means.
 - **EVENT**: `code` u16 + `text`. There is no length field: `text_len = payload_len − 2`, from 0 to 64 (`kEventTextMax`). The text is **not NUL-terminated**; use `text_len`, never `strlen`.
+- **SETPOINT**: the payload size and the RC channel range are constants in `setpoint.hpp`:
+
+```cpp
+// excerpt: SETPOINT payload size and RC channel range
+constexpr std::size_t kSetpointSize = 10;
+constexpr std::size_t kRcChannels = 8;
+constexpr std::uint16_t kRcMin = 1000;
+constexpr std::uint16_t kRcMid = 1500;
+constexpr std::uint16_t kRcMax = 2000;
+```
+Source: [`drone/lib/protocol/include/sd/setpoint.hpp` L18–22](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/lib/protocol/include/sd/setpoint.hpp#L18-L22) @ `b31960e`
 
 ## 4. STATE layout (28 bytes)
 
@@ -163,3 +174,4 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **RC channel value** | A stick value as Betaflight reads it: 1000 to 2000 µs, 1500 = centre (`kRcMin` / `kRcMid` / `kRcMax`). |
