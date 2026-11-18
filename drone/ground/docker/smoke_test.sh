@@ -27,7 +27,8 @@
 #   7. flight_interface, from its compose service (loopback backend, a dummy
 #      secrets file mounted, no PSK): configure + activate, its /flight/state
 #      reaches mission, which stays IDLE (not_streaming) for 5 s: the
-#      loopback drone has no override, so nothing can engage. Never
+#      loopback drone has no override, so nothing can engage. /flight/state
+#      has exactly one publisher (ros2 topic info). Never
 #      backend:=esp, never ARM. docker stop: it deactivates (last zero
 #      setpoint, "inactive: no more setpoints" in its log) and exits 0 at once.
 #
@@ -65,8 +66,8 @@ MONITOR=$PROJECT-monitor
 STOPPER=$PROJECT-stopper
 CONTAINERS=("$INTENT" "$MISSION" "$FLIGHT" "$GESTURE" "$ECHO" "$MISSION_ECHO"
     "$MONITOR" "$STOPPER" "$FLIGHT_INTERFACE" "$FI_MISSION_ECHO" "$LIFECYCLE")
-# flight_interface's service mounts the PSK file read-only and refuses to
-# start without one. The smoke test only runs the loopback backend, which
+# flight_interface's service mounts the PSK file (psk.json by default)
+# read-only and refuses to start without one. The smoke test only runs the loopback backend, which
 # never reads it: an empty dummy, never a real key.
 SEAME_SECRETS_FILE=$(mktemp)
 export SEAME_SECRETS_FILE
@@ -367,6 +368,20 @@ wait_for "$FI_MISSION_ECHO" "$IDLE" 2 "$seen" ||
 ! docker logs "$FI_MISSION_ECHO" 2>&1 | grep -E '"mode":"(WAITING|ENGAGED|LOCKED)"' >/dev/null ||
     fail "mission left IDLE with the loopback drone"
 echo "    mission reads flight_interface's /flight/state and stays IDLE (not_streaming) for ${HOLD} s"
+# Exactly one /flight/state publisher: flight_interface (flight stopped in
+# step 5). Retried for discovery, which can show 0 at first; 2 or more fails.
+pubs=
+end=$((SECONDS + 20))
+while ((SECONDS < end)); do
+    pubs=$(docker run --rm --name "$LIFECYCLE" "${ROS[@]}" rosrangers/flight_interface:jazzy \
+        timeout 10 ros2 topic info /flight/state 2>&1 |
+        grep -oE '^Publisher count: [0-9]+' | grep -oE '[0-9]+$' || true)
+    [[ $pubs == 1 ]] && break
+    sleep 1
+done
+[[ $pubs == 1 ]] ||
+    fail "/flight/state has ${pubs:-no} publisher(s), expected exactly 1 (flight_interface)"
+echo "    /flight/state has exactly one publisher (ros2 topic info)"
 stop_and_check "$FLIGHT_INTERFACE"
 stop_and_check "$MISSION"
 docker kill "$FI_MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instrument

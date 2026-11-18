@@ -5,7 +5,8 @@
 # passed, no respawn (A6). Configure, activate and ARM stay
 # operator actions (ros2 lifecycle / ros2 service), never this image's.
 # The PSK is never in the image or its environment (ADR-025 E3): compose
-# mounts ~/.config/seame-drone/secrets.json read-only at run time.
+# mounts ~/.config/seame-drone/psk.json (the PSK only, E3.2) read-only at
+# run time, at the path the node reads (/root/.config/seame-drone/secrets.json).
 FROM ros:jazzy-ros-base
 
 # pip for sd_protocol, pyserial for msp.py (SerialTransport), pytest for the

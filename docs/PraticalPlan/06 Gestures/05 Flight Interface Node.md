@@ -61,7 +61,7 @@ The gesture nodes know nothing about the radio link. `flight_interface` is the o
 
 - `/mission/velocity_target` (`TwistStamped`, body FLU) from `mission_node`. Only a target that arrives after the activation counts; one older than 0.25 s gives zero.
 - From the drone: `STATE`, `FC_HEALTH`, events and acks over [[Protocol Spec v0]].
-- The PSK, from `~/.config/seame-drone/secrets.json` (never a ROS parameter, never in the image).
+- The PSK, from `~/.config/seame-drone/secrets.json` (never a ROS parameter, never in the image). In Docker, only `psk.json` (the PSK alone) is mounted there ([[ADR-025 flight_interface Ground Node|ADR-025]] E3.2, §7.2).
 - Parameters, declared at the top of `link_node.py`: `backend`, `mask` (8 / 11 / 15, default 8), `esp_host`, `esp_port`, `rate_hz`, `state_rate_hz`, the timeouts, `publish_fc`. A bad value fails `configure`.
 
 ---
@@ -130,7 +130,15 @@ docker compose run --rm echo ros2 service call /flight_interface/arm_control std
 docker compose run --rm echo ros2 service call /flight_interface/estop std_srvs/srv/Trigger
 ```
 
-The secrets file must exist on the host (`chmod 600`); `SEAME_SECRETS_FILE=<path>` points to another one.
+The container mounts only the PSK, never the whole `secrets.json` (it also holds the Wi-Fi and OTA passwords, [[ADR-025 flight_interface Ground Node|ADR-025]] E3.2). Create that file once, and again after the PSK changes:
+
+```bash
+make psk-file   # ~/.config/seame-drone/secrets.json -> psk.json (PSK only, mode 600)
+```
+
+- A missing `psk.json` stops the container from starting. `SEAME_SECRETS_FILE=<path>` mounts another file.
+- The container keeps the file it started with. After the PSK changes (`make psk-file` says so), stop the container and start it again; otherwise `configure` fails with no `HELLO_ACK`.
+- While `flight_interface` runs, `make`, `make sim` and `make sim-smoke` refuse to start: each would add a second `/flight/state` publisher. Stop it with `docker stop <name>` (it deactivates first: one last zero setpoint).
 
 ---
 

@@ -134,9 +134,15 @@ services:
   #     --ros-args -p backend:=esp
   # Configure, activate and ARM are operator steps (ros2 lifecycle / service).
   # No restart (A6): a dead node stays dead, the ESP's failsafe takes over.
-  # The PSK: the host's secrets file mounted read-only, never SEAME_PSK in
-  # the environment and never in the image (E3). A missing file is an error,
-  # not an empty folder. SEAME_SECRETS_FILE=path uses another file.
+  # While it runs, make, make sim and make sim-smoke refuse to start: each
+  # would add a second /flight/state publisher.
+  # The PSK: ~/.config/seame-drone/psk.json, which holds only the PSK
+  # (make psk-file writes it from secrets.json), mounted read-only where the
+  # node looks for secrets.json. Never the whole secrets.json (it also holds
+  # the Wi-Fi and OTA passwords), never SEAME_PSK in the environment, never
+  # in the image (ADR-025 E3, E3.2). A missing file is an error, not an empty
+  # folder. SEAME_SECRETS_FILE=path mounts another file. The file is bound by
+  # inode: after make psk-file changes the PSK, recreate the container.
   flight_interface:
     <<: *node
     profiles: [flight_interface]
@@ -152,7 +158,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${GROUND_LOG_DIR:-./logs}:/logs
       - type: bind
-        source: ${SEAME_SECRETS_FILE:-${HOME}/.config/seame-drone/secrets.json}
+        source: ${SEAME_SECRETS_FILE:-${HOME}/.config/seame-drone/psk.json}
         target: /root/.config/seame-drone/secrets.json
         read_only: true
         bind:

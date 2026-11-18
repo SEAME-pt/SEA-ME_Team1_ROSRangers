@@ -17,6 +17,13 @@
 #   make smoke    Docker smoke test: builds the images, runs the package tests
 #                 inside them, gesture -> intent -> mission across containers,
 #                 the echo monitor, clean stops, node logs (in logs/smoke)
+#   make psk-file copy the PSK from ~/.config/seame-drone/secrets.json into
+#                 psk.json next to it (mode 600), the only secret the
+#                 flight_interface container mounts (ADR-025 E3.2)
+#
+# make, make up, make sim and make sim-smoke refuse to start while a
+# flight_interface container is running: each starts its own /flight/state
+# publisher (flight or px4_offboard_bridge), and /flight/state must have one.
 #
 # SIMULATION ONLY (#86): PX4 SITL + Gazebo instead of the pretend /flight/state.
 # The first run builds the PX4 image (long, several GB); later runs reuse it.
@@ -78,6 +85,12 @@ SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAG
 # networks with the name, so fclean removes only those.
 DOCKER_PROJECTS := ground ground-smoke
 
+# The PSK (ADR-002). SECRETS holds it with the Wi-Fi and OTA passwords;
+# PSK_FILE holds only the PSK and is what the flight_interface service mounts
+# (docker-compose.yml, ADR-025 E3.2). make psk-file writes PSK_FILE.
+SECRETS  ?= $(HOME)/.config/seame-drone/secrets.json
+PSK_FILE ?= $(HOME)/.config/seame-drone/psk.json
+
 # Teammates without Jazzy only get the containers and the unit tests
 ifneq ($(wildcard $(ROS)),)
 NATIVE  := ws
@@ -87,7 +100,7 @@ NATIVE  := no-ros
 TEST    := unit
 endif
 
-all: $(NATIVE) up
+all: no-flight-interface $(NATIVE) up
 
 # ---------- native venv + workspace ----------
 
@@ -240,9 +253,68 @@ smoke:
 
 # ---------- Docker ----------
 
+# /flight/state must have exactly one publisher (ADR-025 §1). A running
+# flight_interface container, from any compose project and started with up
+# or run, blocks every rule that starts another one (flight, the px4 bridge).
+# Only running containers count; there is no override. A docker ps that fails
+# also refuses: no check, no start.
+no-flight-interface:
+	@names=$$(docker ps --filter label=com.docker.compose.service=flight_interface \
+		--format '{{.Names}}') || { echo "make: cannot list Docker containers," \
+		"so cannot check that flight_interface is not running"; exit 1; }; \
+	if [[ -n $$names ]]; then \
+		echo "make $(or $(MAKECMDGOALS),all): refused, flight_interface is running:" $$names; \
+		echo "  This rule would start a second /flight/state publisher (ADR-025)."; \
+		echo "  If nobody is using it (ask the safety pilot), stop it first:"; \
+		echo "    docker stop" $$names; \
+		echo "  docker stop deactivates it cleanly: one last zero setpoint, then BYE."; \
+		exit 1; \
+	fi
+
+# PSK_FILE from SECRETS: only the PSK, mode 600, written atomically. Always
+# rewritten from SECRETS, the one source. Never prints the key.
+define PSK_FILE_PY
+import json, os, re, sys
+
+src, dst = sys.argv[1], sys.argv[2]
+try:
+    with open(src) as f:
+        psk = str(json.load(f).get("psk", "")).strip().lower()
+except (OSError, ValueError, AttributeError) as e:
+    sys.exit(f"make psk-file: cannot read the PSK from {src}: {e}")
+if not re.fullmatch(r"[0-9a-f]{64}", psk):
+    sys.exit(f"make psk-file: no valid PSK (64 hex characters) in {src}; "
+             "create one with: python3 scripts/ground_link.py --gen-psk")
+text = json.dumps({"psk": psk}) + "\n"
+try:
+    with open(dst) as f:
+        old = f.read()
+except OSError:
+    old = None
+os.makedirs(os.path.dirname(dst) or ".", mode=0o700, exist_ok=True)
+if old == text:
+    os.chmod(dst, 0o600)
+    print(f"{dst}: up to date (mode 600)")
+    sys.exit()
+tmp = dst + ".tmp"
+fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    f.write(text)
+os.chmod(tmp, 0o600)
+os.replace(tmp, dst)
+print(f"{dst}: written (mode 600)")
+if old is not None:
+    print("The PSK changed. A running flight_interface container still sees "
+          "the old file: stop it and start it again.")
+endef
+export PSK_FILE_PY
+
+psk-file:
+	@python3 -c "$$PSK_FILE_PY" "$(SECRETS)" "$(PSK_FILE)"
+
 # logs/ made here, not by Docker (as root), so it stays the user's.
 # A running simulation is stopped first: its bridge also publishes /flight/state.
-up:
+up: no-flight-interface
 	-xhost +local: >/dev/null
 	mkdir -p logs
 	$(COMPOSE) $(SIM_PROFILES) stop px4 sim_smoke
@@ -267,7 +339,7 @@ px4-image-present:
 
 # Every service listed by name: never flight (pretend /flight/state). Started
 # from scratch: the other modes stopped, the containers recreated.
-sim: px4-image-present
+sim: no-flight-interface px4-image-present
 	-xhost +local: >/dev/null
 	mkdir -p logs
 	$(COMPOSE) $(SIM_PROFILES) down
@@ -284,7 +356,7 @@ sim-smoke-mask:
 	@[[ "$(MASK)" == 11 || "$(MASK)" == 15 ]] || \
 		{ echo "make sim-smoke: MASK must be 11 or 15, got '$(MASK)'"; exit 2; }
 
-sim-smoke: sim-smoke-mask px4-image-present
+sim-smoke: no-flight-interface sim-smoke-mask px4-image-present
 	@mkdir -p logs $(TESTLOG)
 	$(COMPOSE) $(SIM_PROFILES) down
 	@$(SMOKE_ENV) $(COMPOSE) --profile sim-smoke up --build --force-recreate \
@@ -316,4 +388,5 @@ fclean: clean
 re: fclean all
 
 .PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
-	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask
+	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask \
+	no-flight-interface psk-file
