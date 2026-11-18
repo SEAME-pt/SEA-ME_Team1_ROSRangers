@@ -53,6 +53,9 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── flight_interface/ # flight_interface: the lifecycle node ground <-> drone (ADR-025), fc_telemetry,
 │   │       │                     #   msp.py (MSP client, shared with the bench tools)
 │   │       ├── echo/             # monitor.py: the live table of docker compose up (not a ROS package)
+│   │       ├── bringup/          # ground_bringup: the modes, no code. launch/demo|real|sim.launch.py (the mode
+│   │       │                     #   without Docker), config/demo|real|sim.yaml (its parameters; the containers
+│   │       │                     #   mount config/ and pass --params-file /config/<mode>.yaml)
 │   │       ├── simulation/       # SIM ONLY: PX4 SITL + Gazebo Dockerfile (stage px4 + ground nodes), README,
 │   │       │   │                 #   sim_start.sh (make sim: arms and takes off), sim_smoke.sh (by hand, one container)
 │   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):

@@ -53,7 +53,7 @@ flowchart LR
 | `mission_logic.py` | all the rules of §5, no ROS imports, so they are unit-tested anywhere |
 | `mission_node.py` | the ROS wrapper: subscriptions, the 20 Hz timer, publishers, logs |
 | `fake_flight_state`, `fake_intent` | pretend inputs for testing without a drone or `intent_node` (§7) |
-| `launch/` | `mission_demo.launch.py` (the node with pretend inputs) and `mission_with_gestures.launch.py` (with `intent_node`, used by the CI tests) |
+| `launch/` | `mission_demo.launch.py` (the node with pretend inputs, for testing it alone). The node with the rest of the chain: `ground_bringup`'s mode launch files (`demo.launch.py`, `real.launch.py`, `sim.launch.py`) |
 
 ---
 
@@ -241,7 +241,9 @@ Starting the services, the CLI and the logs: [[01 ROS2 Nodes Installation|01]] �
 
 ### 8.1 With the webcam
 
-`make` starts `mission` and `flight` with the rest of the chain. `MASK=15 make` gives the ground throttle; `AIRBORNE=false make` puts the pretend drone on the ground.
+`make` starts `mission` and `flight` with the rest of the chain. The pretend drone's settings are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: `mask: 15` gives the ground throttle, `airborne: false` puts it on the ground. Edit the file, then `docker compose restart flight` (no rebuild).
+
+Without Docker, the same mode: `ros2 launch ground_bringup demo.launch.py` (`camera:=false` leaves out `gesture_node`).
 
 ### 8.2 On its own: the demo
 
@@ -289,7 +291,7 @@ Attach `logs/intent/latest.log` and `logs/mission/latest.log` of a webcam run to
 | Mode stays `IDLE` / `no_flight_state` | start the `flight` service |
 | Mode stays `WAITING` with both open hands | lower both arms, then show them again (§5.1) |
 | Gestures do nothing, mode `LOCKED` | hold both fists 1 s to unlock |
-| `CLIMB_UP` does nothing | expected with mask 11; use `MASK=15 make` |
+| `CLIMB_UP` does nothing | expected with mask 11; set `mask: 15` in `config/demo.yaml` (§8.1) |
 | Intents jump between two values | `fake_intent` and `intent_node` both running: stop one |
 
 ---

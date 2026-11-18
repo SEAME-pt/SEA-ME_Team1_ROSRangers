@@ -56,7 +56,7 @@ ROS     := /opt/ros/jazzy/setup.bash
 
 VENV    := gesture-venv
 WS      := ros2_ws
-PKGS    := gesture_node intent_node mission_node
+PKGS    := gesture_node intent_node mission_node ground_bringup
 # Each package's folder (src/<component>/<package>), found by tools/pkg_dirs.sh: one
 # folder per package or it fails (#186). Looked up in the rules that use it, so
 # a missing package never breaks make down or make clean.
@@ -123,7 +123,13 @@ $(VENV)/.installed: src/gesture/gesture_node/requirements.txt
 	$(VENV)/bin/pip install -r $<
 	touch $@
 
-ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node
+# --symlink-install links the installed files to the sources. A source file
+# removed or renamed (a launch file, say) leaves a dangling link in build/ or
+# install/, and colcon then fails on it: remove those before each build.
+# Only links whose target is gone, only under the workspace's build/ and install/.
+PRUNE_LINKS = find $(WS)/build $(WS)/install -xtype l -delete 2>/dev/null || true
+
+ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node $(WS)/.ground_bringup
 
 # Symlinks, not copies, so --symlink-install picks up .py edits without a rebuild.
 # Redone when PKGS changes, so an existing workspace gets new packages too.
@@ -133,14 +139,29 @@ $(WS)/.src: Makefile tools/pkg_dirs.sh
 	touch $@
 
 $(WS)/.intent_node: $(WS)/.src src/intent/intent_node/setup.py src/intent/intent_node/package.xml
+	$(PRUNE_LINKS)
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select intent_node
 	touch $@
 
 $(WS)/.mission_node: $(WS)/.src src/mission/mission_node/setup.py src/mission/mission_node/package.xml
+	$(PRUNE_LINKS)
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select mission_node
 	touch $@
 
+# The modes (launch + parameter files, no code). Rebuilt when a file is added
+# or removed; with --symlink-install, edits to existing ones apply at once.
+# After the nodes it starts: colcon wants every package it depends on that is
+# in the workspace built first (flight_interface is not in this one yet).
+BRINGUP := src/bringup/ground_bringup
+$(WS)/.ground_bringup: $(WS)/.src $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node \
+		$(BRINGUP)/setup.py $(BRINGUP)/package.xml \
+		$(wildcard $(BRINGUP)/launch/*.launch.py $(BRINGUP)/config/*.yaml)
+	$(PRUNE_LINKS)
+	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select ground_bringup
+	touch $@
+
 $(WS)/.gesture_node: $(WS)/.src $(VENV)/.installed src/gesture/gesture_node/setup.py src/gesture/gesture_node/package.xml
+	$(PRUNE_LINKS)
 	source $(ROS) && source $(VENV)/bin/activate && cd $(WS) \
 		&& python3 -m colcon build --symlink-install --packages-select gesture_node
 	@head -1 $(WS)/install/gesture_node/lib/gesture_node/gesture_node | grep -q '$(VENV)' \

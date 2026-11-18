@@ -52,6 +52,11 @@ x-after-base: &after-base
   base:
     condition: service_completed_successfully
 
+# Parameters: the mode's file from ground_bringup (config/<mode>.yaml),
+# mounted read-only at /config from the source folder, so an edit applies on
+# the next restart without a rebuild. GROUND_MODE picks the file (demo by
+# default). No parameter is set here.
+#
 # The nodes: output to logs/<service>/ (docker/entrypoint.sh), not to the
 # `docker compose up` terminal, which only shows echo's table.
 x-node: &node
@@ -67,6 +72,7 @@ x-node: &node
   volumes:
     - /etc/localtime:/etc/localtime:ro
     - ${GROUND_LOG_DIR:-./logs}:/logs
+    - ./src/bringup/ground_bringup/config:/config:ro
 
 services:
   # Every ground image gets it as the build context `base`
@@ -110,7 +116,13 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${GROUND_LOG_DIR:-./logs}:/logs
+      - ./src/bringup/ground_bringup/config:/config:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command:
+      - /ws/install/gesture_node/lib/gesture_node/gesture_node
+      - --ros-args
+      - --params-file
+      - /config/${GROUND_MODE:-demo}.yaml
 
   intent:
     <<: *node
@@ -124,6 +136,11 @@ services:
     environment:
       <<: *node-env
       LOG_NAME: intent
+    command:
+      - /ws/install/intent_node/lib/intent_node/intent_node
+      - --ros-args
+      - --params-file
+      - /config/${GROUND_MODE:-demo}.yaml
 
   mission:
     <<: *node
@@ -137,11 +154,17 @@ services:
     environment:
       <<: *node-env
       LOG_NAME: mission
+    command:
+      - /ws/install/mission_node/lib/mission_node/mission_node
+      - --ros-args
+      - --params-file
+      - /config/${GROUND_MODE:-demo}.yaml
 
-  # PRETEND /flight/state (override on, mask 11, airborne) until flight_interface
-  # exists, so mission can leave IDLE. Never use it with a real drone.
-  # MASK=15 docker compose up ...  gives the ground throttle (climb / descend);
-  # AIRBORNE=false: on the ground, land requests are ignored.
+  # PRETEND /flight/state (override on, airborne) so mission can leave IDLE.
+  # Never use it with a real drone. Its mask and airborne are in
+  # config/demo.yaml (ground_bringup): mask 15 gives the ground throttle
+  # (climb / descend); airborne false puts it on the ground, where land
+  # requests are ignored. Edit, then: docker compose restart flight
   flight:
     <<: *node
     build:
@@ -157,10 +180,8 @@ services:
     command:
       - /ws/install/mission_node/lib/mission_node/fake_flight_state
       - --ros-args
-      - -p
-      - mask:=${MASK:-11}
-      - -p
-      - airborne:=${AIRBORNE:-true}
+      - --params-file
+      - /config/demo.yaml   # demo only, whatever GROUND_MODE says
 
   echo:
     <<: *ros

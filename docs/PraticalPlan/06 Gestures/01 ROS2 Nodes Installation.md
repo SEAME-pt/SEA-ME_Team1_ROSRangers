@@ -88,7 +88,7 @@ From `drone/ground/`:
 | `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `flight`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
 | `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
 
-`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). `MASK=` and `AIRBORNE=` set the pretend flight state ([[04 Mission Node]] §8.1).
+`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). The pretend flight state's mask and airborne are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: edit it, then `docker compose restart flight` ([[04 Mission Node]] §8.1).
 
 ### 4.4 Changing the code
 

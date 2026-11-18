@@ -248,7 +248,7 @@ jobs:
       PIP_BREAK_SYSTEM_PACKAGES: "1"
       REQUIRE_ROS_TESTS: "1"
       ROS_AUTOMATIC_DISCOVERY_RANGE: LOCALHOST
-      ROS_PKGS: gesture_node intent_node mission_node flight_interface
+      ROS_PKGS: gesture_node intent_node mission_node flight_interface ground_bringup
     defaults:
       run:
         shell: bash
@@ -294,11 +294,15 @@ jobs:
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
           test_paths=() cov_flags=()
+          # Coverage of each package's Python module (<dir>/<package>/).
+          # ground_bringup has none (launch and parameter files only): its
+          # tests run, nothing to measure.
           for dir in $PKG_DIRS; do
             test_paths+=("$dir/test")
-          done
-          for pkg in $ROS_PKGS; do
-            cov_flags+=("--cov=$pkg")
+            pkg=${dir##*/}
+            if [[ -d $dir/$pkg ]]; then
+              cov_flags+=("--cov=$pkg")
+            fi
           done
           python3 -m pytest "${test_paths[@]}" drone/tests/ros \
             "${cov_flags[@]}" --cov-report=term-missing --cov-fail-under=90 \
