@@ -21,7 +21,7 @@ buf[0] = kMagic;
 Source: [`drone/lib/protocol/src/frame.cpp` L42–58](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/<sha>/drone/lib/protocol/src/frame.cpp#L42-L58) @ `<short sha>`
 ````
 
-- `<sha>`: `git rev-parse HEAD` (the full sha in the URL, the first 7 chars after `@`). Before using it, check the file is committed and unchanged (`git status --porcelain -- <path>`); if not, tell the caller instead of linking to lines that don't exist on GitHub.
+- `<sha>`: a commit already on `dev`, `git merge-base HEAD origin/dev` (the full sha in the URL, the first 7 chars after `@`). Never a feature-branch commit: it disappears after the squash merge and branch delete. Check the file is the same there as in your tree (`git diff --quiet <sha> -- <path>`); if not, tell the caller instead of linking to lines that don't match.
 - Language tag on every block (`cpp`, `python`, `yaml`, `bash`, `ini`, `json`, `xml`, `text`).
 - Copy lines verbatim. Cut with `...` on its own line, never rewrite or "simplify" the code. One leading comment line saying what the excerpt shows is allowed.
 - Keep a snippet short: about 5–25 lines. Show the part the paragraph talks about, not the whole function or file.

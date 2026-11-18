@@ -54,7 +54,7 @@ HORIZON, BEEPER and USER1 (4.5.1) were not re-entered.
 | `motor_pwm_protocol` | DSHOT600 | |
 | `dshot_bidir` | ON | RPM telemetry from each ESC (used by the RPM filter) |
 | `motor_poles` | 12 | **To confirm:** 1405 motors are often 14-pole. If they are, RPM readings are about 17 % high and the RPM filter is mistuned ([[Open Questions]]) |
-| `dshot_idle_value` | 550 | 5.5 % motor speed while armed |
+| `motor_idle` (`dshot_idle_value` on 4.5.1) | 550 | 5.5 % motor speed while armed. Renamed in 2026.6 (`drone/config/betaflight/2026.6.2/CHANGELOG.md`, 2026-10-28) |
 
 > [!warning] Motor direction lives in the ESC, not in `diff all`
 > On 2026-10-23 M2 and M3 were reversed in the ESC with the Motors tab *Motor direction* tool, because all four motors turned the same way ([[Radio Link Tests]] §3.1). This setting is not part of the Betaflight `diff all`. If the ESC is replaced or re-flashed, check and set the directions again.
@@ -79,9 +79,12 @@ Configuration and every change since: `drone/config/betaflight/2026.6.2/CHANGELO
 The UART4 MSP line is **already applied** (2026-10-13 on 4.5.1; on 2026.6.2 the CLI prints it as `serial UART4 1 115200 57600 0 115200`, `diff_all_2026-10-30.txt`). The MSP Override lines are **not applied**: MSP Override stays bench-only, props off, until #123 and #104 pass ([[Safety Rules]] #14).
 
 ```text
-# UART4 = MSP for the ESP (serial id 3), function MSP (1), 115200
-serial 3 1 115200 57600 0 115200
-# MSP Override, stage 1 = yaw only (raw AETR bit 3)
+# 2026.6.2 CLI. A 4.5.1 diff cannot be pasted here (ADR-014).
+# UART4 = MSP for the ESP, function MSP (1), 115200 (already applied)
+serial UART4 1 115200 57600 0 115200
+# MSP Override, stage 1 = yaw only (raw AETR bit 3). The setting exists on
+# 2026.6.2 (SITL, drone/tests/sitl/override.cli, #105). Check
+# msp_override_failsafe with `get msp_override` on the drone before saving.
 set msp_override_channels_mask = 8
 set msp_override_failsafe = OFF
 save

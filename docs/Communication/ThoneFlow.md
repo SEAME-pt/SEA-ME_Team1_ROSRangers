@@ -3,7 +3,7 @@ title: ThoneFlow-3901U Optical-Flow Sensor Integration
 type: sensor-integration
 status: draft
 date: 2026-10-12
-updated: 2026-11-16
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -229,7 +229,7 @@ Observations that follow directly from the table:
 > - A frame lost whole on the line changes no counter; only the timing shows it.
 > - Not done here, for #200: a plausibility limit on the per-frame delta, a cross-check against the IMU (quality and checksum do not catch the black-mat case), and the cage floor at flight height as a gate before flow is used. For #108: the reader's own overflow count and per-frame timestamps.
 
-The parser's frame constants and checksum. It follows the measured byte order (X/Y low byte first, `thoneflow.py` L11–13), not the datasheet table in §3.1.
+The parser's frame constants and checksum. It follows the measured byte order (X/Y low byte first, `thoneflow.py` L12–13), not the datasheet table in §3.1.
 
 ```python
 # excerpt: frame constants, quality floor and checksum
@@ -246,7 +246,7 @@ QUALITY_MIN_FLOOR = 25
 def checksum(frame: bytes) -> int:
     return (frame[2] + frame[3] + frame[4] + frame[5]) & 0xFF
 ```
-Source: [`drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py` L45–53, L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L96) @ `b31960e`
+Source: [`thoneflow.py` L45–53](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L53) and [L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L95-L96) (`drone/ground/src/sd_protocol_py/sd_protocol/`) @ `b31960e`
 
 ---
 

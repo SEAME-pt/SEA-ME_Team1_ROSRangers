@@ -113,8 +113,8 @@ The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2
 | **STREAMING** | ESP link state in which ground setpoints are being forwarded to the FC ([[ESP Link State Machine]]). |
 | **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
 | **ARM / RESUME** | `ARM_CONTROL_REQUEST` / `RESUME_REQUEST`: the operator asks the ESP to pass the ground's sticks on the masked axes to the FC. Neither arms the motors. |
-| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left only through `RESUME_REQUEST` or a confirmed new session ([[ESP Link State Machine]]). |
-| **SESSION_IDLE** | ESP link state: a session is open and control is off; the ESP sends neutral frames to the FC. |
+| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left through `RESUME_REQUEST`, a confirmed new session, or a `BYE` (to NO_SESSION, the ADR-004 output continues) ([[ESP Link State Machine]]). |
+| **SESSION_IDLE** | ESP link state: a session is open and control is off; the ESP sends neutral frames to the FC, except after a switch or `BYE` from control, when the ADR-004 output runs until ARM OK ([[ESP Link State Machine]] §1.1). |
 | **T_fresh** | Setpoint freshness timeout: a setpoint older than this (150 ms) is replaced by neutral sticks, with no failsafe ([[Protocol Spec v0]] §7.2). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four, [[ADR-010 MSP Override\|ADR-010]]). |
 | **RC** | Radio-control channel values (here the 8 AETR channels sent to the FC with `MSP_SET_RAW_RC`). |

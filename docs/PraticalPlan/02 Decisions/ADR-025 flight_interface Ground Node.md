@@ -3,6 +3,7 @@ title: ADR-025 — flight_interface Ground Node
 type: adr
 status: accepted
 date: 2026-11-16
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - adr
@@ -15,6 +16,7 @@ tags:
 
 > [!success] Status: ACCEPTED (#103, PR #187)
 > A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). E3.1 was added on 2026-11-16 (#186). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
+> 2026-11-18 (#214, PR #215), docs only, no decision changed: §1 Context gets the corrected code path and the `guard.py` constants as a code excerpt; §3 Consequences counts the "about 0.4 s" from the first `FC_HEALTH` and gives the worst case.
 > This ADR replaces the `DECISIONS.md` file that PR #187 carried at the repository root.
 
 ## 1. Context
@@ -119,7 +121,7 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 
 ## 3. Consequences
 
-- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the node starts streaming, also when no event came (`FC_RESTORE_AFTER` 0.25 s of `fc_alive`, checked on each 5 Hz `FC_HEALTH`, so on the third one).
+- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the first `FC_HEALTH` (at most about 0.6 s after the node starts streaming), also when no event came (`FC_RESTORE_AFTER` 0.25 s of `fc_alive`, checked on each 5 Hz `FC_HEALTH`, so on the third one).
 - **Negative:** ARM and RESUME answer 1.5 s later than before. Until `override_active` (#176) and the controller (C1) exist, the node only ever sends neutral sticks.
 - **Open:** the C1.4 roll / pitch cap value, E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
 

@@ -130,7 +130,7 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 | `type` allowed on this transport (TCP vs UDP, spec §2) and from this side | `Receiver` (`wrong_transport`, `wrong_direction`); #102 opens one per transport |
 | Unknown codes, value ranges | #102 (spec §4 rule 4) |
 | Config key exists, access (Info / Safety / Tunable), write range, no write while control is enabled, in the order of spec §3.1 | #102, answers with `CONFIG_ACK` |
-| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102. `rx_rejected` wraps (low 16 bits of `sd::Link::rx_rejected()`, decided 2026-11-16, #149, spec §7.5) |
+| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102. `rx_rejected` wraps (low 16 bits of `sd::Link::rx_rejected()`, decided 2026-11-16, #149, spec §7.5); the gateway saturates `msp_errors` at 0xFFFF (`gateway/main.cpp`) |
 | `SETPOINT.flags` and the header `reserved` byte are not checked | Nobody: reserved, sent as 0, ignored (spec §3; vectors in group 8) |
 
 **Not done yet:**
