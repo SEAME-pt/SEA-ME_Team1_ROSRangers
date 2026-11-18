@@ -197,7 +197,7 @@ jobs:
 
   # Logic of the sim-only PX4 offboard bridge (#86): frames, mask, freshness.
   # No ROS and no px4_msgs: bridge_logic.py has no ROS imports. The node itself
-  # needs px4_msgs and runs only in the PX4 SITL image (sim_smoke.sh)
+  # needs px4_msgs and runs only in the PX4 SITL image (make sim, make sim-smoke)
   sim-bridge-python:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.sim_bridge == 'true' }}

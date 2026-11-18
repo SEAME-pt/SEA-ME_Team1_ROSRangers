@@ -213,10 +213,6 @@ To keep a run as evidence, zip its `sim-smoke/<start time>/` folder and attach i
 | `make` stopped the sim | on purpose: the pretend `fake_flight_state` and the bridge would both publish `/flight/state` |
 | `sim-smoke`: `chain ready` FAIL | `mission_node` was not `WAITING` with no hands within 60 s of PX4 being ready: see `logs/mission/latest.log` |
 
-### 7.5 By hand: `sim_smoke.sh`
-
-`drone/ground/src/simulation/sim_smoke.sh` runs the same chain in one container (`px4sim-smoke`, the image of §2 with the repo mounted read-only), for debugging inside it: `up [8|11|15] [gui]`, `gui` (open the window again), `check` (topic rates and the last `/flight/state`), `shell` (ROS sourced), `logs`, `down`. It does not arm, take off or switch to Offboard: you do that yourself, as `make sim` does in `sim_start.sh`. The usage is at the top of the script; details in `drone/ground/src/simulation/README.md`.
-
 ## 8. Related pages
 
 - [[ADR-019 Sim Backends|ADR-019]] · [[ADR-018 Ground OS and ROS 2|ADR-018]] · [[Study Plan v2]] · [[Testing Strategy]]

@@ -219,7 +219,9 @@ services:
 
   # The real /flight/state (#103, ADR-025): the real mode only, never next to
   # fake_flight_state or px4: /flight/state must have one publisher. Starts
-  # unconfigured with real.yaml (backend esp, the drone):
+  # unconfigured with real.yaml (backend esp, the drone). Start it with
+  # make real (checks first), make real-dry (loopback, no drone); stop with
+  # make real-down. By hand:
   #   docker compose --env-file env/real.env run --rm flight_interface
   # (env/real.env filled in with the safety pilot's values first.)
   # A dry run without the drone, on the loopback backend (-p after the file wins):

@@ -101,13 +101,16 @@ From `drone/ground/`:
 
 | Target | Does |
 | :--- | :--- |
-| `make` | builds the images and starts all five services; the terminal shows the live table |
+| `make` | the demo mode: builds the images and starts its services from scratch (other modes stopped, containers recreated); the terminal shows the live table |
 | `make down` | stops the demo and the simulation; refuses while `flight_interface` runs |
 | `make unit` / `make smoke` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
 | `make fclean` / `make re` | `clean` + removes `logs/` and this project's other Docker objects / `fclean`, then `make` |
 | `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
 | `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
+| `make real` | the real mode, the drone: checks `env/real.env`, the PSK file and that the ESP answers, then starts the chain and `flight_interface` unconfigured and prints the operator steps ([[05 Flight Interface Node]] §7). Never configures, activates or ARMs |
+| `make real-dry` | the same without the drone (`flight_interface` on the loopback backend): to rehearse the operator steps |
+| `make real-down` | asks first (it cuts the drone's link), then stops the real mode |
 
 `q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). The pretend flight state's mask and airborne are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: edit it, then `docker compose restart fake_flight_state` ([[04 Mission Node]] §8.1).
 

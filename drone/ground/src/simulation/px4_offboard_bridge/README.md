@@ -58,18 +58,6 @@ Checked in SITL on 2026-11-05 (x500 facing east, 95°): forward 0.3 m/s × 4 s m
 
 With the rest of the ground nodes, from `drone/ground/`: `make sim` (camera gestures), `make sim-smoke` (scripted test, see below), `make sim-down`.
 
-By hand, from the repo root, in its own container (`px4sim-smoke`):
-
-```sh
-drone/ground/src/simulation/sim_smoke.sh up            # headless, mask 15; or: up 11
-drone/ground/src/simulation/sim_smoke.sh up 15 gui     # also opens the Gazebo window
-drone/ground/src/simulation/sim_smoke.sh check         # topic rates and the last /flight/state
-drone/ground/src/simulation/sim_smoke.sh shell         # ROS sourced, for the scenario
-drone/ground/src/simulation/sim_smoke.sh down
-```
-
-`up` stops with an error (and says how to see the logs) if the build fails, PX4 is not ready within 180 s, or a node does not start.
-
 ## Tests
 
 The logic tests need no ROS and no `px4_msgs` (`bridge_logic.py` has no ROS imports). They use pytest, and CI runs them in the `sim-bridge-python` job:
@@ -78,7 +66,7 @@ The logic tests need no ROS and no `px4_msgs` (`bridge_logic.py` has no ROS impo
 cd drone/ground/src/simulation/px4_offboard_bridge && python3 -m pytest test
 ```
 
-The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SITL (`sim_smoke.sh`, `make sim-smoke`), not in CI.
+The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SITL (`make sim`, `make sim-smoke`), not in CI.
 
 `make sim-smoke` runs `sim_smoke_scenario` (`smoke_scenario.py`, needs ROS and `px4_msgs`). It starts its own `intent_node`, sends gestures on `/gesture/raw` (no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT, then `intent_node` killed with SIGKILL), records a rosbag and judges the run with `smoke_checks.py` (no ROS, unit-tested in CI):
 

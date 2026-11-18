@@ -59,7 +59,7 @@ SEA-ME_Team1_ROSRangers/
 │   │       │                     #   without Docker), config/demo|real|sim.yaml (its parameters; the containers
 │   │       │                     #   mount config/ and pass --params-file /config/<mode>.yaml)
 │   │       ├── simulation/       # SIM ONLY: PX4 SITL + Gazebo Dockerfile (stage px4 + ground nodes), README,
-│   │       │   │                 #   sim_start.sh (make sim: arms and takes off), sim_smoke.sh (by hand, one container)
+│   │       │   │                 #   sim_start.sh (make sim: arms and takes off)
 │   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):
 │   │       │                             # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
 │   │       │                             # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.

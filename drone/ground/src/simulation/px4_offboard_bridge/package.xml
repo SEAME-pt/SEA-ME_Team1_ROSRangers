@@ -13,8 +13,6 @@
   <depend>rcl_interfaces</depend>
   <depend>px4_msgs</depend>
   <depend>mission_node</depend>  <!-- mission_node.spin.run -->
-  <exec_depend>launch</exec_depend>
-  <exec_depend>launch_ros</exec_depend>
   <exec_depend>intent_node</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>ros2bag</exec_depend>

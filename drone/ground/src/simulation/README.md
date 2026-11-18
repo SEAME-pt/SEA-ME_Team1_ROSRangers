@@ -21,14 +21,4 @@ make sim-down
 
 The `px4` service (`Dockerfile`, final stage, started by `sim_start.sh`) arms, takes off and switches to Offboard by itself, in the sim only. `make sim-smoke` runs `sim_smoke_scenario` (in `px4_offboard_bridge`): no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT with `intent_node` killed. It checks direction, REQ-CTL-001, REQ-SAF-017, REQ-SAF-018 and REQ-SW-001 and writes the bag and `summary.md` to `drone/ground/logs/sim-smoke/<start time>/`.
 
-## Ground chain smoke test by hand (`sim_smoke.sh`)
-
-`sim_smoke.sh` starts PX4 SITL headless in its own container (`px4sim-smoke`), builds `intent_node`, `mission_node` and the sim-only `px4_offboard_bridge` inside it, and launches the chain `/gesture/raw → intent_node → mission_node → px4_offboard_bridge → PX4`:
-
-```sh
-drone/ground/src/simulation/sim_smoke.sh up       # mask 15 (or: up 11)
-drone/ground/src/simulation/sim_smoke.sh check
-drone/ground/src/simulation/sim_smoke.sh down
-```
-
-It sets `NAV_DLL_ACT 0` in the sim only (there is no ground station, and PX4 never gets ready without it). The bridge never arms: the scenario arms, takes off and switches to Offboard. Details and the FLU → NED conversion: `px4_offboard_bridge/README.md`.
+`sim_start.sh` sets `NAV_DLL_ACT 0` in the sim only (there is no ground station, and PX4 never gets ready without it). The bridge never arms: `sim_start.sh` (the sim) arms, takes off and switches to Offboard. Details and the FLU → NED conversion: `px4_offboard_bridge/README.md`.

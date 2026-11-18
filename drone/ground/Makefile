@@ -21,6 +21,18 @@
 #                 psk.json next to it (mode 600), the only secret the
 #                 flight_interface container mounts (ADR-025 E3.2)
 #
+# REAL MODE: the drone (ADR-025). Safety Rules first: props off on the bench,
+# the safety pilot holds the radio.
+#   make real       checks (env/real.env, the PSK file, the ESP answers ping),
+#                   then gesture, intent, mission and flight_interface (backend
+#                   esp, UNCONFIGURED), prints the operator steps, shows the live
+#                   table. It never configures, activates or ARMs (REQ-SAF-023)
+#   make real-dry   the same with flight_interface on the loopback backend: no
+#                   drone, no PSK. To rehearse the operator steps at a desk
+#   make real-steps print the operator steps again
+#   make real-down  asks first (it cuts the drone's link: the ESP's failsafe
+#                   takes over), then stops flight_interface and the chain
+#
 # Modes: one compose profile and env file each (env/<mode>.env: profile,
 # parameter file, ROS domain, ADR-025 E1.3). Git ignores env/: copy each
 # template from env.example/ and fill in the values the safety pilot gives you
@@ -360,23 +372,118 @@ export PSK_FILE_PY
 psk-file:
 	@python3 -c "$$PSK_FILE_PY" "$(SECRETS)" "$(PSK_FILE)"
 
-# logs/ made here, not by Docker (as root), so it stays the user's.
-# A running simulation is stopped first: its bridge also publishes /flight/state.
 # env/<mode>.env filled in (from env.example/, values from the safety pilot)
 env-demo env-sim env-real:
 	@tools/env_check.sh $(@:env-%=%)
 
+# The ros2 CLI's daemon on the host caches the ROS graph, one per domain: a
+# stale one lists nodes from an earlier run. Stopped for the mode's domain
+# before the mode starts; nothing to do without ROS 2 on the host.
+# $(call stop_ros_daemon,MODE)
+stop_ros_daemon = if [[ -f $(ROS) ]]; then \
+	d=$$(grep -E '^[[:space:]]*GROUND_DOMAIN_ID=' env/$(1).env | tail -n 1 | cut -d= -f2); \
+	( source $(ROS) && ROS_DOMAIN_ID=$$d ros2 daemon stop ) >/dev/null 2>&1 || true; fi
+
+# Every start rule starts from scratch: the other modes stopped (demo and sim
+# stop each other; a running flight_interface makes them refuse instead),
+# the containers recreated, the host's ROS daemon stopped. The build cache is
+# kept: only make fclean / make re remove it.
+# logs/ made here, not by Docker (as root), so it stays the user's.
 up: no-flight-interface env-demo
 	-xhost +local: >/dev/null
 	mkdir -p logs
-	$(STOP_COMPOSE) stop px4 sim_smoke
-	$(DEMO_COMPOSE) up --build
+	@$(call stop_ros_daemon,demo)
+	$(STOP_COMPOSE) down
+	$(DEMO_COMPOSE) up --build --force-recreate
 
 down: no-flight-interface
 	$(STOP_COMPOSE) down
 
 clean: no-flight-interface
 	$(STOP_COMPOSE) down --rmi all --remove-orphans
+
+# ---------- Real mode: the drone (ADR-025) ----------
+
+REAL_COMPOSE := $(COMPOSE) --env-file env/real.env
+# The real chain; echo is started apart, in the foreground (the live table)
+REAL_CHAIN   := gesture intent mission
+# flight_interface is started with `run` (so the dry run can change its
+# command), under this name, with --rm: docker stop also removes it
+FI_NAME      := ground-flight_interface
+FI_EXE       := /ws/install/flight_interface/lib/flight_interface/flight_interface
+# The ESP's address: ground_bringup's config/real.yaml, the one source
+ESP_HOST      = $(shell sed -n 's/^[[:space:]]*esp_host:[[:space:]]*\([0-9.]*\).*/\1/p' \
+	$(BRINGUP)/config/real.yaml | head -n 1)
+
+# make real: the whole real stack, flight_interface (backend esp) unconfigured.
+# Checks first: env/real.env filled in, the PSK file, the ESP answering ping.
+# It never configures, activates or ARMs flight_interface (REQ-SAF-023): it
+# prints the operator steps, then shows the live table. Ctrl+C closes only
+# the table; the stack keeps running until make real-down.
+real: FI_ARGS =
+real: no-flight-interface env-real real-check
+	$(REAL_START)
+
+# make real-dry: the same stack and operator steps without the drone. Why it
+# is needed: the real mode's steps (configure, activate, ARM, E-stop) and its
+# chain can then be rehearsed, and checked after a change, at a desk, with no
+# drone, no PSK and nobody holding the radio. flight_interface runs the
+# loopback backend (-p backend:=loopback after real.yaml): nothing leaves the PC.
+# The loopback never reads the PSK, so /dev/null is mounted in place of the
+# PSK file (the service always mounts one): no psk.json needed.
+real-dry: FI_ARGS = $(FI_EXE) --ros-args --params-file /config/real.yaml -p backend:=loopback
+real-dry: export SEAME_SECRETS_FILE := /dev/null
+real-dry: no-flight-interface env-real
+	$(REAL_START)
+
+real-check:
+	@tools/real_check.sh "$${SEAME_SECRETS_FILE:-$(PSK_FILE)}" "$(ESP_HOST)"
+
+# The recipe of real and real-dry, never a rule of its own (so nothing starts
+# the real mode without their checks). FI_ARGS empty = the service's own
+# command (real.yaml, backend esp).
+define REAL_START
+-xhost +local: >/dev/null
+mkdir -p logs
+@$(call stop_ros_daemon,real)
+$(STOP_COMPOSE) down
+$(REAL_COMPOSE) up -d --build --force-recreate $(REAL_CHAIN)
+$(REAL_COMPOSE) run -d --rm --build --name $(FI_NAME) flight_interface $(FI_ARGS)
+@$(MAKE) --no-print-directory real-steps
+-$(REAL_COMPOSE) run --rm echo
+@echo "The real stack is still running. Stop it with: make real-down"
+endef
+
+# The operator steps, printed again any time (nothing else happens)
+real-steps:
+	@echo
+	@echo "===== flight_interface is UNCONFIGURED. Operator steps (another terminal, in drone/ground/):"
+	@echo "  Safety Rules first: props off on the bench, the safety pilot holds the radio."
+	@echo "  R='docker compose --env-file env/real.env run --rm echo'"
+	@echo "  L='ros2 lifecycle set --no-daemon --spin-time 5'   # waits for discovery (fresh container)"
+	@echo '  $$R $$L /flight_interface configure'
+	@echo '  $$R $$L /flight_interface activate'
+	@echo '  $$R ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger   # ARM: by hand only'
+	@echo '  $$R ros2 service call /flight_interface/estop std_srvs/srv/Trigger         # E-stop'
+	@echo '  $$R ros2 topic echo /flight/state                                            # its state'
+	@echo "  Logs: logs/flight_interface/latest.log. Stop everything: make real-down"
+	@echo "  These steps again: make real-steps"
+	@echo
+
+# Stopping the real mode cuts the drone's link on purpose: the ESP's link
+# failsafe takes over. So it asks first, and goes on only on the answer `stop`.
+# flight_interface is stopped first (docker stop: it deactivates, one last
+# zero setpoint, then BYE; --rm removes it), then the chain.
+real-down:
+	@echo "make real-down stops flight_interface: the drone's link is cut and the ESP's"
+	@echo "failsafe takes over. The safety pilot must be ready, holding the radio."
+	@read -r -p "Type stop to go on: " answer && [[ $$answer == stop ]] || \
+		{ echo "make real-down: nothing stopped"; exit 1; }
+	@ids=$$(docker ps -q --filter label=com.docker.compose.project=ground \
+		--filter label=com.docker.compose.service=flight_interface); \
+	if [[ -n $$ids ]]; then docker stop $$ids >/dev/null; fi
+	GROUND_MODE=real GROUND_DOMAIN_ID=0 GROUND_DISCOVERY_RANGE=LOCALHOST \
+		$(COMPOSE) --profile real down
 
 # ---------- Simulation (SIMULATION ONLY, #86) ----------
 
@@ -394,6 +501,7 @@ px4-image-present:
 sim: no-flight-interface env-sim px4-image-present
 	-xhost +local: >/dev/null
 	mkdir -p logs
+	@$(call stop_ros_daemon,sim)
 	$(STOP_COMPOSE) down
 	$(SIM_ENV) $(SIM_COMPOSE) up --build --force-recreate $(SIM)
 
@@ -410,6 +518,7 @@ sim-smoke-mask:
 
 sim-smoke: no-flight-interface env-sim sim-smoke-mask px4-image-present
 	@mkdir -p logs $(TESTLOG)
+	@$(call stop_ros_daemon,sim)
 	$(STOP_COMPOSE) down
 	@$(SMOKE_ENV) $(SIM_COMPOSE) --profile sim-smoke up --build --force-recreate \
 		--exit-code-from sim_smoke $(SIM_SMOKE) 2>&1 | tee $(TESTLOG)/sim-smoke.log; \
@@ -441,4 +550,5 @@ re: fclean all
 
 .PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
 	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask \
-	no-flight-interface psk-file env-demo env-sim env-real
+	no-flight-interface psk-file env-demo env-sim env-real \
+	real real-dry real-check real-steps real-down
