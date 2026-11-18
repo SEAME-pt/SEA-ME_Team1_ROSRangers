@@ -174,9 +174,10 @@ services:
     build: &px4-build
       context: .
       dockerfile: src/simulation/Dockerfile
-      # The PX4 stage comes from the image make px4-image builds
+      # The PX4 stage comes from the image make px4-image builds. The Makefile
+      # passes its PX4_IMAGE, so both always name the same image.
       args:
-        PX4_IMAGE: seame-px4-sim:jazzy-1.17
+        PX4_IMAGE: ${PX4_IMAGE:-seame-px4-sim:jazzy-1.17}
     image: rosrangers/px4-sim:jazzy
     # GPU (Mesa) for Gazebo rendering. This image runs as uid 1000, so it also
     # needs the host's render group: the Makefile sets RENDER_GID from

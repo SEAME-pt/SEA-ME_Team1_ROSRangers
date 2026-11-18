@@ -26,9 +26,10 @@
 #      command prints while stopping (the entrypoint is PID 1 there).
 #   7. flight_interface, from its compose service (loopback backend, a dummy
 #      secrets file mounted, no PSK): configure + activate, its /flight/state
-#      reaches mission, which stays IDLE (not_streaming): the loopback drone
-#      has no override, so nothing can engage. Never backend:=esp, never ARM.
-#      docker stop: it exits 0 at once.
+#      reaches mission, which stays IDLE (not_streaming) for 5 s: the
+#      loopback drone has no override, so nothing can engage. Never
+#      backend:=esp, never ARM. docker stop: it deactivates (last zero
+#      setpoint, "inactive: no more setpoints" in its log) and exits 0 at once.
 #
 # Own compose project, ROS domain and log folder (logs/smoke), so a running
 # `make up` stack (or teammates on the network) is neither stopped nor mixed
@@ -315,20 +316,32 @@ log=$GROUND_LOG_DIR/stopper/latest.log
 echo "    all 5000 lines printed during docker stop, and the last one, are in the log file"
 
 step 7 "flight_interface (loopback) -> /flight/state -> mission stays IDLE"
-# lifecycle TRANSITION: ros2 lifecycle set, retried until the node is
-# discovered (at most 30 s). Configure and activate only: never ARM.
+# lifecycle_cli SECONDS ARGS: ros2 lifecycle ARGS from a throwaway container,
+# cut after SECONDS; its output, never a failure
+lifecycle_cli() {
+    local t=$1
+    shift
+    docker run --rm --name "$LIFECYCLE" "${ROS[@]}" rosrangers/flight_interface:jazzy \
+        timeout "$t" ros2 lifecycle "$@" 2>&1 || true
+}
+# lifecycle TRANSITION STATE: ros2 lifecycle set until the node is in STATE
+# (at most about 30 s). The state is read before each try, so a transition
+# that worked but whose reply was lost (or cut by timeout) is not retried
+# from the new state and reported as failed. Configure and activate only:
+# never ARM.
 lifecycle() {
-    local end=$((SECONDS + 30))
-    while ((SECONDS < end)); do
-        if docker run --rm --name "$LIFECYCLE" "${ROS[@]}" rosrangers/flight_interface:jazzy \
-            timeout 20 ros2 lifecycle set /flight_interface "$1" 2>&1 |
-            grep -F "Transitioning successful" >/dev/null; then
-            echo "    ros2 lifecycle set /flight_interface $1: done"
+    local end=$((SECONDS + 30)) left
+    while ((left = end - SECONDS, left > 0)); do
+        if lifecycle_cli $((left < 10 ? left : 10)) get /flight_interface |
+            grep -E "^$2 \[[0-9]+\]" >/dev/null; then
+            echo "    /flight_interface is $2 (ros2 lifecycle set $1)"
             return 0
         fi
+        ((left = end - SECONDS, left > 0)) || break
+        lifecycle_cli $((left < 20 ? left : 20)) set /flight_interface "$1" >/dev/null
         sleep 1
     done
-    fail "ros2 lifecycle set /flight_interface $1 did not succeed within 30 s"
+    fail "/flight_interface did not reach $2 (ros2 lifecycle set $1) within 30 s"
 }
 # mission alone: flight (the pretend /flight/state) stopped in step 5, so
 # flight_interface is the only /flight/state publisher here
@@ -337,19 +350,29 @@ docker run -d --name "$FI_MISSION_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
     ros2 topic echo --field data /mission/state std_msgs/msg/String >/dev/null
 wait_for "$FLIGHT_INTERFACE" "unconfigured: use ros2 lifecycle set" 30 ||
     fail "flight_interface did not start within 30 s"
-lifecycle configure
-lifecycle activate
+lifecycle configure inactive
+lifecycle activate active
 # not_streaming, not no_flight_state: mission got flight_interface's state
 # (link_ok while active), and the loopback drone is not STREAMING
-wait_for "$FI_MISSION_ECHO" '"mode":"IDLE","mode_reason":"not_streaming"' 15 ||
+IDLE='"mode":"IDLE","mode_reason":"not_streaming"'
+wait_for "$FI_MISSION_ECHO" "$IDLE" 15 ||
     fail "mission did not report IDLE (not_streaming) from flight_interface's /flight/state within 15 s"
-echo "    mission reads flight_interface's /flight/state and stays IDLE (not_streaming)"
+# Held, not only reached: mission repeats its state at 2 Hz, so over HOLD
+# seconds new IDLE lines keep coming, and no other mode ever shows
+HOLD=5
+seen=$(docker logs "$FI_MISSION_ECHO" 2>&1 | wc -l)
+sleep "$HOLD"
+wait_for "$FI_MISSION_ECHO" "$IDLE" 2 "$seen" ||
+    fail "mission stopped reporting IDLE (not_streaming) during the ${HOLD} s hold"
 ! docker logs "$FI_MISSION_ECHO" 2>&1 | grep -E '"mode":"(WAITING|ENGAGED|LOCKED)"' >/dev/null ||
     fail "mission left IDLE with the loopback drone"
+echo "    mission reads flight_interface's /flight/state and stays IDLE (not_streaming) for ${HOLD} s"
 stop_and_check "$FLIGHT_INTERFACE"
 stop_and_check "$MISSION"
 docker kill "$FI_MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instrument
 check_log flight_interface "active: setpoints go out from the next fresh target"
+# docker stop deactivated it first: one last zero setpoint, then this line
+check_log flight_interface "inactive: no more setpoints"
 
 echo "PASS: images, in-image tests, gesture -> intent -> mission across containers," \
     "monitor, clean stops, node logs, flight_interface -> mission"

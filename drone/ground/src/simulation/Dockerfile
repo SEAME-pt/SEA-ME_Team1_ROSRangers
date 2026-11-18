@@ -1,5 +1,6 @@
 # SIMULATION ONLY (#29, #86, ADR-018/019). Never use with the real drone.
-# Build context is drone/ground/. Two stages:
+# Build context is drone/ground/ (its .dockerignore keeps build/, install/ and
+# the logs out), for compose and for make px4-image alike. Two stages:
 #   px4  PX4 SITL + Gazebo Harmonic + ROS 2 Jazzy (Ubuntu 24.04), px4_msgs and the
 #        Micro XRCE-DDS agent. Long to build (several GB). The Makefile builds it
 #        alone (make px4-image: --target px4, tagged seame-px4-sim:jazzy-1.17),
@@ -7,7 +8,9 @@
 #   sim  (final) PX4_IMAGE + intent_node, mission_node and px4_offboard_bridge
 #        (it imports mission_node.spin; the smoke scenario runs intent_node),
 #        started by sim_start.sh (make sim, make sim-smoke). Compose sets
-#        PX4_IMAGE to the tagged image; without it the px4 stage is built here.
+#        PX4_IMAGE to the tagged image (the Makefile's PX4_IMAGE). Without it
+#        (a plain docker build) the px4 stage is built here too, which takes
+#        long: use make px4-image, then make sim.
 ARG PX4_IMAGE=px4
 
 FROM ros:jazzy AS px4

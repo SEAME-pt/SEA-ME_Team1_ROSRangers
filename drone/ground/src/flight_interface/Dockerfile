@@ -32,10 +32,11 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select flight_interface
 
 ENTRYPOINT ["/entrypoint.sh"]
 # The node itself, not `ros2 launch`: launch ignores SIGTERM (docker stop
-# then kills it after 10 s, without the last zero setpoint), and SIGINT never
-# reaches it under entrypoint.sh (bash ignores SIGINT for the commands it
-# starts in the background). The node handles SIGTERM itself: it deactivates
-# (one last zero setpoint) and closes the backend. The launch file's E1
+# then kills it after 10 s, without the last zero setpoint). The node sets
+# its own SIGTERM and SIGINT handlers (link_node.main), which replace the
+# SIGINT ignore bash gives a background command; entrypoint.sh forwards both
+# as SIGTERM. On either, it deactivates (one last zero setpoint) and closes
+# the backend. The launch file's E1
 # defaults (ROS_DOMAIN_ID 42, LOCALHOST discovery) come from compose's
 # environment instead. backend:=esp: --ros-args -p backend:=esp
 CMD ["/ws/install/flight_interface/lib/flight_interface/flight_interface"]

@@ -55,7 +55,9 @@ SEA-ME_Team1_ROSRangers/
 │   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):
 │   │       │                             # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
 │   │       │                             # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
-│   │       │                             # smoke_scenario.py + smoke_checks.py: the make sim-smoke test
+│   │       │                             # smoke_scenario.py + smoke_checks.py: the make sim-smoke test.
+│   │       │                             # A plain colcon build over drone/ground/src fails on it (no px4_msgs):
+│   │       │                             # select packages by name (--packages-select), as CI and make do
 │   │       └── sd_protocol_py/   # Python twin of lib/protocol
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp_check, fc_cli, seame ...

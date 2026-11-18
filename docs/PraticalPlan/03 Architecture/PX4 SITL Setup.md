@@ -34,7 +34,7 @@ PX4 SITL + Gazebo is the flight-behaviour backend of [[ADR-019 Sim Backends|ADR-
 The `Dockerfile` is in the code repo under `drone/ground/src/simulation/`; its `px4` stage is this image. It runs PX4's `ubuntu.sh --no-nuttx`, builds the ROS 2 workspace and pre-builds `px4_sitl_default`.
 
 ```sh
-docker build --target px4 -t seame-px4-sim:jazzy-1.17 drone/ground/src/simulation
+docker build --target px4 -t seame-px4-sim:jazzy-1.17 -f drone/ground/src/simulation/Dockerfile drone/ground
 ```
 
 Your user must be in the `docker` group (`sudo usermod -aG docker $USER`, then log in again).

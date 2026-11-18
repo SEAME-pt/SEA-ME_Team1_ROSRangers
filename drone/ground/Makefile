@@ -70,8 +70,8 @@ RENDER_GID   := $(shell stat -c %g /dev/dri/renderD128 2>/dev/null || echo 0)
 # default LOCALHOST the px4 container (uid 1000, UDP only) and the others never
 # see each other. The sim runs no flight_interface and no drone.
 SIM_DISCOVERY := ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
-SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) $(SIM_DISCOVERY)
-SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) $(SIM_DISCOVERY)
+SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
+SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
 
 # Compose projects: ground (make, make up: named after this folder) and
 # ground-smoke (make smoke). Compose labels their containers, images and
@@ -260,7 +260,7 @@ clean:
 # sim-smoke build it only when it is missing, so they also work offline
 # (docker build checks Docker Hub for the base image every time).
 px4-image:
-	docker build --target px4 -t $(PX4_IMAGE) src/simulation
+	docker build --target px4 -t $(PX4_IMAGE) -f src/simulation/Dockerfile .
 
 px4-image-present:
 	@docker image inspect $(PX4_IMAGE) >/dev/null 2>&1 || $(MAKE) --no-print-directory px4-image
