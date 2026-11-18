@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - ci
@@ -40,24 +40,25 @@ SEA-ME_Team1_ROSRangers/
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke;
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
 │   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed);
-│   │   │                      #   px4 + sim_smoke behind the profiles sim / sim-smoke (SIM ONLY)
-│   │   ├── docker/            # one Dockerfile per image, entrypoint.sh, smoke_test.sh, echo/monitor.py (live table);
-│   │   │                      #   px4/: PX4 image + ground nodes + bridge, sim_start.sh (arms and takes off, sim only)
+│   │   │                      #   flight_interface behind its own profile; px4 + sim_smoke behind sim / sim-smoke (SIM ONLY)
+│   │   ├── docker/            # shared only: entrypoint.sh (node logs), smoke_test.sh (make smoke, CI ground-docker)
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
-│   │   └── src/
-│   │       ├── sd_protocol_py/   # Python twin of lib/protocol
-│   │       ├── flight_interface/ # fc_telemetry: FC over MSP -> /fc/attitude, /fc/battery (#96);
-│   │       │                     #   msp.py (MSP client, shared with the bench tools); lifecycle node later (#103)
-│   │       ├── gesture_node/     # webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
-│   │       ├── intent_node/      # /gesture/raw -> safety filter -> /gesture/intent
-│   │       └── mission_node/     # /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
-│   ├── simulation/
-│   │   └── px4/               # PX4 SITL + Gazebo Dockerfile and README
-│   │       ├── sim_smoke.sh       # by hand, one container: PX4 SITL headless + intent/mission nodes + bridge (#86)
-│   │       └── ros/px4_offboard_bridge/  # SIM ONLY stand-in for the PX4 backend of flight_interface (#86):
-│   │                                     # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
-│   │                                     # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
-│   │                                     # smoke_scenario.py + smoke_checks.py: the make sim-smoke test
+│   │   └── src/               # one folder per component: its ROS 2 package and its Dockerfile
+│   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
+│   │       ├── intent/           # intent_node: /gesture/raw -> safety filter -> /gesture/intent
+│   │       ├── mission/          # mission_node: /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
+│   │       ├── flight_interface/ # flight_interface: the lifecycle node ground <-> drone (ADR-025), fc_telemetry,
+│   │       │                     #   msp.py (MSP client, shared with the bench tools)
+│   │       ├── echo/             # monitor.py: the live table of docker compose up (not a ROS package)
+│   │       ├── simulation/       # SIM ONLY: PX4 SITL + Gazebo Dockerfile (stage px4 + ground nodes), README,
+│   │       │   │                 #   sim_start.sh (make sim: arms and takes off), sim_smoke.sh (by hand, one container)
+│   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):
+│   │       │                             # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
+│   │       │                             # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
+│   │       │                             # smoke_scenario.py + smoke_checks.py: the make sim-smoke test.
+│   │       │                             # A plain colcon build over drone/ground/src fails on it (no px4_msgs):
+│   │       │                             # select packages by name (--packages-select), as CI and make do
+│   │       └── sd_protocol_py/   # Python twin of lib/protocol
 │   ├── tools/
 │   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp_check, fc_cli, seame ...
 │   └── tests/
@@ -82,7 +83,7 @@ SEA-ME_Team1_ROSRangers/
 ```
 
 > [!note] Until #60 lands
-> The bench tools sit in `scripts/` and their tests in `tests/scripts/`. Their MSP library, `msp.py`, moved into the `flight_interface` package with #96 (`drone/ground/src/flight_interface/flight_interface/msp.py`), so the ROS 2 node can import it. `msp_check.py` and `esp_at.py` add that folder to `sys.path` and still run without ROS. #60 has to keep that import working when the tools move.
+> The bench tools sit in `scripts/` and their tests in `tests/scripts/`. Their MSP library, `msp.py`, moved into the `flight_interface` package with #96 (`drone/ground/src/flight_interface/flight_interface/flight_interface/msp.py`), so the ROS 2 node can import it. `msp_check.py` and `esp_at.py` add that folder to `sys.path` and still run without ROS. #60 has to keep that import working when the tools move.
 
 > [!note] Generated, not committed
 > `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §4).

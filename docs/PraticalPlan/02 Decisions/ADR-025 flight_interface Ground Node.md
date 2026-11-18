@@ -14,12 +14,12 @@ tags:
 # ADR-025 — flight_interface Ground Node
 
 > [!success] Status: ACCEPTED (#103, PR #187)
-> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
+> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). E3.1 was added on 2026-11-16 (#186). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
 > This ADR replaces the `DECISIONS.md` file that PR #187 carried at the repository root.
 
 ## 1. Context
 
-- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: `drone/ground/src/flight_interface/` (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
+- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: `drone/ground/src/flight_interface/flight_interface/` (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
 - It is the innermost ground layer of the safety chain ([[ADR-004 ESP Failsafe|ADR-004]] §3): the radio and the safety pilot, Betaflight's failsafe and the ESP's link failsafe all act without it.
 - Fixed rules every decision respects:
   - The node never sends ARM or RESUME on its own (REQ-SAF-023). ARM only hands the masked stick channels to the ground; it never arms the motors (only the pilot's switch does).
@@ -71,6 +71,7 @@ tags:
 | E1.2 | `make sim` and `make sim-smoke` use `SUBNET` discovery: with `LOCALHOST` the PX4 image (uid 1000, UDP only) and the other containers never see each other. The simulation runs no `flight_interface` and no drone. Added 2026-11-16. | Claude under BrunoBMFT's go, 2026-11-16 |
 | E2 | Every `ARM_CONTROL_ACK` / `RESUME_ACK` is logged, a refusal as a warning with its reason; `last_ack` on `/flight/state` comes with the docs of #98. | ThiagoTEP, BrunoBMFT |
 | E3 | `load_psk` warns when the secrets file is readable by the group or others; Docker will mount it read-only (never `SEAME_PSK` in the environment) once `flight_interface` has a compose service. | ptorrao-git, BrunoBMFT |
+| E3.1 | The compose service exists (`flight_interface`, its own profile, `restart: "no"`): the secrets file is mounted read-only and a missing file is an error; no `SEAME_PSK` in its environment, no PSK in the image. The container runs the node itself, not the launch file: `ros2 launch` ignores the SIGTERM of `docker stop`, so the node would be killed without its last zero setpoint. E1's defaults then come from `docker-compose.yml`. Added 2026-11-16. | Claude in #186 (PR A), for BrunoBMFT's review |
 | E4 | A new session counts only once a frame under its keys comes back (the `CONFIG_ACK` or a `STATE`); none within 1 s: drop it and redo the handshake, never with ARM ([[ADR-005 TCP Session\|ADR-005]]). | ptorrao-git, BrunoBMFT |
 | E5 | Each test file has its own `TEST_DOMAIN_ID`; a check fails when two share one or use 42. Track D, own PR. | Dot99 |
 | E6 | After a reconnect the ground takes the FC state from `FC_HEALTH` (5 Hz), since the events `0x0201` / `0x0202` report only changes. | BrunoBMFT, ptorrao-git |
@@ -88,7 +89,7 @@ tags:
 
 - **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the node starts streaming, also when no event came.
 - **Negative:** ARM and RESUME answer 1.5 s later than before. Until `override_active` (#176) and the controller (C1) exist, the node only ever sends neutral sticks.
-- **Open:** the C1.4 roll / pitch cap value, E1's SROS2, the Docker half of E3, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
+- **Open:** the C1.4 roll / pitch cap value, E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
 
 ## 4. Related pages
 

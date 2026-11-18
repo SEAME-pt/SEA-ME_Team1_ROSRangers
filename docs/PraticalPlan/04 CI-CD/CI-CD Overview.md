@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -49,11 +49,11 @@ Each job is gated by `check-components` and turns on when its component exists (
 
 **Ground ROS 2 jobs.**
 - `ground-ros2` builds `gesture_node` and `intent_node`, plus `mission_node` and `flight_interface` when their `package.xml` exists (the `ros_pkgs` output of `check-components`), in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
-- `ground-docker` runs `drone/ground/docker/smoke_test.sh`.
+- `ground-docker` runs `drone/ground/docker/smoke_test.sh`: every ground image, including `flight_interface`, its package tests inside it, and the containers talking to each other.
 - They turn on when the `gesture_node` and `intent_node` `package.xml` files exist (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
-- On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why.
+- On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why. The simulation lives in `drone/ground/src/simulation/`, so a PR that only changes the simulation runs them too: slower, but harmless.
 
-**Simulation bridge job.** `sim-bridge-python` runs the pytest tests of the sim-only `px4_offboard_bridge` that need no ROS and no `px4_msgs` (`bridge_logic.py`, and `smoke_checks.py`, the pass/fail rules of `make sim-smoke`), with a **90 % coverage gate**. It turns on when `drone/simulation/px4/ros/px4_offboard_bridge/setup.py` exists. The simulation itself is not run in CI.
+**Simulation bridge job.** `sim-bridge-python` runs the pytest tests of the sim-only `px4_offboard_bridge` that need no ROS and no `px4_msgs` (`bridge_logic.py`, and `smoke_checks.py`, the pass/fail rules of `make sim-smoke`), with a **90 % coverage gate**. It turns on when `drone/ground/src/simulation/px4_offboard_bridge/setup.py` exists. The simulation itself is not run in CI.
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
 

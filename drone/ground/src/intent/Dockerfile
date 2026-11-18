@@ -5,7 +5,7 @@ FROM ros:jazzy-ros-base
 # Before the source: it rarely changes, so its layer stays cached
 COPY docker/entrypoint.sh /entrypoint.sh
 WORKDIR /ws
-COPY src/intent_node src/intent_node
+COPY src/intent/intent_node src/intent_node
 RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select intent_node
 
 ENTRYPOINT ["/entrypoint.sh"]

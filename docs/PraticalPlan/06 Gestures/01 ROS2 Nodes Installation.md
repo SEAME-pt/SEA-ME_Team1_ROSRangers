@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - gestures
@@ -176,11 +176,11 @@ Full output in `logs/test/`.
 
 ### 7.2 Where the tests are
 
-Package tests in `drone/ground/src/<package>/test/`, tests of nodes together (contract, pipeline, launch) in `drone/tests/ros/`. Each file's docstring says what it checks. Requirement IDs and their tests: [[03 Intent Node]] §9, [[04 Mission Node]] §11.
+Package tests in `drone/ground/src/<component>/<package>/test/`, tests of nodes together (contract, pipeline, launch) in `drone/tests/ros/`. Each file's docstring says what it checks. Requirement IDs and their tests: [[03 Intent Node]] §9, [[04 Mission Node]] §11.
 
 ### 7.3 The smoke test
 
-`docker/smoke_test.sh` builds the images, runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs.
+`docker/smoke_test.sh` builds the images (also `flight_interface`), runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs. Last, `flight_interface` (loopback) publishes `/flight/state` and mission stays `IDLE`.
 
 ### 7.4 Skipped tests
 

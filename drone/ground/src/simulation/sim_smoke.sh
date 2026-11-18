@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # PX4 SITL smoke test of the ground chain (#86). SIMULATION ONLY.
 #
-#   drone/simulation/px4/sim_smoke.sh up [mask] [gui]   start everything (mask 15 by default);
+#   drone/ground/src/simulation/sim_smoke.sh up [mask] [gui]   start everything (mask 15 by default);
 #                                                       gui also opens the Gazebo window
-#   drone/simulation/px4/sim_smoke.sh gui     open the Gazebo window again (after closing it)
-#   drone/simulation/px4/sim_smoke.sh check   is the chain alive? (topic rates, last /flight/state)
-#   drone/simulation/px4/sim_smoke.sh shell   bash inside the container, ROS sourced
-#   drone/simulation/px4/sim_smoke.sh logs    last lines of each log
-#   drone/simulation/px4/sim_smoke.sh down    stop and remove the container
+#   drone/ground/src/simulation/sim_smoke.sh gui     open the Gazebo window again (after closing it)
+#   drone/ground/src/simulation/sim_smoke.sh check   is the chain alive? (topic rates, last /flight/state)
+#   drone/ground/src/simulation/sim_smoke.sh shell   bash inside the container, ROS sourced
+#   drone/ground/src/simulation/sim_smoke.sh logs    last lines of each log
+#   drone/ground/src/simulation/sim_smoke.sh down    stop and remove the container
 #
-# Needs the image from drone/simulation/px4/Dockerfile (seame-px4-sim:jazzy-1.17).
+# Needs the image from stage px4 of drone/ground/src/simulation/Dockerfile
+# (seame-px4-sim:jazzy-1.17; make px4-image in drone/ground/ builds it).
 # It runs in its own container (px4sim-smoke) with this repo mounted read-only.
 # The ground packages are copied and built inside the container.
 #
@@ -21,7 +22,7 @@ set -euo pipefail
 IMAGE=${IMAGE:-seame-px4-sim:jazzy-1.17}
 NAME=${NAME:-px4sim-smoke}
 HERE=$(cd "$(dirname "$0")" && pwd)
-REPO=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null || (cd "$HERE/../../.." && pwd))
+REPO=$(git -C "$HERE" rev-parse --show-toplevel 2>/dev/null || (cd "$HERE/../../../.." && pwd))
 READY_TIMEOUT_SEC=${READY_TIMEOUT_SEC:-180}
 ENV_SH='source /opt/ros/jazzy/setup.bash; source ~/ros2_px4_ws/install/setup.bash; [ -f /tmp/ws/install/setup.bash ] && source /tmp/ws/install/setup.bash'
 
@@ -70,8 +71,8 @@ up() {
 
   echo "2/5 Building intent_node, mission_node and px4_offboard_bridge"
   in_box 'mkdir -p /tmp/ws/src && cd /tmp/ws/src \
-    && cp -r ~/repo/drone/ground/src/intent_node ~/repo/drone/ground/src/mission_node \
-             ~/repo/drone/simulation/px4/ros/px4_offboard_bridge . \
+    && cp -r ~/repo/drone/ground/src/intent/intent_node ~/repo/drone/ground/src/mission/mission_node \
+             ~/repo/drone/ground/src/simulation/px4_offboard_bridge . \
     && cd /tmp/ws && { colcon build --packages-select intent_node mission_node px4_offboard_bridge \
        > /tmp/build.log 2>&1 || { tail -30 /tmp/build.log; exit 1; }; }'
 
