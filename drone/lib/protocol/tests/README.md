@@ -107,8 +107,33 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.OwnFramesRejectedEvenWithTheSameKey` | With the same key everywhere, the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT and an ARM_CONTROL_REQUEST (`wrong_direction`), no window moves; BYE is accepted by both; the real traffic still goes through | Even if both ends got the keys wrong, a node's own frame is never accepted (#152) |
 | `Receiver.KeepsItsRoleAndTransport` | A Receiver created for the ground on TCP reports exactly that | The role and transport are fixed for its whole life |
 | `Handshake.EachSideAcceptsOnlyItsOwnHandshakeFrame` | The ESP accepts HELLO, the ground HELLO_ACK; each refuses the other's and a PSK-tagged SETPOINT; wrong session ID, seq 2, short payload, bad tag and a cut frame refused; the output is written only on accept | Before a session only the right handshake frame gets through (#152) |
-| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–16), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
+| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–17), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
+
+## LateCheck: frames that arrive too late (#171, #204)
+
+Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or RESUME_REQUEST that arrived more than 200 ms (provisional) after it was sent, against the session's offset between the ground's clock and the ESP's.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `LateCheck.OnTimeAcceptedHeldBackRejected` | 15 ms on its way: accepted; held back 250 ms: refused as late and counted; 195 ms: accepted | The 200 ms bound decided on #171 |
+| `LateCheck.ALateFrameUsesUpNothing` | A late seq 1 is refused, the window does not move, and seq 1 sent again on time is accepted | The check runs before the sequence window, so it changes no state |
+| `LateCheck.TheHelloSeedCatchesADelayFromTheStart` | Every frame held back 300 ms from the first one on: all refused | The offset comes from the HELLO, so an attacker cannot set it with delayed first frames |
+| `LateCheck.AFasterPathLowersTheFloor` | A frame faster than the HELLO lowers the offset; later frames are measured from it | The offset is the lowest lag seen |
+| `LateCheck.DriftUpTo200PpmIsFollowed` | The ESP clock runs 190 ppm fast for an hour: no frame refused | Real clock drift never causes a failsafe |
+| `LateCheck.AnNtpSlewedGroundClockIsRefused` | A ground clock slewed by 500 ppm (NTP on `CLOCK_MONOTONIC`): frames end up refused | Why the ground must use `CLOCK_MONOTONIC_RAW` (#171) |
+| `LateCheck.BothClocksWrap` | `t_send_us` and the ESP clock each wrap between frames: on time accepted, 250 ms late refused | Works after 71.6 min of uptime on either side |
+| `LateCheck.HeldBackLongEnoughToWrapIsStillRefused` | Held back 40 and 60 min (the u32 lag difference wraps negative): refused, and the offset does not move | A long hold never passes as a "faster path" (#205 review) |
+| `LateCheck.TheDriftAllowanceKeepsGrowingPast71Minutes` | TCP Receiver, no control frame for 72 min (> 2^32 µs, `keep_time()` every 10 min), the ESP clock 60 ppm fast: a RESUME 259 ms above the floor is accepted (allowance 864 ms); 1.3 s above is refused | The allowance's elapsed time is 64-bit: a u32 one wrapped and refused every RESUME after 71.6 min (#205 review) |
+| `LateCheck.AHugeBoundIsClamped` | `set_late_bound(0xFFFFFFFF)`: on time accepted, 10.5 s late refused | A bound above 2^31 µs would read as negative and refuse everything; clamped to 10 s (#205 review) |
+| `LateCheck.ArmIsCheckedConfigIsNot` | Both 300 ms late on TCP: ARM refused, CONFIG_GET accepted | Only frames that start or keep control are checked |
+| `LateCheck.WithoutAReceiveTimeControlFramesAreRefused` | Check on, no receive time given: control frames refused; check off: accepted | A caller that forgets the time fails closed |
+| `LateCheck.ANewSessionNeedsANewSeed` | A new session clears the offset; without a seed the first control frame sets it | One session's offset never carries over |
+| `LateReplay.TheS109CageRunsGetNoExtraFailsafe` | **Local only, skipped in CI** (the fixtures are bench data, not in the repo; build them with `make_replay.py` from the logs in `results/`). The three ESP-S1-09 cage runs (`drone/tests/vectors/replay/`: nominal 50 Hz send slot corrected for the PC's slot slips, see `make_replay.py`) through a Receiver with and without the check, the offset seeded from each run's first frame (the runs have no HELLO): exactly 0 / 292 / 8 frames refused, and the 250 ms silences 0 / 14 / 0 in both cases | The bound adds no failsafe in real traffic (#204 acceptance criterion) |
+| `LateLinkTest.HeldBackSetpointsNeverKeepStreamingAlive` | Through `sd::Link` with the default config: STREAMING, then every frame released 300 ms late is refused and `T_loss` ends in LINK_FAILSAFE | Closes the known limit of PR #170 |
+| `LateLinkTest.ALateArmIsRefused` | An ARM 300 ms late: still SESSION_IDLE | A held-back ARM can never start control |
+| `LateLinkTest.WorksAcrossTheMillisWrap` | The ESP's `millis()` wraps while streaming: on time accepted, 260 ms late refused | `millis() × 1000` wraps with `t_send_us` |
+| `LateLinkTest.LinkKeepsTheDriftClockGoingForAnHour` | Through `sd::Link`: only `tick()` for 72 min (ESP clock 60 ppm fast), then a SETPOINT and an ARM: both accepted, STREAMING | `Link` feeds the late check's clock on every loop, so even TCP (ARM / RESUME only) sees the time pass |
 
 ## Messages: the content of each message type
 Each message type is turned into bytes and back (a "round trip"). The bytes are compared with Protocol Spec v0 §3.

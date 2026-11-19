@@ -3,7 +3,7 @@ title: ADR-003 — Sequence Acceptance
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-05
+updated: 2026-11-16
 project: SEA autonomous drone
 aliases:
   - D03
@@ -43,6 +43,8 @@ REQ-COM-006 to 013 (old IDs REQ-SEQ-01 to 04 and REQ-ORD-01 to 04) in [[PC_to_ES
 > 2026-11-05: "per sender, per session" is now also **per transport**: TCP and UDP each have their own counter, each starting at 1 (`HELLO` and `HELLO_ACK` use seq 1). The rule `seq > last seen` applies to every message on that transport, not only control. **The decision is extended** from control messages to all messages, per transport; the C++ (#99) and Python (#100) libraries must implement it. Decided on GitHub #142, recorded in [[Protocol Spec v0]] §7.5.
 
 > 2026-11-05: `STATE` ([[Protocol Spec v0]] §3) carries only the total `rx_rejected`, not the duplicate, old and gap counters named in §3. How they reach the ground is open in GitHub #149 ([[Open Questions]]). The C++ library (#99) starts the TCP window at seq 1, because `HELLO` and `HELLO_ACK` already used it. The decision is unchanged.
+
+> 2026-11-16 (#171, #204, safety pilot BrunoBMFT): `seq > last seen` alone accepts frames that were held back and released in order. The ESP now also refuses a control frame (`SETPOINT`, `ARM_CONTROL_REQUEST`, `RESUME_REQUEST`) that arrived more than 200 ms (provisional) late against the session's offset between the ground's `t_send_us` (`CLOCK_MONOTONIC_RAW`) and its own clock: `reject:late`, checked **before** the window, so a late frame uses up no `seq` ([[Protocol Spec v0]] §4 rule 3a). The offset is seeded from the `HELLO` and follows clock drift up to 200 ppm.
 
 ## 5. Glossary
 

@@ -42,6 +42,7 @@ Optional fields:
 | `note` | Extra context, e.g. which decision a vector comes from |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
 | `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` and `last_tcp_seq` (the ESP's UDP and TCP Receivers), `rx_rejected` and `gaps` (totals over all Receivers: both sides, both transports) at the end. A step may say `"transport": "tcp"` (default `udp`) and `"role": "ground"` (default `esp`). Each side and transport has its own Receiver (spec §2, §4 rule 3). A single frame goes to the ground only for a type only the ground receives; otherwise (also BYE, HELLO, HELLO_ACK and unknown types) to the ESP, on its type's transport (UDP if none) |
+| `late`, `rx_us` | Group 5, late check only (spec §4 rule 3a, #204): `late` turns the check on for the ESP's Receivers with `bound_us` and seeds the offset from `hello_t_send_us` / `hello_rx_us`; each step then has `rx_us`, the ESP receive time (u32 µs), or is only `keep_time_us`: time passes on the ESP without a frame (`Receiver::keep_time`) |
 | `channels` | Group 6: the 8 RC channels for `MSP_SET_RAW_RC` |
 | `handshake` | Group 9: `esp` or `ground`, the side that checks this frame before any session (`receive_handshake`, spec §1). `key` is the PSK |
 | `psk`, `ground_nonce`, `esp_nonce`, `direction` | Group 2: `key` is derived from these: the session key, then the key of `direction` (`g2e` ground→ESP or `e2g` ESP→ground, spec §1) |
@@ -204,9 +205,11 @@ Example: the ESP's session is `0x12345678`, the frame says `0x12345679`, tag val
 }
 ```
 
-### Group 5: Sequence, ADR-003 (6 vectors)
+### Group 5: Sequence, ADR-003 (10 vectors)
 
 `seq_in_order`, `seq_duplicate`, `seq_older`, `seq_gap` (accepted, gap counted), `seq_zero` (never accepted), `seq_too_high` (`seq ≥ 2^31` → new session).
+
+Late check (spec §4 rule 3a, #204), on the ESP's Receivers only: `late_setpoint_rejected` (held back 250 ms → `reject:late`, then the same seq on time is accepted: the late frame used up nothing) `late_across_both_wraps` (`t_send_us` and the ESP clock both wrap) `late_held_40_min` (the u32 lag difference wraps negative: still late, #205 review) and `late_drift_allowance_past_71_min` (no control frame for 72 min, the ESP clock 60 ppm fast: the drift allowance keeps growing past the u32 wrap, #205 review). These carry `late` (`bound_us`, and `hello_t_send_us` / `hello_rx_us`, the HELLO that seeds the offset), and each step an `rx_us` (the ESP receive time, u32 µs).
 
 Proves: old or replayed control messages are refused (anti-replay). These are **behaviour** vectors: several frames in order, with the result after each one.
 
