@@ -3,7 +3,7 @@ title: ESP Bench Test Plan
 type: test-plan
 status: active
 date: 2026-10-12
-updated: 2026-11-13
+updated: 2026-11-19
 project: SEA autonomous drone
 aliases:
   - ESP8266 Bench Tests
@@ -160,6 +160,20 @@ From #30, 2026-10-16. With the initial `T_loss` = 250 ms ([[ADR-004 ESP Failsafe
 - Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall.
 - [[ESP_to_FC]] §10 photos of the soldered joints: not taken (the checks themselves were done, #69).
 - S2-05 and S2-06 on the soldered link. S2-02 passed on it (#69), numbers not recorded. S2-06 was not run: the link was only lost by accident (§4).
+
+### ESP-S1-09 re-run with the real `t_send_us` (#219, prepared 2026-11-19)
+
+Confirms or retunes the late-check bound (Protocol Spec §4 rule 3a, 200 ms provisional) on real cage traffic. Same setup as the 2026-10-23 runs: drone in the cage, props off, battery on, laptop in the coding room, 3 × 10 min at 50 Hz. Needs the drone back (#189).
+
+1. Flash the logging build over Wi-Fi: `pio run -d drone/firmware/esp8266 -e esp_late_log_ota -t upload`. It stays at 40 MHz flash like `esp_ota` (ADR-006, 2026-11-19). `ground_link.py` should report firmware `sd-gw 0.2.0L`.
+2. Terminal 1: `python3 drone/tools/bench/late_log.py listen --csv s1-09_late_run1.csv`. It prints the flash chip line once (ID, size, speed): note it on #218.
+3. Terminal 2: `python3 drone/tools/bench/ground_link.py` (the 50 Hz control stream, `t_send_us` from `CLOCK_MONOTONIC_RAW`), 10 min, then `q`, then Ctrl+C in terminal 1. Repeat for runs 2 and 3.
+4. `python3 drone/tools/bench/late_log.py analyze results/s1-09_late_run1.csv` for each run, and paste the tables on #219.
+5. Flash the flight build back: `pio run -d drone/firmware/esp8266 -e esp_ota -t upload`.
+
+**Pass** (BrunoBMFT's conditions, #171): "Extra failsafes" is 0 at the chosen bound; a run without Wi-Fi stalls refuses nothing; the largest lateness in normal traffic stays below the bound. A frame held back 250 ms or more is refused by construction (the bound is below 250 ms). If 200 ms fails, pick the smallest bound in the table that passes, then change `kLateBoundMs` with a dated spec §8 and ADR-003 entry.
+
+The log is one line per SETPOINT (`seq`, `t_send_us`, the check's receive time, `micros()`, the result) on UDP 5770, sent in batches of 20 (`WITH_LATE_LOG` in `src/gateway/main.cpp`). `analyze` replays every logged frame through the Python twin of the ESP's Receiver at 100, 150, 200 and 250 ms, and with the check off. It seeds from the first frame, since the log has no HELLO, so its 200 ms column can differ slightly from the ESP's own count, which is printed too.
 
 ## 5. Related pages
 

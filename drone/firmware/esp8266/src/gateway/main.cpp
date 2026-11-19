@@ -54,6 +54,12 @@
 #ifndef WITH_LOOP_TIMING // env esp_loop_timing: loop() periods on UDP 5770
 #define WITH_LOOP_TIMING 0
 #endif
+#ifndef WITH_LATE_LOG // env esp_late_log: per-SETPOINT log on UDP 5770 (#219)
+#define WITH_LATE_LOG 0
+#endif
+#if WITH_LOOP_TIMING && WITH_LATE_LOG
+#error "WITH_LOOP_TIMING and WITH_LATE_LOG both send on UDP 5770: pick one"
+#endif
 
 namespace {
 
@@ -75,6 +81,8 @@ constexpr unsigned long kTcpWriteTimeoutMs = 1;
 constexpr unsigned int kTcpStopWaitMs = 1;
 #if WITH_LOOP_TIMING // "T": ground_link.py shows which build is on the ESP
 constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0T";
+#elif WITH_LATE_LOG // "L": the late-check log build (#219)
+constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0L";
 #else
 constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0 ";
 #endif
@@ -293,6 +301,102 @@ void service_tcp(sd::Link &link, uint32_t now) {
   }
 }
 
+#if WITH_LATE_LOG
+// #219 (ESP-S1-09 re-run): one record per SETPOINT that reaches the gateway,
+// accepted or not, sent in batches to the UDP peer on port 5770 and read by
+// drone/tools/bench/late_log.py. Lines:
+//   R,<seq>,<t_send_us>,<rx_us>,<micros>,<result>   one SETPOINT
+//   F,<chip_id>,<vendor>,<real_size>,<speed_hz>,<dropped>   once a second
+// rx_us is the receive time the late check uses (millis() * 1000, sd::Link);
+// micros() is the finer clock, for the analysis only. result is sd::RxResult
+// (0 accepted, 1 accepted with a gap, 17 late, ...). The F line also gives the
+// flash chip for #218 (80 MHz needs a chip rated for it).
+constexpr uint16_t kLateLogPort = 5770;
+constexpr size_t kLateLogBatch = 20; // ~1 kB of text: one Wi-Fi frame
+constexpr uint32_t kLateLogFlushMs = 500;
+constexpr uint32_t kLateLogInfoMs = 1000;
+struct LateRecord {
+  uint32_t seq;
+  uint32_t t_send_us;
+  uint32_t rx_us;
+  uint32_t micros_us;
+  uint8_t result;
+};
+LateRecord late_log[kLateLogBatch];
+size_t late_log_count = 0;
+uint32_t late_log_dropped = 0; // records lost: no peer yet or a full batch
+uint32_t late_log_flush_ms = 0;
+uint32_t late_log_info_ms = 0;
+
+// A u32 from 4 little-endian bytes (the frame header, Protocol Spec §1).
+uint32_t le_u32(const uint8_t *p) {
+  uint32_t value = 0;
+  for (int i = 3; i >= 0; --i) {
+    value = value * 256U + p[i];
+  }
+  return value;
+}
+
+void late_log_frame(const uint8_t *buf, size_t len, sd::RxResult r,
+                    uint32_t now_ms) {
+  // Header: magic(2) version type flags reserved len(2) session seq t_send
+  constexpr size_t kTypeAt = 3;
+  constexpr size_t kSeqAt = 12;
+  constexpr size_t kTSendAt = 16;
+  if (len < sd::kHeaderSize ||
+      buf[kTypeAt] != static_cast<uint8_t>(sd::MsgType::kSetpoint)) {
+    return;
+  }
+  if (late_log_count == kLateLogBatch) {
+    ++late_log_dropped;
+    return;
+  }
+  LateRecord &rec = late_log[late_log_count];
+  rec.seq = le_u32(buf + kSeqAt);
+  rec.t_send_us = le_u32(buf + kTSendAt);
+  rec.rx_us = now_ms * 1000U;
+  rec.micros_us = micros();
+  rec.result = static_cast<uint8_t>(r);
+  ++late_log_count;
+}
+
+void late_log_send(uint32_t now_ms) {
+  const bool full = late_log_count == kLateLogBatch;
+  const bool due = now_ms - late_log_flush_ms >= kLateLogFlushMs;
+  if (late_log_count > 0 && (full || due)) {
+    late_log_flush_ms = now_ms;
+    if (!have_peer) {
+      late_log_dropped += late_log_count;
+    } else {
+      udp.beginPacket(peer_ip, kLateLogPort);
+      char line[64];
+      for (size_t i = 0; i < late_log_count; ++i) {
+        const LateRecord &rec = late_log[i];
+        const int n =
+            snprintf(line, sizeof line, "R,%u,%u,%u,%u,%u\n", rec.seq,
+                     rec.t_send_us, rec.rx_us, rec.micros_us, rec.result);
+        udp.write(line, n);
+      }
+      if (udp.endPacket() != 1) { // Wi-Fi send queue full: lost, counted
+        late_log_dropped += late_log_count;
+      }
+    }
+    late_log_count = 0;
+  }
+  if (have_peer && now_ms - late_log_info_ms >= kLateLogInfoMs) {
+    late_log_info_ms = now_ms;
+    char line[96];
+    const int n = snprintf(line, sizeof line, "F,%08x,%u,%u,%u,%u\n",
+                           ESP.getFlashChipId(), ESP.getFlashChipVendorId(),
+                           ESP.getFlashChipRealSize(), ESP.getFlashChipSpeed(),
+                           late_log_dropped);
+    udp.beginPacket(peer_ip, kLateLogPort);
+    udp.write(line, n);
+    udp.endPacket();
+  }
+}
+#endif
+
 void service_udp(sd::Link &link, uint32_t now) {
   uint8_t buf[sd::kMaxFrame + 1]; // one byte more: an oversized frame is seen
   for (int k = 0; k < kMaxUdpPerLoop; ++k) {
@@ -307,6 +411,9 @@ void service_udp(sd::Link &link, uint32_t now) {
       continue;
     }
     const sd::RxResult r = link.on_udp(buf, static_cast<size_t>(n), now);
+#if WITH_LATE_LOG
+    late_log_frame(buf, static_cast<size_t>(n), r, now);
+#endif
     if (sd::is_accepted(r)) { // STATE goes back to this sender
       peer_ip = udp.remoteIP();
       peer_port = udp.remotePort();
@@ -554,6 +661,9 @@ void loop() {
   const uint32_t now = millis();
 #if WITH_LOOP_TIMING
   loop_timing(now);
+#endif
+#if WITH_LATE_LOG
+  late_log_send(now);
 #endif
 
   while (Serial.available() > 0) { // FC -> ESP: replies
