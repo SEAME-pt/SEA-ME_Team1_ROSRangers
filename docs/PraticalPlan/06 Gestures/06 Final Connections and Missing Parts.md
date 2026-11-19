@@ -24,7 +24,7 @@ What the gesture chain still needs before a gesture moves the real drone (§2), 
 | 2.1 | controller + estimator | velocity target → attitude setpoints | ==🟠planned, Module 1== |
 | 2.2 | PX4 backend for `flight_interface` | the simulator through the real node | ==🟠planned, Module 1== |
 | 2.3 | gestures driving `flight_interface` in the simulator | the whole chain end to end | ==🟠planned, Module 1== |
-| 2.4 | `override_active` from the ESP | the gate in `mission_node` and `flight_interface` | ==🟠in progress== |
+| 2.4 | `override_active` from the ESP | the gate in `mission_node` and `flight_interface` | ==🟢built== (#176) |
 | 2.5 | `gesture_node` leftovers | ADR and the MediaPipe Tasks API | ==🟠to do== |
 | 3.1 | `camera_node` | camera frames as a ROS topic | ==🟣idea, optional== |
 | 3.2 | `drone_msgs` | typed messages instead of JSON strings | ==🟠proposed== |
@@ -59,7 +59,7 @@ The whole chain, webcam → gesture → intent → mission → controller → `f
 
 ### 2.4 `override_active` from the ESP
 
-The ESP reports whether the pilot has handed control to the ground (from `MSP_BOXIDS` and `MSP_STATUS`). Until it does, `override_active` is false, so `mission_node` stays `IDLE` and `flight_interface` sends only neutral ([[05 Flight Interface Node|05]] §5).
+Built (#176, PR #198). The ESP reports whether the pilot has handed control to the ground (from `MSP_BOXIDS` and `MSP_STATUS`), and the ground's `override_active` is true only when the ESP reports it on, never when it is unknown. While it is false, `mission_node` stays `IDLE` and `flight_interface` sends only neutral ([[05 Flight Interface Node|05]] §5).
 
 ### 2.5 `gesture_node` leftovers
 

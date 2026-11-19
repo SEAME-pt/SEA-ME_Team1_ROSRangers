@@ -22,7 +22,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Backends: `loopback` (no drone) and `esp` (the gateway firmware). The PX4 backend for the simulator is planned ([[06 Final Connections and Missing Parts|06]] §2.2).
-> - Every setpoint is **neutral** until the controller exists ([[06 Final Connections and Missing Parts|06]] §2.1), and `override_active` stays false until the ESP reports it (§2.5 there), so no non-zero setpoint passes the gate yet.
+> - Every setpoint is **neutral** until the controller exists ([[06 Final Connections and Missing Parts|06]] §2.1), so no non-zero setpoint passes the gate yet. `override_active` comes from the ESP (#176, PR #198; §2.4 there): true only when the ESP reports the pilot's override on.
 > - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
 ---
@@ -202,7 +202,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 ## ❓ 13. Open points
 
 - [ ] **Controller and PX4 backend** ([[06 Final Connections and Missing Parts|06]] §2.1–2.2).
-- [ ] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.4).
+- [x] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.4; #176, PR #198).
 - [ ] **E-stop time** measured end to end on the bench (ADR-025 C3).
 - [ ] **A compose service for `fc_telemetry`**, if the bench needs it outside a native workspace.
 

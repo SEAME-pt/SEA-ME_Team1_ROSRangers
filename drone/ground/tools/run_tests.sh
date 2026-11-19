@@ -55,12 +55,6 @@ n_before() {
     n=$(grep -oE "[0-9]+ $1" <<<"$2" | grep -oE '^[0-9]+' | head -n 1)
     echo "${n:-0}"
 }
-# "skipped=3" -> 3 (0 if absent)
-n_after() {
-    local n
-    n=$(grep -oE "$1=[0-9]+" <<<"$2" | grep -oE '[0-9]+$' | head -n 1)
-    echo "${n:-0}"
-}
 # notes N LABEL ...: "3 skipped, 1 failed" (non-zero counts only)
 notes() {
     local out=()
@@ -222,33 +216,28 @@ suite_e2e() {
     pytest_row drone/tests/ros "$code" "$log"
 }
 
-# Without ROS: each package's tests with unittest (the ROS ones skip), and
-# drone/tests/ros. One row each.
+# Without ROS: each package's tests with pytest (the ROS ones skip), and
+# drone/tests/ros. One row each. pytest, not unittest: most of
+# flight_interface's tests are plain pytest functions, which unittest
+# discover never finds. Run from the package folder (python -m puts it on
+# sys.path), so the package imports from the source tree.
 suite_nonros_pkgs() {
-    local log=$LOG part=$TESTLOG/unit.part dirs dir c ran end k f e name status
+    local log=$LOG part=$TESTLOG/unit.part dirs dir c name
     dirs=$(tools/pkg_dirs.sh src $PKGS) || {
         row packages FAIL 0 '?' 'package folders not found (tools/pkg_dirs.sh)'
         return
     }
     for dir in $dirs "$E2E"; do
         if [[ $dir == "$E2E" ]]; then
-            "$PY" -m unittest discover -s "$dir" -v 2>&1 | tee "$part"
+            "$PY" "${PYTEST[@]}" "$dir" 2>&1 | tee "$part"
         else
-            (cd "$dir" && "$PY" -m unittest discover -s test -v) 2>&1 | tee "$part"
+            (cd "$dir" && "$PY" "${PYTEST[@]}" test) 2>&1 | tee "$part"
         fi
         c=${PIPESTATUS[0]}
         cat "$part" >>"$log"
-        ran=$(grep -oE '^Ran [0-9]+' "$part" | grep -oE '[0-9]+')
-        ran=${ran:-0}
-        end=$(grep -E '^(OK|FAILED)' "$part" | tail -n 1)
-        k=$(n_after skipped "$end")
-        f=$(n_after failures "$end")
-        e=$(n_after errors "$end")
         name=${dir##*/}
         [[ $dir == "$E2E" ]] && name=drone/tests/ros
-        status=PASS
-        ((c)) && status=FAIL
-        row "$name" "$status" $((ran - k - f - e)) "$ran" "$(notes "$k" skipped "$f" failed "$e" errors)"
+        pytest_row "$name" "$c" "$part"
     done
     rm -f "$part"
 }
@@ -300,7 +289,9 @@ suite_scripts() {
 # drone/tests/hil without the bench (as CI's hil-unit)
 suite_hil() {
     local log=$LOG code
-    run "$log" "$PY" "${PYTEST[@]}" "$REPO/drone/tests/hil" \
+    # -p no:launch_testing: with ROS sourced, that plugin's collect hook
+    # overrides --ignore and collects gateway/wifi; these aren't launch tests
+    run "$log" "$PY" "${PYTEST[@]}" -p no:launch_testing "$REPO/drone/tests/hil" \
         --ignore="$REPO/drone/tests/hil/gateway/wifi"
     code=$?
     pytest_row 'hil (host part)' "$code" "$log"

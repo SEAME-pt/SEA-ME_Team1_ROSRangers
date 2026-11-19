@@ -1,0 +1,20 @@
+# Real mode: the drone, through flight_interface (ADR-025).
+# ros2 launch ground_bringup real.launch.py. Follow the Safety Rules: props off
+# on the bench, the safety pilot holds the radio.
+#
+# flight_interface starts unconfigured. Configure, activate and ARM stay
+# operator steps (ros2 lifecycle / ros2 service), never this file's or a
+# launch file's (REQ-SAF-023).
+#
+# Only the values this mode sets; every other parameter keeps the default its
+# node declares. Each key must be a parameter its node declares
+# (test/test_config.py checks it).
+intent_node:
+  ros__parameters:
+    input_source: topic   # gesture_node's /gesture/raw, not UDP
+
+flight_interface:
+  ros__parameters:
+    backend: esp            # the ESP gateway (#102), not the loopback
+    esp_host: 192.168.4.1   # the drone's SoftAP
+    mask: 8                 # yaw only: the only mask the gateway accepts today (ADR-010)

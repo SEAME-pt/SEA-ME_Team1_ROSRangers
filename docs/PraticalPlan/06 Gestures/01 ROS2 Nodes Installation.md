@@ -120,7 +120,7 @@ The code is copied into the images, so run `make` again after an edit: it rebuil
 
 ### 4.5 `ROS_DOMAIN_ID`
 
-Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
+Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). `make` refuses a domain another mode uses, the tests' 81–98, and 0 or 42: the domains a plain terminal and the native launch files use, so a native `flight_interface` can't join a mode (E1.4). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
 
 ---
 
