@@ -72,7 +72,7 @@ TEST(Msp, AllowListRefusesEverythingElse) {
   std::uint8_t out[sd::msp::kMaxFrame];
   for (int cmd = 0; cmd < 256; ++cmd) {
     const bool ok = cmd == 1 || cmd == 101 || cmd == 105 || cmd == 108 ||
-                    cmd == 110 || cmd == 200;
+                    cmd == 110 || cmd == 119 || cmd == 200;
     EXPECT_EQ(sd::msp::allowed(static_cast<std::uint8_t>(cmd)), ok) << cmd;
     const std::size_t n = sd::msp::encode_request(
         static_cast<std::uint8_t>(cmd), nullptr, 0, out, sizeof(out));
@@ -206,6 +206,22 @@ TEST(MspDecode, StatusArmedAndArmingFlags) {
   cut.resize(18);
   feed(p, reply_frame(sd::msp::kStatus, cut));
   EXPECT_FALSE(sd::msp::decode_status(p.reply(), s));
+}
+
+TEST(MspDecode, StatusModeFlagsIncludeTheExtraBytes) {
+  sd::msp::Parser p;
+  // 4 flag bytes (armed = bit 0), then 1 extra byte 0xAA: bits 33, 35, ...
+  feed(p, reply_frame(sd::msp::kStatus, status_payload(true, 0, 1)));
+  sd::msp::Status s{};
+  ASSERT_TRUE(sd::msp::decode_status(p.reply(), s));
+  EXPECT_EQ(s.mode_bytes, 5U);
+  EXPECT_TRUE(sd::msp::mode_active(s, 0));
+  EXPECT_FALSE(sd::msp::mode_active(s, 1));
+  EXPECT_FALSE(sd::msp::mode_active(s, 32));
+  EXPECT_TRUE(sd::msp::mode_active(s, 33));
+  EXPECT_TRUE(sd::msp::mode_active(s, 39));
+  EXPECT_FALSE(sd::msp::mode_active(s, 40)); // no bit sent for it
+  EXPECT_FALSE(sd::msp::mode_active(s, 1000));
 }
 
 TEST(MspDecode, AnalogTakesTheCentivoltField) {

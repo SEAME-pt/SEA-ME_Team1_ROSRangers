@@ -190,6 +190,37 @@ def test_no_gateway_is_an_error_not_an_exception(fake):
 
 
 # ---------- A5: reconnect, never ARM ----------
+def test_a_late_hello_ack_is_dropped_and_a_new_handshake_follows(
+    clock, fake, backend, monkeypatch
+):
+    # REQ-SAF-024 (#204): the first HELLO_ACK comes 150 ms after the HELLO (a
+    # fake clock), so no session opens; the next attempt, with a new
+    # GroundSession and so a new nonce, answers in time and opens one.
+    from sd_protocol.ground import GroundSession
+
+    made = []
+
+    def session(psk):
+        step_us = 150_000 if not made else 1  # per clock read
+        now_us = [0]
+
+        def clock_us():
+            now_us[0] += step_us
+            return now_us[0]
+
+        made.append(GroundSession(psk, clock_us=clock_us))
+        return made[-1]
+
+    monkeypatch.setattr(esp_backend, "GroundSession", session)
+    clock.run(0.3)
+    assert not backend.session_open and backend.late_hello_acks == 1
+    assert "REQ-SAF-024" in backend.last_error
+    clock.run(RECONNECT_EVERY + 0.5)
+    assert backend.session_open and fake.hellos == 2
+    assert made[0].nonce != made[1].nonce  # a nonce never repeats (spec §1)
+    assert fake.arm_requests == 0
+
+
 def test_reconnects_after_an_esp_restart_without_arm(clock, fake, backend):
     clock.run(0.3)
     first = backend.session_id
@@ -503,6 +534,15 @@ def test_the_esp_wants_1_s_of_streaming_before_arm(
     assert backend.arm_control(8, clock.now, backend.session_id)
     clock.run(0.1)
     assert backend.last_ack == ("ARM_CONTROL_ACK", result)
+
+
+@pytest.mark.parametrize("raw, on", [(0, False), (1, True), (2, False), (7, False)])
+def test_override_active_is_on_only_for_1(clock, fake, backend, raw, on):
+    # Protocol Spec §3.1 (#176): 2 = unknown (no box list, no MSP OVERRIDE box,
+    # or an old MSP_STATUS) and any newer value must never read as "on".
+    fake.override_value = raw
+    state = clock.run(0.3)
+    assert state["override_active"] is on
 
 
 # ---------- A4: ARM on the operator's request; B1: the mask from the ACK ----------

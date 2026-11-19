@@ -24,6 +24,7 @@ from sd_protocol import (
     Hello,
     HelloAck,
     MsgType,
+    OverrideActive,
     Role,
     State,
     Transport,
@@ -59,6 +60,7 @@ def test_code_values_match_the_cpp():
     assert ConfigResult.OUT_OF_RANGE == 4
     assert ConfigResult.CONTROL_ENABLED == 5
     assert [int(v) for v in EspState] == [0, 1, 2, 3, 4]
+    assert [int(v) for v in OverrideActive] == [0, 1, 2]
     assert [int(v) for v in EventCode] == [
         0x0101,
         0x0102,

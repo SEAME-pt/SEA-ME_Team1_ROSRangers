@@ -34,6 +34,8 @@ enum class RxResult : std::uint8_t {
   kWrongTransport = 15, // a TCP type on the UDP Receiver or the other way (§2)
   kWrongDirection = 16, // a type this side never receives: its own, sent back
                         // (§2)
+  kLate = 17, // a control frame that arrived too long after it was sent
+              // (spec §4 rule 3a, #204)
 };
 
 inline bool is_accepted(RxResult r) {
@@ -58,7 +60,21 @@ struct RxCounters {
   std::uint32_t duplicate_seq;
   std::uint32_t old_seq;
   std::uint32_t seq_too_high;
+  std::uint32_t late;
 };
+
+// Late check (spec §4 rule 3a, #171, #204). The offset between the ground's
+// t_send_us clock and this side's receive clock may rise by at most this much
+// (clock drift, BrunoBMFT on #171).
+constexpr std::uint32_t kLateDriftPpm = 200;
+// A lag this far below the offset is not a faster path but a frame held back
+// so long (35.8-71.6 min) that the u32 difference wrapped: refused as late too
+// (#205 review). A real faster path is at most ~100 ms (REQ-SAF-024) below.
+constexpr std::uint32_t kLateMaxEarlyUs = 1000000;
+// The largest late bound (10 s): set_late_bound() clamps to it (#205 review).
+constexpr std::uint32_t kLateBoundMaxUs = 10000000;
+// The types the late check applies to: the frames that start or keep control.
+bool is_control_type(std::uint8_t type);
 
 // Receive rules of spec §4 for one side (ESP or ground) and one transport
 // inside one session, in this order: frame checks (rule 1), session check
@@ -89,6 +105,30 @@ public:
 
   // `out` is written only when the result is accepted (is_accepted()).
   RxResult receive(const std::uint8_t *buf, std::size_t len, Frame &out);
+  // The same, with the receive time in µs (a u32 that wraps, like
+  // t_send_us), for the late check. Without a time, a Receiver with the late
+  // check on refuses every control frame as kLate (fails closed).
+  RxResult receive(const std::uint8_t *buf, std::size_t len, Frame &out,
+                   std::uint32_t rx_us);
+
+  // Late check (ESP only, spec §4 rule 3a): SETPOINT, ARM_CONTROL_REQUEST and
+  // RESUME_REQUEST whose lag (rx_us - t_send_us) is more than `bound_us`
+  // above the session's offset are refused as kLate. The offset is the lowest
+  // lag seen, seeded from the session's HELLO with seed_lag(); it may rise by
+  // kLateDriftPpm of the time since it was last lowered. 0 turns it off.
+  // Kept across sessions.
+  // A bound above kLateBoundMaxUs is clamped to it (an int32 must hold it).
+  void set_late_bound(std::uint32_t bound_us);
+  // Seeds the offset from the HELLO that opened this session (its t_send_us
+  // and when it arrived). Call after start_session(), which clears it.
+  // Without a seed, the first control frame seeds it.
+  void seed_lag(std::uint32_t t_send_us, std::uint32_t rx_us);
+  // Keeps the drift allowance's clock going between control frames (#205
+  // review): rx_us is a u32 that wraps every 71.6 min, so the elapsed time
+  // is counted in 64 bits from every reading. Call it at least every 35 min;
+  // sd::Link does it on every loop. receive() with a time does it too.
+  // A reading older than the newest one seen is ignored (#220).
+  void keep_time(std::uint32_t rx_us);
 
   Role role() const { return role_; }
   Transport transport() const { return transport_; }
@@ -102,6 +142,8 @@ public:
 
 private:
   RxResult reject(RxResult r);
+  RxResult check(const std::uint8_t *buf, std::size_t len, Frame &out,
+                 bool timed, std::uint32_t rx_us);
 
   Role role_;
   Transport transport_;
@@ -110,6 +152,15 @@ private:
   bool in_session_ = false;
   SeqWindow window_;
   RxCounters counters_ = {};
+  std::uint32_t late_bound_us_ = 0;
+  bool seeded_ = false;
+  std::uint32_t offset_us_ = 0; // lowest lag seen (u32, wraps)
+  // The receive clock in 64 bits: last_rx_us_ is the last u32 reading,
+  // now_us_ the time it extends to; offset_at_us_ is when offset_us_ was set.
+  bool clock_started_ = false;
+  std::uint32_t last_rx_us_ = 0;
+  std::uint64_t now_us_ = 0;
+  std::uint64_t offset_at_us_ = 0;
 };
 
 // The handshake (spec §1, #152): the ESP accepts only HELLO and the ground only

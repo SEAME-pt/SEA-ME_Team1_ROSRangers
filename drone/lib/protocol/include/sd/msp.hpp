@@ -21,6 +21,9 @@ constexpr std::uint8_t kStatus = 101;
 constexpr std::uint8_t kRc = 105;
 constexpr std::uint8_t kAttitude = 108;
 constexpr std::uint8_t kAnalog = 110;
+// Read-only, ESP-originated (#176): the FC's active boxes as permanent IDs,
+// 32 per page (optional u8 page in the request, default 0).
+constexpr std::uint8_t kBoxIds = 119;
 constexpr std::uint8_t kSetRawRc = 200;
 // ESP-originated only (ADR-024 upload lock): never allowed(), never built
 // from network data. Only encode_set_arming_disabled() builds it.
@@ -32,8 +35,9 @@ constexpr std::size_t kMaxFrame = kHeaderSize + kMaxPayload + 1;
 constexpr std::size_t kRcChannels = 8;
 
 // The commands the ESP may send (MSP Cheat Sheet, gateway allow-list):
-// MSP_API_VERSION, MSP_STATUS, MSP_RC, MSP_ATTITUDE, MSP_ANALOG and
-// MSP_SET_RAW_RC. Every other command is refused, every MSP_SET_* but 200 too.
+// MSP_API_VERSION, MSP_STATUS, MSP_RC, MSP_ATTITUDE, MSP_ANALOG, MSP_BOXIDS
+// (#176) and MSP_SET_RAW_RC. Every other command is refused, every MSP_SET_*
+// but 200 too.
 bool allowed(std::uint8_t cmd);
 
 // Builds a read request into `out`. Returns its size, or 0 if `cmd` is not
@@ -118,10 +122,22 @@ struct Analog {
 // MSP_STATUS: the ARM state is bit 0 of the flight mode flags (BOXARM is always
 // the first active box). The arming-disable flags follow the extra flight mode
 // bytes; ARMING_DISABLED_MSP is bit 16 (ADR-024).
+// The flight mode flags have one bit per active box, in the order of
+// MSP_BOXIDS: 4 bytes, then up to 15 extra bytes (#176).
+constexpr std::size_t kMaxModeBytes = 4 + 15;
 struct Status {
   bool armed;
   std::uint32_t arming_disable_flags;
+  std::uint8_t mode_bytes; // how many bytes of mode_flags the FC sent
+  std::uint8_t mode_flags[kMaxModeBytes];
 };
+// Box `index` (its position in MSP_BOXIDS) is on. False if the FC sent no bit
+// for it.
+bool mode_active(const Status &s, std::size_t index);
+// Betaflight's permanent box ID of MSP OVERRIDE (msp_box.c). It is in the box
+// list only when msp_override_channels_mask is not 0 (#176).
+constexpr std::uint8_t kBoxMspOverride = 50;
+constexpr std::size_t kBoxesPerPage = 32;
 constexpr std::uint32_t kArmingDisabledMsp = 1U << 16;
 
 // Each returns false for an error reply, another command, or a payload too

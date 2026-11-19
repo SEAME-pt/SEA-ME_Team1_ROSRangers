@@ -134,6 +134,9 @@ class FakeEsp:
         self.send_state = True
         self.accept_udp = True
         self.override_mask = 8  # the gateway's kOverrideMask (ADR-010 stage 1)
+        self.override_value = (
+            None  # STATE.override_active to send; None: 1 in STREAMING, else 0
+        )
         # None, "hang_up", "garbage" or "replay_ack" instead of a fresh HELLO_ACK
         self.hello_fault = None
         self.last_hello_ack = None  # the last genuine HELLO_ACK frame sent
@@ -572,10 +575,17 @@ class FakeEsp:
         self.last_tcp_frame = self._seal(msg_type, payload, self._seq_tcp)
         self._session_conn.send(self.last_tcp_frame)
 
+    def _override_active(self):
+        if self.override_value is not None:
+            return self.override_value
+        if self.state == EspState.STREAMING:
+            return 1
+        return 0
+
     def _state_msg(self, esp_state=None):
         return State(
             esp_state=int(self.state if esp_state is None else esp_state),
-            override_active=1 if self.state == EspState.STREAMING else 0,
+            override_active=self._override_active(),
             last_ctrl_seq=0,
             last_ctrl_t_send_us=0,
             roll=self.fc_values["roll"],

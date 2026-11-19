@@ -107,8 +107,34 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 | `Receiver.OwnFramesRejectedEvenWithTheSameKey` | With the same key everywhere, the ESP refuses a STATE and an ARM_CONTROL_ACK, the ground a SETPOINT and an ARM_CONTROL_REQUEST (`wrong_direction`), no window moves; BYE is accepted by both; the real traffic still goes through | Even if both ends got the keys wrong, a node's own frame is never accepted (#152) |
 | `Receiver.KeepsItsRoleAndTransport` | A Receiver created for the ground on TCP reports exactly that | The role and transport are fixed for its whole life |
 | `Handshake.EachSideAcceptsOnlyItsOwnHandshakeFrame` | The ESP accepts HELLO, the ground HELLO_ACK; each refuses the other's and a PSK-tagged SETPOINT; wrong session ID, seq 2, short payload, bad tag and a cut frame refused; the output is written only on accept | Before a session only the right handshake frame gets through (#152) |
-| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–16), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
+| `Receiver.ResultNumbersMatchThePythonTwin` | Every reject reason has the same number as in the Python twin (0–17), and the handshake results too | A number in a log means the same reason on both sides; new values are only appended |
 | `Receiver.IsAccepted` | The helper says "yes" only for accepted and accepted-with-gap | The firmware uses this one check to decide |
+
+## LateCheck: frames that arrive too late (#171, #204)
+
+Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or RESUME_REQUEST that arrived more than 200 ms (provisional) after it was sent, against the session's offset between the ground's clock and the ESP's.
+
+| Test | What it does | Why it matters |
+|---|---|---|
+| `LateCheck.OnTimeAcceptedHeldBackRejected` | 15 ms on its way: accepted; held back 250 ms: refused as late and counted; 195 ms: accepted | The 200 ms bound decided on #171 |
+| `LateCheck.ALateFrameUsesUpNothing` | A late seq 1 is refused, the window does not move, and seq 1 sent again on time is accepted | The check runs before the sequence window, so it changes no state |
+| `LateCheck.TheHelloSeedCatchesADelayFromTheStart` | Every frame held back 300 ms from the first one on: all refused | The offset comes from the HELLO, so an attacker cannot set it with delayed first frames |
+| `LateCheck.AFasterPathLowersTheFloor` | A frame faster than the HELLO lowers the offset; later frames are measured from it | The offset is the lowest lag seen |
+| `LateCheck.DriftUpTo200PpmIsFollowed` | The ESP clock runs 190 ppm fast for an hour: no frame refused | Real clock drift never causes a failsafe |
+| `LateCheck.AnNtpSlewedGroundClockIsRefused` | A ground clock slewed by 500 ppm (NTP on `CLOCK_MONOTONIC`): frames end up refused | Why the ground must use `CLOCK_MONOTONIC_RAW` (#171) |
+| `LateCheck.BothClocksWrap` | `t_send_us` and the ESP clock each wrap between frames: on time accepted, 250 ms late refused | Works after 71.6 min of uptime on either side |
+| `LateCheck.HeldBackLongEnoughToWrapIsStillRefused` | Held back 40 and 60 min (the u32 lag difference wraps negative): refused, and the offset does not move | A long hold never passes as a "faster path" (#205 review) |
+| `LateCheck.TheDriftAllowanceKeepsGrowingPast71Minutes` | TCP Receiver, no control frame for 72 min (> 2^32 µs, `keep_time()` every 10 min), the ESP clock 60 ppm fast: a RESUME 259 ms above the floor is accepted (allowance 864 ms); 1.3 s above is refused | The allowance's elapsed time is 64-bit: a u32 one wrapped and refused every RESUME after 71.6 min (#205 review) |
+| `LateCheck.OldReadingsMixedWithFreshOnesAddNoTime` | A fresh reading every 5 ms, each followed by one 10 ms older, 1000 times (5 s): a frame 202 ms above the floor is refused (allowance 1 ms); on time is still accepted | Old readings are ignored and never become the reference, so a caller mixing fresh and old times can't widen the allowance (3x before the fix; #220, Dot99's review) |
+| `LateCheck.AHugeBoundIsClamped` | `set_late_bound(0xFFFFFFFF)`: on time accepted, 10.5 s late refused | A bound above 2^31 µs would read as negative and refuse everything; clamped to 10 s (#205 review) |
+| `LateCheck.ArmIsCheckedConfigIsNot` | Both 300 ms late on TCP: ARM refused, CONFIG_GET accepted | Only frames that start or keep control are checked |
+| `LateCheck.WithoutAReceiveTimeControlFramesAreRefused` | Check on, no receive time given: control frames refused; check off: accepted | A caller that forgets the time fails closed |
+| `LateCheck.ANewSessionNeedsANewSeed` | A new session clears the offset; without a seed the first control frame sets it | One session's offset never carries over |
+| `LateReplay.TheS109CageRunsGetNoExtraFailsafe` | **Local only, skipped in CI** (the fixtures are bench data, not in the repo; build them with `make_replay.py` from the logs in `results/`). The three ESP-S1-09 cage runs (`drone/tests/vectors/replay/`: nominal 50 Hz send slot corrected for the PC's slot slips, see `make_replay.py`) through a Receiver with and without the check, the offset seeded from each run's first frame (the runs have no HELLO): exactly 0 / 292 / 8 frames refused, and the 250 ms silences 0 / 14 / 0 in both cases | The bound adds no failsafe in real traffic (#204 acceptance criterion) |
+| `LateLinkTest.HeldBackSetpointsNeverKeepStreamingAlive` | Through `sd::Link` with the default config: STREAMING, then every frame released 300 ms late is refused and `T_loss` ends in LINK_FAILSAFE | Closes the known limit of PR #170 |
+| `LateLinkTest.ALateArmIsRefused` | An ARM 300 ms late: still SESSION_IDLE | A held-back ARM can never start control |
+| `LateLinkTest.WorksAcrossTheMillisWrap` | The ESP's `millis()` wraps while streaming: on time accepted, 260 ms late refused | `millis() × 1000` wraps with `t_send_us` |
+| `LateLinkTest.LinkKeepsTheDriftClockGoingForAnHour` | Through `sd::Link`: only `tick()` for 72 min (ESP clock 60 ppm fast), then a SETPOINT and an ARM: both accepted, STREAMING | `Link` feeds the late check's clock on every loop, so even TCP (ARM / RESUME only) sees the time pass |
 
 ## Messages: the content of each message type
 Each message type is turned into bytes and back (a "round trip"). The bytes are compared with Protocol Spec v0 §3.
@@ -186,7 +212,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | Test | What it does | Why it matters |
 |---|---|---|
 | `Msp.KnownRequestBytes` | MSP_API_VERSION and MSP_STATUS requests are exactly `$M< 00 01 01` and `$M< 00 65 65` | The bytes match what Betaflight expects |
-| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108 and 110 can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
+| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108, 110 and 119 (MSP_BOXIDS, #176) can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
 | `Msp.EncodeRefusesBadArguments` | Null buffers, a too-small buffer, a too-long payload are refused | A bad call writes nothing |
 | `Msp.SetRawRcOnlyThroughTheTypedEncoder` | `encode_request` refuses MSP_SET_RAW_RC with every payload length 0–64; only `encode_set_raw_rc` builds it, always with 8 channels | The one write command on the allow-list cannot be built with an arbitrary payload |
 | `Msp.SetRawRcBytes` | 8 channels become a 16-byte little-endian payload with the right checksum | The RC frame #102 will send is right |
@@ -199,13 +225,14 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `MspParser.ErrorReplyAndEmptyReply` | An `!` error reply and an empty reply are reported as such and never decoded as values | The FC refusing a command is not read as numbers |
 | `MspParser.RandomBytesNeverCrashAndAlwaysResync` | 200,000 random bytes, then a valid reply: the reply is read | The reader always recovers |
 | `MspDecode.StatusArmedAndArmingFlags` | MSP_STATUS laid out as Betaflight 2026.6.2 writes it: armed bit and arming-disable flags, with 0 to 3 extra mode bytes; a cut reply is refused | The ESP knows if the drone is armed (failsafe, ADR-024 gate) |
+| `MspDecode.StatusModeFlagsIncludeTheExtraBytes` | MSP_STATUS with one extra mode byte: `mode_active()` reads bits 0–39 across the 4 flag bytes and the extra byte, and is false for a bit the FC did not send | MSP OVERRIDE can sit past bit 31 on an FC with many modes (#176) |
 | `MspDecode.AnalogTakesTheCentivoltField` | MSP_ANALOG gives 1110 = 11.10 V from its last field; an old 7-byte reply is refused | The battery voltage has the unit STATE needs |
 
 ## FcLink: the scheduler that owns the FC UART (#101)
 | Test | What it does | Why it matters |
 |---|---|---|
 | `FcLink.PollsAtTheAdr009Rates` | One simulated second: 25 ATTITUDE, 5 STATUS, 5 ANALOG requests, every one answered | The rates of ADR-009 |
-| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the three poll commands are sent | The gateway alone never sends RC |
+| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the poll commands are sent (ATTITUDE, STATUS, ANALOG, API_VERSION, BOXIDS) | The gateway alone never sends RC |
 | `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout, then 50 ms of drain where nothing is sent and a late reply is dropped | Requests never collide, and a late reply is never taken as the answer to a newer request |
 | `FcLink.ArmedStateAndFreshness` | The armed flag is read, and the status is fresh for 500 ms only | The ADR-024 gate needs a fresh "disarmed" |
 | `FcLink.ErrorAndBadRepliesCounted` | Error replies, bad checksums and undecodable replies are counted, never stored | Bad data never reaches the telemetry |
@@ -233,6 +260,14 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.ASilenceWithoutATimeoutStillNeeds250MsToComeBack` | No request in flight for 400 ms (no timeout counted): `fc_up()` comes back only after 250 ms of replies again | A stalled loop cannot skip the RESTORED hysteresis (#188 pre-review) |
 | `FcLink.OneRefusedRcRestartsTheSecond` | One `!` reply to RC after 1.5 s of good acks: not accepted at once, accepted again after 1 s | A refused RC frame breaks "continuously good" (#188) |
 | `FcLink.APollTimeoutDoesNotRestartTheRcSecond` | One poll unanswered, every RC acked: RC stays accepted | Only RC problems restart the RC second (#188) |
+| `FcLink.OverrideFollowsMspStatusFromTheSitlRecording` | Replies recorded on Betaflight 2026.6.2 SITL (mask 8): MSP OVERRIDE is box 22; `override_state()` goes off → on → off with MSP_STATUS | `STATE.override_active` shows what the FC really does (#176, REQ-SAF-007) |
+| `FcLink.OverrideUnknownBeforeTheBoxList` | MSP_STATUS has bit 22 on but MSP_BOXIDS is never answered: unknown, never on | A bit means nothing until the box list says which mode it is (#176) |
+| `FcLink.OverrideUnknownWhenTheFcHasNoOverrideBox` | Recorded box list with mask 0 (no box 50): unknown | An FC without MSP OVERRIDE configured never reports "on" |
+| `FcLink.OverrideUnknownWhenTheStatusIsOld` | On while MSP_STATUS is under 500 ms old, unknown at 500 ms | An old "on" is never reported as current |
+| `FcLink.BoxListIsForgottenAfterAnFcSilence` | 400 ms of FC silence (a reboot), then the FC comes back with mask 0: the old list is dropped, unknown until the new list is read | A box list from before a reboot is never matched with a new STATUS |
+| `FcLink.OverrideBoxOnTheSecondPage` | Page 0 has 32 boxes without 50: the next request asks for page 1 (payload 1), box 50 is its 4th entry → box 35, read from the extra mode byte | Works on an FC with more than 32 modes |
+| `FcLink.BoxListExpiresWhenNotReadFor10Seconds` | The FC answers everything but MSP_BOXIDS: 10 s after the last list, `override_state()` is unknown although STATUS still says bit 22 is on | A box list that is no longer confirmed is never trusted |
+| `FcLink.ALostBoxIdsPageRestartsFromPageZero` | Page 0 full, the page-1 request times out: the next MSP_BOXIDS asks for page 0 again | A lost reply never leaves the list half-read for good |
 
 ## Link: the ESP link state machine (#102)
 

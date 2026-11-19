@@ -15,6 +15,10 @@ What it does:
     drops it after 2 s unless a frame under its keys arrives (ESP Link State
     Machine §1, #156); an inactive node sends no setpoints, so without this its
     new session would expire.
+  * Late check (#204): every frame's t_send_us comes from CLOCK_MONOTONIC_RAW
+    (sd_protocol.ground), which the ESP compares with its own clock, and a
+    HELLO_ACK more than 100 ms after the HELLO is refused and the attempt
+    dropped (REQ-SAF-024).
   * Checks that the ESP answers (decision E4, ADR-005): a new session counts
     only once a frame under its keys came back (the CONFIG_ACK, or a STATE).
     None within HANDSHAKE_TIMEOUT means the HELLO_ACK was a replayed one (the
@@ -90,6 +94,7 @@ from sd_protocol.messages import (
     AckResult,
     EspState,
     EventCode,
+    OverrideActive,
     decode_event,
     decode_fc_health,
     decode_state,
@@ -169,6 +174,7 @@ class EspBackend(Backend):
         self._session = None  # the open session
         self._deadline = 0.0
         self._next_attempt = 0.0  # the first poll connects
+        self.late_hello_acks = 0  # REQ-SAF-024: handshakes dropped as late
         self._last_state_t = 0.0
         self._last_udp_t = None  # last SETPOINT sent
         self._waiting_since = None  # sending, and no STATE since then
@@ -360,6 +366,16 @@ class EspBackend(Backend):
             if self._pending.take_ack(frame):
                 if self._open(now):  # e.g. EVENT 0x0104 in the same read
                     self._handle_tcp_frames(frames[i + 1 :], now)
+                return
+            if self._pending.late_acks:
+                # REQ-SAF-024 (#204): the ESP seeds its late-check offset from
+                # our HELLO, so a delayed handshake never opens a session. The
+                # next attempt makes a new GroundSession: a new nonce.
+                self.late_hello_acks += 1
+                self._error(
+                    "handshake", "HELLO_ACK more than 100 ms after HELLO (REQ-SAF-024)"
+                )
+                self._drop(now, retry_after=RECONNECT_EVERY)
                 return
 
     def _open(self, now):
@@ -640,7 +656,9 @@ class EspBackend(Backend):
         armed = self.armed
         return {
             "esp_state": name,
-            "override_active": bool(latest.override_active),
+            # Only ON (1) means the FC takes our sticks; UNKNOWN (2, #176)
+            # must never read as on, so no bool() here (Protocol Spec §3.1).
+            "override_active": latest.override_active == OverrideActive.ON,
             "mask": self.armed_mask,  # B1: confirmed by ARM_CONTROL_ACK OK
             "armed": armed,  # D1: FC_HEALTH's armed flag, None when unknown
             "airborne": armed is True,  # D1: airborne = armed for now

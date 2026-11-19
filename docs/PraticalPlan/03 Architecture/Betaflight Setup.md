@@ -3,7 +3,7 @@ title: Betaflight Setup
 type: procedure
 status: draft
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - betaflight
@@ -30,20 +30,20 @@ tags:
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
 | Airmode | **On** (read 2026-11-06 over MSP, `MSP_FEATURE_CONFIG` mask `0x10440408`: RX_SERIAL, TELEMETRY, OSD, AIRMODE, ANTI_GRAVITY). `FEATURE_AIRMODE` is a Betaflight default and `diff_all_2026-10-30.txt` has no `feature -AIRMODE`; no AIRMODE switch is needed. Turning it off would be a config change (team approval, `diff all`, CHANGELOG). Safety Rules #18: disarm before handling | GitHub #161, PR #162 |
 
-### 1.1 Modes (CLI `aux`, read 2026-10-21)
+### 1.1 Modes (CLI `aux`, `diff_all_2026-10-30.txt` on 2026.6.2)
 
-Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_2026-10-13_v2.txt`). The CLI prints each mode's permanent ID.
+Re-entered by hand after the 2026.6.2 flash; changes from the 4.5.1 baseline are in `drone/config/betaflight/2026.6.2/CHANGELOG.md` (2026-10-28). The CLI prints each mode's permanent ID.
 
 | Mode | Channel | Range (µs) | Radio switch |
 |---|---|---|---|
 | ARM | AUX1 (CH5) | 1700–2100 | **SA** (mapped 2026-10-21, [[Radio Link Tests]]) |
-| ANGLE | AUX2 (CH6) | 1700–2100 | not mapped yet |
-| HORIZON | AUX2 (CH6) | 1300–1700 | not mapped yet |
-| BEEPER | AUX3 (CH7) | 1700–2100 | not mapped yet |
-| USER1 | AUX5 (CH9) | 1300–1700 | not mapped yet |
+| ANGLE | AUX2 (CH6) | 1300–2100 | **SB** up or middle (SB down = acro, never used) |
+| ALTHOLD | AUX3 (CH7) | 1700–2100 | **SC** forward |
 
-> [!warning] Unmapped channels sit at mid-stick
-> Channels with no switch assigned sit at about 1500 µs. That value is inside the HORIZON and USER1 ranges, so both show as active in `MSP_STATUS` until the switches are assigned. MSP OVERRIDE is not configured yet ([[ADR-010 MSP Override|ADR-010]]).
+HORIZON, BEEPER and USER1 (4.5.1) were not re-entered.
+
+> [!warning] MSP OVERRIDE is not configured on the drone
+> `diff_all_2026-10-30.txt` (the latest saved configuration) has no `msp_override_*` line and no MSP OVERRIDE mode ([[ADR-010 MSP Override|ADR-010]]). On 4.5.1, unmapped channels at about 1500 µs showed HORIZON and USER1 as active in `MSP_STATUS`; those modes are not set on 2026.6.2.
 
 ### 1.2 Motors (CLI read 2026-10-23)
 
@@ -54,7 +54,7 @@ Identical to the 2026-10-13 baseline (`drone/config/betaflight/4.5.1/diff_all_20
 | `motor_pwm_protocol` | DSHOT600 | |
 | `dshot_bidir` | ON | RPM telemetry from each ESC (used by the RPM filter) |
 | `motor_poles` | 12 | **To confirm:** 1405 motors are often 14-pole. If they are, RPM readings are about 17 % high and the RPM filter is mistuned ([[Open Questions]]) |
-| `dshot_idle_value` | 550 | 5.5 % motor speed while armed |
+| `motor_idle` (`dshot_idle_value` on 4.5.1) | 550 | 5.5 % motor speed while armed. Renamed in 2026.6 (`drone/config/betaflight/2026.6.2/CHANGELOG.md`, 2026-10-28) |
 
 > [!warning] Motor direction lives in the ESC, not in `diff all`
 > On 2026-10-23 M2 and M3 were reversed in the ESC with the Motors tab *Motor direction* tool, because all four motors turned the same way ([[Radio Link Tests]] §3.1). This setting is not part of the Betaflight `diff all`. If the ESC is replaced or re-flashed, check and set the directions again.
@@ -76,12 +76,15 @@ Configuration and every change since: `drone/config/betaflight/2026.6.2/CHANGELO
 
 ## 4. CLI for the ESP link (after approval)
 
-The `serial 3 1 ...` line is **already applied** (2026-10-13, `diff_all_2026-10-13_v3`, §1). The MSP Override lines still wait: props off, bench only on 4.5.1 ([[Safety Rules]] #14).
+The UART4 MSP line is **already applied** (2026-10-13 on 4.5.1; on 2026.6.2 the CLI prints it as `serial UART4 1 115200 57600 0 115200`, `diff_all_2026-10-30.txt`). The MSP Override lines are **not applied**: MSP Override stays bench-only, props off, until #123 and #104 pass ([[Safety Rules]] #14).
 
 ```text
-# UART4 = MSP for the ESP (serial id 3), function MSP (1), 115200
-serial 3 1 115200 57600 0 115200
-# MSP Override, stage 1 = yaw only (raw AETR bit 3)
+# 2026.6.2 CLI. A 4.5.1 diff cannot be pasted here (ADR-014).
+# UART4 = MSP for the ESP, function MSP (1), 115200 (already applied)
+serial UART4 1 115200 57600 0 115200
+# MSP Override, stage 1 = yaw only (raw AETR bit 3). The setting exists on
+# 2026.6.2 (SITL, drone/tests/sitl/override.cli, #105). Check
+# msp_override_failsafe with `get msp_override` on the drone before saving.
 set msp_override_channels_mask = 8
 set msp_override_failsafe = OFF
 save

@@ -26,6 +26,7 @@ tags:
 ## 2. Consequences
 
 - Answers TEL-05: one scheduler on the ESP owns the UART, so polling and override frames never collide.
+- **2026-11-16 (#176, accepted by the team the same day):** the ESP also polls `MSP_BOXIDS` (119) at 1 Hz. It is read-only and ESP-originated, and it is never forwarded. It finds where MSP OVERRIDE (permanent box ID 50) sits in the `MSP_STATUS` mode flags, so `STATE.override_active` can be reported. Cost: a 6-byte request and a reply of at most 38 bytes (32 IDs + framing) once a second, under 0.5 % of the UART; a second page (7-byte request) only on an FC with more than 32 modes. The `MSP_API_VERSION` poll (1 Hz, #102) was already added the same way. See [[MSP Cheat Sheet]] §3.
 
 ## 3. Related pages
 

@@ -22,7 +22,7 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | `drone/ground/tools/` | Host helpers: `run_tests.sh` (`make test`'s suites, one summary row each), `smoke_test.sh` (`make smoke`, CI `ground-docker`), `pkg_dirs.sh` (package folders for the Makefile and CI), `env_check.sh` / `real_check.sh` (checks before a mode starts) |
 | `drone/ground/src/bringup/ground_bringup/` | The modes (demo, real, sim): launch files and parameter files (`config/<mode>.yaml`), no code. The containers read the same parameter files |
 | `drone/tests/{sitl,hil,vectors}/` | SITL tests, HIL bench tests, golden test vectors shared by C++ and Python |
-| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review) |
+| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review; `docs-code-snippets`: adds commit-pinned code excerpts to notes and checks them for drift) |
 
 ## Where to look in the docs
 
@@ -102,6 +102,10 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
 - Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
+
+## Code style
+
+- Write code a teammate can read at a glance: `if`/`else` with named intermediate variables, not nested or packed ternaries or chained assignments (`a = b = 0`). Shifts are fine when they read plainly and are commented (byte packing in the protocol library, `16u << octave`); replace a bit trick that needs decoding (`__builtin_clz`, packed shift-and-mask expressions) with a loop or named steps. When math is unavoidable, a comment shows it with a worked example.
 
 ## Gotchas
 

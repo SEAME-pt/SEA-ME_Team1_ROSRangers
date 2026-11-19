@@ -340,7 +340,7 @@ jobs:
       - run: pip install platformio
       - name: Build ESP8266 firmware
         # the bridge and diagnostic envs too, so a broken build fails the PR (same cache)
-        run: pio run -d drone/firmware/esp8266 -e esp -e esp_bridge -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
+        run: pio run -d drone/firmware/esp8266 -e esp -e esp_bridge -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart -e esp_loop_timing
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass
@@ -402,7 +402,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pytest
+      - run: pip install pytest "pyserial==3.5"  # flight_interface.msp imports serial
       - run: pip install -e drone/ground/src/sd_protocol_py
 
       - name: MSP integration tests against SITL
@@ -413,6 +413,10 @@ jobs:
           # at boot the TCP thread can drop the UART listener, and then 5761
           # never accepts. Boot again when SITL does not answer MSP within
           # 15 s, at most 3 boots. Remove once we use a Betaflight with the fix.
+          # MSP Override mask and switches for test_msp_override.py: --config
+          # writes bf/eeprom.bin and exits, every boot below loads it. Runs in the
+          # foreground with a timeout, so it has exited before the boot loop binds 5761
+          (cd bf && timeout -k 5 20 ./obj/main/betaflight_SITL.elf --config ../drone/tests/sitl/override.cli)
           for boot in 1 2 3; do
             # stdbuf: line-buffered, so sitl.log is complete at a failure
             (cd bf && stdbuf -oL -eL ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)
