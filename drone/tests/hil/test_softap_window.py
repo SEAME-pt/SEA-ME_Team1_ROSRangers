@@ -18,7 +18,7 @@ import pytest
 SCRIPT = Path(__file__).with_name("softap_window.sh")
 LAB = "netplan-wlan0-SEAME"
 PASSWORD = "not-a-real-password"
-REJOIN = f"--wait 25 connection up {LAB}"  # the script's own re-join
+REJOIN = f"--wait 35 connection up {LAB}"  # the script's own re-join (#193)
 WATCHDOG_REJOIN = REJOIN  # the watchdog re-joins the same way, after the script
 LAB_AUTO_OFF = f"connection modify --temporary {LAB} connection.autoconnect no"
 LAB_AUTO_ON = f"connection modify --temporary {LAB} connection.autoconnect yes"

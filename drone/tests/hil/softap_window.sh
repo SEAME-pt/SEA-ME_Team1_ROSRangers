@@ -10,15 +10,19 @@
 # passwordless `sudo nmcli` (/etc/sudoers.d/hil-nmcli on the Pi).
 #
 # If the job dies inside the window, a watchdog started outside the job
-# re-joins the lab Wi-Fi after SECONDS + 65 s (both joins, kill grace and
-# 10 s; 115 s for a 50 s test), also when the re-join below failed.
+# re-joins the lab Wi-Fi after SECONDS + 75 s (both joins, kill grace and
+# 10 s; 125 s for a 50 s test), also when the re-join below failed.
 set -euo pipefail
 
 LAB_CON=${HIL_LAB_CON:-netplan-wlan0-SEAME}
 IFACE=${HIL_WIFI_IFACE:-wlan0}
 JOIN_WAIT_S=25 # a join takes about 6 s on the bench
+# The lab's 5 GHz AP sometimes ignores the first login after the window: wpa
+# times out at 10 s, NetworkManager restarts the join at 25 s and is on the
+# lab 0.6 s later (#193, 2026-11-17 and -18). 35 s lets that retry finish.
+REJOIN_WAIT_S=35
 KILL_GRACE_S=5
-MAX_TEST_S=50 # join 25 + test 50 + kill 5 + re-join 25 = 105 s offline at most
+MAX_TEST_S=50 # join 25 + test 50 + kill 5 + re-join 35 = 115 s offline at most
 # The watchdog waits for the lock, so it can never race this run's restore:
 # a short grace is enough, and even a killed run is back within 2 min
 WATCHDOG_GRACE_S=10
@@ -53,7 +57,7 @@ con="hil-softap-${GITHUB_RUN_ID:-local}-$$"
 # run's lock. It fires WATCHDOG_GRACE_S after this window can have ended,
 # and waits for a later window for as long as a whole window can last: both
 # follow from the limits above, so changing those keeps it in step.
-window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + JOIN_WAIT_S))
+window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S))
 RUNNER_TRACKING_ID="" setsid -f bash -c '
   sleep "$1" || exit 1 # killed while waiting: someone stopped the watchdog
   # Never act while this run is still alive: nothing bounds how long a
@@ -68,8 +72,8 @@ RUNNER_TRACKING_ID="" setsid -f bash -c '
   sudo nmcli connection modify --temporary "$2" connection.autoconnect yes
   nmcli -t -f NAME connection show --active | grep -qxF "$2" && exit 0
   sudo nmcli --wait "$6" connection up "$2"
-' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + JOIN_WAIT_S + WATCHDOG_GRACE_S))" \
-  "$LAB_CON" "$con" "$lock" "$window_max_s" "$JOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
+' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + REJOIN_WAIT_S + WATCHDOG_GRACE_S))" \
+  "$LAB_CON" "$con" "$lock" "$window_max_s" "$REJOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
 
 # RUNNER_TEMP is wiped after each job, so a SIGKILL does not leave the
 # password behind. mktemp creates it 0600.
@@ -109,10 +113,13 @@ restore() {
   fi
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
-  if ! sudo nmcli --wait "$JOIN_WAIT_S" connection up "$LAB_CON"; then
+  local t0=$SECONDS
+  if ! sudo nmcli --wait "$REJOIN_WAIT_S" connection up "$LAB_CON"; then
     echo "::error title=HIL Wi-Fi::could not re-join $LAB_CON, the watchdog retries about ${WATCHDOG_GRACE_S} s after the window"
     rc=1
   fi
+  # Over 25 s means the AP ignored the first login and the 35 s saved the run (#193)
+  echo "Lab re-join took $((SECONDS - t0)) s"
   # Then wait for the test, so pytest has let go of /dev/hil-esp before the
   # next step
   [[ -z $bg_pid ]] || wait "$bg_pid" 2>/dev/null || true
