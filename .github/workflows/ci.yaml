@@ -69,11 +69,11 @@ jobs:
             echo "::notice title=scripts-python skipped::no test in tests/scripts"
           fi
 
-          if [[ -f drone/simulation/px4/ros/px4_offboard_bridge/setup.py ]]; then
+          if [[ -f drone/ground/src/simulation/px4_offboard_bridge/setup.py ]]; then
             echo "sim_bridge=true" >> "$GITHUB_OUTPUT"
           else
             echo "sim_bridge=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=sim-bridge-python skipped::drone/simulation/px4/ros/px4_offboard_bridge/setup.py not found"
+            echo "::notice title=sim-bridge-python skipped::drone/ground/src/simulation/px4_offboard_bridge/setup.py not found"
           fi
 
           if [[ -f drone/tests/hil/softap_window.sh ]]; then
@@ -112,8 +112,8 @@ jobs:
             fi
           fi
 
-          if [[ ! -f drone/ground/src/gesture_node/package.xml ||
-                ! -f drone/ground/src/intent_node/package.xml ]]; then
+          if [[ ! -f drone/ground/src/gesture/gesture_node/package.xml ||
+                ! -f drone/ground/src/intent/intent_node/package.xml ]]; then
             echo "ros=false" >> "$GITHUB_OUTPUT"
             echo "::notice title=ground-ros2 skipped::gesture_node or intent_node package.xml not found"
           elif [[ $ground_changed == false ]]; then
@@ -126,12 +126,13 @@ jobs:
           # Packages ground-ros2 builds and tests. gesture_node + intent_node
           # decide whether the job runs; mission_node and flight_interface
           # join once they exist.
+          # Each package sits in src/<component>/ (component = name without _node).
           ros_pkgs="gesture_node intent_node"
           for pkg in mission_node flight_interface; do
-            if [[ -f drone/ground/src/$pkg/package.xml ]]; then
+            if [[ -f drone/ground/src/${pkg%_node}/$pkg/package.xml ]]; then
               ros_pkgs+=" $pkg"
             else
-              echo "::notice title=ground-ros2 without $pkg::drone/ground/src/$pkg/package.xml not found"
+              echo "::notice title=ground-ros2 without $pkg::drone/ground/src/${pkg%_node}/$pkg/package.xml not found"
             fi
           done
           echo "ros_pkgs=$ros_pkgs" >> "$GITHUB_OUTPUT"
@@ -217,7 +218,7 @@ jobs:
     timeout-minutes: 5
     defaults:
       run:
-        working-directory: drone/simulation/px4/ros/px4_offboard_bridge
+        working-directory: drone/ground/src/simulation/px4_offboard_bridge
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -268,7 +269,11 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends python3-pip python3-pytest python3-pytest-cov python3-serial libgl1 libegl1 libglib2.0-0
-          pip3 install -r drone/ground/src/gesture_node/requirements.txt
+          pip3 install -r drone/ground/src/gesture/gesture_node/requirements.txt
+          # flight_interface's ESP backend (#103) imports sd_protocol, a pip
+          # package (not a ROS one). Without it its tests skip and the
+          # coverage gate fails.
+          pip3 install drone/ground/src/sd_protocol_py
 
       - name: Build
         run: |
@@ -293,7 +298,7 @@ jobs:
           source install/setup.bash
           test_paths=() cov_flags=()
           for pkg in $ROS_PKGS; do
-            test_paths+=("drone/ground/src/$pkg/test")
+            test_paths+=("drone/ground/src/${pkg%_node}/$pkg/test")
             cov_flags+=("--cov=$pkg")
           done
           python3 -m pytest "${test_paths[@]}" drone/tests/ros \
@@ -332,7 +337,7 @@ jobs:
       - run: pip install platformio
       - name: Build ESP8266 firmware
         # the bridge and diagnostic envs too, so a broken build fails the PR (same cache)
-        run: pio run -d drone/firmware/esp8266 -e esp -e esp_bridge -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart
+        run: pio run -d drone/firmware/esp8266 -e esp -e esp_bridge -e esp_diag_timing -e esp_diag_tcp -e esp_diag_wdt -e esp_diag_udp -e esp_diag_uart -e esp_loop_timing
         env: # build-only dummies, read by drone/firmware/esp8266/secrets.py
           SEAME_AP_SSID: ci-dummy-ssid
           SEAME_AP_PASS: ci-dummy-ap-pass
@@ -394,7 +399,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install pytest
+      - run: pip install pytest "pyserial==3.5"  # flight_interface.msp imports serial
       - run: pip install -e drone/ground/src/sd_protocol_py
 
       - name: MSP integration tests against SITL
@@ -405,6 +410,10 @@ jobs:
           # at boot the TCP thread can drop the UART listener, and then 5761
           # never accepts. Boot again when SITL does not answer MSP within
           # 15 s, at most 3 boots. Remove once we use a Betaflight with the fix.
+          # MSP Override mask and switches for test_msp_override.py: --config
+          # writes bf/eeprom.bin and exits, every boot below loads it. Runs in the
+          # foreground with a timeout, so it has exited before the boot loop binds 5761
+          (cd bf && timeout -k 5 20 ./obj/main/betaflight_SITL.elf --config ../drone/tests/sitl/override.cli)
           for boot in 1 2 3; do
             # stdbuf: line-buffered, so sitl.log is complete at a failure
             (cd bf && stdbuf -oL -eL ./obj/main/betaflight_SITL.elf > ../sitl.log 2>&1 &)

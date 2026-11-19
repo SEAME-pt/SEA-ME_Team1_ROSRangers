@@ -3,7 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - gestures
@@ -23,7 +23,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Topic names, `/flight/state` fields and every number are **proposals** (§12). The design decisions to review are in §10.
-> - `/flight/state` comes from the **pretend** `fake_flight_state` (§7) until `flight_interface` exists, or in the simulator from `px4_offboard_bridge` (§8.4). Never use either with a real drone.
+> - In `make`, `/flight/state` comes from the **pretend** `fake_flight_state` (§7), in the simulator from `px4_offboard_bridge` (§8.4). Never use either with a real drone: there it comes from `flight_interface` ([[05 Flight Interface Node]]).
 > - Not run yet with the real webcam, a controller or a drone.
 
 ---
@@ -46,7 +46,7 @@ flowchart LR
 
 ## 📦 2. The package
 
-`drone/ground/src/mission_node/`, image `rosrangers/mission:jazzy`:
+`drone/ground/src/mission/mission_node/`, image `rosrangers/mission:jazzy`:
 
 | Piece | What it does |
 | :--- | :--- |
@@ -65,7 +65,7 @@ JSON in a `std_msgs/String`, 20 Hz, format in [[03 Intent Node]] §4. The node u
 
 ### 3.2 `/flight/state` (proposal; `fake_flight_state` for now)
 
-JSON in a `std_msgs/String`, later published by `flight_interface` ([[05 Future Nodes]] §6):
+JSON in a `std_msgs/String`, published by `flight_interface` ([[05 Flight Interface Node]] §6):
 
 ```json
 {"link_ok":true,"esp_state":"STREAMING","override_active":true,"mask":11,"airborne":true}
@@ -203,7 +203,7 @@ Mode and intent changes, bad input and a health report every 5 s, in `logs/missi
 
 ### 6.5 Downstream (not this node's job)
 
-The velocity controller turns the target into attitude setpoints, and `flight_interface` sends them to the drone ([[05 Future Nodes]] §5–6).
+The velocity controller turns the target into attitude setpoints, and `flight_interface` sends them to the drone ([[06 Final Connections and Missing Parts|06]] §2.1, [[05 Flight Interface Node]]).
 
 ---
 
@@ -331,17 +331,17 @@ Registered in [[Requirements]] (status `draft`).
 - [ ] **Land request from the flight controller**: what telemetry sets `land_request`, and what the pilot sees.
 - [ ] **Register the engage rule** as a REQ-SAF in [[Requirements]].
 - [ ] **First run with the webcam**, logs attached to a Test session issue.
-- [ ] **Topic types**: a typed message package instead of JSON strings ([[05 Future Nodes]] §4).
+- [ ] **Topic types**: a typed message package instead of JSON strings ([[06 Final Connections and Missing Parts|06]] §3.2).
 - [ ] **Who publishes `/flight/state`**, and how `airborne` is decided.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
 - [ ] **Mission and controller in one node?** [[System Overview]] draws them as one box.
-- [ ] **Launch files and parameters** move to a `gesture_bringup` package ([[05 Future Nodes]] §11).
+- [ ] **Launch files and parameters** move to a bringup package ([[06 Final Connections and Missing Parts|06]] §2.4).
 
 ---
 
 ## 🔗 13. Related pages
 
-[[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[02 Gesture Node]] · [[03 Intent Node]] · [[05 Future Nodes]] · [[Requirements]] · [[System Overview]] · [[ADR-010 MSP Override|ADR-010]] · [[Safety Rules]]
+[[00 Gesture Pipeline]] · [[01 ROS2 Nodes Installation]] · [[02 Gesture Node]] · [[03 Intent Node]] · [[05 Flight Interface Node]] · [[06 Final Connections and Missing Parts]] · [[Requirements]] · [[System Overview]] · [[ADR-010 MSP Override|ADR-010]] · [[Safety Rules]]
 
 ---
 

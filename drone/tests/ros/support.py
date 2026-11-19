@@ -14,8 +14,12 @@ import types
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[2] / "ground" / "src"
-PACKAGES = (SRC / "gesture_node", SRC / "intent_node", SRC / "mission_node")
-for path in (*PACKAGES, SRC / "gesture_node" / "test"):
+PACKAGES = (
+    SRC / "gesture" / "gesture_node",
+    SRC / "intent" / "intent_node",
+    SRC / "mission" / "mission_node",
+)
+for path in (*PACKAGES, SRC / "gesture" / "gesture_node" / "test"):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 

@@ -3,7 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-13
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - gestures
@@ -32,9 +32,10 @@ flowchart LR
   W[Webcam] --> R[gesture_node]
   R -->|"/gesture/raw"| G[intent_node]
   G -->|"/gesture/intent"| M[mission_node]
+  FI -->|"/flight/state"| M
   FFS["fake_flight_state<br/>(pretend)"] -.->|"/flight/state"| M
   M -->|"/mission/velocity_target"| C["controller + estimator<br/>(planned)"]
-  C --> FI["flight_interface<br/>(planned)"]
+  C --> FI[flight_interface]
   FI -->|"Wi-Fi (UDP / TCP)"| E["ESP8266<br/>(planned)"]
   E -->|"MSP over UART"| FC[Betaflight FC]
 ```
@@ -45,8 +46,8 @@ flowchart LR
 | `intent_node` ([[03 Intent Node\|03]]) | decides what the **operator** wants; filters noise and lost hands | `/gesture/raw` → `/gesture/intent` | ==🟢built== |
 | `mission_node` ([[04 Mission Node\|04]]) | decides what the **drone** does: modes, limits, owned axes | `/gesture/intent` + `/flight/state` → `/mission/velocity_target` | ==🟢built==, numbers not reviewed |
 | `fake_flight_state`, `fake_intent` ([[04 Mission Node\|04]] §7) | test without a drone | made-up `/flight/state`, `/gesture/intent` | ==🟠pretend, never with a real drone== |
-| controller + estimator ([[05 Future Nodes\|05]] §5) | velocity → attitude | `/mission/velocity_target` → setpoints | ==🔴planned== |
-| `flight_interface` ([[05 Future Nodes\|05]] §6) | sends setpoints to the drone safely | setpoints → ESP | ==🔴planned== |
+| controller + estimator ([[06 Final Connections and Missing Parts\|06]] §2.1) | velocity → attitude | `/mission/velocity_target` → setpoints | ==🔴planned== |
+| `flight_interface` ([[05 Flight Interface Node\|05]]) | sends setpoints to the drone safely, publishes the real `/flight/state` | setpoints → ESP, drone → `/flight/state` | ==🟢built== (ESP backend; PX4 backend planned) |
 | ESP8266 firmware ([[Protocol Spec v0]]) | bridges Wi-Fi to the FC | packets → MSP | ==🔴planned== |
 
 ---
@@ -54,8 +55,8 @@ flowchart LR
 ## 🗂️ 2. Notes in this section
 
 - [[01 ROS2 Nodes Installation]]: ROS 2 basics, running everything in Docker, tests, troubleshooting.
-- [[02 Gesture Node]], [[03 Intent Node]], [[04 Mission Node]]: one note per node.
-- [[05 Future Nodes]]: nodes to add later.
+- [[02 Gesture Node]], [[03 Intent Node]], [[04 Mission Node]], [[05 Flight Interface Node]]: one note per node.
+- [[06 Final Connections and Missing Parts]]: what the chain still needs, and nodes to add later.
 
 ---
 
@@ -113,9 +114,9 @@ The **left hand** makes the mirror image of each pose. Up, down, forward and bac
 
 | What | Where |
 | :--- | :--- |
-| The three ROS 2 packages, each with its `test/` folder | `drone/ground/src/` (one Docker image each) |
+| The ROS 2 packages, each with its `test/` folder and its Dockerfile | `drone/ground/src/<component>/` (`gesture/`, `intent/`, `mission/`, `flight_interface/`) |
 | Tests of the nodes together | `drone/tests/ros/` |
-| `Makefile`, `docker-compose.yml`, Dockerfiles | `drone/ground/` |
+| `Makefile`, `docker-compose.yml` | `drone/ground/` |
 | Node and test logs (not in Git) | `drone/ground/logs/` |
 
 ---
@@ -136,7 +137,7 @@ Against the simulated drone (PX4 SITL + Gazebo): `make sim`, and the headless te
 
 ## 🚀 8. Module 2 extension (accepted by instructors)
 
-A trained landmark classifier instead of the rule-based `recognize()`, and the same `/gesture/intent` driving a car or an arm ([[Roadmap to April 2027]] §4, [[05 Future Nodes|05]] §8–9).
+A trained landmark classifier instead of the rule-based `recognize()`, and the same `/gesture/intent` driving a car or an arm ([[Roadmap to April 2027]] §4, [[06 Final Connections and Missing Parts|06]] §3.4–3.5).
 
 ---
 

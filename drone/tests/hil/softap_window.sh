@@ -5,21 +5,32 @@
 #
 #   softap_window.sh SECONDS -- COMMAND [ARGS...]
 #
-# Needs SEAME_AP_SSID and SEAME_AP_PASS (the spare ESP's SoftAP) and
+# Needs SEAME_AP_SSID and SEAME_AP_PASS (the spare ESP's SoftAP; its channel
+# from SEAME_AP_CHANNEL, default 6) and
 # passwordless `sudo nmcli` (/etc/sudoers.d/hil-nmcli on the Pi).
 #
 # If the job dies inside the window, a watchdog started outside the job
-# re-joins the lab Wi-Fi after SECONDS + 65 s (both joins, kill grace and
-# 10 s; 115 s for a 50 s test), also when the re-join below failed.
+# re-joins the lab Wi-Fi once the longest window with this SECONDS has
+# passed, plus WATCHDOG_GRACE_S, also when the re-join below failed.
 set -euo pipefail
 
 LAB_CON=${HIL_LAB_CON:-netplan-wlan0-SEAME}
 IFACE=${HIL_WIFI_IFACE:-wlan0}
 JOIN_WAIT_S=25 # a join takes about 6 s on the bench
+# The lab's 5 GHz AP sometimes ignores the Pi's logins after the window, and
+# NetworkManager keeps retrying: back after 25.6 s, 25.6 s and 49 s (#193,
+# 2026-11-17 to 2026-11-19). So the re-join waits for what is left of this
+# run's window (window_s below), REJOIN_WAIT_S at least; a run whose test
+# ends early gets more.
+REJOIN_WAIT_S=35
 KILL_GRACE_S=5
-MAX_TEST_S=50 # join 25 + test 50 + kill 5 + re-join 25 = 105 s offline at most
+# A window is JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S offline
+# at most: 115 s, under ADR-020's 2 min. Green runs of the gateway's Wi-Fi
+# tests took 27-39 s (2026-11-13 to 2026-11-17).
+MAX_TEST_S=50
 # The watchdog waits for the lock, so it can never race this run's restore:
-# a short grace is enough, and even a killed run is back within 2 min
+# a short grace is enough. It only acts for a job that is already dead
+# (killed), so the 2 min a live job needs (ADR-020) does not bind it.
 WATCHDOG_GRACE_S=10
 
 usage() {
@@ -52,7 +63,8 @@ con="hil-softap-${GITHUB_RUN_ID:-local}-$$"
 # run's lock. It fires WATCHDOG_GRACE_S after this window can have ended,
 # and waits for a later window for as long as a whole window can last: both
 # follow from the limits above, so changing those keeps it in step.
-window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + JOIN_WAIT_S))
+window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S))
+window_s=$((JOIN_WAIT_S + test_s + KILL_GRACE_S + REJOIN_WAIT_S)) # this run's
 RUNNER_TRACKING_ID="" setsid -f bash -c '
   sleep "$1" || exit 1 # killed while waiting: someone stopped the watchdog
   # Never act while this run is still alive: nothing bounds how long a
@@ -67,8 +79,8 @@ RUNNER_TRACKING_ID="" setsid -f bash -c '
   sudo nmcli connection modify --temporary "$2" connection.autoconnect yes
   nmcli -t -f NAME connection show --active | grep -qxF "$2" && exit 0
   sudo nmcli --wait "$6" connection up "$2"
-' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + JOIN_WAIT_S + WATCHDOG_GRACE_S))" \
-  "$LAB_CON" "$con" "$lock" "$window_max_s" "$JOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
+' watchdog "$((window_s + WATCHDOG_GRACE_S))" \
+  "$LAB_CON" "$con" "$lock" "$window_max_s" "$REJOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
 
 # RUNNER_TEMP is wiped after each job, so a SIGKILL does not leave the
 # password behind. mktemp creates it 0600.
@@ -81,6 +93,7 @@ psk_file=$(mktemp -p "${RUNNER_TEMP:-/tmp}")
 # at once. 9>&-: a step still running after the script exits must not hold
 # the lock.
 bg_pid=
+left_lab=
 step() {
   "$@" 9>&- &
   bg_pid=$!
@@ -108,7 +121,19 @@ restore() {
   fi
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
-  if ! sudo nmcli --wait "$JOIN_WAIT_S" connection up "$LAB_CON"; then
+  # What is left of the window since the lab was left; REJOIN_WAIT_S if it
+  # never was (a failed add) or at least
+  local wait_s=$REJOIN_WAIT_S t0
+  if [[ -n $left_lab ]]; then
+    wait_s=$((window_s - (SECONDS - left_lab)))
+    ((wait_s >= REJOIN_WAIT_S)) || wait_s=$REJOIN_WAIT_S
+  fi
+  t0=$(date +%s.%N)
+  if sudo nmcli --wait "$wait_s" connection up "$LAB_CON"; then
+    # Over JOIN_WAIT_S: the AP ignored the first login and the longer wait
+    # saved the run (#193)
+    awk -v t0="$t0" -v t1="$(date +%s.%N)" 'BEGIN { printf "Lab re-join took %.1f s\n", t1 - t0 }'
+  else
     echo "::error title=HIL Wi-Fi::could not re-join $LAB_CON, the watchdog retries about ${WATCHDOG_GRACE_S} s after the window"
     rc=1
   fi
@@ -130,10 +155,19 @@ printf '802-11-wireless-security.psk:%s\n' "$SEAME_AP_PASS" >"$psk_file"
 step sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect no
 # Power save off (2 = disable): a dozing Pi makes the ESP's SoftAP hold its
 # packets, which stalled TCP connects and EVENTs (#106, 2026-11-13). The Pi's
-# NetworkManager config sets it too; this keeps it off without that file
+# NetworkManager config sets it too; this keeps it off without that file.
+# Static address, as the ground PC has (scripts/setup_production.py): the
+# ESP's DHCP took 16 s of the 25 s join on 2026-11-16 (#207). No gateway, so
+# the SoftAP never becomes the Pi's default route.
+# Band and channel pinned: the Pi skips the 5 GHz scan and tunes straight to
+# the SoftAP, coming from the lab's 5 GHz network (#207). SEAME_AP_CHANNEL
+# is the one the firmware was built with (hil.yaml, secrets.py; default 6)
 step sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con" \
   ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk \
-  802-11-wireless.powersave 2 >/dev/null
+  802-11-wireless.powersave 2 \
+  802-11-wireless.band bg 802-11-wireless.channel "${SEAME_AP_CHANNEL:-6}" \
+  ipv4.method manual ipv4.addresses 192.168.4.2/24 ipv6.method disabled >/dev/null
+left_lab=$SECONDS # the window starts: the lab goes down with this join
 step sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
 # What the driver really does, in the log of every run
 iw dev "$IFACE" get power_save 2>/dev/null || echo "Power save: unknown (no iw)"

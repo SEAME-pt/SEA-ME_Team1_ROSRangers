@@ -30,7 +30,7 @@ from serial.tools import list_ports
 
 # msp.py lives in the flight_interface ROS 2 package (#96)
 REPO = pathlib.Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface"))
+sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface/flight_interface"))
 from flight_interface import msp  # noqa: E402
 
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "esp8266"

@@ -50,10 +50,12 @@ ROS     := /opt/ros/jazzy/setup.bash
 VENV    := gesture-venv
 WS      := ros2_ws
 PKGS    := gesture_node intent_node mission_node
+# src/<component>/<package>: gesture_node lives in src/gesture/gesture_node
+PKG_DIRS := $(foreach p,$(PKGS),src/$(p:_node=)/$(p))
 E2E     := ../tests/ros
 TESTLOG := logs/test
 
-# Simulation (#86). The PX4 image (drone/simulation/px4/Dockerfile) is built
+# Simulation (#86). The PX4 image (stage px4 of src/simulation/Dockerfile) is built
 # with plain docker build, not by compose, so make clean and fclean keep it:
 # rebuilding it takes a long time. Remove it by hand: docker rmi $(PX4_IMAGE)
 PX4_IMAGE    := seame-px4-sim:jazzy-1.17
@@ -64,8 +66,12 @@ MASK         ?= 15
 GUI          ?= 1
 # Host group of the GPU render node, so the px4 container (uid 1000) can use it
 RENDER_GID   := $(shell stat -c %g /dev/dri/renderD128 2>/dev/null || echo 0)
-SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID)
-SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID)
+# Subnet discovery for the simulation only (ADR-025 E1.2): with the compose
+# default LOCALHOST the px4 container (uid 1000, UDP only) and the others never
+# see each other. The sim runs no flight_interface and no drone.
+SIM_DISCOVERY := ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET
+SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
+SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE) $(SIM_DISCOVERY)
 
 # Compose projects: ground (make, make up: named after this folder) and
 # ground-smoke (make smoke). Compose labels their containers, images and
@@ -87,7 +93,7 @@ all: $(NATIVE) up
 
 venv: $(VENV)/.installed
 
-$(VENV)/.installed: src/gesture_node/requirements.txt
+$(VENV)/.installed: src/gesture/gesture_node/requirements.txt
 	python3.12 -m venv --system-site-packages $(VENV)
 	$(VENV)/bin/pip install --upgrade pip
 	$(VENV)/bin/pip install -r $<
@@ -99,18 +105,18 @@ ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node
 # Redone when PKGS changes, so an existing workspace gets new packages too.
 $(WS)/.src: Makefile
 	mkdir -p $(WS)/src
-	$(foreach p,$(PKGS),ln -sfn ../../src/$(p) $(WS)/src/$(p);)
+	$(foreach d,$(PKG_DIRS),ln -sfn ../../$(d) $(WS)/src/$(notdir $(d));)
 	touch $@
 
-$(WS)/.intent_node: $(WS)/.src src/intent_node/setup.py src/intent_node/package.xml
+$(WS)/.intent_node: $(WS)/.src src/intent/intent_node/setup.py src/intent/intent_node/package.xml
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select intent_node
 	touch $@
 
-$(WS)/.mission_node: $(WS)/.src src/mission_node/setup.py src/mission_node/package.xml
+$(WS)/.mission_node: $(WS)/.src src/mission/mission_node/setup.py src/mission/mission_node/package.xml
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select mission_node
 	touch $@
 
-$(WS)/.gesture_node: $(WS)/.src $(VENV)/.installed src/gesture_node/setup.py src/gesture_node/package.xml
+$(WS)/.gesture_node: $(WS)/.src $(VENV)/.installed src/gesture/gesture_node/setup.py src/gesture/gesture_node/package.xml
 	source $(ROS) && source $(VENV)/bin/activate && cd $(WS) \
 		&& python3 -m colcon build --symlink-install --packages-select gesture_node
 	@head -1 $(WS)/install/gesture_node/lib/gesture_node/gesture_node | grep -q '$(VENV)' \
@@ -214,14 +220,14 @@ e2e-test: ws
 # Every suite runs even if one fails. One row per package, plus drone/tests/ros.
 unit:
 	@eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); : >$(TESTLOG)/unit.log; code=0; rows=(); \
-	for dir in $(addprefix src/,$(PKGS)) $(E2E); do \
+	for dir in $(PKG_DIRS) $(E2E); do \
 		( if [[ $$dir == $(E2E) ]]; then python3 -m unittest discover -s $$dir -v; \
 			else cd $$dir && python3 -m unittest discover -s test -v; fi ) 2>&1 | tee $(TESTLOG)/unit.part; \
 		c=$${PIPESTATUS[0]}; ((c)) && code=1; cat $(TESTLOG)/unit.part >>$(TESTLOG)/unit.log; \
 		ran=$$(grep -oE '^Ran [0-9]+' $(TESTLOG)/unit.part | grep -oE '[0-9]+'); ran=$${ran:-0}; \
 		end=$$(grep -E '^(OK|FAILED)' $(TESTLOG)/unit.part | tail -n 1); \
 		k=$$(n_after skipped "$$end"); f=$$(n_after failures "$$end"); e=$$(n_after errors "$$end"); \
-		name=$${dir#src/}; [[ $$dir == $(E2E) ]] && name=drone/tests/ros; \
+		name=$${dir##*/}; [[ $$dir == $(E2E) ]] && name=drone/tests/ros; \
 		rows+=("$$(row $$name $$c $$((ran - k - f - e)) $$ran "$$(notes $$k skipped $$f failed $$e errors)")"); \
 	done; \
 	rm -f $(TESTLOG)/unit.part; \
@@ -254,7 +260,7 @@ clean:
 # sim-smoke build it only when it is missing, so they also work offline
 # (docker build checks Docker Hub for the base image every time).
 px4-image:
-	docker build -t $(PX4_IMAGE) ../simulation/px4
+	docker build --target px4 -t $(PX4_IMAGE) -f src/simulation/Dockerfile .
 
 px4-image-present:
 	@docker image inspect $(PX4_IMAGE) >/dev/null 2>&1 || $(MAKE) --no-print-directory px4-image

@@ -3,7 +3,7 @@ title: Intent_node (gesture name → operator intent)
 type: architecture
 status: draft
 date: 2026-10-21
-updated: 2026-10-27
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - gestures
@@ -122,13 +122,13 @@ Every fallback is `NEUTRAL`, and `mission_node` hovers in all of them ([[04 Miss
 
 ## 📁 7. Code
 
-`drone/ground/src/intent_node/`: `intent_node/gesture_filter.py` (the rules and `GESTURE_TO_INTENT`), `intent_node/intent_node.py` (the ROS wrapper) and `test/`.
+`drone/ground/src/intent/intent_node/`: `intent_node/gesture_filter.py` (the rules and `GESTURE_TO_INTENT`), `intent_node/intent_node.py` (the ROS wrapper) and `test/`.
 
 ---
 
 ## ❓ 8. Open points
 
-- [ ] **Message type.** JSON in `std_msgs/String` is untyped; `drone_msgs` is proposed in [[05 Future Nodes]].
+- [ ] **Message type.** JSON in `std_msgs/String` is untyped; `drone_msgs` is proposed in [[06 Final Connections and Missing Parts|06]] §3.2.
 - [ ] **Default input.** Make `topic` the default, or remove the UDP input.
 - [ ] **Keep-alive rate.** Confirm 10 Hz with the team.
 
