@@ -49,7 +49,7 @@ JOIN_WAIT_S, REJOIN_WAIT_S, KILL_GRACE_S, MAX_TEST_S, WATCHDOG_GRACE_S = (
     25,
     35,
     5,
-    40,
+    50,
     10,
 )
 
