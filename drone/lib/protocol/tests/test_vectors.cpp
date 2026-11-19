@@ -462,6 +462,13 @@ TEST_P(Vector, Check) {
   if (v.contains("steps")) {
     int i = 0;
     for (const auto &step : v["steps"]) {
+      // Late check: time passes on the ESP without a frame (#205 review).
+      if (step.contains("keep_time_us")) {
+        for (sd::Receiver *rx : {&esp_udp, &esp_tcp}) {
+          rx->keep_time(step["keep_time_us"].get<std::uint32_t>());
+        }
+        continue;
+      }
       const std::string transport = step.value("transport", "udp");
       const std::string role = step.value("role", "esp");
       ASSERT_TRUE(transport == "udp" || transport == "tcp") << transport;

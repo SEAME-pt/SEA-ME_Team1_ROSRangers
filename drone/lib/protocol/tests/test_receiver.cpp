@@ -685,6 +685,47 @@ TEST(LateCheck, HeldBackLongEnoughToWrapIsStillRefused) {
   }
 }
 
+TEST(LateCheck, TheDriftAllowanceKeepsGrowingPast71Minutes) {
+  // #205 review (BrunoBMFT): on TCP the offset only moves on an ARM or
+  // RESUME. 72 min (> 2^32 us) after the HELLO, with the ESP clock 60 ppm
+  // fast, a RESUME's lag has grown 259 ms; the 200 ppm allowance (864 ms)
+  // covers it. A u32 elapsed time would have wrapped to ~25 s (5 ms of
+  // allowance) and refused it. keep_time() every 10 min, as sd::Link does.
+  sd::Receiver tcp(sd::Role::kEsp, sd::Transport::kTcp);
+  ASSERT_TRUE(tcp.start_session(kSession, test_key()));
+  tcp.set_late_bound(kBound);
+  tcp.seed_lag(0, 5010000);
+  const std::uint64_t end_us = 72ULL * 60 * 1000000; // ground time
+  const auto esp_us = [](std::uint64_t ground_us) {
+    return static_cast<std::uint32_t>(5010000 + ground_us +
+                                      ground_us * 60 / 1000000);
+  };
+  for (std::uint64_t t = 0; t < end_us; t += 600ULL * 1000000) {
+    tcp.keep_time(esp_us(t));
+  }
+  const auto t_send = static_cast<std::uint32_t>(end_us);
+  EXPECT_TRUE(sd::is_accepted(
+      at(tcp, late_frame(sd::MsgType::kResumeRequest, 2, t_send),
+         esp_us(end_us))));
+  // Still a real late check: 1.2 s above the floor (more than 200 ms plus
+  // the 864 ms allowance) is refused.
+  EXPECT_EQ(at(tcp, late_frame(sd::MsgType::kResumeRequest, 3, t_send + 100),
+               esp_us(end_us) + 1300000),
+            sd::RxResult::kLate);
+}
+
+TEST(LateCheck, AHugeBoundIsClamped) {
+  // #205 review: a bound above 2^31 us would read as negative and refuse
+  // everything; set_late_bound() clamps it to 10 s.
+  LateRx rx;
+  rx.set_late_bound(0xFFFFFFFFU);
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 1000000), 6015000)));
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 2, 1020000),
+               6020000 + 10500000),
+            sd::RxResult::kLate); // 10.5 s late: above the 10 s clamp
+}
+
 TEST(LateCheck, ArmIsCheckedConfigIsNot) {
   sd::Receiver tcp(sd::Role::kEsp, sd::Transport::kTcp);
   ASSERT_TRUE(tcp.start_session(kSession, test_key()));

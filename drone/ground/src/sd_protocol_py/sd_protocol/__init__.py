@@ -65,6 +65,7 @@ from sd_protocol.messages import (
     transport_of,
 )
 from sd_protocol.receiver import (
+    LATE_BOUND_MAX_US,
     LATE_DRIFT_PPM,
     LATE_MAX_EARLY_US,
     PAYLOAD_SIZES,
@@ -103,6 +104,7 @@ __all__ = [
     "HELLO_ACK_SIZE",
     "HELLO_SIZE",
     "NONCE_SIZE",
+    "LATE_BOUND_MAX_US",
     "LATE_DRIFT_PPM",
     "LATE_MAX_EARLY_US",
     "PAYLOAD_SIZES",

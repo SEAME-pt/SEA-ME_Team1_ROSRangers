@@ -124,6 +124,8 @@ Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or 
 | `LateCheck.AnNtpSlewedGroundClockIsRefused` | A ground clock slewed by 500 ppm (NTP on `CLOCK_MONOTONIC`): frames end up refused | Why the ground must use `CLOCK_MONOTONIC_RAW` (#171) |
 | `LateCheck.BothClocksWrap` | `t_send_us` and the ESP clock each wrap between frames: on time accepted, 250 ms late refused | Works after 71.6 min of uptime on either side |
 | `LateCheck.HeldBackLongEnoughToWrapIsStillRefused` | Held back 40 and 60 min (the u32 lag difference wraps negative): refused, and the offset does not move | A long hold never passes as a "faster path" (#205 review) |
+| `LateCheck.TheDriftAllowanceKeepsGrowingPast71Minutes` | TCP Receiver, no control frame for 72 min (> 2^32 µs, `keep_time()` every 10 min), the ESP clock 60 ppm fast: a RESUME 259 ms above the floor is accepted (allowance 864 ms); 1.3 s above is refused | The allowance's elapsed time is 64-bit: a u32 one wrapped and refused every RESUME after 71.6 min (#205 review) |
+| `LateCheck.AHugeBoundIsClamped` | `set_late_bound(0xFFFFFFFF)`: on time accepted, 10.5 s late refused | A bound above 2^31 µs would read as negative and refuse everything; clamped to 10 s (#205 review) |
 | `LateCheck.ArmIsCheckedConfigIsNot` | Both 300 ms late on TCP: ARM refused, CONFIG_GET accepted | Only frames that start or keep control are checked |
 | `LateCheck.WithoutAReceiveTimeControlFramesAreRefused` | Check on, no receive time given: control frames refused; check off: accepted | A caller that forgets the time fails closed |
 | `LateCheck.ANewSessionNeedsANewSeed` | A new session clears the offset; without a seed the first control frame sets it | One session's offset never carries over |
@@ -131,6 +133,7 @@ Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or 
 | `LateLinkTest.HeldBackSetpointsNeverKeepStreamingAlive` | Through `sd::Link` with the default config: STREAMING, then every frame released 300 ms late is refused and `T_loss` ends in LINK_FAILSAFE | Closes the known limit of PR #170 |
 | `LateLinkTest.ALateArmIsRefused` | An ARM 300 ms late: still SESSION_IDLE | A held-back ARM can never start control |
 | `LateLinkTest.WorksAcrossTheMillisWrap` | The ESP's `millis()` wraps while streaming: on time accepted, 260 ms late refused | `millis() × 1000` wraps with `t_send_us` |
+| `LateLinkTest.LinkKeepsTheDriftClockGoingForAnHour` | Through `sd::Link`: only `tick()` for 72 min (ESP clock 60 ppm fast), then a SETPOINT and an ARM: both accepted, STREAMING | `Link` feeds the late check's clock on every loop, so even TCP (ARM / RESUME only) sees the time pass |
 
 ## Messages: the content of each message type
 Each message type is turned into bytes and back (a "round trip"). The bytes are compared with Protocol Spec v0 §3.

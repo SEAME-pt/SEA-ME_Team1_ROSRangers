@@ -259,6 +259,9 @@ def test_wrong_psk_hello_gets_no_ack_and_the_session_keeps_running(fake_fc, sess
     states = session.stream(2.5, each=read_intruder)
     tcp.close()
     assert not acked, "HELLO_ACK for a HELLO signed with another PSK"
+    # A late HELLO_ACK (REQ-SAF-024) is refused before the session opens, so
+    # without this "not acked" could hide one the ESP sent with the wrong PSK.
+    assert intruder.late_acks == 0, "a HELLO_ACK came back (late) for another PSK"
     assert len(states) >= 40, "the session stopped sending STATE"
     assert states[-1].esp_state == EspState.SESSION_IDLE
     check_frames(*fake_fc.snapshot())

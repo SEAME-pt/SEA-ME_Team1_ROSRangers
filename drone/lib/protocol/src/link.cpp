@@ -40,6 +40,16 @@ std::uint32_t t_send_us(std::uint32_t now_ms) { return now_ms * 1000U; }
 // 2^32), so lag differences stay right.
 std::uint32_t rx_us(std::uint32_t now_ms) { return now_ms * 1000U; }
 
+// LinkConfig::late_bound_ms in us, at most kLateBoundMaxMs (#205 review):
+// above ~4.29 million ms the product wraps, and above 2^31 us the bound reads
+// as negative, which would refuse every control frame.
+std::uint32_t late_bound_us(std::uint32_t late_bound_ms) {
+  if (late_bound_ms > kLateBoundMaxMs) {
+    return kLateBoundMaxMs * 1000U;
+  }
+  return late_bound_ms * 1000U;
+}
+
 } // namespace
 
 Link::Session::Session()
@@ -81,6 +91,14 @@ void Link::tick(std::uint32_t now_ms) { advance(now_ms); }
 void Link::advance(std::uint32_t now_ms) {
   if (state_ == EspState::kBoot) {
     return;
+  }
+  // The late check's drift clock must see the time pass even when no control
+  // frame comes for an hour (TCP: ARM / RESUME only), #205 review.
+  for (Session &s : sessions_) {
+    if (s.open) {
+      s.udp.keep_time(rx_us(now_ms));
+      s.tcp.keep_time(rx_us(now_ms));
+    }
   }
   if (pend().open && now_ms - pend().opened_ms >= kPendingMaxMs) {
     ++counters_.pending_expired;
@@ -384,7 +402,7 @@ void Link::open_session(Session &s, std::uint32_t id, const DirectionKeys &keys,
   // the ground bounds to 100 ms (REQ-SAF-024), so a ground delayed from the
   // start is caught too.
   for (Receiver *rx : {&s.udp, &s.tcp}) {
-    rx->set_late_bound(config_.late_bound_ms * 1000U);
+    rx->set_late_bound(late_bound_us(config_.late_bound_ms));
     rx->seed_lag(hello_t_send_us, rx_us(now_ms));
   }
   s.tx_key = keys.esp_to_ground;

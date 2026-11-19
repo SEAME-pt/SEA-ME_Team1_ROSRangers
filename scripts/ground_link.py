@@ -34,6 +34,7 @@ keep a finger on SA. This tool never sends ARM by itself.
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import pathlib
@@ -386,47 +387,156 @@ def needs_new_session(stale_s: float, tcp_open: bool, esp_state: int | None) -> 
     return not tcp_open and esp_state is not None and esp_state != EspState.STREAMING
 
 
+def _connect_nonblocking(addr: tuple[str, int]) -> socket.socket:
+    """A TCP socket whose connect is under way (it never waits for it)."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    err = sock.connect_ex(addr)
+    if err not in (0, errno.EINPROGRESS, errno.EWOULDBLOCK, errno.EALREADY):
+        sock.close()
+        raise OSError(err, os.strerror(err))
+    return sock
+
+
+class Handshake:
+    """Opens a session without blocking its caller (#205 review): poll() it
+    from the main loop, so SETPOINTs keep going out on the current session
+    while a new one opens (a blocked loop puts the gap past T_loss).
+
+    One attempt: non-blocking TCP connect, HELLO, then the HELLO_ACK within
+    `timeout`. A HELLO_ACK more than HELLO_ACK_MAX_US after the HELLO
+    (REQ-SAF-024) is dropped, and a new attempt with a new nonce starts 0.5 s
+    later (the ESP takes one HELLO per 500 ms), at most HELLO_TRIES attempts.
+    When `done`: `result` is (tcp, reader, frames after the HELLO_ACK), or
+    None with the reason in `why`.
+    """
+
+    def __init__(
+        self, addr, link: GroundLink, timeout: float, t0: float, open_socket=None
+    ):
+        self.addr = addr
+        self.link = link
+        self.timeout = timeout
+        self.t0 = t0
+        self._open_socket = open_socket or _connect_nonblocking
+        self.tries = 0
+        self.next_try = 0.0
+        self.tcp = None
+        self.connected = False
+        self.reader = None
+        self.hello = None
+        self.deadline = 0.0
+        self.late_before = 0
+        self.done = False
+        self.result = None
+        self.why = ""
+
+    def poll(self, now: float) -> None:
+        if self.done:
+            return
+        if self.tcp is None:
+            if now >= self.next_try:
+                self._start(now)
+            return
+        if not self.connected:
+            self._check_connected()
+        if self.connected and not self.done:
+            self._read_ack(now)
+        if not self.done and self.tcp is not None and now > self.deadline:
+            # Reported as a missing HELLO_ACK even after late ones, so a dead
+            # drone never reads as a REQ-SAF-024 problem (#205 review).
+            self._fail("no HELLO_ACK: wrong PSK, or not the gateway firmware?")
+
+    def _fail(self, why: str) -> None:
+        if self.tcp is not None:
+            self.tcp.close()
+            self.tcp = None
+        self.done = True
+        self.why = why
+
+    def _start(self, now: float) -> None:
+        self.tries += 1
+        if self.tries > 1:
+            self.link.new_nonce()  # a nonce never repeats (spec §1)
+        try:
+            self.tcp = self._open_socket(self.addr)
+        except OSError as e:
+            self._fail(f"cannot open a session with {self.addr[0]}:{self.addr[1]}: {e}")
+            return
+        self.connected = False
+        self.deadline = now + self.timeout
+
+    def _check_connected(self) -> None:
+        _, writable, _ = select.select([], [self.tcp], [], 0)
+        if not writable:
+            return
+        err = self.tcp.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+        if err:
+            self._fail(
+                f"cannot open a session with {self.addr[0]}:{self.addr[1]}: {os.strerror(err)}"
+            )
+            return
+        self.tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self.hello = self.link.hello()
+        self.late_before = self.link.late_acks
+        try:
+            self.tcp.sendall(self.hello)
+        except OSError as e:
+            self._fail(f"HELLO not sent: {e}")
+            return
+        self.reader = TcpReader()
+        self.connected = True
+
+    def _read_ack(self, now: float) -> None:
+        try:
+            data = self.tcp.recv(512)
+        except BlockingIOError:
+            return
+        except OSError as e:
+            self._fail(f"TCP error before HELLO_ACK: {e}")
+            return
+        if not data:
+            self._fail("the ESP closed the connection before HELLO_ACK")
+            return
+        try:
+            rest = take_ack(self.link, self.reader.feed(data))
+        except ValueError as e:
+            self._fail(f"bad frame before HELLO_ACK: {e}")
+            return
+        if rest is not None:
+            self.link.recorded_hello = self.hello
+            log(
+                self.t0,
+                f"session 0x{self.link.session_id:08x} open, firmware '{self.link.fw_version}'",
+            )
+            self.done = True
+            self.result = (self.tcp, self.reader, rest)
+            return
+        if self.link.late_acks > self.late_before:
+            self.tcp.close()
+            self.tcp = None
+            why = f"HELLO_ACK came more than {HELLO_ACK_MAX_US // 1000} ms after HELLO (REQ-SAF-024)"
+            if self.tries >= HELLO_TRIES:
+                self._fail(f"{why}, {self.tries} times")
+                return
+            log(self.t0, why + ": new handshake in 0.5 s")
+            self.next_try = now + 0.5
+
+
 def connect(args, link: GroundLink, t0: float, fatal: bool = True, timeout: float = 3):
-    """Opens a session: (tcp, reader, frames that came after HELLO_ACK). On
-    failure it exits, or returns None when `fatal` is False (reconnect)."""
-    why = "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
-    try:
-        for attempt in range(HELLO_TRIES):
-            if attempt:
-                # REQ-SAF-024: a new handshake with a new nonce; the ESP takes
-                # at most one HELLO per 500 ms
-                link.new_nonce()
-                time.sleep(0.5)
-            late_before = link.late_acks
-            tcp = socket.create_connection((args.host, args.port), timeout=timeout)
-            tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            hello = link.hello()
-            tcp.sendall(hello)
-            reader = TcpReader()
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline and link.late_acks == late_before:
-                data = tcp.recv(512)
-                if not data:
-                    break
-                rest = take_ack(link, reader.feed(data))
-                if rest is not None:
-                    log(
-                        t0,
-                        f"session 0x{link.session_id:08x} open, firmware '{link.fw_version}'",
-                    )
-                    tcp.setblocking(False)
-                    link.recorded_hello = hello
-                    return tcp, reader, rest
-            tcp.close()
-            if link.late_acks == late_before:
-                break  # no HELLO_ACK at all: retrying will not help
-            why = f"HELLO_ACK came more than {HELLO_ACK_MAX_US // 1000} ms after HELLO {link.late_acks} time(s) (REQ-SAF-024)"
-            log(t0, why + ": new handshake")
-    except (OSError, ValueError) as e:
-        why = f"cannot open a session with {args.host}:{args.port}: {e}"
-    if fatal:
-        raise SystemExit(why)
-    return None
+    """Opens a session and waits for it: only at start-up, when no SETPOINT is
+    going out yet. Returns (tcp, reader, frames that came after HELLO_ACK); on
+    failure it exits, or returns None when `fatal` is False. While streaming,
+    use a Handshake polled from the loop instead."""
+    hs = Handshake((args.host, args.port), link, timeout, t0)
+    while not hs.done:
+        hs.poll(time.monotonic())
+        time.sleep(0.005)
+    if hs.result is None:
+        if fatal:
+            raise SystemExit(hs.why)
+        return None
+    return hs.result
 
 
 def parse_roll(words: list[str]) -> int:
@@ -486,6 +596,9 @@ def run(args) -> None:
     udp_error = ""  # logged once per change, not 50 times a second
     next_reconnect = 0.0
     unreachable_logged = False
+    # A new session being opened while the loop keeps streaming (#205 review),
+    # and whether the operator's `R` asked for ARM on it.
+    pending, pending_arm = None, False
     replay, replay_reader = None, TcpReader()
     print(__doc__.split("\n\n")[2], flush=True)
 
@@ -597,33 +710,52 @@ def run(args) -> None:
         # operator's action (REQ-SAF-023). Not during `s`, which is on purpose.
         esp_state = last_state.esp_state if last_state is not None else None
         if (
-            udp_on
+            pending is None
+            and udp_on
             and needs_new_session(now - last_state_t, tcp is not None, esp_state)
             and now >= next_reconnect
         ):
             next_reconnect = now + RECONNECT_EVERY_S
-            fresh = GroundLink(link.psk)
-            opened = connect(args, fresh, t0, fatal=False, timeout=1)
-            if opened is None and not unreachable_logged:
+            pending = Handshake(dest, GroundLink(link.psk), 1.0, t0)
+            pending_arm = False
+        if pending is not None:
+            pending.poll(time.monotonic())
+        if pending is not None and pending.done:
+            fresh, opened = pending.link, pending.result
+            arm_it = pending_arm
+            why = pending.why
+            pending = None
+            if opened is None and arm_it:
+                log(t0, f"reconnect failed: {why}")
+            elif opened is None and not unreachable_logged:
                 log(
                     t0,
-                    "opening a new session: drone not reachable yet, retrying every 2 s",
+                    f"opening a new session: {why}; retrying every 2 s",
                 )
                 unreachable_logged = True
-            if opened is not None:
+            elif opened is not None:
                 unreachable_logged = False
+                new_tcp, new_reader, early = opened
+                for frame in early:
+                    log(t0, fresh.describe_tcp(frame))
+                if arm_it:
+                    # `R`: the first frame under the new keys confirms the
+                    # switch (ADR-005 entry); the operator asked for ARM.
+                    new_tcp.sendall(fresh.arm(args.mask))
+                    log(
+                        t0,
+                        f"sent ARM_CONTROL_REQUEST mask {args.mask} on the new session",
+                    )
                 if tcp is not None:
                     tcp.close()
-                link = fresh
-                tcp, reader, early = opened
-                for frame in early:
-                    log(t0, link.describe_tcp(frame))
-                mode, roll = 0, 0
-                stopped_at = None
-                last_state = None  # never show the dead session's STATE
+                link, tcp, reader = fresh, new_tcp, new_reader
+                last_state = None  # never show the old session's STATE
                 last_health = None
                 last_state_t = time.monotonic()
-                log(t0, "new session: sticks neutral; type a to ARM again")
+                if not arm_it:
+                    mode, roll = 0, 0
+                    stopped_at = None
+                    log(t0, "new session: sticks neutral; type a to ARM again")
         if stdin.open and stdin.fd in ready:
             for line in stdin.lines():
                 try:
@@ -690,26 +822,13 @@ def run(args) -> None:
                             "TCP dropped (no BYE): the session keeps going on UDP (ADR-005)",
                         )
                     elif cmd == "R":
-                        fresh = GroundLink(link.psk)
-                        opened = connect(args, fresh, t0, fatal=False, timeout=1)
-                        if opened is None:
-                            log(t0, "reconnect failed: drone not reachable")
+                        # Opened by the loop (pending), so SETPOINTs keep going
+                        # out on this session meanwhile (#205 review).
+                        if pending is not None:
+                            log(t0, "a new session is already being opened")
                         else:
-                            new_tcp, new_reader, early = opened
-                            for frame in early:
-                                log(t0, fresh.describe_tcp(frame))
-                            # The first frame under the new keys confirms the
-                            # switch (ADR-005 entry); the operator asked for ARM.
-                            new_tcp.sendall(fresh.arm(args.mask))
-                            log(
-                                t0,
-                                f"sent ARM_CONTROL_REQUEST mask {args.mask} on the new session",
-                            )
-                            if tcp is not None:
-                                tcp.close()
-                            link, tcp, reader = fresh, new_tcp, new_reader
-                            last_state = None  # never show the old session's STATE
-                            last_state_t = time.monotonic()
+                            pending = Handshake(dest, GroundLink(link.psk), 1.0, t0)
+                            pending_arm = True
                     elif cmd == "k":
                         log(t0, "killed: sockets closed without BYE")
                         os._exit(0)

@@ -19,9 +19,31 @@ bool Receiver::start_session(std::uint32_t session_id, const Key &rx_key) {
   return true;
 }
 
+void Receiver::set_late_bound(std::uint32_t bound_us) {
+  if (bound_us > kLateBoundMaxUs) {
+    late_bound_us_ = kLateBoundMaxUs;
+    return;
+  }
+  late_bound_us_ = bound_us;
+}
+
+void Receiver::keep_time(std::uint32_t rx_us) {
+  if (!clock_started_) {
+    clock_started_ = true;
+    last_rx_us_ = rx_us;
+    return;
+  }
+  // The u32 step since the last reading, so the wrap at 2^32 us adds nothing
+  // wrong: 0xFFFFFF00 -> 0x00000100 is a step of 0x200 us.
+  const std::uint32_t step = rx_us - last_rx_us_;
+  now_us_ += step;
+  last_rx_us_ = rx_us;
+}
+
 void Receiver::seed_lag(std::uint32_t t_send_us, std::uint32_t rx_us) {
+  keep_time(rx_us);
   offset_us_ = rx_us - t_send_us;
-  offset_rx_us_ = rx_us;
+  offset_at_us_ = now_us_;
   seeded_ = true;
 }
 
@@ -183,9 +205,11 @@ RxResult Receiver::check(const std::uint8_t *buf, std::size_t len, Frame &out,
     if (!seeded_) {
       new_floor = true;
     } else {
-      const std::uint64_t drift =
-          static_cast<std::uint64_t>(rx_us - offset_rx_us_) * kLateDriftPpm /
-          1000000U;
+      keep_time(rx_us);
+      // Elapsed time in 64 bits (#205 review): a u32 difference would wrap
+      // after 71.6 min and drop the allowance back to about 0.
+      const std::uint64_t since_offset_us = now_us_ - offset_at_us_;
+      const std::uint64_t drift = since_offset_us * kLateDriftPpm / 1000000U;
       // `early`: below the offset, without the drift allowance. Far below is
       // a frame held back past 35.8 min, its u32 difference wrapped.
       const std::int32_t early = static_cast<std::int32_t>(lag - offset_us_);

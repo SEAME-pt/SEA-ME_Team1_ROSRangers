@@ -7,7 +7,7 @@ import pytest
 
 from sd_protocol.crypto import derive_keys
 from sd_protocol.frame import HEADER_SIZE, Header, MsgType, decode_frame, encode_frame
-from sd_protocol.ground import GroundSession, TcpReader, load_psk, t_send_us
+from sd_protocol.ground import GroundSession, TcpReader, load_psk
 from sd_protocol.messages import (
     EspState,
     HelloAck,
@@ -121,9 +121,15 @@ def test_load_psk_refuses_missing_or_bad(tmp_path, content):
         load_psk(path=path, environ={})
 
 
-def test_t_send_us_wraps_to_u32():
-    assert t_send_us(1.5) == 1_500_000
-    assert t_send_us(5000.0) == 5_000_000_000 & 0xFFFFFFFF
+def test_the_fallback_clock_wraps_to_u32(monkeypatch):
+    # Without CLOCK_MONOTONIC_RAW (not Linux): the monotonic clock, as a u32.
+    import time
+
+    from sd_protocol import ground
+
+    monkeypatch.setattr(ground, "_RAW", None)
+    monkeypatch.setattr(time, "monotonic", lambda: 5000.0)
+    assert ground.raw_now_us() == 5_000_000_000 & 0xFFFFFFFF
 
 
 def test_ack_with_another_psk_or_garbage_is_refused():

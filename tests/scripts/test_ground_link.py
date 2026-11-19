@@ -2,6 +2,7 @@
 twin of the ESP-side checks (sd_protocol): no network, no ESP."""
 
 import pathlib
+import socket
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
@@ -298,41 +299,93 @@ def test_hello_ack_without_our_hello_is_dropped():
     assert not ground_link.GroundLink(PSK).take_ack(esp_ack())
 
 
-def test_a_late_ack_starts_a_new_handshake(monkeypatch):
-    # connect(): the first HELLO_ACK comes 150 ms late, the second on time.
-    sent = []
-    acks = iter([150_000, 20_000])
+class FakeEspServer:
+    """A local TCP listener that plays the ESP's handshake side."""
 
-    class FakeTcp:
-        def setsockopt(self, *a):
-            pass
+    def __init__(self):
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.bind(("127.0.0.1", 0))
+        self.listener.listen(4)
+        self.listener.settimeout(2)
+        self.addr = self.listener.getsockname()
+        self.conns = []
 
-        def sendall(self, data):
-            sent.append(data)
-            self.delay = next(acks)
+    def accept(self):
+        conn, _ = self.listener.accept()
+        conn.settimeout(2)
+        self.conns.append(conn)
+        return conn
 
-        def recv(self, n):
-            link.hello_sent_us = 1_000_000
-            monkeypatch.setattr(ground_link, "now_us", lambda: 1_000_000 + self.delay)
-            return esp_ack()
+    def close(self):
+        for c in self.conns + [self.listener]:
+            c.close()
 
-        def setblocking(self, flag):
-            pass
 
-        def close(self):
-            pass
+def poll_until(hs, now, until, step=0.01):
+    """Polls like the main loop; each poll must return at once (#205 review)."""
+    import time as _time
 
-    link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
-    first_nonce = link.nonce
-    monkeypatch.setattr(
-        ground_link.socket, "create_connection", lambda *a, **k: FakeTcp()
-    )
-    monkeypatch.setattr(ground_link.time, "sleep", lambda s: None)
+    while now < until and not hs.done:
+        started = _time.monotonic()
+        hs.poll(now)
+        assert _time.monotonic() - started < 0.05, "poll() blocked the loop"
+        now += step
+    return now
 
-    class Args:
-        host, port = "192.0.2.1", 5760
 
-    got = ground_link.connect(Args, link, 0.0)
-    assert got is not None and link.session_id == SESSION
-    assert len(sent) == 2 and link.late_acks == 1
-    assert link.nonce != first_nonce  # a nonce never repeats (spec §1)
+def test_handshake_never_blocks_and_retries_a_late_ack(monkeypatch):
+    # #205 review: the reconnect runs from the loop; the first HELLO_ACK comes
+    # 150 ms late (REQ-SAF-024), so a new handshake with a new nonce follows
+    # 0.5 s later and opens the session.
+    esp = FakeEspServer()
+    try:
+        link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+        first_nonce = link.nonce
+        hs = ground_link.Handshake(esp.addr, link, 1.0, 0.0)
+        now = poll_until(hs, 0.0, 0.05)
+        conn = esp.accept()
+        now = poll_until(hs, now, now + 0.05)
+        assert conn.recv(512)  # the HELLO
+        sent = link.hello_sent_us
+        monkeypatch.setattr(ground_link, "now_us", lambda: sent + 150_000)
+        conn.sendall(esp_ack())
+        now = poll_until(hs, now, now + 0.1)
+        assert link.late_acks == 1 and not hs.done and hs.tcp is None
+        now = poll_until(hs, now, now + 0.3)
+        assert hs.tries == 1  # waits 0.5 s before the next HELLO
+        now = poll_until(hs, now, now + 0.3)
+        conn2 = esp.accept()
+        now = poll_until(hs, now, now + 0.05)
+        assert conn2.recv(512)
+        sent = link.hello_sent_us
+        monkeypatch.setattr(ground_link, "now_us", lambda: sent + 20_000)
+        conn2.sendall(esp_ack())
+        poll_until(hs, now, now + 0.1)
+        assert hs.done and hs.result is not None and hs.tries == 2
+        assert link.session_id == SESSION and link.nonce != first_nonce
+        hs.result[0].close()
+    finally:
+        esp.close()
+
+
+def test_no_ack_after_a_late_one_reports_no_hello_ack(monkeypatch):
+    # #205 review: a late HELLO_ACK, then none at all, is a missing HELLO_ACK
+    # (drone gone, wrong PSK), not a REQ-SAF-024 failure.
+    esp = FakeEspServer()
+    try:
+        link = ground_link.GroundLink(PSK, nonce=bytes([0x11] * 16))
+        hs = ground_link.Handshake(esp.addr, link, 0.3, 0.0)
+        now = poll_until(hs, 0.0, 0.05)
+        conn = esp.accept()
+        now = poll_until(hs, now, now + 0.05)
+        conn.recv(512)
+        sent = link.hello_sent_us
+        monkeypatch.setattr(ground_link, "now_us", lambda: sent + 150_000)
+        conn.sendall(esp_ack())
+        now = poll_until(hs, now, now + 0.6)
+        esp.accept()  # second attempt connects, the ESP never answers
+        poll_until(hs, now, now + 1.0)
+        assert hs.done and hs.result is None
+        assert hs.why.startswith("no HELLO_ACK"), hs.why
+    finally:
+        esp.close()

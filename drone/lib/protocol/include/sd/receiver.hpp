@@ -71,6 +71,8 @@ constexpr std::uint32_t kLateDriftPpm = 200;
 // so long (35.8-71.6 min) that the u32 difference wrapped: refused as late too
 // (#205 review). A real faster path is at most ~100 ms (REQ-SAF-024) below.
 constexpr std::uint32_t kLateMaxEarlyUs = 1000000;
+// The largest late bound (10 s): set_late_bound() clamps to it (#205 review).
+constexpr std::uint32_t kLateBoundMaxUs = 10000000;
 // The types the late check applies to: the frames that start or keep control.
 bool is_control_type(std::uint8_t type);
 
@@ -115,11 +117,17 @@ public:
   // lag seen, seeded from the session's HELLO with seed_lag(); it may rise by
   // kLateDriftPpm of the time since it was last lowered. 0 turns it off.
   // Kept across sessions.
-  void set_late_bound(std::uint32_t bound_us) { late_bound_us_ = bound_us; }
+  // A bound above kLateBoundMaxUs is clamped to it (an int32 must hold it).
+  void set_late_bound(std::uint32_t bound_us);
   // Seeds the offset from the HELLO that opened this session (its t_send_us
   // and when it arrived). Call after start_session(), which clears it.
   // Without a seed, the first control frame seeds it.
   void seed_lag(std::uint32_t t_send_us, std::uint32_t rx_us);
+  // Keeps the drift allowance's clock going between control frames (#205
+  // review): rx_us is a u32 that wraps every 71.6 min, so the elapsed time
+  // is counted in 64 bits from every reading. Call it at least every 35 min;
+  // sd::Link does it on every loop. receive() with a time does it too.
+  void keep_time(std::uint32_t rx_us);
 
   Role role() const { return role_; }
   Transport transport() const { return transport_; }
@@ -145,8 +153,13 @@ private:
   RxCounters counters_ = {};
   std::uint32_t late_bound_us_ = 0;
   bool seeded_ = false;
-  std::uint32_t offset_us_ = 0;    // lowest lag seen (u32, wraps)
-  std::uint32_t offset_rx_us_ = 0; // when it was set
+  std::uint32_t offset_us_ = 0; // lowest lag seen (u32, wraps)
+  // The receive clock in 64 bits: last_rx_us_ is the last u32 reading,
+  // now_us_ the time it extends to; offset_at_us_ is when offset_us_ was set.
+  bool clock_started_ = false;
+  std::uint32_t last_rx_us_ = 0;
+  std::uint64_t now_us_ = 0;
+  std::uint64_t offset_at_us_ = 0;
 };
 
 // The handshake (spec §1, #152): the ESP accepts only HELLO and the ground only

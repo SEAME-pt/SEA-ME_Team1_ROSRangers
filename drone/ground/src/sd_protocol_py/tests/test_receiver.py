@@ -526,6 +526,7 @@ def late_frame(msg_type: MsgType, seq: int, t_send_us: int) -> bytes:
         MsgType.SETPOINT: bytes(SETPOINT_SIZE),
         MsgType.ARM_CONTROL_REQUEST: bytes([8]),
         MsgType.CONFIG_GET: bytes(5),
+        MsgType.RESUME_REQUEST: b"",
     }[msg_type]
     header = Header(
         type=msg_type, session_id=SESSION, seq=seq, t_send_us=t_send_us & 0xFFFFFFFF
@@ -647,3 +648,33 @@ def test_late_new_session_needs_a_new_seed():
     assert rx.start_session(SESSION, TEST_KEY)
     assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 0), 9_000_000))
     assert at(rx, late_frame(MsgType.SETPOINT, 2, 20_000), 9_250_000) is RxResult.LATE
+
+
+def test_late_drift_allowance_keeps_growing_past_71_minutes():
+    # #205 review: 72 min after the HELLO with the ESP clock 60 ppm fast, a
+    # RESUME's lag has grown 259 ms; the allowance (864 ms) covers it. A u32
+    # elapsed time would have wrapped and refused it. keep_time() every 10 min.
+    tcp = open_receiver(Transport.TCP)
+    tcp.set_late_bound(BOUND)
+    tcp.seed_lag(0, 5_010_000)
+    end_us = 72 * 60 * 1_000_000
+
+    def esp_us(ground_us):
+        return (5_010_000 + ground_us + ground_us * 60 // 1_000_000) & 0xFFFFFFFF
+
+    for t in range(0, end_us, 600 * 1_000_000):
+        tcp.keep_time(esp_us(t))
+    resume = late_frame(MsgType.RESUME_REQUEST, 2, end_us)
+    assert is_accepted(at(tcp, resume, esp_us(end_us)))
+    later = late_frame(MsgType.RESUME_REQUEST, 3, end_us + 100)
+    assert at(tcp, later, esp_us(end_us) + 1_300_000) is RxResult.LATE
+
+
+def test_late_huge_bound_is_clamped():
+    rx = late_rx()
+    rx.set_late_bound(0xFFFFFFFF)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_015_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_020_000 + 10_500_000)
+        is RxResult.LATE
+    )

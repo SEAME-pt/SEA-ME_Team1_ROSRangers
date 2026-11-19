@@ -90,9 +90,9 @@ def _check_private(path, warn):
         )
 
 
-def t_send_us(now):
-    """u32 microseconds from seconds."""
-    return int(now * 1_000_000) & 0xFFFFFFFF
+def _seconds_to_us(seconds):
+    """u32 microseconds from seconds (the fallback clock only)."""
+    return int(seconds * 1_000_000) & 0xFFFFFFFF
 
 
 # Linux only; elsewhere the plain monotonic clock, for tests.
@@ -105,7 +105,7 @@ HELLO_ACK_MAX_US = 100_000
 def raw_now_us():
     """Header t_send_us: CLOCK_MONOTONIC_RAW in u32 microseconds."""
     if _RAW is None:
-        return t_send_us(time.monotonic())
+        return _seconds_to_us(time.monotonic())
     return time.clock_gettime_ns(_RAW) // 1000 & 0xFFFFFFFF
 
 
@@ -154,6 +154,9 @@ class GroundSession:
             return False
         if self.hello_sent_us is None:
             return False  # no HELLO of ours: not our HELLO_ACK
+        # Measured when the frame is processed, not when it arrived: a slow
+        # poll loop counts toward the 100 ms, so an on-time HELLO_ACK can be
+        # refused. That errs on the safe side: the next handshake follows.
         waited_us = (self._clock_us() - self.hello_sent_us) & 0xFFFFFFFF
         if waited_us > HELLO_ACK_MAX_US:
             self.late_acks += 1

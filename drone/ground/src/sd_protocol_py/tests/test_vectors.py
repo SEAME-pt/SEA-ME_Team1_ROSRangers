@@ -213,6 +213,10 @@ def test_vector(vector):
 
     if "steps" in vector:
         for i, step in enumerate(vector["steps"]):
+            if "keep_time_us" in step:  # time passes on the ESP, no frame (#205)
+                for t in Transport:
+                    rxs[Role.ESP, t].keep_time(step["keep_time_us"])
+                continue
             buf = bytes.fromhex(step["bytes"])
             role = Role[step.get("role", "esp").upper()]
             transport = Transport[step.get("transport", "udp").upper()]

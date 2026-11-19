@@ -1419,3 +1419,21 @@ TEST(LateLinkTest, WorksAcrossTheMillisWrap) {
   }
   EXPECT_EQ(l.setpoint(t, t + 260), sd::RxResult::kLate);
 }
+
+TEST(LateLinkTest, LinkKeepsTheDriftClockGoingForAnHour) {
+  // #205 review: no control frame for 72 min (only the loop runs, tick()
+  // every 10 min), the ESP clock 60 ppm fast; then ARM on TCP is accepted.
+  LateLink l;
+  const std::uint32_t start = 3010;
+  const std::uint32_t idle_ms = 72U * 60 * 1000;
+  for (std::uint32_t t = 0; t < idle_ms; t += 600000) {
+    l.link.tick(start + t + t / 16667); // ~60 ppm
+  }
+  const std::uint32_t sent = start + idle_ms;
+  const std::uint32_t arrive = sent + idle_ms / 16667 + 8;
+  ASSERT_TRUE(sd::is_accepted(l.setpoint(sent - 20, arrive - 20)));
+  l.g.t_send_us = (sent - 3000) * 1000U;
+  const Bytes arm = l.g.tcp(MsgType::kArmControlRequest, u8(kMask));
+  l.link.on_tcp_frame(0, arm.data(), arm.size(), arrive);
+  EXPECT_EQ(l.link.state(), EspState::kStreaming);
+}

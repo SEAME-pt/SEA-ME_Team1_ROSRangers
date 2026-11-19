@@ -236,6 +236,56 @@
     }
   },
   {
+    "name": "late_drift_allowance_past_71_min",
+    "description": "No control frame for 72 min (> 2^32 us; the ESP's clock ticks every 10 min) with the ESP clock 60 ppm fast: the SETPOINT's lag has grown 259 ms, and the 200 ppm allowance (864 ms) still covers it; a u32 elapsed time would have wrapped and refused it (#205 review)",
+    "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "state": {
+      "current_session": 305419896,
+      "last_ctrl_seq": 0
+    },
+    "late": {
+      "bound_us": 200000,
+      "hello_t_send_us": 0,
+      "hello_rx_us": 5010000
+    },
+    "steps": [
+      {
+        "keep_time_us": 5010000
+      },
+      {
+        "keep_time_us": 605046000
+      },
+      {
+        "keep_time_us": 1205082000
+      },
+      {
+        "keep_time_us": 1805118000
+      },
+      {
+        "keep_time_us": 2405154000
+      },
+      {
+        "keep_time_us": 3005190000
+      },
+      {
+        "keep_time_us": 3605226000
+      },
+      {
+        "keep_time_us": 4205262000
+      },
+      {
+        "bytes": "5344016000000a00785634120100000000f87d010000000000000000000056f274924ffaa8a2",
+        "rx_us": 30301904,
+        "expect": "accept"
+      }
+    ],
+    "final": {
+      "last_ctrl_seq": 1,
+      "rx_rejected": 0,
+      "gaps": 0
+    }
+  },
+  {
     "name": "late_held_40_min",
     "description": "Held back 40 min: the u32 lag difference wraps negative and must not pass as a faster path; then the same seq on time is accepted",
     "key": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",

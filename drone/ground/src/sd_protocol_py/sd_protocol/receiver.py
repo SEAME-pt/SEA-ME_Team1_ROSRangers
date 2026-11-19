@@ -132,6 +132,8 @@ LATE_DRIFT_PPM = 200
 # A lag this far below the offset is a frame held back 35.8-71.6 min whose u32
 # difference wrapped, not a faster path: refused as late too (#205 review).
 LATE_MAX_EARLY_US = 1_000_000
+# The largest late bound (10 s): set_late_bound() clamps to it (#205 review).
+LATE_BOUND_MAX_US = 10_000_000
 _CONTROL_TYPES = (MsgType.SETPOINT, MsgType.ARM_CONTROL_REQUEST, MsgType.RESUME_REQUEST)
 _U32 = 0xFFFFFFFF
 
@@ -159,22 +161,44 @@ class Receiver:
         self._late_bound_us = 0
         self._seeded = False
         self._offset_us = 0
-        self._offset_rx_us = 0
+        # The receive clock in 64 bits (#205 review): the last u32 reading,
+        # the time it extends to, and when the offset was set.
+        self._clock_started = False
+        self._last_rx_us = 0
+        self._now_us = 0
+        self._offset_at_us = 0
 
     def set_late_bound(self, bound_us: int) -> None:
         """Late check (ESP only, spec §4 rule 3a). SETPOINT, ARM_CONTROL_REQUEST
         and RESUME_REQUEST whose lag (rx_us - t_send_us) is more than bound_us
         above the session's offset are refused as LATE. The offset is the lowest
         lag seen, seeded from the HELLO with seed_lag(); it may rise by
-        LATE_DRIFT_PPM of the time since it was last lowered. 0 turns it off."""
-        self._late_bound_us = bound_us
+        LATE_DRIFT_PPM of the time since it was last lowered. 0 turns it off;
+        a bound above LATE_BOUND_MAX_US is clamped to it."""
+        self._late_bound_us = min(bound_us, LATE_BOUND_MAX_US)
+
+    def keep_time(self, rx_us: int) -> None:
+        """Keeps the drift allowance's clock going between control frames
+        (#205 review). rx_us is a u32 that wraps every 71.6 min, so the elapsed
+        time is counted from every reading. Call it at least every 35 min (the
+        ESP's sd::Link does it on every loop); receive() with a time does too."""
+        rx_us &= _U32
+        if not self._clock_started:
+            self._clock_started = True
+            self._last_rx_us = rx_us
+            return
+        # The u32 step since the last reading: across the wrap,
+        # 0xFFFFFF00 -> 0x00000100 is a step of 0x200 us.
+        self._now_us += (rx_us - self._last_rx_us) & _U32
+        self._last_rx_us = rx_us
 
     def seed_lag(self, t_send_us: int, rx_us: int) -> None:
         """Seeds the offset from the HELLO that opened this session. Call after
         start_session(), which clears it; without a seed, the first control
         frame seeds it."""
+        self.keep_time(rx_us)
         self._offset_us = (rx_us - t_send_us) & _U32
-        self._offset_rx_us = rx_us & _U32
+        self._offset_at_us = self._now_us
         self._seeded = True
 
     @property
@@ -300,9 +324,11 @@ class Receiver:
             if not self._seeded:
                 new_floor = True
             else:
-                drift = (
-                    ((rx_us - self._offset_rx_us) & _U32) * LATE_DRIFT_PPM // 1_000_000
-                )
+                self.keep_time(rx_us)
+                # Elapsed time without a u32 wrap (#205 review): after 71.6 min
+                # a u32 difference would drop the allowance back to about 0.
+                since_offset_us = self._now_us - self._offset_at_us
+                drift = since_offset_us * LATE_DRIFT_PPM // 1_000_000
                 early = _int32(lag - self._offset_us)
                 excess = _int32(lag - self._offset_us - drift)
                 if excess > self._late_bound_us or early < -LATE_MAX_EARLY_US:
