@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.5
+version: 1.6
 date: 2026-10-12
 updated: 2026-11-16
 project: SEA autonomous drone
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.5 (late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
+> [!success] Status: ACCEPTED v1.6 (`override_active` values, #176; v1.5 is the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -96,6 +96,14 @@ A published code keeps its meaning forever. A code no longer used is marked "ret
 | 2 | SESSION_IDLE |
 | 3 | STREAMING |
 | 4 | LINK_FAILSAFE |
+
+`STATE.override_active` (2026-11-16, #176). Only 1 means the FC takes the ESP's RC channels; the ground treats 2 like 0. The ESP reads it from `MSP_STATUS`, at the position of MSP OVERRIDE (permanent box ID 50) in `MSP_BOXIDS` ([[MSP Cheat Sheet]] §3).
+
+| Value | Meaning |
+|---|---|
+| 0 | MSP OVERRIDE is off: the radio's sticks fly |
+| 1 | MSP OVERRIDE is on: the channels in the override mask come from the ESP |
+| 2 | Unknown: the box list is not read yet (or not re-read for 10 s, or the FC was silent for 250 ms or more since), the FC has no MSP OVERRIDE box (`msp_override_channels_mask` = 0), or the last `MSP_STATUS` is 500 ms old or more |
 
 `ARM_CONTROL_ACK.result` and `RESUME_ACK.result` share one list, so a number means the same in both.
 
@@ -316,6 +324,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | 2026-11-13 | 1.4.1 | No wire change. Result 4 also covers "RC not acknowledged for 1 s" (§3.1), and `FC_LINK_RESTORED` comes only after 250 ms of replies with no timeout (#188, safety pilot's rules from the #183 review). |
 | 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` wraps to 0 after 65,535 and the ground counts the wraps (`WrapCounter`); it counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The ESP used to saturate at 65,535. |
 | 2026-11-16 | 1.5 | Late check (§4 rule 3a, #204, safety pilot's decision on spike #171): `reject:late` for `SETPOINT`, `ARM_CONTROL_REQUEST` and `RESUME_REQUEST` more than 200 ms (provisional) late against the session's offset (seeded from `HELLO`, 200 ppm drift). The ground's `t_send_us` is `CLOCK_MONOTONIC_RAW` (§1). Same bytes on the wire; a frame held back is now refused. Vectors `late_setpoint_rejected`, `late_across_both_wraps`, `late_held_40_min`, `late_drift_allowance_past_71_min` (§6, group 5). Every ground client drops a `HELLO_ACK` later than 100 ms and starts a new handshake (REQ-SAF-024): `sd_protocol.ground` (so `flight_interface`'s ESP backend) and `scripts/ground_link.py`. The drift allowance's time is 64-bit (no wrap after 71.6 min), `late_bound_ms` is clamped to 10 s (#205 review). (v1.5 was planned for the `override_active` values of #176, PR #198; they become v1.6.) |
+| 2026-11-19 | 1.6 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
 
 ## 9. Glossary
 

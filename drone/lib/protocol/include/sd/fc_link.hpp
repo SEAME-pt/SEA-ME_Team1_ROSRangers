@@ -24,6 +24,12 @@ constexpr std::uint32_t kAnalogPeriodMs = 200;  // 5 Hz
 // MSP_API_VERSION: the FC answers, so the link works (BOOT -> NO_SESSION of
 // the ESP Link State Machine, #102). Kept at 1 Hz to notice a silent FC.
 constexpr std::uint32_t kApiVersionPeriodMs = 1000;
+// MSP_BOXIDS (#176): the box list only changes when the FC reboots with a new
+// configuration, so 1 Hz is enough; it is also forgotten after kFcLostMs of
+// silence (a reboot), so an old list is never matched with a new STATUS.
+constexpr std::uint32_t kBoxIdsPeriodMs = 1000;
+// override_state() needs an MSP_STATUS younger than this (polled at 5 Hz).
+constexpr std::uint32_t kOverrideStatusMaxAgeMs = 500;
 constexpr std::uint32_t kReplyTimeoutMs = 50;
 // After a timeout, nothing is sent for this long and any reply that arrives is
 // dropped, so a late reply that comes within the drain window is never taken as
@@ -65,6 +71,16 @@ struct FcTelemetry {
   std::uint32_t api_version_ms;
   std::uint8_t api_major; // 1.46 on 4.5.1
   std::uint8_t api_minor;
+};
+
+// STATE.override_active (spec §3.1, #176). Only kOn means the FC takes the
+// ESP's RC channels.
+enum class OverrideState : std::uint8_t {
+  kOff = 0,
+  kOn = 1,
+  // Not known: box list not read yet, MSP OVERRIDE not in it (Betaflight's
+  // msp_override_channels_mask is 0), or no MSP_STATUS for 500 ms.
+  kUnknown = 2,
 };
 
 struct FcCounters {
@@ -129,6 +145,13 @@ public:
   // ADR-024 needs a fresh "disarmed" (500 ms).
   bool status_fresh(std::uint32_t now_ms, std::uint32_t max_age_ms) const;
 
+  // Is Betaflight's MSP OVERRIDE mode on (#176, REQ-SAF-007)?
+  OverrideState override_state(std::uint32_t now_ms) const;
+  // The box list was read: override_box() is the position of MSP OVERRIDE in
+  // it, or -1 if the FC does not have that box.
+  bool has_boxes() const { return has_boxes_; }
+  int override_box() const { return override_box_; }
+
 private:
   struct Poll {
     std::uint8_t cmd;
@@ -138,10 +161,12 @@ private:
   };
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
+  void on_box_ids(const msp::Reply &reply, std::uint32_t now_ms);
+  void forget_boxes();
   void expire(std::uint32_t now_ms);
   bool any_poll_due(std::uint32_t now_ms) const;
 
-  Poll polls_[4];
+  Poll polls_[5];
   bool rc_pending_ = false;
   bool poll_first_ = false; // an RC timed out: let one due poll go next
   std::uint16_t rc_[msp::kRcChannels] = {};
@@ -161,6 +186,14 @@ private:
   std::uint32_t drain_ms_ = 0;
   std::uint8_t in_flight_cmd_ = 0;
   std::uint32_t in_flight_ms_ = 0;
+  // #176: the box list, read page by page (32 boxes each).
+  bool has_boxes_ = false;
+  std::uint32_t boxes_ms_ = 0;
+  // When the current list was first read: a STATUS older than this may come
+  // from before an FC reboot and is never matched with it.
+  std::uint32_t boxes_since_ms_ = 0;
+  int override_box_ = -1;
+  std::uint8_t box_page_ = 0; // the page the next MSP_BOXIDS asks for
   FcTelemetry telemetry_ = {};
   FcCounters counters_ = {};
 };

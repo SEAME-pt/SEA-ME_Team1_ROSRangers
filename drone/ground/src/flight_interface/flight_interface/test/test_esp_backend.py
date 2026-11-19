@@ -536,6 +536,15 @@ def test_the_esp_wants_1_s_of_streaming_before_arm(
     assert backend.last_ack == ("ARM_CONTROL_ACK", result)
 
 
+@pytest.mark.parametrize("raw, on", [(0, False), (1, True), (2, False), (7, False)])
+def test_override_active_is_on_only_for_1(clock, fake, backend, raw, on):
+    # Protocol Spec §3.1 (#176): 2 = unknown (no box list, no MSP OVERRIDE box,
+    # or an old MSP_STATUS) and any newer value must never read as "on".
+    fake.override_value = raw
+    state = clock.run(0.3)
+    assert state["override_active"] is on
+
+
 # ---------- A4: ARM on the operator's request; B1: the mask from the ACK ----------
 def test_arm_on_request_streams_and_reports_the_confirmed_mask(clock, fake, backend):
     state = clock.run(0.3)

@@ -26,8 +26,11 @@
 //   FC_HEALTH (spec v1.4) at 5 Hz: alive, armed, arming flags, value ages,
 //   the FcLink counters and rc_sent / rc_replaced.
 //
-// Not yet: STATE.override_active (#176, needs the MSP box IDs) and reading the
-// override mask from the FC (fixed kOverrideMask below).
+// - STATE.override_active (#176): 1 while Betaflight's MSP OVERRIDE mode is
+//   on, 0 when off, 2 when not known (box list from MSP_BOXIDS not read, no
+//   MSP OVERRIDE box, or MSP_STATUS older than 500 ms).
+//
+// Not yet: reading the override mask from the FC (fixed kOverrideMask below).
 
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
@@ -312,11 +315,11 @@ void service_udp(sd::Link &link, uint32_t now) {
   }
 }
 
-sd::FcView fc_view() {
+sd::FcView fc_view(uint32_t now) {
   const sd::FcTelemetry &t = fc.telemetry();
   const sd::FcCounters &c = fc.counters();
   sd::FcView v{};
-  v.override_active = 0; // not read yet: needs the MSP box IDs (#102)
+  v.override_active = static_cast<uint8_t>(fc.override_state(now));
   if (t.has_attitude) {
     v.roll = t.attitude.roll;
     v.pitch = t.attitude.pitch;
@@ -637,7 +640,7 @@ void loop() {
   // STATE at telemetry_rate_hz (CONFIG key 0x80, 1-50 Hz).
   if (now - last_state_ms >= 1000U / link.telemetry_rate_hz()) {
     last_state_ms = now;
-    link.send_state(now, fc_view());
+    link.send_state(now, fc_view(now));
   } else if (retry_len > 0 && have_peer &&
              static_cast<int32_t>(now - retry_at_ms) >= 0) {
     retry_at_ms = now + kStateRetryMs;

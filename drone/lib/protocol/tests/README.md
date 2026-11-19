@@ -211,7 +211,7 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | Test | What it does | Why it matters |
 |---|---|---|
 | `Msp.KnownRequestBytes` | MSP_API_VERSION and MSP_STATUS requests are exactly `$M< 00 01 01` and `$M< 00 65 65` | The bytes match what Betaflight expects |
-| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108 and 110 can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
+| `Msp.AllowListRefusesEverythingElse` | All 256 command numbers: only 1, 101, 105, 108, 110 and 119 (MSP_BOXIDS, #176) can be built as requests, and 200 only through its typed encoder; MSP_SET_MOTOR, EEPROM_WRITE, REBOOT and ARMING_DISABLED cannot | A forbidden command can never reach the FC |
 | `Msp.EncodeRefusesBadArguments` | Null buffers, a too-small buffer, a too-long payload are refused | A bad call writes nothing |
 | `Msp.SetRawRcOnlyThroughTheTypedEncoder` | `encode_request` refuses MSP_SET_RAW_RC with every payload length 0–64; only `encode_set_raw_rc` builds it, always with 8 channels | The one write command on the allow-list cannot be built with an arbitrary payload |
 | `Msp.SetRawRcBytes` | 8 channels become a 16-byte little-endian payload with the right checksum | The RC frame #102 will send is right |
@@ -224,13 +224,14 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `MspParser.ErrorReplyAndEmptyReply` | An `!` error reply and an empty reply are reported as such and never decoded as values | The FC refusing a command is not read as numbers |
 | `MspParser.RandomBytesNeverCrashAndAlwaysResync` | 200,000 random bytes, then a valid reply: the reply is read | The reader always recovers |
 | `MspDecode.StatusArmedAndArmingFlags` | MSP_STATUS laid out as Betaflight 2026.6.2 writes it: armed bit and arming-disable flags, with 0 to 3 extra mode bytes; a cut reply is refused | The ESP knows if the drone is armed (failsafe, ADR-024 gate) |
+| `MspDecode.StatusModeFlagsIncludeTheExtraBytes` | MSP_STATUS with one extra mode byte: `mode_active()` reads bits 0–39 across the 4 flag bytes and the extra byte, and is false for a bit the FC did not send | MSP OVERRIDE can sit past bit 31 on an FC with many modes (#176) |
 | `MspDecode.AnalogTakesTheCentivoltField` | MSP_ANALOG gives 1110 = 11.10 V from its last field; an old 7-byte reply is refused | The battery voltage has the unit STATE needs |
 
 ## FcLink: the scheduler that owns the FC UART (#101)
 | Test | What it does | Why it matters |
 |---|---|---|
 | `FcLink.PollsAtTheAdr009Rates` | One simulated second: 25 ATTITUDE, 5 STATUS, 5 ANALOG requests, every one answered | The rates of ADR-009 |
-| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the three poll commands are sent | The gateway alone never sends RC |
+| `FcLink.OnlyPollRequestsEverLeave` | Five simulated seconds: only the poll commands are sent (ATTITUDE, STATUS, ANALOG, API_VERSION, BOXIDS) | The gateway alone never sends RC |
 | `FcLink.OneRequestAtATimeAndTimeouts` | Nothing else is sent while a reply is awaited; after 50 ms it is a timeout, then 50 ms of drain where nothing is sent and a late reply is dropped | Requests never collide, and a late reply is never taken as the answer to a newer request |
 | `FcLink.ArmedStateAndFreshness` | The armed flag is read, and the status is fresh for 500 ms only | The ADR-024 gate needs a fresh "disarmed" |
 | `FcLink.ErrorAndBadRepliesCounted` | Error replies, bad checksums and undecodable replies are counted, never stored | Bad data never reaches the telemetry |
@@ -258,6 +259,14 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.ASilenceWithoutATimeoutStillNeeds250MsToComeBack` | No request in flight for 400 ms (no timeout counted): `fc_up()` comes back only after 250 ms of replies again | A stalled loop cannot skip the RESTORED hysteresis (#188 pre-review) |
 | `FcLink.OneRefusedRcRestartsTheSecond` | One `!` reply to RC after 1.5 s of good acks: not accepted at once, accepted again after 1 s | A refused RC frame breaks "continuously good" (#188) |
 | `FcLink.APollTimeoutDoesNotRestartTheRcSecond` | One poll unanswered, every RC acked: RC stays accepted | Only RC problems restart the RC second (#188) |
+| `FcLink.OverrideFollowsMspStatusFromTheSitlRecording` | Replies recorded on Betaflight 2026.6.2 SITL (mask 8): MSP OVERRIDE is box 22; `override_state()` goes off → on → off with MSP_STATUS | `STATE.override_active` shows what the FC really does (#176, REQ-SAF-007) |
+| `FcLink.OverrideUnknownBeforeTheBoxList` | MSP_STATUS has bit 22 on but MSP_BOXIDS is never answered: unknown, never on | A bit means nothing until the box list says which mode it is (#176) |
+| `FcLink.OverrideUnknownWhenTheFcHasNoOverrideBox` | Recorded box list with mask 0 (no box 50): unknown | An FC without MSP OVERRIDE configured never reports "on" |
+| `FcLink.OverrideUnknownWhenTheStatusIsOld` | On while MSP_STATUS is under 500 ms old, unknown at 500 ms | An old "on" is never reported as current |
+| `FcLink.BoxListIsForgottenAfterAnFcSilence` | 400 ms of FC silence (a reboot), then the FC comes back with mask 0: the old list is dropped, unknown until the new list is read | A box list from before a reboot is never matched with a new STATUS |
+| `FcLink.OverrideBoxOnTheSecondPage` | Page 0 has 32 boxes without 50: the next request asks for page 1 (payload 1), box 50 is its 4th entry → box 35, read from the extra mode byte | Works on an FC with more than 32 modes |
+| `FcLink.BoxListExpiresWhenNotReadFor10Seconds` | The FC answers everything but MSP_BOXIDS: 10 s after the last list, `override_state()` is unknown although STATUS still says bit 22 is on | A box list that is no longer confirmed is never trusted |
+| `FcLink.ALostBoxIdsPageRestartsFromPageZero` | Page 0 full, the page-1 request times out: the next MSP_BOXIDS asks for page 0 again | A lost reply never leaves the list half-read for good |
 
 ## Link: the ESP link state machine (#102)
 

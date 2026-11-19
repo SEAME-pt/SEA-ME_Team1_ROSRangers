@@ -14,6 +14,7 @@ bool allowed(std::uint8_t cmd) {
   case kRc:
   case kAttitude:
   case kAnalog:
+  case kBoxIds:
   case kSetRawRc:
     return true;
   default:
@@ -172,7 +173,22 @@ bool decode_status(const Reply &reply, Status &out) {
   }
   out.armed = (reply.payload[kModeFlags] & 0x01) != 0;
   out.arming_disable_flags = get_u32(reply.payload + arming);
+  out.mode_bytes = static_cast<std::uint8_t>(4 + extra);
+  for (std::size_t i = 0; i < 4; ++i) {
+    out.mode_flags[i] = reply.payload[kModeFlags + i];
+  }
+  for (std::size_t i = 0; i < extra; ++i) {
+    out.mode_flags[4 + i] = reply.payload[kExtraCount + 1 + i];
+  }
   return true;
+}
+
+bool mode_active(const Status &s, std::size_t index) {
+  const std::size_t byte = index / 8;
+  if (byte >= s.mode_bytes || byte >= kMaxModeBytes) {
+    return false;
+  }
+  return (s.mode_flags[byte] >> (index % 8) & 1U) != 0;
 }
 
 } // namespace msp

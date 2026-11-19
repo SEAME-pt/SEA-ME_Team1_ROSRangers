@@ -108,11 +108,51 @@ FAKE_VBAT_CV = 1111  # 11.11 V
 FAKE_ARMING_FLAGS = 0x00000020
 
 
-def fake_status(armed: bool = False) -> bytes:
-    # cycle, i2c errors, sensors, flight mode flags, profile, load, gyro cycle,
-    # 0 extra flag bytes, arming-disable flag count, arming-disable flags,
-    # config state
-    head = struct.pack("<HHHIBHH", 125, 0, 0x23, int(armed), 0, 5, 125)
+# MSP_BOXIDS (119, #176): the box list of Betaflight 2026.6.2 SITL with
+# msp_override_channels_mask = 8, recorded 2026-11-16. MSP OVERRIDE (permanent
+# ID 50) is box 22, so it is bit 22 of MSP_STATUS's mode flags.
+MSP_BOXIDS = 119
+BOX_MSP_OVERRIDE = 50
+FAKE_BOXIDS = bytes(
+    [
+        0,
+        1,
+        2,
+        5,
+        3,
+        6,
+        27,
+        11,
+        46,
+        56,
+        7,
+        13,
+        19,
+        26,
+        30,
+        32,
+        33,
+        34,
+        36,
+        37,
+        45,
+        49,
+        50,
+        51,
+        52,
+        53,
+        57,
+    ]
+)
+OVERRIDE_BIT = FAKE_BOXIDS.index(BOX_MSP_OVERRIDE)
+
+
+def fake_status(armed: bool = False, override: bool = False) -> bytes:
+    # cycle, i2c errors, sensors, flight mode flags (bit 0 ARM, bit 22 MSP
+    # OVERRIDE), profile, load, gyro cycle, 0 extra flag bytes,
+    # arming-disable flag count, arming-disable flags, config state
+    flags = int(armed) | (int(override) << OVERRIDE_BIT)
+    head = struct.pack("<HHHIBHH", 125, 0, 0x23, flags, 0, 5, 125)
     return head + bytes([0, 26]) + struct.pack("<I", FAKE_ARMING_FLAGS) + bytes([0])
 
 
@@ -127,6 +167,7 @@ FAKE_ANSWERS = {
     # vbat (u8, 0.1 V), mAh drawn, RSSI, amperage, voltage (u16, 0.01 V) at 7
     msp.MSP_ANALOG: struct.pack("<BHHhH", FAKE_VBAT_CV // 10, 0, 0, 0, FAKE_VBAT_CV),
     msp.MSP_STATUS: fake_status(),
+    MSP_BOXIDS: FAKE_BOXIDS,
     # Betaflight 4.5.1: MSP protocol 0, API 1.46. The gateway stays in BOOT
     # until this is answered (REQ-SAF-016).
     msp.MSP_API_VERSION: bytes([0, 1, 46]),
@@ -146,6 +187,10 @@ class FakeFc:
     def __init__(self, port):
         self.port = port
         self.answering = True
+        # #176: what MSP_BOXIDS and MSP_STATUS tell the gateway about MSP
+        # OVERRIDE. `boxes` without box 50 is an FC with mask 0.
+        self.override_on = False
+        self.boxes = FAKE_BOXIDS
         self.raw = bytearray()
         self.frames = []  # (time.monotonic(), msp.Frame)
         self.parser = msp.Parser()
@@ -199,7 +244,14 @@ class FakeFc:
                 self.frames += [(now, f) for f in frames]
             for f in frames:
                 if self.answering and f.direction == "<" and f.cmd in FAKE_ANSWERS:
-                    self.port.write(msp.encode_response(f.cmd, FAKE_ANSWERS[f.cmd]))
+                    self.port.write(msp.encode_response(f.cmd, self._answer(f.cmd)))
+
+    def _answer(self, cmd):
+        if cmd == msp.MSP_STATUS:
+            return fake_status(override=self.override_on)
+        if cmd == MSP_BOXIDS:
+            return self.boxes
+        return FAKE_ANSWERS[cmd]
 
 
 # The longest frame the gateway sends is MSP_SET_RAW_RC: 6 + 8 channels x 2 =
@@ -224,7 +276,13 @@ def stray_bytes(raw: bytes, frames) -> int:
 
 # What the gateway may send to the FC (ADR-009), and the only RC it may send
 # without an armed session: centred sticks, throttle low.
-POLLS = {msp.MSP_STATUS, msp.MSP_ATTITUDE, msp.MSP_ANALOG, msp.MSP_API_VERSION}
+POLLS = {
+    msp.MSP_STATUS,
+    msp.MSP_ATTITUDE,
+    msp.MSP_ANALOG,
+    msp.MSP_API_VERSION,
+    MSP_BOXIDS,  # read-only, ESP-originated (#176, MSP Cheat Sheet §3)
+}
 RC = msp.MSP_SET_RAW_RC
 NEUTRAL = msp.encode_rc(setpoint_to_rc(Setpoint(0, 0, 0, 0, 0)))
 
