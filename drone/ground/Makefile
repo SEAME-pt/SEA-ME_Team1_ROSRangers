@@ -6,14 +6,24 @@
 #                 this terminal, each node's output in logs/<service>/latest.log
 #   make down     stop the demo and the simulation (never flight_interface)
 #   make clean    down + remove this project's Docker images
-#   make fclean   clean + remove the venv, the workspace, logs/, Python caches and
-#                 the rest of this project's Docker objects (make smoke's too),
-#                 leaving drone/ground/ as it was cloned. The rest of Docker on
-#                 this PC is not touched
+#   make fclean   clean + remove the venv, the workspace, build/ (C++ library,
+#                 Betaflight SITL), logs/, Python caches and the rest of this
+#                 project's Docker objects (make smoke's too), leaving
+#                 drone/ground/ as it was cloned. The rest of Docker on this PC
+#                 is not touched
 #   make re       fclean, then all
-#   make test     every test: colcon test (unit + node) and drone/tests/ros
-#                 (pipeline). Without Jazzy: the unit tests only (= make unit)
-#   make unit     tests that need no ROS (ROS tests are skipped)
+#   make test     every suite, each runs even if one fails (tools/run_tests.sh):
+#                 colcon test of every ground package, the coverage gate (package
+#                 tests + drone/tests/ros, 90 %), sd_protocol_py, the C++ protocol
+#                 library (ctest, no coverage gate), px4_offboard_bridge,
+#                 tests/scripts, the HIL host part, pre-commit --all-files (fixes
+#                 files in place). Without Jazzy the ROS suites show SKIP and the
+#                 package tests run without ROS. A missing tool shows SKIP
+#   make unit     the suites that need no ROS (no pre-commit)
+#   make pkg-test / e2e-test   colcon test only / drone/tests/ros only
+#   make test-sitl Betaflight SITL + drone/tests/sitl. The first run clones
+#                 Betaflight (BF_VERSION, as CI) into build/betaflight, builds it
+#                 (network, a few minutes); BF_DIR=<checkout> uses another one
 #   make smoke    Docker smoke test: builds the images, runs the package tests
 #                 inside them, gesture -> intent -> mission across containers,
 #                 the echo monitor, clean stops, node logs (in logs/smoke)
@@ -62,8 +72,9 @@
 #   make sim only; sim-smoke is always headless). Logs: logs/px4/ (sim start-up, bridge),
 #   logs/px4-sitl/ (PX4, agent), logs/<node>/ as above.
 #
-# Every test target ends with a summary (passed/total per package or file)
-# and keeps its full output in logs/test/<target>.log.
+# Every test target ends with a summary (one row per suite, per package for
+# colcon: PASS, FAIL, SKIP or TIMEOUT) and keeps each suite's full output in
+# logs/test/<suite>.log. Each suite is stopped after SUITE_TIMEOUT (20m).
 #
 # The native workspace follows docs/PraticalPlan/06 Gestures/00 Gesture Pipeline.md
 # (Step 0), but lives here instead of ~/ros2_ws and ~/gesture-venv:
@@ -76,13 +87,23 @@ ROS     := /opt/ros/jazzy/setup.bash
 
 VENV    := gesture-venv
 WS      := ros2_ws
-PKGS    := gesture_node intent_node mission_node ground_bringup
+PKGS    := gesture_node intent_node mission_node flight_interface ground_bringup
 # Each package's folder (src/<component>/<package>), found by tools/pkg_dirs.sh: one
 # folder per package or it fails (#186). Looked up in the rules that use it, so
 # a missing package never breaks make down or make clean.
 FIND_PKG_DIRS := tools/pkg_dirs.sh src $(PKGS)
 E2E     := ../tests/ros
 TESTLOG := logs/test
+# Build output outside colcon: the C++ protocol library, Betaflight SITL.
+# Git ignores it (build*/); make fclean removes it.
+BUILD   := build
+BF_VERSION := 2026.6.2
+BF_DIR  ?= $(BUILD)/betaflight
+# Each test suite is stopped after this (CI's ground-ros2 limit)
+SUITE_TIMEOUT ?= 20m
+RUN_TESTS = ROS=$(ROS) WS=$(WS) VENV=$(VENV) PKGS="$(PKGS)" TESTLOG=$(TESTLOG) \
+	BUILD_DIR=$(BUILD) BF_DIR=$(BF_DIR) BF_VERSION=$(BF_VERSION) \
+	SUITE_TIMEOUT=$(SUITE_TIMEOUT) tools/run_tests.sh
 
 # Simulation (#86). The PX4 image (stage px4 of src/simulation/Dockerfile) is built
 # with plain docker build, not by compose, so make clean and fclean keep it:
@@ -130,10 +151,8 @@ PSK_FILE ?= $(HOME)/.config/seame-drone/psk.json
 # Teammates without Jazzy only get the containers and the unit tests
 ifneq ($(wildcard $(ROS)),)
 NATIVE  := ws
-TEST    := ros-test
 else
 NATIVE  := no-ros
-TEST    := unit
 endif
 
 all: no-flight-interface env-demo $(NATIVE) up
@@ -154,7 +173,8 @@ $(VENV)/.installed: src/gesture/gesture_node/requirements.txt
 # Only links whose target is gone, only under the workspace's build/ and install/.
 PRUNE_LINKS = find $(WS)/build $(WS)/install -xtype l -delete 2>/dev/null || true
 
-ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node $(WS)/.ground_bringup
+ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node $(WS)/.flight_interface \
+	$(WS)/.ground_bringup
 
 # Symlinks, not copies, so --symlink-install picks up .py edits without a rebuild.
 # Redone when PKGS changes, so an existing workspace gets new packages too.
@@ -173,13 +193,21 @@ $(WS)/.mission_node: $(WS)/.src src/mission/mission_node/setup.py src/mission/mi
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select mission_node
 	touch $@
 
+# Built here for its tests (make test); it runs in its container only
+# (make real). Its ESP backend needs sd_protocol: the venv has it (test-deps).
+$(WS)/.flight_interface: $(WS)/.src src/flight_interface/flight_interface/setup.py \
+		src/flight_interface/flight_interface/package.xml
+	$(PRUNE_LINKS)
+	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select flight_interface
+	touch $@
+
 # The modes (launch + parameter files, no code). Rebuilt when a file is added
 # or removed; with --symlink-install, edits to existing ones apply at once.
 # After the nodes it starts: colcon wants every package it depends on that is
-# in the workspace built first (flight_interface is not in this one yet).
+# in the workspace built first.
 BRINGUP := src/bringup/ground_bringup
 $(WS)/.ground_bringup: $(WS)/.src $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node \
-		$(BRINGUP)/setup.py $(BRINGUP)/package.xml \
+		$(WS)/.flight_interface $(BRINGUP)/setup.py $(BRINGUP)/package.xml \
 		$(wildcard $(BRINGUP)/launch/*.launch.py $(BRINGUP)/config/*.yaml)
 	$(PRUNE_LINKS)
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select ground_bringup
@@ -198,111 +226,45 @@ no-ros:
 
 # ---------- tests ----------
 
-# Bash helpers for the summaries, loaded with `eval "$$SUMMARY_SH"`.
-#   row NAME CODE PASSED TOTAL [NOTE]  one line: PASS/FAIL, passed/total, note
-#   n_before WORD TEXT                 "3 failed" -> 3 (0 if absent)
-#   n_after KEY TEXT                   "skipped=3" -> 3 (0 if absent)
-#   notes N LABEL ...                  "3 skipped, 1 failed" (non-zero counts)
-#   summary TITLE CODE ROW...          the block at the end; returns CODE
-define SUMMARY_SH
-row() {
-    local status=PASS
-    (($$2)) && status=FAIL
-    printf '  %-34s %s %5s/%-5s %s\n' "$$1" "$$status" "$$3" "$$4" "$${5:-}"
-}
-n_before() {
-    local n
-    n=$$(grep -oE "[0-9]+ $$1" <<<"$$2" | grep -oE '^[0-9]+' | head -n 1)
-    echo "$${n:-0}"
-}
-n_after() {
-    local n
-    n=$$(grep -oE "$$1=[0-9]+" <<<"$$2" | grep -oE '[0-9]+$$' | head -n 1)
-    echo "$${n:-0}"
-}
-notes() {
-    local out=()
-    while (($$# >= 2)); do
-        (($$1 > 0)) && out+=("$$1 $$2")
-        shift 2
-    done
-    local IFS=,
-    sed 's/,/, /g' <<<"$${out[*]}"
-}
-summary() {
-    local title=$$1 code=$$2
-    shift 2
-    echo
-    echo "=================== summary: $$title ==================="
-    printf '%s\n' "$$@"
-    ((code)) && echo "FAILED" || echo "ALL PASSED"
-    return "$$code"
-}
-endef
-export SUMMARY_SH
+# What the test suites need in the venv, beyond what make venv installs:
+#  * sd_protocol: a .pth file pointing at src/sd_protocol_py (always the
+#    current source, nothing written into the repo: no egg-info);
+#  * tests/scripts' requirements (esptool, pyserial), but not pytest: the
+#    system's pytest stays, the one ROS's launch_testing plugins work with;
+#  * pytest and pytest-cov only where the system has none (a PC without ROS).
+TEST_DEPS := $(VENV)/.test-deps
+$(TEST_DEPS): $(VENV)/.installed ../../scripts/requirements.txt
+	$(VENV)/bin/pip install -r <(grep -vE '^[[:space:]]*pytest\b' ../../scripts/requirements.txt)
+	$(VENV)/bin/python -c 'import pytest' 2>/dev/null || $(VENV)/bin/pip install pytest
+	$(VENV)/bin/python -c 'import pytest_cov' 2>/dev/null || $(VENV)/bin/pip install pytest-cov
+	site=$$($(VENV)/bin/python -c 'import sysconfig; print(sysconfig.get_path("purelib"))') \
+		&& echo "$(abspath src/sd_protocol_py)" >"$$site/seame_sd_protocol.pth"
+	$(VENV)/bin/python -c 'import sd_protocol'
+	touch $@
 
-test: $(TEST)
+test-deps: $(TEST_DEPS)
 
-# Same as CI's ground-ros2 job. The venv's Python runs them so gesture_node
-# finds MediaPipe; it also sees the system pytest and ROS. Both parts run even
-# if the first fails, each with its own summary.
-ros-test: ws
-	@$(MAKE) --no-print-directory pkg-test; a=$$?; \
-	$(MAKE) --no-print-directory e2e-test; b=$$?; \
-	exit $$((a || b))
+# Every suite, one summary row each (tools/run_tests.sh). With Jazzy the
+# workspace is built first; without it the ROS suites show SKIP.
+test: $(NATIVE) test-deps
+	@$(RUN_TESTS) test
 
-# The packages' tests (unit + node), the way ROS runs them. One row per package.
-pkg-test: ws
-	@eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); \
-	( source $(ROS) && source $(WS)/install/setup.bash && source $(VENV)/bin/activate \
-		&& cd $(WS) \
-		&& { colcon test-result --delete-yes >/dev/null || true; } \
-		&& python3 -m colcon test --packages-select $(PKGS) --event-handlers console_direct+ \
-		&& colcon test-result --verbose ) 2>&1 | tee $(TESTLOG)/pkg-test.log; \
-	code=$${PIPESTATUS[0]}; rows=(); \
-	for p in $(PKGS); do \
-		line=$$(cd $(WS) && colcon test-result --all 2>/dev/null | grep "^build/$$p/"); \
-		if [[ -z $$line ]]; then rows+=("$$(row $$p 1 0 '?' 'no results (crash or not built)')"); code=1; continue; fi; \
-		t=$$(n_before tests "$$line"); e=$$(n_before errors "$$line"); \
-		f=$$(n_before failures "$$line"); k=$$(n_before skipped "$$line"); \
-		rows+=("$$(row $$p $$((e + f)) $$((t - e - f - k)) $$t "$$(notes $$k skipped $$f failed $$e errors)")"); \
-	done; \
-	summary "make pkg-test (colcon: unit + node tests)" $$code "$${rows[@]}"
+# The suites that need no ROS (the package tests' ROS cases are skipped)
+unit: test-deps
+	@$(RUN_TESTS) unit
 
-# drone/tests/ros: pipeline, contracts, monitor, entrypoint. One row per file.
-e2e-test: ws
-	@eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); \
-	( source $(ROS) && source $(WS)/install/setup.bash && source $(VENV)/bin/activate \
-		&& python3 -m pytest $(E2E) -v ) 2>&1 | tee $(TESTLOG)/e2e-test.log; \
-	code=$${PIPESTATUS[0]}; rows=(); \
-	for f in $$(grep -oE '^[^ ]+\.py::' $(TESTLOG)/e2e-test.log | sort -u); do \
-		lines=$$(grep -F "$$f" $(TESTLOG)/e2e-test.log | grep -E ' (PASSED|FAILED|ERROR|SKIPPED)'); \
-		p=$$(grep -c ' PASSED' <<<"$$lines"); x=$$(grep -cE ' (FAILED|ERROR)' <<<"$$lines"); \
-		k=$$(grep -c ' SKIPPED' <<<"$$lines"); \
-		rows+=("$$(row "$$(basename "$${f%::}")" $$x $$p $$((p + x + k)) "$$(notes $$k skipped $$x failed)")"); \
-	done; \
-	last=$$(grep -E '^=+ .*[0-9]+ (passed|failed|error)' $(TESTLOG)/e2e-test.log | tail -n 1); \
-	p=$$(n_before passed "$$last"); x=$$(( $$(n_before failed "$$last") + $$(n_before 'errors?' "$$last") )); \
-	k=$$(n_before skipped "$$last"); \
-	rows+=("$$(row total $$code $$p $$((p + x + k)) "$$(notes $$k skipped $$x 'failed or errors')")"); \
-	summary "make e2e-test (drone/tests/ros)" $$code "$${rows[@]}"
+# colcon test only, one row per package (as CI's first ground-ros2 step)
+pkg-test: ws test-deps
+	@$(RUN_TESTS) pkg
 
-# Every suite runs even if one fails. One row per package, plus drone/tests/ros.
-unit:
-	@dirs=$$($(FIND_PKG_DIRS)) || exit 1; \
-	eval "$$SUMMARY_SH"; mkdir -p $(TESTLOG); : >$(TESTLOG)/unit.log; code=0; rows=(); \
-	for dir in $$dirs $(E2E); do \
-		( if [[ $$dir == $(E2E) ]]; then python3 -m unittest discover -s $$dir -v; \
-			else cd $$dir && python3 -m unittest discover -s test -v; fi ) 2>&1 | tee $(TESTLOG)/unit.part; \
-		c=$${PIPESTATUS[0]}; ((c)) && code=1; cat $(TESTLOG)/unit.part >>$(TESTLOG)/unit.log; \
-		ran=$$(grep -oE '^Ran [0-9]+' $(TESTLOG)/unit.part | grep -oE '[0-9]+'); ran=$${ran:-0}; \
-		end=$$(grep -E '^(OK|FAILED)' $(TESTLOG)/unit.part | tail -n 1); \
-		k=$$(n_after skipped "$$end"); f=$$(n_after failures "$$end"); e=$$(n_after errors "$$end"); \
-		name=$${dir##*/}; [[ $$dir == $(E2E) ]] && name=drone/tests/ros; \
-		rows+=("$$(row $$name $$c $$((ran - k - f - e)) $$ran "$$(notes $$k skipped $$f failed $$e errors)")"); \
-	done; \
-	rm -f $(TESTLOG)/unit.part; \
-	summary "make unit (no ROS needed)" $$code "$${rows[@]}"
+# drone/tests/ros only: pipeline, contracts, monitor, entrypoint
+e2e-test: ws test-deps
+	@$(RUN_TESTS) e2e
+
+# Betaflight SITL (as CI's betaflight-sitl), not part of make test: the first
+# run clones and builds Betaflight
+test-sitl: test-deps
+	@$(RUN_TESTS) sitl
 
 # Its summary comes from tools/smoke_test.sh itself
 smoke:
@@ -534,7 +496,7 @@ sim-smoke: no-flight-interface env-sim sim-smoke-mask px4-image-present
 # leaves, and networks. Kept, as other projects may use them: the
 # ros:jazzy-ros-base base image and Docker's build cache.
 fclean: clean
-	rm -rf $(VENV) $(WS) ../.pytest_cache
+	rm -rf $(VENV) $(WS) $(BUILD) ../.pytest_cache
 	find logs -mindepth 1 -maxdepth 1 ! -name .gitignore -exec rm -rf {} +
 	find src docker tools $(E2E) -path src/sd_protocol_py -prune -o \
 		\( -name __pycache__ -o -name .pytest_cache -o -name '*.egg-info' \) -prune -exec rm -rf {} +
@@ -548,7 +510,8 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all venv ws no-ros test ros-test pkg-test e2e-test unit smoke up down clean fclean re \
+.PHONY: all venv ws no-ros test test-deps test-sitl pkg-test e2e-test unit smoke up down \
+	clean fclean re \
 	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask \
 	no-flight-interface psk-file env-demo env-sim env-real \
 	real real-dry real-check real-steps real-down
