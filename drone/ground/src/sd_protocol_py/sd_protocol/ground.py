@@ -8,8 +8,11 @@ receive checks exist once. Python only: the ESP side is sd::Link in C++.
   TcpReader      cuts the TCP byte stream into frames (OD-03)
   load_psk       the PSK from SEAME_PSK or ~/.config/seame-drone/secrets.json
 
-`now` is monotonic seconds; it only fills the header's t_send_us, which is for
-latency logging (spec §1).
+The header's t_send_us comes from CLOCK_MONOTONIC_RAW (Protocol Spec §1, #204):
+the ESP's late check compares it with its own clock, and NTP can slew
+CLOCK_MONOTONIC by up to 500 ppm. The `now` arguments (monotonic seconds) are
+the callers' own time; they no longer fill t_send_us. A HELLO_ACK more than
+HELLO_ACK_MAX_US after the HELLO is refused (REQ-SAF-024).
 """
 
 import json
@@ -18,6 +21,7 @@ import os
 import pathlib
 import re
 import secrets
+import time
 
 from sd_protocol.crypto import NONCE_SIZE, derive_keys
 from sd_protocol.frame import HEADER_SIZE, Header, MsgType, encode_frame, frame_size
@@ -87,16 +91,33 @@ def _check_private(path, warn):
 
 
 def t_send_us(now):
-    """Header t_send_us (u32) from monotonic seconds."""
+    """u32 microseconds from seconds."""
     return int(now * 1_000_000) & 0xFFFFFFFF
+
+
+# Linux only; elsewhere the plain monotonic clock, for tests.
+_RAW = getattr(time, "CLOCK_MONOTONIC_RAW", None)
+# REQ-SAF-024 (#204): the ESP seeds its late-check offset from the HELLO, so a
+# delayed handshake must not open a session.
+HELLO_ACK_MAX_US = 100_000
+
+
+def raw_now_us():
+    """Header t_send_us: CLOCK_MONOTONIC_RAW in u32 microseconds."""
+    if _RAW is None:
+        return t_send_us(time.monotonic())
+    return time.clock_gettime_ns(_RAW) // 1000 & 0xFFFFFFFF
 
 
 class GroundSession:
     """One ground session: HELLO, then frames sealed with ground_to_esp and
     checked with esp_to_ground by one Receiver per transport."""
 
-    def __init__(self, psk, nonce=None):
+    def __init__(self, psk, nonce=None, clock_us=raw_now_us):
         self.psk = psk
+        self._clock_us = clock_us  # t_send_us source; tests inject a fake
+        self.hello_sent_us = None
+        self.late_acks = 0  # HELLO_ACKs refused for REQ-SAF-024
         self.nonce = nonce if nonce is not None else secrets.token_bytes(NONCE_SIZE)
         self.session_id = 0
         self.keys = None
@@ -116,16 +137,26 @@ class GroundSession:
     # ---------- handshake ----------
     def hello(self, now):
         payload = encode_hello(Hello(proto=1, ground_nonce=self.nonce))
-        header = Header(type=MsgType.HELLO, seq=1, t_send_us=t_send_us(now))
+        self.hello_sent_us = self._clock_us()
+        header = Header(type=MsgType.HELLO, seq=1, t_send_us=self.hello_sent_us)
         return encode_frame(header, payload, self.psk)
 
     def take_ack(self, frame):
-        """True if `frame` is this session's HELLO_ACK; then the keys are set."""
+        """True if `frame` is this session's HELLO_ACK; then the keys are set.
+        A valid one more than HELLO_ACK_MAX_US after our HELLO is refused and
+        counted in late_acks (REQ-SAF-024): start a new handshake, with a new
+        GroundSession (a nonce never repeats)."""
         result, f = receive_handshake(Role.GROUND, frame, self.psk)
         if result != HandshakeResult.ACCEPTED or f is None:
             return False
         ack = decode_hello_ack(f.payload)
         if ack is None:
+            return False
+        if self.hello_sent_us is None:
+            return False  # no HELLO of ours: not our HELLO_ACK
+        waited_us = (self._clock_us() - self.hello_sent_us) & 0xFFFFFFFF
+        if waited_us > HELLO_ACK_MAX_US:
+            self.late_acks += 1
             return False
         self.session_id = ack.session_id
         self.keys = derive_keys(self.psk, self.nonce, ack.esp_nonce)
@@ -140,7 +171,7 @@ class GroundSession:
             type=msg_type,
             session_id=self.session_id,
             seq=seq,
-            t_send_us=t_send_us(now),
+            t_send_us=self._clock_us(),
         )
         return encode_frame(header, payload, self.keys.ground_to_esp)
 

@@ -6,7 +6,7 @@ import logging
 import pytest
 
 from sd_protocol.crypto import derive_keys
-from sd_protocol.frame import HEADER_SIZE, Header, MsgType, encode_frame
+from sd_protocol.frame import HEADER_SIZE, Header, MsgType, decode_frame, encode_frame
 from sd_protocol.ground import GroundSession, TcpReader, load_psk, t_send_us
 from sd_protocol.messages import (
     EspState,
@@ -191,3 +191,64 @@ def test_tcp_reader_waits_for_a_frame_cut_after_its_header():
     assert reader.feed(a[-1:] + b[: HEADER_SIZE + 1]) == [a]
     assert reader.feed(b[HEADER_SIZE + 1 :]) == [b]
     assert reader.buf == b""
+
+
+# ---------- #204: t_send_us from CLOCK_MONOTONIC_RAW, REQ-SAF-024 ----------
+class FakeClock:
+    def __init__(self, us=1_000_000):
+        self.us = us
+
+    def __call__(self):
+        return self.us & 0xFFFFFFFF
+
+
+def test_frames_carry_the_raw_clock_not_now():
+    clock = FakeClock(7_000_000)
+    s = GroundSession(PSK, clock_us=clock)
+    frame, _ = esp_ack(s)  # HELLO at 7.000 s
+    assert s.take_ack(frame)
+    clock.us = 7_020_000
+    sp = s.setpoint(123.0)  # `now` is the caller's time, not the stamp
+    _, f = decode_frame(sp, s.keys.ground_to_esp)
+    assert f.header.t_send_us == 7_020_000
+
+
+def test_raw_now_us_reads_clock_monotonic_raw(monkeypatch):
+    import time
+
+    from sd_protocol import ground
+
+    asked = []
+
+    def fake(clock):
+        asked.append(clock)
+        return 5_000_123_456_789
+
+    monkeypatch.setattr(time, "clock_gettime_ns", fake)
+    assert ground.raw_now_us() == 5_000_123_456_789 // 1000 & 0xFFFFFFFF
+    assert asked == [time.CLOCK_MONOTONIC_RAW]
+
+
+@pytest.mark.parametrize("waited_us, opened", [(100_000, True), (100_001, False)])
+def test_hello_ack_later_than_100_ms_is_refused(waited_us, opened):
+    clock = FakeClock()
+    s = GroundSession(PSK, clock_us=clock)
+    frame, _ = esp_ack(s)
+    clock.us += waited_us
+    assert s.take_ack(frame) is opened
+    assert s.is_open is opened
+    assert s.late_acks == (0 if opened else 1)
+
+
+def test_hello_ack_bound_survives_the_clock_wrap():
+    clock = FakeClock(0xFFFFFFF0)
+    s = GroundSession(PSK, clock_us=clock)
+    frame, _ = esp_ack(s)
+    clock.us = 0x1_0000_0100  # 272 us later, across the u32 wrap
+    assert s.take_ack(frame)
+
+
+def test_hello_ack_without_our_hello_is_refused():
+    s = GroundSession(PSK)
+    frame, _ = esp_ack(GroundSession(PSK))  # another session's HELLO
+    assert not s.take_ack(frame) and not s.is_open
