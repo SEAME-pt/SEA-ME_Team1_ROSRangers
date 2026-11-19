@@ -17,10 +17,11 @@ set -euo pipefail
 LAB_CON=${HIL_LAB_CON:-netplan-wlan0-SEAME}
 IFACE=${HIL_WIFI_IFACE:-wlan0}
 JOIN_WAIT_S=25 # a join takes about 6 s on the bench
-# The lab's 5 GHz AP sometimes ignores the first login after the window: wpa
-# times out at 10 s, NetworkManager restarts the join at its own 25 s limit
-# and is on the lab 0.6 s later (#193, runs of 2026-11-17 and 2026-11-18).
-# REJOIN_WAIT_S lets that retry finish.
+# The lab's 5 GHz AP sometimes ignores the Pi's logins after the window, and
+# NetworkManager keeps retrying: back after 25.6 s, 25.6 s and 49 s (#193,
+# 2026-11-17 to 2026-11-19). So the re-join waits for what is left of this
+# run's window (window_s below), REJOIN_WAIT_S at least; a run whose test
+# ends early gets more.
 REJOIN_WAIT_S=35
 KILL_GRACE_S=5
 # A window is JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S offline
@@ -63,6 +64,7 @@ con="hil-softap-${GITHUB_RUN_ID:-local}-$$"
 # and waits for a later window for as long as a whole window can last: both
 # follow from the limits above, so changing those keeps it in step.
 window_max_s=$((JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S))
+window_s=$((JOIN_WAIT_S + test_s + KILL_GRACE_S + REJOIN_WAIT_S)) # this run's
 RUNNER_TRACKING_ID="" setsid -f bash -c '
   sleep "$1" || exit 1 # killed while waiting: someone stopped the watchdog
   # Never act while this run is still alive: nothing bounds how long a
@@ -77,7 +79,7 @@ RUNNER_TRACKING_ID="" setsid -f bash -c '
   sudo nmcli connection modify --temporary "$2" connection.autoconnect yes
   nmcli -t -f NAME connection show --active | grep -qxF "$2" && exit 0
   sudo nmcli --wait "$6" connection up "$2"
-' watchdog "$((JOIN_WAIT_S + test_s + KILL_GRACE_S + REJOIN_WAIT_S + WATCHDOG_GRACE_S))" \
+' watchdog "$((window_s + WATCHDOG_GRACE_S))" \
   "$LAB_CON" "$con" "$lock" "$window_max_s" "$REJOIN_WAIT_S" "$$" >/dev/null 2>&1 9>&-
 
 # RUNNER_TEMP is wiped after each job, so a SIGKILL does not leave the
@@ -91,6 +93,7 @@ psk_file=$(mktemp -p "${RUNNER_TEMP:-/tmp}")
 # at once. 9>&-: a step still running after the script exits must not hold
 # the lock.
 bg_pid=
+left_lab=
 step() {
   "$@" 9>&- &
   bg_pid=$!
@@ -118,10 +121,16 @@ restore() {
   fi
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
-  local t0
+  # What is left of the window since the lab was left; REJOIN_WAIT_S if it
+  # never was (a failed add) or at least
+  local wait_s=$REJOIN_WAIT_S t0
+  if [[ -n $left_lab ]]; then
+    wait_s=$((window_s - (SECONDS - left_lab)))
+    ((wait_s >= REJOIN_WAIT_S)) || wait_s=$REJOIN_WAIT_S
+  fi
   t0=$(date +%s.%N)
-  if sudo nmcli --wait "$REJOIN_WAIT_S" connection up "$LAB_CON"; then
-    # Over JOIN_WAIT_S: the AP ignored the first login and REJOIN_WAIT_S
+  if sudo nmcli --wait "$wait_s" connection up "$LAB_CON"; then
+    # Over JOIN_WAIT_S: the AP ignored the first login and the longer wait
     # saved the run (#193)
     awk -v t0="$t0" -v t1="$(date +%s.%N)" 'BEGIN { printf "Lab re-join took %.1f s\n", t1 - t0 }'
   else
@@ -158,6 +167,7 @@ step sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con"
   802-11-wireless.powersave 2 \
   802-11-wireless.band bg 802-11-wireless.channel "${SEAME_AP_CHANNEL:-6}" \
   ipv4.method manual ipv4.addresses 192.168.4.2/24 ipv6.method disabled >/dev/null
+left_lab=$SECONDS # the window starts: the lab goes down with this join
 step sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
 # What the driver really does, in the log of every run
 iw dev "$IFACE" get power_save 2>/dev/null || echo "Power save: unknown (no iw)"

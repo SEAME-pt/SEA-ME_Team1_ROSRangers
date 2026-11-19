@@ -20,8 +20,10 @@ import pytest
 SCRIPT = Path(__file__).with_name("softap_window.sh")
 LAB = "netplan-wlan0-SEAME"
 PASSWORD = "not-a-real-password"
-REJOIN = f"--wait 35 connection up {LAB}"  # the script's own re-join (#193)
+# A re-join of the lab, its --wait read out by rejoin_waits() (#193)
+REJOIN = f"--wait N connection up {LAB}"
 WATCHDOG_REJOIN = REJOIN  # the watchdog re-joins the same way, after the script
+REJOIN_RE = re.compile(rf"^--wait (\d+) connection up {LAB}$")
 LAB_AUTO_OFF = f"connection modify --temporary {LAB} connection.autoconnect no"
 LAB_AUTO_ON = f"connection modify --temporary {LAB} connection.autoconnect yes"
 
@@ -36,7 +38,7 @@ case "$*" in
   *"connection up hil-softap-"*)
     /bin/sleep "${{SLOW_JOIN:-0}}"
     [[ -z $FAIL_JOIN ]] || exit 1 ;;
-  "{REJOIN}")
+  "--wait "*" connection up {LAB}")
     /bin/sleep "${{SLOW_REJOIN:-0}}"
     [[ -z $FAIL_REJOIN ]] || exit 1
     echo rejoined >> "$NMCLI_LOG" ;;
@@ -107,10 +109,18 @@ def run(env, *args):
     )
 
 
-def nmcli_calls(env):
+def raw_nmcli_calls(env):
     log = Path(env["NMCLI_LOG"])
     lines = log.read_text().splitlines() if log.exists() else []
     return [line for line in lines if line != "rejoined"]
+
+
+def nmcli_calls(env):
+    return [REJOIN if REJOIN_RE.match(c) else c for c in raw_nmcli_calls(env)]
+
+
+def rejoin_waits(env):
+    return [int(m[1]) for c in raw_nmcli_calls(env) if (m := REJOIN_RE.match(c))]
 
 
 def rejoined(env):
@@ -155,6 +165,23 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert rejoin == REJOIN
     assert not any(PASSWORD in call for call in calls), "password on the command line"
     assert list(Path(env["RUNNER_TEMP"]).iterdir()) == [], "password file left"
+
+
+def test_rejoin_waits_for_the_rest_of_the_window(env):
+    # The lab's AP can ignore logins for 45 s and more (#193): the re-join
+    # gets what is left of this run's window, so the window never grows
+    window_s = JOIN_WAIT_S + 10 + KILL_GRACE_S + REJOIN_WAIT_S
+    assert run(env, "10", "--", "true").returncode == 0
+    assert window_s - 1 <= rejoin_waits(env)[-1] <= window_s
+    assert run(env, "10", "--", "/bin/sleep", "3").returncode == 0
+    assert window_s - 4 <= rejoin_waits(env)[-1] <= window_s - 3
+
+
+def test_watchdog_rejoin_waits_rejoin_wait_s(env):
+    env |= {"FAIL_REJOIN": "1", "LAB_ACTIVE": "0"}
+    assert run(env, "10", "--", "true").returncode == 1
+    open_gate_and_wait_for(env, WATCHDOG_REJOIN, after=len(nmcli_calls(env)))
+    assert rejoin_waits(env)[-1] == REJOIN_WAIT_S
 
 
 def test_successful_rejoin_prints_its_time(env):
