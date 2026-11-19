@@ -49,6 +49,12 @@ constexpr ConnId kNoConn = 0xFF;
 // Fills `out` with `n` random bytes. On the ESP: the hardware RNG (spec §1).
 using RandomFill = void (*)(std::uint8_t *out, std::size_t n);
 
+// Late check bound (spec §4 rule 3a, #204): 200 ms, provisional until ESP-S1-09
+// is re-run with the real t_send_us (BrunoBMFT on #171).
+constexpr std::uint32_t kLateBoundMs = 200;
+// A larger late_bound_ms is clamped to this (10 s, #205 review).
+constexpr std::uint32_t kLateBoundMaxMs = 10000;
+
 struct LinkConfig {
   Key psk;
   // msp_override_channels_mask set in Betaflight (ADR-010). An
@@ -57,6 +63,10 @@ struct LinkConfig {
   FailsafeOutput failsafe_output;
   char fw_version[kFwVersionSize]; // raw bytes, not NUL-terminated
   RandomFill random;
+  // A SETPOINT, ARM_CONTROL_REQUEST or RESUME_REQUEST that arrives more than
+  // this after it was sent (against the session's offset) is refused as
+  // reject:late. 0 turns the check off (host tests only).
+  std::uint32_t late_bound_ms = kLateBoundMs;
 };
 
 // Where the link's frames go. The firmware owns the sockets.
@@ -198,7 +208,8 @@ private:
   void advance(std::uint32_t now_ms);
   void on_hello(ConnId conn, const Frame &f, std::uint32_t now_ms);
   void open_session(Session &s, std::uint32_t id, const DirectionKeys &keys,
-                    ConnId conn, std::uint32_t now_ms);
+                    std::uint32_t hello_t_send_us, ConnId conn,
+                    std::uint32_t now_ms);
   void close_session(Session &s);
   void drop_pending(ConnId keep_conn);
   void confirm_pending(std::uint32_t now_ms);

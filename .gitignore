@@ -20,4 +20,7 @@ results/
 .coverage
 temp/
 build*/
-# REQ-SW-005 (#146): the ESP loop log is committed next to its plots
+
+# Late-check replay fixtures (#204): bench data, built locally by make_replay.py
+# from results/, never committed (the LateReplay test skips without them)
+drone/tests/vectors/replay/*.csv
