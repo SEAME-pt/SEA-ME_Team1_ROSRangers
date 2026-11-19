@@ -164,6 +164,16 @@ Paulo - Continuar com issues pendentes da semana passada. Avancar com a issue 17
 **Blockers**
 Geral - USB
 
+19/Nov - 11:04/11:09
+Bruno - Acabar o issue #186, arch documento. 
+Guilherme - A perceber o problema com o HIL e corregir. Arch documento
+Paulo - Avançar com issues onde não existe blockers
+Tiago - Terminou teste sensor ThoneFlow, avanço no Gazebo. Tentar perceber cage
+**Blocker**
+Paulo - Drone
+Tiago - Drone
+Guilherme - Esperar por runs no Hil e pelo o Bruno terminar o seu issue.
+
 ---
 
 ## Glossary
