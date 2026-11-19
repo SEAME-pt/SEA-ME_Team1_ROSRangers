@@ -19,7 +19,9 @@ import time
 import pytest
 from bench import (
     APP_BAUD,
+    BOX_MSP_OVERRIDE,
     FAKE_ARMING_FLAGS,
+    FAKE_BOXIDS,
     FAKE_HEADING,
     FAKE_PITCH,
     FAKE_ROLL,
@@ -236,6 +238,26 @@ def test_garbage_is_rejected_and_never_reaches_the_fc(fake_fc, session):
     rejected = (states[-1].rx_rejected - before) & 0xFFFF
     assert rejected >= len(garbage) - 1, [n for n, _ in garbage]
     assert states[-1].esp_state == EspState.SESSION_IDLE
+    check_frames(*fake_fc.snapshot())
+
+
+def test_override_active_follows_the_fc(fake_fc, session):
+    """#176 on the real ESP: STATE.override_active is 1 only while MSP_STATUS
+    has MSP OVERRIDE's bit (found through MSP_BOXIDS), 0 when it is clear, and
+    2 (unknown) for an FC without the box (msp_override_channels_mask 0)."""
+    try:
+        session.stream(1.5)  # the ESP reads the box list (1 Hz) and learns the peer
+        assert session.stream(0.6)[-1].override_active == 0
+        fake_fc.override_on = True
+        assert session.stream(0.6)[-1].override_active == 1  # STATUS at 5 Hz
+        fake_fc.override_on = False
+        assert session.stream(0.6)[-1].override_active == 0
+        fake_fc.boxes = bytes(b for b in FAKE_BOXIDS if b != BOX_MSP_OVERRIDE)
+        fake_fc.override_on = True  # the bit alone means nothing without the box
+        assert session.stream(1.5)[-1].override_active == 2  # next box list read
+    finally:
+        fake_fc.boxes = FAKE_BOXIDS  # module-scoped fake FC: leave it as found
+        fake_fc.override_on = False
     check_frames(*fake_fc.snapshot())
 
 
