@@ -514,6 +514,42 @@ def test_the_esps_rx_rejected_wraps_are_counted_per_session(clock, fake, backend
     assert clock.states[-1]["esp_rx_rejected"] == 3
 
 
+def test_a_long_state_gap_restarts_the_esps_reject_total(clock, fake, backend):
+    """#223 review (BrunoBMFT): an inactive node keeps its session with no
+    STATE for any length of time, and meanwhile the ESP's u16 count can wrap
+    unseen. Total 65,541 (one wrap counted), then 70,000 rejects during a 4 s
+    gap: the raw value comes back as 4,469, higher than 5, so no new wrap is
+    seen. Without the restart the total would read 70,005, silently 65,536 too
+    low (the true total is 135,541). After a gap longer than RECONNECT_AFTER
+    the total restarts from the raw value instead, and wraps are counted from
+    there."""
+    fake.rx_rejected = 65_530
+    clock.run(0.2)
+    fake.rx_rejected = 5  # one wrap
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+    fake.send_state = False
+    clock.run(RECONNECT_AFTER + 1.0, send=False)  # quiet node, session kept
+    assert backend.session_open
+    fake.rx_rejected = (5 + 70_000) % 65_536  # 4,469
+    fake.send_state = True
+    assert clock.run(0.2)["esp_rx_rejected"] == 4_469  # restarted, not 70,005
+    fake.rx_rejected = 65_530
+    clock.run(0.2)
+    fake.rx_rejected = 5  # a wrap after the restart is still counted
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+
+
+def test_a_short_state_gap_keeps_counting_wraps(clock, fake, backend):
+    # 2 s without STATE (under RECONNECT_AFTER): the total goes on, wraps counted.
+    fake.rx_rejected = 65_530
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_530
+    fake.send_state = False
+    clock.run(2.0)
+    fake.rx_rejected = 5
+    fake.send_state = True
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+
+
 def test_arm_refused_fc_not_answering_is_kept_raw(clock, fake, backend):
     """#179 D2: ARM_CONTROL_ACK result 4. This node never sends ARM; a stray
     ACK is recorded, not raised."""

@@ -2,7 +2,7 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.6
+version: 1.6.1
 date: 2026-10-12
 updated: 2026-11-16
 project: SEA autonomous drone
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.6 (`override_active` values, #176; v1.5 is the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
+> [!success] Status: ACCEPTED v1.6.1 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -299,7 +299,7 @@ Found while writing the C++ library (#99) and decided on 2026-11-16 (GitHub #149
 
 | Item | Decision |
 |---|---|
-| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). A wrap is missed only with 65,536 rejects or more between two received `STATE`s (25 Hz). Wraps before the ground's first `STATE` are not known; the total is for diagnostics only. The ground calls `reset()` on **every new session** (each `HELLO_ACK`): `STATE` has no boot id, so a reboot (e.g. 500 → 3) would otherwise look like a wrap, a false jump of 65,536 rejects. A reboot always ends the session; wraps of an earlier session on the same boot are forgotten |
+| `STATE.rx_rejected` width | The ESP counts in 32 bits (the total over every receiver since boot) and sends the low 16 bits: the field **wraps** to 0 after 65,535, so new rejects always show, also during a flood. The ground counts the wraps: a value lower than the previous one means +65,536 (`sd_protocol.WrapCounter`). The ground also restarts the total (from that `STATE`'s value) when a `STATE` comes more than 3 s (`flight_interface`'s `RECONNECT_AFTER`) after the previous one: an inactive ground keeps its session with no `STATE` for any length of time, and the count may wrap unseen in such a gap (#223 review). So within one count a wrap is missed only with 65,536 rejects within 3 s, ~22,000 refused frames per second into an ESP8266, not reachable. A replayed or reordered `STATE` can't fake a wrap: the ground feeds `WrapCounter` only from `STATE`s its Receiver accepted, in order, and the Receiver accepts only a `seq` newer than the last one ([[ADR-003 Sequence Acceptance|ADR-003]]), so an older `STATE` never reaches `update()`. Wraps before the ground's first `STATE` are not known; the total is for diagnostics only. The ground calls `reset()` on **every new session** (each `HELLO_ACK`): `STATE` has no boot id, so a reboot (e.g. 500 → 3) would otherwise look like a wrap, a false jump of 65,536 rejects. A reboot always ends the session; wraps of an earlier session on the same boot are forgotten |
 | Frames with no session open | Counted in `rx_rejected` (`reject:no_session`, UDP with no session, bad `HELLO`) |
 | Per-reason and ADR-003 counters (`bad_tag`, `duplicate_seq`, `old_seq`, gaps, …) | Not sent to the ground in v0: `STATE` carries the total only. The per-reason counters stay in the library, where the unit tests and the golden vectors check them. Revisit in Module 2 (a `CONFIG_GET` Info key or an `EVENT` per counter) |
 
@@ -325,6 +325,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | 2026-11-16 | 1.4.2 | No wire change. Counter reporting decided (#149, §7.5): `STATE.rx_rejected` wraps to 0 after 65,535 and the ground counts the wraps (`WrapCounter`); it counts no-session frames; the per-reason and ADR-003 counters are not sent in v0. The ESP used to saturate at 65,535. |
 | 2026-11-16 | 1.5 | Late check (§4 rule 3a, #204, safety pilot's decision on spike #171): `reject:late` for `SETPOINT`, `ARM_CONTROL_REQUEST` and `RESUME_REQUEST` more than 200 ms (provisional) late against the session's offset (seeded from `HELLO`, 200 ppm drift). The ground's `t_send_us` is `CLOCK_MONOTONIC_RAW` (§1). Same bytes on the wire; a frame held back is now refused. Vectors `late_setpoint_rejected`, `late_across_both_wraps`, `late_held_40_min`, `late_drift_allowance_past_71_min` (§6, group 5). Every ground client drops a `HELLO_ACK` later than 100 ms and starts a new handshake (REQ-SAF-024): `sd_protocol.ground` (so `flight_interface`'s ESP backend) and `scripts/ground_link.py`. The drift allowance's time is 64-bit (no wrap after 71.6 min), `late_bound_ms` is clamped to 10 s (#205 review). (v1.5 was planned for the `override_active` values of #176, PR #198; they become v1.6.) |
 | 2026-11-19 | 1.6 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
+| 2026-11-19 | 1.6.1 | No wire change. §7.5 states when a `rx_rejected` wrap can be missed and why a replayed `STATE` can't fake one; the ground restarts the total after a `STATE` gap longer than 3 s, so a missed wrap needs 65,536 rejects within 3 s (#149, PR #223, BrunoBMFT's and ThiagoTEP's reviews). |
 
 ## 9. Glossary
 

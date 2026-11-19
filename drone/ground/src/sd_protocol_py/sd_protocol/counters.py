@@ -5,11 +5,19 @@ class WrapCounter:
     """Total of a u16 counter that wraps to 0 after 65535, such as
     STATE.rx_rejected.
 
-    Feed every value received with update(). When a value is lower than the
-    previous one the counter wrapped, so 65536 is added. A wrap is missed only
-    if the counter moves by 65536 or more between two values the ground
-    receives (STATE comes at 25 Hz). Wraps before the first value are not
+    Feed it with update(). When a value is lower than the previous one the
+    counter wrapped, so 65536 is added. Wraps before the first value are not
     known: the total starts at the first value received.
+
+    What the caller must do:
+      * Feed only values from STATEs a Receiver accepted, in the order they
+        were accepted. The Receiver accepts only a seq newer than the last
+        one (ADR-003), so a replayed or reordered STATE, with its older and
+        lower value, never reaches update() and can't fake a wrap.
+      * A wrap is missed if the counter moves by 65536 or more between two
+        values fed. If the values can be far apart (no STATE for a while),
+        call reset() first after a long gap: the total then starts again from
+        the next value instead of reading 65536 too low.
 
     Call reset() on every new session (each HELLO_ACK). STATE carries no boot
     id, so the ground cannot tell an ESP reboot from a reconnect; without the
