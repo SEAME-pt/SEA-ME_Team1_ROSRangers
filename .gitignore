@@ -20,3 +20,4 @@ results/
 .coverage
 temp/
 build*/
+# REQ-SW-005 (#146): the ESP loop log is committed next to its plots
