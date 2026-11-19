@@ -7,8 +7,13 @@ class WrapCounter:
 
     Feed every value received with update(). When a value is lower than the
     previous one the counter wrapped, so 65536 is added. A wrap is missed only
-    if the counter moves by 65536 or more between two values the ground
-    receives (STATE comes at 25 Hz). Wraps before the first value are not
+    if the counter moves by 65536 or more between two STATEs the ground
+    receives (at most RECONNECT_AFTER, ~3 s, apart within one session: without
+    a STATE for that long the session is dropped and the counter reset). That
+    is ~22,000 refused frames per second into an ESP8266, not reachable. A
+    replayed or reordered STATE can't fake a wrap: the ground's Receiver
+    accepts only a seq newer than the last one (ADR-003), so an older STATE is
+    dropped before it reaches update(). Wraps before the first value are not
     known: the total starts at the first value received.
 
     Call reset() on every new session (each HELLO_ACK). STATE carries no boot
