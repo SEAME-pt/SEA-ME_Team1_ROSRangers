@@ -42,6 +42,14 @@ Port numbers are **not fixed yet**. They are still open in [[Protocol Spec v0]] 
 
 The decision is unchanged. The protocol review of 2026-11-03 (#97) set the ports in [[Protocol Spec v0]] §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session, 5760 reserved (the transparent bridge's port until the gateway firmware replaces it). OD-04 is resolved.
 
+### Update 2026-11-19: flash clock and SoftAP channel
+
+The decision is unchanged. The #194 TCP stall on the SoftAP went away with the ESP's SPI flash clock at 80 MHz instead of 40 MHz (15 of 15 HIL runs green, PR #212). Likely cause: the 40 MHz clock's harmonic at 2440 MHz is inside channel 6; the 80 MHz harmonics fall at 2400 and 2480 MHz.
+
+- The HIL spare ESP (`env:esp`, flashed over USB) runs at **80 MHz**.
+- The drone (`env:esp_ota`) stays at **40 MHz** until its flash chip is checked for 80 MHz (`esptool.py flash_id`, over USB per [[ADR-012 ESP UART Pins|ADR-012]]). A chip that can't run 80 MHz would leave the ESP unbootable after an OTA update. So HIL tests a different flash clock than the drone flies; the stall was only seen on the HIL bench.
+- The SoftAP channel is limited to **1–11**: the 80 MHz harmonic at 2480 MHz is inside channel 13. `secrets.py` stops the build outside 1–11.
+
 ## 3. Consequences
 
 - The [[HIL Runner]] Pi joins the ESP SoftAP on Wi-Fi and uses Ethernet for GitHub.
