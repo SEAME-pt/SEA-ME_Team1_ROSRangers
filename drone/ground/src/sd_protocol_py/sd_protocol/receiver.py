@@ -191,11 +191,14 @@ class Receiver:
         # 0xFFFFFF00 -> 0x00000100 is a step of 0x200 us.
         step = (rx_us - self._last_rx_us) & _U32
         # A step of 2^31 us or more is a reading older than the last one (time
-        # going back), not 35.8-71.6 min passing: it adds nothing, so it can
-        # never widen the drift allowance (#220). 1000 -> 900 adds 0.
+        # going back), not 35.8-71.6 min passing. It changes nothing, not even
+        # the last reading, so mixing fresh and old readings never counts a gap
+        # twice (#220, Dot99's review): 1000 -> 900 is ignored, and a later
+        # 1010 counts 10 us (from 1000), not 110 us (from 900).
         backward = step >= 0x80000000
-        if not backward:
-            self._now_us += step
+        if backward:
+            return
+        self._now_us += step
         self._last_rx_us = rx_us
 
     def seed_lag(self, t_send_us: int, rx_us: int) -> None:

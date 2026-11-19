@@ -127,7 +127,7 @@ public:
   // review): rx_us is a u32 that wraps every 71.6 min, so the elapsed time
   // is counted in 64 bits from every reading. Call it at least every 35 min;
   // sd::Link does it on every loop. receive() with a time does it too.
-  // A reading older than the last one adds no time (#220).
+  // A reading older than the newest one seen is ignored (#220).
   void keep_time(std::uint32_t rx_us);
 
   Role role() const { return role_; }
