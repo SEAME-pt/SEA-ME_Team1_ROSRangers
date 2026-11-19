@@ -678,3 +678,13 @@ def test_late_huge_bound_is_clamped():
         at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_020_000 + 10_500_000)
         is RxResult.LATE
     )
+
+
+def test_late_backward_clock_step_adds_no_time():
+    # #220: a reading older than the last one must not count as ~71.6 min.
+    rx = late_rx()
+    rx.keep_time(5_100_000)
+    rx.keep_time(5_000_000)  # 100 ms back: adds nothing
+    rx.keep_time(5_110_000)
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, 100_000), 5_370_000) is RxResult.LATE
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 2, 120_000), 5_140_000))

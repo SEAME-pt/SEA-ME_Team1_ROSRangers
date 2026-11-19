@@ -714,6 +714,22 @@ TEST(LateCheck, TheDriftAllowanceKeepsGrowingPast71Minutes) {
             sd::RxResult::kLate);
 }
 
+TEST(LateCheck, ABackwardClockStepAddsNoTime) {
+  // #220 (BrunoBMFT on PR #205): a reading older than the last one must not
+  // count as ~71.6 min (it would widen the allowance by ~860 ms).
+  LateRx rx; // floor 5.010 s, set at rx 5.010 s
+  rx.keep_time(5100000);
+  rx.keep_time(5000000); // 100 ms back: adds nothing
+  rx.keep_time(5110000); // forward again: +110 ms from the last reading
+  // Sent at 0.100 s, arrives 260 ms above the floor: still late, as the
+  // allowance is only 200 ppm of ~0.2 s.
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, 100000), 5370000),
+            sd::RxResult::kLate);
+  // A normal forward step still counts: on time is accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 2, 120000), 5140000)));
+}
+
 TEST(LateCheck, AHugeBoundIsClamped) {
   // #205 review: a bound above 2^31 us would read as negative and refuse
   // everything; set_late_bound() clamps it to 10 s.

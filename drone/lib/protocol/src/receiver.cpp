@@ -36,7 +36,14 @@ void Receiver::keep_time(std::uint32_t rx_us) {
   // The u32 step since the last reading, so the wrap at 2^32 us adds nothing
   // wrong: 0xFFFFFF00 -> 0x00000100 is a step of 0x200 us.
   const std::uint32_t step = rx_us - last_rx_us_;
-  now_us_ += step;
+  // A step of 2^31 us or more is a reading older than the last one (time
+  // going back), not 35.8-71.6 min passing: it adds nothing, so it can never
+  // widen the drift allowance (#220). Example: 1000 -> 900 is a step of
+  // 0xFFFFFF9C, which adds 0.
+  const bool backward = step >= 0x80000000U;
+  if (!backward) {
+    now_us_ += step;
+  }
   last_rx_us_ = rx_us;
 }
 
