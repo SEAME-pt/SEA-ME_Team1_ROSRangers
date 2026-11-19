@@ -53,6 +53,9 @@ if psk:
     env.Append(CPPDEFINES=[("SD_PSK_HEX", env.StringifyMacro(psk))])
 
 channel = int(os.environ.get("SEAME_AP_CHANNEL") or profile.get("channel", 6))
+if not 1 <= channel <= 11:
+    # The 80 MHz flash clock's harmonic at 2480 MHz is inside channel 13 (#194).
+    env.Exit(f"ERROR: AP_CHANNEL {channel} is outside 1-11 (#194).")
 env.Append(
     CPPDEFINES=[(k, env.StringifyMacro(v)) for k, v in values.items()]
     + [("AP_CHANNEL", channel)]

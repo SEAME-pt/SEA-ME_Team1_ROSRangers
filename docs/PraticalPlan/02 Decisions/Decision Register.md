@@ -28,7 +28,7 @@ tags:
 | [[ADR-003 Sequence Acceptance\|ADR-003]] | 32-bit seq + random session ID, newer-only | ✅ Accepted | OD-08, OD-09, P3 |
 | [[ADR-004 ESP Failsafe\|ADR-004]] | 250 ms link failsafe, explicit resume | ✅ Accepted (values to confirm) | OD-06/07 (initial), OD-12 (partly), OD-13, P4 |
 | [[ADR-005 TCP Session\|ADR-005]] | Session over TCP; UDP decides liveness | ✅ Accepted | OD-14, P5 |
-| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted (ports set in [[Protocol Spec v0]] §7.1, 2026-11-03) | OD-17, OD-04, P6 |
+| [[ADR-006 Network\|ADR-006]] | ESP SoftAP, WPA2-PSK, static IPs | ✅ Accepted (ports set in [[Protocol Spec v0]] §7.1, 2026-11-03; flash clock and channels 1–11, 2026-11-19) | OD-17, OD-04, P6 |
 | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] | Custom firmware + portable C++ lib + Python twin | ✅ Accepted | OD-01, OD-19, FC-07, P7 |
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
