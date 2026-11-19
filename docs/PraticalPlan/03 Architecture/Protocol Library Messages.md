@@ -3,7 +3,7 @@ title: Protocol Library Messages
 type: architecture
 status: draft
 date: 2026-11-03
-updated: 2026-11-09
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - architecture
@@ -14,7 +14,7 @@ tags:
 
 # Protocol Library Messages
 
-> [!info] Status: DRAFT, follows Protocol Spec v0 v1.3
+> [!info] Status: DRAFT, follows Protocol Spec v0 v1.4.2
 > Payload codecs of the C++ protocol library (`drone/lib/protocol`, #99, PR #143) for the messages in [[Protocol Spec v0]] §3. The code values in §5 are the ones decided on #142 (spec §3.1, 2026-11-05). For firmware (#101, #102) and for keeping the Python twin (#100) in sync.
 
 ---
@@ -28,7 +28,7 @@ A frame on the wire is **header (20 bytes) + payload + tag (8 bytes)** ([[Protoc
 | Frame | `sd/frame.hpp` | `encode_frame` / `decode_frame`: length, magic, version, HMAC tag (§4 rule 1). Gives back a `Header` and a pointer to the payload |
 | Receiver | `sd/receiver.hpp` | Frame checks (§4 rule 1) and session check (rule 2), then known `type`, the type's transport (§2, `wrong_transport`), the side it comes from (§2, `wrong_direction`), §3 payload size and `SETPOINT.mode` 0 or 1 (`check_payload()`, `transport_of()`), then the sequence window (rule 3). Counts rejects. Does not read the other payload values |
 | Payload codec | `sd/setpoint.hpp`, `sd/messages.hpp` | Turns one payload into a struct and back. Nothing else |
-| Link (2026-11-09, #102) | `sd/link.hpp` | The ESP side of the [[ESP Link State Machine]]: owns the Receivers of the current and the pending session, does the handshake and the replies, the timers (`T_fresh`, `T_loss`, pending 2 s, `HELLO` 500 ms) and decides what goes to the FC every 20 ms. Pure logic with an injected clock; the firmware gives it frames and sends what it asks for through `LinkIo` |
+| Link (2026-11-09, #102) | `sd/link.hpp` | The ESP side of the [[ESP Link State Machine]]: owns the Receivers of the current and the pending session, does the handshake and the replies, the timers (`T_fresh`, `T_loss`, pending 2 s, `HELLO` 500 ms, failsafe neutral 1 s `kFailsafeNeutralMs`) and decides what goes to the FC every 20 ms. Since spec v1.4 (2026-11-10 and 2026-11-13, #179, #188) it also takes the FC link state (`set_fc_alive`, `set_rc_accepted`) and sends `FC_HEALTH` (`send_fc_health`). Pure logic with an injected clock; the firmware gives it frames and sends what it asks for through `LinkIo` |
 
 Who calls the codecs: the firmware (link state machine #102) after the Receiver accepts a frame. It switches on `frame.header.type` (`MsgType` in `frame.hpp`) and calls the matching `decode_*` with `frame.payload` and `frame.header.payload_len`. To send, it calls `encode_*` into a buffer, then `encode_frame`. `HELLO` and `HELLO_ACK` are the exception: they are tagged with the PSK, so #102 checks them with `receive_handshake(role, buf, len, psk, out)` (spec §1): the ESP accepts only `HELLO`, the ground only `HELLO_ACK`, with the `session_id` and seq 1 rules. The ESP routes every `HELLO` (type 0x01) there, also during a session, because a new `HELLO` opens a pending session that replaces the current one once confirmed (#156); a Receiver never accepts it.
 
@@ -65,9 +65,21 @@ Same contract as `encode_setpoint` / `decode_setpoint`.
 | 0x40 | EVENT | `encode_event` / `decode_event` | 2–66 | Variable length, see below |
 | 0x60 | SETPOINT | `encode_setpoint` / `decode_setpoint` (`setpoint.hpp`) | 10 (`kSetpointSize`) | Plus `setpoint_to_rc` (spec §4–5) |
 | 0x80 | STATE | `encode_state` / `decode_state` | 28 (`kStateSize`) | Layout in §4 |
+| 0x81 | FC_HEALTH | `encode_fc_health` / `decode_fc_health` | 42 (`kFcHealthSize`) | ESP → ground, 5 Hz (spec v1.4, #179). `armed` 0, 1 or `kArmedUnknown` (0xFF); ages saturate at `kAgeMax` (0xFFFE), `kAgeUnknown` = 0xFFFF |
 
 - **One-byte codec**: four messages carry a single `u8`, so they share `encode_u8_payload` / `decode_u8_payload`. The message type in the header says what the byte means.
 - **EVENT**: `code` u16 + `text`. There is no length field: `text_len = payload_len − 2`, from 0 to 64 (`kEventTextMax`). The text is **not NUL-terminated**; use `text_len`, never `strlen`.
+- **SETPOINT**: the payload size and the RC channel range are constants in `setpoint.hpp`:
+
+```cpp
+// excerpt: SETPOINT payload size and RC channel range
+constexpr std::size_t kSetpointSize = 10;
+constexpr std::size_t kRcChannels = 8;
+constexpr std::uint16_t kRcMin = 1000;
+constexpr std::uint16_t kRcMid = 1500;
+constexpr std::uint16_t kRcMax = 2000;
+```
+Source: [`drone/lib/protocol/include/sd/setpoint.hpp` L18–22](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/lib/protocol/include/sd/setpoint.hpp#L18-L22) @ `b31960e`
 
 ## 4. STATE layout (28 bytes)
 
@@ -86,7 +98,7 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | 18 | 2 | `flow_x` | i16 | not defined in the spec |
 | 20 | 2 | `flow_y` | i16 | not defined in the spec |
 | 22 | 1 | `flow_quality` | u8 | – |
-| 23 | 1 | `flow_status` | u8 | [[ThoneFlow]] §8.1 codes (numbers open, §6) |
+| 23 | 1 | `flow_status` | u8 | [[ThoneFlow]] §8.1 codes, numbered 0–4 in [[Protocol Spec v0]] §3 (to be confirmed there) |
 | 24 | 2 | `rx_rejected` | u16 | count |
 | 26 | 2 | `msp_errors` | u16 | count |
 
@@ -98,13 +110,13 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 
 | Enum | Used in | Values |
 |---|---|---|
-| `AckResult` (u8) | `ARM_CONTROL_ACK.result`, `RESUME_ACK.result` | 0 `kOk`, 1 `kWrongState`, 2 `kMaskMismatch`, 3 `kResumeConditionNotMet` |
+| `AckResult` (u8) | `ARM_CONTROL_ACK.result`, `RESUME_ACK.result` | 0 `kOk`, 1 `kWrongState`, 2 `kMaskMismatch`, 3 `kResumeConditionNotMet`, 4 `kFcNotAnswering` (FC silent or RC not acknowledged for 1 s, spec v1.4.1) |
 | `ByeReason` (u8) | `BYE.reason` | 0 `kNormal`, 1 `kTimeout`, 2 `kProtocolError`, 3 `kReplaced` (by a new session) |
 | `ConfigResult` (u8) | `CONFIG_ACK.result` | 0 `kOk`, 1 `kUnknownKey`, 2 `kReadOnly` (Info key), 3 `kSafetyParameter` (Safety key, firmware only), 4 `kOutOfRange`, 5 `kControlEnabled` (OD-16). A `CONFIG_SET` is checked 5 first, then 1–4 |
 | `EspState` (u8) | `STATE.esp_state` | 0 `kBoot`, 1 `kNoSession`, 2 `kSessionIdle`, 3 `kStreaming`, 4 `kLinkFailsafe` ([[ESP Link State Machine]]) |
-| `EventCode` (u16) | `EVENT.code` | `0x0101` `kSetpointStale`, `0x0102` `kLinkFailsafeEntered`, `0x0103` `kLinkResumed` |
+| `EventCode` (u16) | `EVENT.code` | `0x0101` `kSetpointStale`, `0x0102` `kLinkFailsafeEntered`, `0x0103` `kLinkResumed`, `0x0104` `kFailsafeOutputActive`, `0x0201` `kFcLinkLost`, `0x0202` `kFcLinkRestored` |
 
-- `EventCode` ranges: `0x00xx` system, `0x01xx` link, `0x02xx` FC / MSP. Only the three link codes exist so far.
+- `EventCode` ranges: `0x00xx` system, `0x01xx` link, `0x02xx` FC / MSP. Six codes exist: the link codes `0x0101` to `0x0104` and the FC / MSP codes `0x0201`, `0x0202`.
 - A stale setpoint is an event (`0x0101`), not an `EspState`.
 
 ## 6. Not the codec's job, and not done yet
@@ -118,13 +130,12 @@ The numbers are defined in [[Protocol Spec v0]] §3.1 (decided on #142, 2026-11-
 | `type` allowed on this transport (TCP vs UDP, spec §2) and from this side | `Receiver` (`wrong_transport`, `wrong_direction`); #102 opens one per transport |
 | Unknown codes, value ranges | #102 (spec §4 rule 4) |
 | Config key exists, access (Info / Safety / Tunable), write range, no write while control is enabled, in the order of spec §3.1 | #102, answers with `CONFIG_ACK` |
-| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102 (saturate or wrap: open in #149) |
+| `rx_rejected` / `msp_errors` from 32-bit counters into the u16 STATE fields | #102. `rx_rejected` wraps (low 16 bits of `sd::Link::rx_rejected()`, decided 2026-11-16, #149, spec §7.5); the gateway saturates `msp_errors` at 0xFFFF (`gateway/main.cpp`) |
 | `SETPOINT.flags` and the header `reserved` byte are not checked | Nobody: reserved, sent as 0, ignored (spec §3; vectors in group 8) |
 
 **Not done yet:**
 
 - No named constants for the config keys of spec §7.3 (`0x01 config_table_version` … `0x81 event_level`). Use the numbers from the spec for now.
-- No numbers for `flow_status` (the [[ThoneFlow]] §8.1 names have no wire values yet).
 
 ## 7. How to test
 
@@ -154,7 +165,7 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Payload** | The bytes between the 20-byte header and the 8-byte tag of a frame ([[Protocol Spec v0]] §1). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **Receiver** | The library class that checks each frame (tag, session, type, payload size, `SETPOINT.mode`, seq) before any payload is used. |
-| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. Open for `STATE.rx_rejected` (#149). |
+| **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` wraps and the ground counts the wraps; the `FC_HEALTH` u16 counters saturate ([[Protocol Spec v0]] §7.5). |
 | **Info / Safety / Tunable key** | The three configuration key groups: read-only, firmware-only, ground-writable (spec §7.3). |
 | **Session** | One run of the protocol between the ground and the ESP, named by `session_id`; opened by `HELLO` / `HELLO_ACK` ([[ADR-005 TCP Session\|ADR-005]]). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (spec §6). Also called a "golden vector". |
@@ -163,3 +174,7 @@ GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are 
 | **Reflection** | Sending a node one of its own frames back. Refused because each direction has its own key. |
 | **TCP** | Transmission Control Protocol: reliable, ordered, connection-oriented transport. |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data. |
+| **RC channel value** | A stick value as Betaflight reads it: 1000 to 2000 µs, 1500 = centre (`kRcMin` / `kRcMid` / `kRcMax`). |
+| **`FC_HEALTH`** | ESP → ground message 0x81 at 5 Hz: FC alive, armed flag, value ages, counters (Protocol Spec v1.4, #179). |
+| **Link** | `sd::Link` in `sd/link.hpp`: the ESP side of the [[ESP Link State Machine]], pure logic with an injected clock. |
+| **EVENT** | ESP → ground message (0x40) with a u16 code: link events `0x01xx`, FC events `0x02xx` ([[Protocol Spec v0]] §3.1). |

@@ -12,12 +12,13 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | `drone/firmware/esp8266/` | ESP firmware (PlatformIO, env `esp`, `esp_ota`) |
 | `drone/lib/protocol/` | C++ protocol library (CMake + GoogleTest, shared with firmware) |
 | `drone/ground/src/sd_protocol_py/` | Python implementation of the same protocol |
+| `drone/ground/src/<component>/` | One folder per ground component: its ROS 2 package and its Dockerfile (`gesture/`, `intent/`, `mission/`, `flight_interface/`, `echo/`) |
 | `drone/ground/src/flight_interface/` | ROS 2 lifecycle node (ground ↔ drone) |
-| `drone/ground/src/gesture_node/` | Gesture recognition → flight interface |
+| `drone/ground/src/gesture/` | Gesture recognition → flight interface |
 | `drone/config/betaflight/` | Betaflight `diff all` / `status` baselines per version |
-| `drone/simulation/` | PX4 SITL / Gazebo setup |
+| `drone/ground/src/simulation/` | PX4 SITL / Gazebo image, sim scripts, `px4_offboard_bridge` (sim only) |
 | `drone/tests/{sitl,hil,vectors}/` | SITL tests, HIL bench tests, golden test vectors shared by C++ and Python |
-| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review) |
+| `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review; `docs-code-snippets`: adds commit-pinned code excerpts to notes and checks them for drift) |
 
 ## Where to look in the docs
 
@@ -91,12 +92,16 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 ## CI
 
 - `ci.yaml`: `lint` (pre-commit) always runs. `check-components` turns each job on only when its component exists:
-  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `tests/scripts/test_*.py` → `scripts-python` (bench tool unit tests), `drone/simulation/px4/ros/px4_offboard_bridge/setup.py` → `sim-bridge-python` (logic tests of the sim-only PX4 bridge, no ROS), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `gesture_node` + `intent_node` `package.xml` → `ground-ros2` (colcon test + 90 % coverage gate; it also builds and tests `mission_node` once its `package.xml` exists, via the `ros_pkgs` output), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test). Skips print a `::notice`.
+  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `tests/scripts/test_*.py` → `scripts-python` (bench tool unit tests), `drone/ground/src/simulation/px4_offboard_bridge/setup.py` → `sim-bridge-python` (logic tests of the sim-only PX4 bridge, no ROS), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `gesture_node` + `intent_node` `package.xml` → `ground-ros2` (colcon test + 90 % coverage gate; it also builds and tests `mission_node` and `flight_interface` once their `package.xml` exists, via the `ros_pkgs` output), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test, including the `flight_interface` image). Skips print a `::notice`.
 - `ground-ros2` and `ground-docker` also have a PR path filter: they run only when the PR changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`; pushes to `dev`/`main` always run them. Keep filters inside `check-components` (`if:`), never in `on: paths`: a workflow that never starts leaves required checks pending.
 - Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
 - Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
+
+## Code style
+
+- Write code a teammate can read at a glance: `if`/`else` with named intermediate variables, not nested or packed ternaries or chained assignments (`a = b = 0`). Shifts are fine when they read plainly and are commented (byte packing in the protocol library, `16u << octave`); replace a bit trick that needs decoding (`__builtin_clz`, packed shift-and-mask expressions) with a loop or named steps. When math is unavoidable, a comment shows it with a worked example.
 
 ## Gotchas
 

@@ -1,4 +1,4 @@
-"""The echo container's live table: drone/ground/docker/echo/monitor.py.
+"""The echo container's live table: drone/ground/src/echo/monitor.py.
 
 `docker compose up` shows this table, so a broken monitor hides the whole
 pipeline. Checks:
@@ -34,9 +34,7 @@ from unittest import mock
 
 from support import ros_available
 
-MONITOR = (
-    Path(__file__).resolve().parents[2] / "ground" / "docker" / "echo" / "monitor.py"
-)
+MONITOR = Path(__file__).resolve().parents[2] / "ground" / "src" / "echo" / "monitor.py"
 
 if ros_available():
     import rclpy

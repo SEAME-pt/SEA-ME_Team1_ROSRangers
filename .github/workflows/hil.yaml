@@ -4,6 +4,12 @@ on:
   push:
     branches: [dev, main]
   workflow_dispatch:
+    inputs:
+      env:
+        description: "Firmware env to flash on the spare ESP (esp_loop_timing: REQ-SW-005 profile, #146)"
+        type: choice
+        options: [esp, esp_loop_timing]
+        default: esp
 
 concurrency:
   group: hil-bench
@@ -41,12 +47,17 @@ jobs:
     timeout-minutes: 30
     env:
       HIL_ESP_PORT: /dev/hil-esp
+      HIL_FW_ENV: ${{ inputs.env || 'esp' }} # push runs: always esp
       HIL_REQUIRED: "1"
       # Read by drone/firmware/esp8266/secrets.py on every pio run, the
       # upload included, so they are set for the whole job
       SEAME_AP_SSID: ${{ secrets.SEAME_AP_SSID_HIL }}
       SEAME_AP_PASS: ${{ secrets.SEAME_AP_PASS_HIL }}
       SEAME_OTA_PASS: ${{ secrets.SEAME_OTA_PASS_HIL }}
+      # The SoftAP's channel: built into the firmware (AP_CHANNEL) and pinned
+      # in softap_window.sh's profile. One value, so they can never differ
+      # (a pinned channel that doesn't match fails every join, #207)
+      SEAME_AP_CHANNEL: "6"
       # Protocol PSK (ADR-002): built into the gateway (env esp) and used by
       # the session tests as the ground's key
       SEAME_PSK: ${{ secrets.SD_PSK_HIL }}
@@ -75,7 +86,7 @@ jobs:
       - name: Build firmware
         run: |
           . .venv/bin/activate
-          pio run -d drone/firmware/esp8266 -e esp
+          pio run -d drone/firmware/esp8266 -e "$HIL_FW_ENV"
 
       - name: Flash the spare ESP over USB
         run: |
@@ -84,11 +95,17 @@ jobs:
           # LD script on LIBPATH, and the esptool upload needs it for the
           # flash size ("Could not find LD script"). The build above is
           # reused, so nothing is recompiled.
-          pio run -d drone/firmware/esp8266 -e esp -t upload --upload-port "$HIL_ESP_PORT"
+          pio run -d drone/firmware/esp8266 -e "$HIL_FW_ENV" -t upload --upload-port "$HIL_ESP_PORT"
 
       - name: Bench tests (no battery, no props)
         run: |
           . .venv/bin/activate
+          # Holds /dev/hil-esp open until the SoftAP join, so no open in
+          # between resets the ESP, and logs the join (#207). It outlives
+          # this step (its output in a file, so it does not hold the step's
+          # log open); the last step stops it
+          python drone/tests/hil/esp_join_log.py esp-join.txt >esp-join.err 2>&1 &
+          echo $! > esp-join.pid
           # The window script's self-test runs in PR CI (ci.yaml), not here.
           # The Pi plays the FC on the ESP's UART (bench.FakeFc). Smoke first:
           # its resets must not be the last thing before the window (#106)
@@ -103,10 +120,27 @@ jobs:
         timeout-minutes: 4
         run: |
           . .venv/bin/activate
+          kill -USR1 "$(cat esp-join.pid)" ||
+            echo "::warning title=HIL ESP log::the port holder is gone, the SoftAP join is not logged"
           # exec: a cancel or step timeout signals the step's shell, so the
-          # script must be that shell to restore the lab Wi-Fi at once
-          exec drone/tests/hil/softap_window.sh 50 -- \
+          # script must be that shell to restore the lab Wi-Fi at once.
+          # The holder is stopped (port closed) before the tests open it
+          exec drone/tests/hil/softap_window.sh 50 -- bash -c '
+            pid=$(cat esp-join.pid)
+            kill "$pid" 2>/dev/null && tail --pid="$pid" -f /dev/null
+            exec "$@"' _ \
             pytest drone/tests/hil/gateway/wifi -v --junitxml=hil-wifi-report.xml
+
+      # Also after a failed join or an earlier failure: that is when it counts
+      - name: ESP output in the SoftAP window
+        if: always()
+        timeout-minutes: 1
+        run: |
+          [[ -f esp-join.pid ]] || exit 0
+          pid=$(cat esp-join.pid)
+          kill "$pid" 2>/dev/null && tail --pid="$pid" -f /dev/null
+          cat esp-join.txt 2>/dev/null || echo "no ESP log: the holder never wrote one"
+          [[ ! -s esp-join.err ]] || { echo "holder output:"; cat esp-join.err; }
 
       - uses: actions/upload-artifact@v4
         if: always()

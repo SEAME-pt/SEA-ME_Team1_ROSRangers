@@ -48,6 +48,10 @@
 #error "PSK missing: set SEAME_PSK or \"psk\" in secrets.json (64 hex chars)"
 #endif
 
+#ifndef WITH_LOOP_TIMING // env esp_loop_timing: loop() periods on UDP 5770
+#define WITH_LOOP_TIMING 0
+#endif
+
 namespace {
 
 constexpr uint16_t kPort = 5759;        // TCP session + UDP control (§7.1)
@@ -66,7 +70,11 @@ constexpr uint32_t kStateRetryMs = 3; // let the queue drain between tries
 // up to 300 ms for ACKs by default (firmware review of #102 PR 2).
 constexpr unsigned long kTcpWriteTimeoutMs = 1;
 constexpr unsigned int kTcpStopWaitMs = 1;
+#if WITH_LOOP_TIMING // "T": ground_link.py shows which build is on the ESP
+constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0T";
+#else
 constexpr char kFwVersion[sd::kFwVersionSize + 1] = "sd-gw 0.2.0 ";
+#endif
 
 sd::FcLink fc;
 
@@ -414,6 +422,103 @@ sd::FcHealth fc_health(uint32_t now) {
 
 constexpr uint32_t kFcHealthPeriodMs = 200; // 5 Hz (#179 D3)
 
+#if WITH_LOOP_TIMING
+// REQ-SW-005 (#146): the period of every loop() in a histogram, sent once a
+// second to the UDP peer on port 5770 (read by scripts/rt_profile.py).
+// The window max is exact. Lines: L,<window>,<now_us>,<loops>,<max_us> then
+// B,<lo_us>,<count> per non-empty bucket; the L line starts every packet.
+//
+// Buckets: 0..15 us get one bucket each (1 us wide). Above that, each octave
+// (16-31 us, 32-63 us, 64-127 us, ...) is cut into 16 equal buckets, so a
+// bucket is never wider than 1/16 (6.25 %) of the periods in it:
+//   octave 0: 16-31 us, 1 us wide   -> buckets 16..31
+//   octave 1: 32-63 us, 2 us wide   -> buckets 32..47
+//   octave 2: 64-127 us, 4 us wide  -> buckets 48..63, and so on.
+constexpr uint16_t kLoopTimingPort = 5770;
+constexpr uint32_t kLoopReportMs = 1000;
+constexpr uint32_t kLoopOctaves = 17;                // up to 2^21 us (2 s)
+constexpr size_t kLoopBins = 16 + 16 * kLoopOctaves; // longer: last bucket
+constexpr size_t kBinsPerPacket = 60; // about 1 kB, below one Wi-Fi frame
+uint32_t loop_bins[kLoopBins];
+uint32_t loop_last_us = 0;
+uint32_t loop_max_us = 0;
+uint32_t loop_count = 0;
+uint32_t loop_window = 0;
+uint32_t loop_report_ms = 0;
+
+// Bucket index of a period.
+size_t loop_bin(uint32_t us) {
+  if (us < 16) {
+    return us;
+  }
+  uint32_t octave = 0; // us is in [16 << octave, 32 << octave)
+  while ((us >> octave) >= 32) {
+    ++octave;
+  }
+  const uint32_t octave_start = 16u << octave;
+  const uint32_t width = 1u << octave;               // bucket width, us
+  const uint32_t slot = (us - octave_start) / width; // 0..15
+  const size_t bin = 16 + 16 * octave + slot;
+  if (bin >= kLoopBins) {
+    return kLoopBins - 1;
+  }
+  return bin;
+}
+
+// Lowest period (us) that falls in a bucket: what the B line reports.
+uint32_t loop_bin_lo(size_t bin) {
+  if (bin < 16) {
+    return bin;
+  }
+  const uint32_t octave = (bin - 16) / 16;
+  const uint32_t slot = (bin - 16) % 16;
+  const uint32_t octave_start = 16u << octave;
+  const uint32_t width = 1u << octave;
+  return octave_start + slot * width;
+}
+
+void loop_timing(uint32_t now_ms) {
+  const uint32_t now_us = micros();
+  if (loop_last_us != 0) {
+    const uint32_t period = now_us - loop_last_us;
+    ++loop_bins[loop_bin(period)];
+    ++loop_count;
+    if (period > loop_max_us) {
+      loop_max_us = period;
+    }
+  }
+  loop_last_us = now_us;
+  if (now_ms - loop_report_ms < kLoopReportMs) {
+    return;
+  }
+  loop_report_ms = now_ms;
+  if (have_peer) {
+    size_t i = 0;
+    do {
+      char line[48];
+      udp.beginPacket(peer_ip, kLoopTimingPort);
+      int len = snprintf(line, sizeof line, "L,%u,%u,%u,%u\n", loop_window,
+                         now_us, loop_count, loop_max_us);
+      udp.write(line, len);
+      for (size_t n = 0; n < kBinsPerPacket && i < kLoopBins; ++i) {
+        if (loop_bins[i] != 0) {
+          len = snprintf(line, sizeof line, "B,%u,%u\n", loop_bin_lo(i),
+                         loop_bins[i]);
+          udp.write(line, len);
+          ++n;
+        }
+      }
+      udp.endPacket();
+    } while (i < kLoopBins);
+  }
+  ++loop_window; // a gap in the windows = no peer or a lost packet
+  memset(loop_bins, 0, sizeof loop_bins);
+  loop_count = 0;
+  loop_max_us = 0;
+  loop_last_us = micros(); // the report itself is not a loop period
+}
+#endif
+
 WiFiServer server(kPort);
 uint32_t last_rc_ms = 0;
 uint32_t last_health_ms = 0;
@@ -443,6 +548,9 @@ void setup() {
 void loop() {
   sd::Link &link = *link_ptr;
   const uint32_t now = millis();
+#if WITH_LOOP_TIMING
+  loop_timing(now);
+#endif
 
   while (Serial.available() > 0) { // FC -> ESP: replies
     fc.on_byte(static_cast<uint8_t>(Serial.read()), now);

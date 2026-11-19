@@ -21,7 +21,7 @@ import warnings
 import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface"))
+sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface/flight_interface"))
 # sd_protocol (the ground side of the protocol) for the session tests
 sys.path.insert(0, str(REPO / "drone/ground/src/sd_protocol_py"))
 sys.path.insert(0, str(REPO / "scripts"))  # ground_link.py, the bench ground

@@ -3,6 +3,9 @@
 The fixture waits for the port to open and for MSP to answer, up to
 SITL_TIMEOUT_S (60 s with SITL_REQUIRED=1, else 5 s). Without SITL the tests that need it are skipped, unless
 SITL_REQUIRED=1 (set in ci.yaml) turns the skip into a failure.
+
+In CI, SITL boots with override.cli (MSP Override mask and switches, and no
+accelerometer): MSP_ATTITUDE and other attitude data read as zeros.
 """
 
 import os
