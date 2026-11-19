@@ -1,9 +1,9 @@
 ---
-title: ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
+title: ThoneFlow-3901U Optical-Flow Sensor Integration
 type: sensor-integration
 status: draft
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - sea-drone
@@ -19,11 +19,14 @@ tags:
   - draft
 ---
 
-# ThoneFlow-3901U Optical-Flow Sensor Integration (Planned)
+# ThoneFlow-3901U Optical-Flow Sensor Integration
 
 > [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
-> [!warning] Status: DRAFT / PLANNED. Sensor NOT installed.
+> [!success] Update 2026-11-16: bench characterisation done (#107)
+> The sensor was characterised **alone, on a bench Raspberry Pi Pico, off the drone** (2026-11-10 and 2026-11-16, 40 captures, 66,297 frames). The datasheet is wrong on two points that matter for the parser: the rate is **~95 Hz, not 66 Hz**, and X/Y come **low byte first**. The checksum is the sum of bytes 2–5. On the carpet the motion is correct and repeatable; on a plain white table and on a black EVA mat it is not, and on the mat it was once **reversed with good quality**. Results in §2.4, parser in §3.3, test log in §9.2, decisions TF-03 to TF-07 in §10.2. Still not on the drone.
+
+> [!warning] Status: DRAFT. Sensor NOT installed on the drone; bench characterisation and the ground parser are done (#107, 2026-11-16).
 > The ThoneFlow-3901U is an unsoldered, separate module and is **not installed** on the drone. No wiring exists. It is **not confirmed** that Betaflight 4.5.1 supports this sensor. Everything under "Proposed" below is an architectural option, not a validated design. Datasheet facts are marked **[DS]**; proposals are marked **[PROPOSED]**; items the datasheet does not state are marked **[NOT STATED]**.
 
 > [!success] Update 2026-10-12: team decisions recorded as ADRs
@@ -58,9 +61,9 @@ Record what is known about the ThoneFlow-3901U's communication interface and des
 |---|---|
 | Sensor availability | Available as a separate, unsoldered module |
 | Installed on the drone | **No** |
-| Wired to anything | **No** |
-| Tested | **No**; nothing on this page has been tested |
-| Betaflight 4.5.1 support | **Unconfirmed** |
+| Wired to anything | Only to a bench Raspberry Pi Pico (USB to the PC), never to the drone |
+| Tested | **Bench only** (2026-11-10, 2026-11-16, #107): serial format, rate, checksum, byte order, axes, scale and surfaces (§2.4, §9.2). Not tested on the drone or in flight |
+| Betaflight support | **None** for this sensor (TF-01) |
 | Integration path chosen | **No**; see §5 and §11 |
 
 ### Scope
@@ -103,6 +106,8 @@ Notes on interpretation:
 
 ### 2.2 **Not stated** in the retrieved datasheet text **[NOT STATED]**
 
+> [!note] Several of these items were measured on the bench on 2026-11-10 and 2026-11-16. The measured values are in §2.4; the list below is the datasheet gap as found on 2026-10-12.
+
 These must be determined (from further documentation, a reference driver, or measurement), not assumed:
 
 - Data bits, parity and stop bits (8N1 is a common default but is **not** confirmed).
@@ -123,9 +128,44 @@ If the serial format is 8N1 (**assumed, not stated**), then:
 
 - one bit ≈ 52 µs at 19200 baud;
 - one 9-byte frame = 90 bit times ≈ 4.7 ms;
-- at ~66 frames/s the nominal frame period ≈ 15 ms, so the line is busy roughly 31% of the time.
+- at the datasheet's ~66 frames/s the frame period would be ≈ 15 ms, so the line would be busy roughly 31% of the time (measured: ~95 Hz and ~45 %, below).
 
 These numbers matter for the software-serial discussion in §6, but must be confirmed by measurement.
+
+**Measured (2026-11-16, §2.4):** the frames come every **~10.5 ms (~95.4 Hz)**, not 15 ms. With 8N1 a frame takes ~4.7 ms of line time, so the line is busy **~45 %** of the time, not 31 %. This makes software serial on the ESP8266 (§6.3) harder than first estimated.
+
+### 2.4 Measured on the bench **[MEASURED]**
+
+Setup: sensor alone, off the drone, read by a Raspberry Pi Pico (MicroPython 1.29.0, hardware UART0 RX) that forwards each frame with a microsecond timestamp to the PC over USB. Supply from the Pico 3V3 pin, **3.29 V measured at the sensor pads** (the datasheet asks for 3.3–3.6 V; it worked, but the margin is small). For the movement tests the sensor was fixed on a base on top of a box (~15 cm or ~30 cm to the floor) and slid 30 cm between two tape marks placed **beside** the path, so the sensor never saw the marks. 40 captures, 66,297 frames. Four of the captures (forward on the carpet, lens covered, white table, black mat) are in `drone/ground/src/sd_protocol_py/tests/data/thoneflow/`, and the parser tests replay them; the rest and the capture scripts are kept by the author (#107).
+
+| Item | Measured | Datasheet | Evidence |
+|---|---|---|---|
+| Serial format | 19200 baud, 8 data bits, no parity: **0 checksum errors** in 66,297 frames | 19200, rest not stated | All captures. One vs. two stop bits cannot be told apart by receiving only |
+| Frame rate | **~95.4 Hz**, median gap 10.5 ms, max ~16 ms on a clean wiring | 66 Hz | All captures |
+| Frame layout | `FE 04 X X Y Y CS Q AA`, as §3.1 | Same | All captures |
+| X/Y byte order | **Low byte first**, signed 16-bit (`01 00` = +1, `fe ff` = −2) | High byte first | 2026-11-10; with high byte first the sums run away at rest |
+| X/Y meaning | **Per-frame deltas**: 0 at rest, and the sum over a move is proportional to the distance | Not stated | Rest and 30 cm moves |
+| Checksum | **(byte2 + byte3 + byte4 + byte5) & 0xFF** (the four motion bytes). It does **not** cover the quality byte, and as a plain sum it misses some multi-bit errors | Not stated | 0 mismatches in 66,297 frames |
+| Axes (sensor on our base) | Forward = **+Y**, left = **+X**, right = **−X** | Not stated | 3–4 runs each. The direction relative to the module body is still to be recorded with a photo (TF-16) |
+| Scale | Carpet, 30 cm move: **~1015 counts at 15 cm** (~34 counts/cm), **~533 at 30 cm** (half). About **510–535 counts per radian** of flow (distance ÷ height) | Not stated | Hand-moved, height to the box top: rough (±10 %) |
+| At rest | ≤ 3 counts drift in 30 s, quality ~163 | — | 3 × 30 s on the carpet |
+| Lens covered | **X = Y = 0, quality 5–17** | Not stated | 2 × 10 s. Zero motion and "no image" look the same in X/Y; only quality differs |
+
+**Surfaces** (same 30 cm forward move at 15 cm; correct answer ≈ +1000 in Y):
+
+| Surface | Result | Quality | Verdict |
+|---|---|---|---|
+| Striped carpet, moving along or across the stripes | +906 to +1086, repeatable | 125–180 | **Good**. The stripes do not confuse it |
+| Plain white table | ~0: noise only, the move is not seen | 52–82 | **Bad** |
+| Black EVA mat (tatami type), first set | **−3600 to −4040**: reversed and ~4× too large, but repeatable | 78–135 | **Bad, and dangerous**: wrong motion with medium quality |
+| Same mat, second set | +358, +526 (right sign, ⅓–½ of the move) | 57–85 | **Bad** |
+| Same mat with random pieces of tape under the path | +433, +289 | 75–114 | **Bad** |
+
+What follows:
+
+- **No single quality threshold separates good from bad data.** On the carpet at 30 cm the quality was ~135 with correct motion, and on the mat it reached ~135 with reversed motion. At the flight height (~1 m) it will be lower still. The threshold (TF-06) stays a per-surface, per-height setting, and quality alone is not a safety check.
+- **The floor decides.** Before flow is used in the cage, the cage floor must be tested the same way; a plain or fine, regular floor may need a textured mat.
+- **Wiring:** in two runs bytes were lost for 2–4 s while the setup was being handled (55 and 180 bytes dropped, gaps up to 1.2 s), then the stream was clean again. Likely an intermittent contact. Check the solder joints before the sensor goes on the drone.
 
 ---
 
@@ -151,6 +191,9 @@ Observations that follow directly from the table:
 - The length byte (`0x04`) counts the four motion bytes. It does not count the whole frame.
 - X and Y are each assembled from a high byte followed by a low byte.
 
+> [!warning] Measured 2026-11-10: the byte order is the opposite
+> On the bench, X and Y are **low byte first** (signed 16-bit), and byte 6 is a checksum of bytes 2–5. See §2.4. The table above is kept as the datasheet says it.
+
 ### 3.2 Items to establish before the parser is trusted
 
 > [!warning] Discrepancy found 2026-10-12 against ArduPilot's CX-OF driver
@@ -164,6 +207,8 @@ Observations that follow directly from the table:
 | Meaning/range of surface quality | Bench observation across surfaces, cross-checked with the reference. |
 | Serial framing (data/parity/stop bits) | Logic-analyser/oscilloscope or serial-capture check (§9.2). |
 
+> [!success] Measured 2026-11-16 (§2.4): checksum = sum of bytes 2–5 & 0xFF; X/Y signed 16-bit, low byte first, per-frame deltas; ~510–535 counts per radian (rough); quality 5–17 with the lens covered, 125–180 on the carpet, and not a reliable validity signal on its own; 19200 8N1 decodes with no errors.
+
 ### 3.3 Parsing requirements [PROPOSED]
 
 - **PAR-01**: Parsing shall operate on a **byte stream**, not assume that reads align with frame boundaries.
@@ -175,6 +220,33 @@ Observations that follow directly from the table:
 - **PAR-07**: Parser counters (frames accepted, header/length/footer/checksum rejects, resync events) shall be kept and exposable for diagnostics.
 - **PAR-08**: The parser shall never emit "zero motion" to represent "no valid data" (see §8).
 - **PAR-09**: No silent clamping or sign assumptions; signedness and scaling follow §3.2 once established.
+
+> [!success] Implemented 2026-11-16 (#107): a Python parser, `sd_protocol.thoneflow` (`drone/ground/src/sd_protocol_py/`), with the status outputs of §8.1 (`OK`, `LOW_QUALITY`, `STALE`, `NO_DATA`; a bad frame is dropped and counted, never emitted) and the PAR-07/VAL-03 counters (bytes in, accepted, header/length/footer/checksum rejects, skipped bytes, resyncs, stale events). The counters do not depend on how the reads split the byte stream. The quality threshold and the stale interval are required settings with no default, because the bench found no safe value (§2.4). The threshold cannot be set below 25: below it the sensor sent X = Y = 0 in 2,749 of 2,789 bench frames (the lens covered gave 5–17), so those frames are never `OK` (PAR-08). Tests cover the §9.1 table, including false headers, resync, fuzzing and a replay of the bench captures. A C++ version for the ESP is only needed if Option B goes ahead (#108).
+>
+> Rules for a consumer (also in the module docstring):
+> - The receive time `t` is when the caller **read** the bytes. All frames from one read share it, so `dt` between frames must come from the frame count (~10.5 ms each) or from timestamps taken by the reader per frame, not from `t`. `stale_s` must be above the read period plus its jitter. `t` and `now` come from one monotonic clock; a clock that goes back reads as not fresh.
+> - X/Y are per-frame deltas: integrate by summing **every** frame `feed()` returns. `latest()` is for status and quality only, and it can return a `LOW_QUALITY` frame with X = Y = 0, so check its status.
+> - A frame lost whole on the line changes no counter; only the timing shows it.
+> - Not done here, for #200: a plausibility limit on the per-frame delta, a cross-check against the IMU (quality and checksum do not catch the black-mat case), and the cage floor at flight height as a gate before flow is used. For #108: the reader's own overflow count and per-frame timestamps.
+
+The parser's frame constants and checksum. It follows the measured byte order (X/Y low byte first, `thoneflow.py` L12–13), not the datasheet table in §3.1.
+
+```python
+# excerpt: frame constants, quality floor and checksum
+FRAME_SIZE = 9
+HEADER = 0xFE
+LENGTH = 0x04
+FOOTER = 0xAA
+
+# Below 25 the sensor sends X = Y = 0 in 2,749 of 2,789 bench frames (the lens
+# covered gave 5-17), so such a frame is "no image", not "not moving". A lower
+# quality_min would let it out as OK (PAR-08, VAL-01), so it is refused.
+QUALITY_MIN_FLOOR = 25
+...
+def checksum(frame: bytes) -> int:
+    return (frame[2] + frame[3] + frame[4] + frame[5]) & 0xFF
+```
+Source: [`thoneflow.py` L45–53](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L53) and [L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L95-L96) (`drone/ground/src/sd_protocol_py/sd_protocol/`) @ `b31960e`
 
 ---
 
@@ -208,7 +280,7 @@ Key consequences:
 
 ```mermaid
 flowchart LR
-    SENS["ThoneFlow-3901U<br/>UART 19200 baud · ~66 Hz · 3.3–3.6 V<br/>(NOT INSTALLED)"]
+    SENS["ThoneFlow-3901U<br/>UART 19200 baud · ~95 Hz measured · 3.3–3.6 V<br/>(NOT INSTALLED)"]
 
     subgraph DRONE["Drone"]
         FC["Flight controller<br/>Betaflight 4.5.1<br/>(sensor support UNCONFIRMED)"]
@@ -354,9 +426,11 @@ Each measurement should carry a status, so consumers never guess:
 |---|---|
 | `OK` | Frame valid, quality acceptable, fresh |
 | `LOW_QUALITY` | Frame structurally valid, but surface quality is below the accepted threshold (threshold TBD) |
-| `INVALID_FRAME` | Header, length, footer or checksum failed |
+| `INVALID_FRAME` | Header, length, footer or checksum failed. *The #107 parser never emits it: such a frame is dropped and counted (§8.2).* |
 | `STALE` | No new valid frame within the allowed interval (interval TBD) |
 | `NO_DATA` | No bytes received at all (sensor absent or disconnected) |
+
+Wire numbers in `STATE.flow_status`: 0 `OK`, 1 `LOW_QUALITY`, 2 `INVALID_FRAME`, 3 `STALE`, 4 `NO_DATA`, in the table order ([[Protocol Spec v0]] §3, 2026-11-09, marked "to confirm with the ThoneFlow work"). The gateway sends 4 while no sensor is fitted. The parser's `Status` uses names, not these numbers.
 
 ### 8.2 Conditions and handling
 
@@ -368,7 +442,7 @@ Each measurement should carry a status, so consumers never guess:
 | **Stale frames** | No valid frame within a staleness interval (TBD, chosen from the measured rate, not assumed) | Mark `STALE`; stop publishing last values as current |
 | **Duplicate / repeated frames** | Same content could be genuine (no motion) or a repeat; datasheet gives no frame counter | Do not infer staleness from identical values; use arrival timing and sequence counters on the reader's side |
 | **Sensor disconnection** | No bytes (`NO_DATA`), or only invalid bytes for a period (TBD) | Report fault; do not output motion; require valid frames again before resuming |
-| **Frame-rate drop** | Measured rate falls well below nominal ~66 Hz (limit TBD) | Report degraded data; log |
+| **Frame-rate drop** | Measured rate falls well below the measured ~95 Hz (§2.4; limit TBD, TF-07). A limit set against the datasheet's 66 Hz would miss a ~30 % drop | Report degraded data; log |
 | **Reader overload** (e.g. dropped bytes under load) | Rising reject counters, rate drop | Surface in diagnostics; may indicate unsuitable reception method (§6.3) |
 | **Power fault / brown-out** | Sensor stops or restarts | Treat as disconnection; do not use data until valid frames resume |
 | **Reader restart** | Reader reboots | Start with `NO_DATA`/`STALE`; no carried-over values |
@@ -385,7 +459,7 @@ Each measurement should carry a status, so consumers never guess:
 ## 9. Testing plan
 
 > [!important]
-> No test below has been written or run. This is a plan. All tests are **bench** tests; no flight testing is proposed. Do not connect anything to the FC until the team has approved wiring (see the FC-interface page).
+> Done so far (#107): the §9.1 parser tests are written and pass (`sd_protocol.thoneflow`), and the §9.2 bench characterisation was run on 2026-11-10 and 2026-11-16. Everything from §9.3 on is still a plan. All tests are **bench** tests; no flight testing is proposed. Do not connect anything to the FC until the team has approved wiring (see the FC-interface page).
 
 ### 9.1 Hardware-independent tests (parser and logic)
 
@@ -396,7 +470,7 @@ Each measurement should carry a status, so consumers never guess:
 | Stream handling | Frames split across reads; several frames in one read; leading garbage; truncated frame |
 | False headers | `0xFE`/`0xAA` appearing inside payload/checksum/quality does not cause mis-alignment (PAR-03) |
 | Resync | Recovery after corruption without manual action (PAR-04) |
-| Endianness / signedness | High/low byte composition per datasheet; signedness per what is established (§3.2) |
+| Endianness / signedness | Low byte first, signed 16-bit, as measured (§2.4, TF-05), not the datasheet order |
 | Status logic | `OK`, `LOW_QUALITY`, `STALE`, `NO_DATA` transitions with a mock clock |
 | Robustness | Fuzzed random byte streams never crash, hang or over-read |
 | Replay | Parser output from recorded raw captures (§9.2) matches expectations |
@@ -407,15 +481,17 @@ Gate: these pass before any hardware-specific work relies on the parser.
 
 Purpose: establish the facts the datasheet text does not state, and record real data for replay.
 
-- [ ] Power the sensor within **3.3–3.6 V** from a source whose voltage has been measured. Wiring/pins taken from physical module markings and manufacturer documentation, verified by inspection; **no pinout is assumed here**.
-- [ ] Confirm the serial parameters (baud, data/parity/stop bits) and the TX logic level with a scope or logic analyser.
-- [ ] Capture raw output on a computer using a serial adapter whose logic level is compatible with the sensor; store the raw bytes.
-- [ ] Verify frame structure against §3.1 and measure the actual frame rate and its variation against the nominal ~66 Hz.
-- [ ] Determine the checksum algorithm from the captures and the reference documentation (§3.2); confirm every captured frame validates.
-- [ ] Determine X/Y signedness and sign conventions by moving the sensor in known directions.
-- [ ] Characterise the surface-quality field over different surfaces and conditions, and note behaviour when no surface is tracked.
+Done on 2026-11-10 and 2026-11-16 (#107) with a Raspberry Pi Pico as the reader. Results in §2.4.
+
+- [x] Power the sensor within **3.3–3.6 V** from a source whose voltage has been measured. Pico 3V3, **3.29 V** measured at the sensor pads with a multimeter; wiring checked for shorts. Pads marked G, V, T on the module; **no pinout is recorded here**.
+- [ ] Confirm the serial parameters (baud, data/parity/stop bits) and the TX logic level with a scope or logic analyser. *Partly: 19200 8N1 decodes 66,297 frames with no checksum error; no scope or logic analyser was used, and the TX level was not measured.*
+- [x] Capture raw output on a computer using a serial adapter whose logic level is compatible with the sensor; store the raw bytes. *Pico (3.3 V logic) forwarding every frame with a timestamp; 40 CSV captures.*
+- [x] Verify frame structure against §3.1 and measure the actual frame rate and its variation against the nominal ~66 Hz. *Structure as §3.1; **~95.4 Hz**, median gap 10.5 ms.*
+- [x] Determine the checksum algorithm from the captures and the reference documentation (§3.2); confirm every captured frame validates. *Sum of bytes 2–5 & 0xFF; every frame validates.*
+- [x] Determine X/Y signedness and sign conventions by moving the sensor in known directions. *Signed, low byte first; forward +Y, left +X on our base.*
+- [x] Characterise the surface-quality field over different surfaces and conditions, and note behaviour when no surface is tracked. *Carpet, white table, black EVA mat, lens covered; heights 15 and 30 cm. Not yet at flight height (~1 m) or on the cage floor.*
 - [ ] Observe start-up behaviour and behaviour on power interruption.
-- [ ] Record datasets for offline replay in tests §9.1 and §9.5.
+- [x] Record datasets for offline replay in tests §9.1 and §9.5.
 
 ### 9.3 Serial reception and timing tests (on the candidate reader)
 
@@ -485,11 +561,11 @@ Evidence (captures, logs, test records) is required for each.
 |---|---|---|---|---|---|
 | TF-01 | Does Betaflight 4.5.1 / the ODDITYRCF7AIO target support this sensor, and in what form (UART frame, MSP, none)? | Option A |  | Resolved | **Unsupported.** Betaflight 4.5.1 has no optical-flow driver at all; 2026.6.2 supports MT and UPT1 only (not CX-OF); INAV has CX-OF but no `ODDITYRCF7AIO` target (source-verified). Option A dropped. [[ADR-016 Flow Sensor Path\|ADR-016]] |
 | TF-02 | Which integration option (A, B, C) | Any wiring |  | Accepted | Characterise first → time-boxed Option B experiment with a threshold agreed beforehand → if it fails, ADR-016 is re-opened (Option C, an extra MCU, was rejected on 2026-10-14, TF-11). [[ADR-016 Flow Sensor Path\|ADR-016]] |
-| TF-03 | Serial framing (data/parity/stop bits), TX logic level, whether the sensor RX pin is usable | Bench setup |  | Open | — |
-| TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Open | Not resolved by ArduPilot's CX-OF driver, which does not validate a checksum (its byte 6 is time motion). Determine from bench captures (§9.2). |
-| TF-05 | X/Y signedness, units, scaling; delta vs. accumulated | Estimation |  | Open | Datasheet order (high byte first) conflicts with ArduPilot's CX-OF driver (low byte first, signed 16-bit). ArduPilot uses an empirical scale factor. Determine byte order and signedness from bench captures; calibrate scaling. |
-| TF-06 | Surface-quality meaning and threshold | Fault handling |  | Open | ArduPilot's driver uses an empirical quality window for CX-OF; nothing is specified for the ThoneFlow. Do not adopt it blindly; characterise on the bench. |
-| TF-07 | Staleness interval, disconnection timeout, frame-rate-drop limit (from measurement) | Fault handling |  | Open | — |
+| TF-03 | Serial framing (data/parity/stop bits), TX logic level, whether the sensor RX pin is usable | Bench setup |  | Partly resolved | 2026-11-16 (§2.4): 19200, 8 data bits, no parity decode 66,297 frames with no error. Not measured: the TX logic level and stop-bit count (no scope), and the RX pin (not needed: the sensor only sends). |
+| TF-04 | Checksum algorithm and covered bytes | Parser acceptance |  | Resolved | 2026-11-16 (§2.4): **(byte2 + byte3 + byte4 + byte5) & 0xFF**, the four motion bytes. 0 mismatches in 66,297 frames. The quality byte is not covered, so a corrupted quality can pass. |
+| TF-05 | X/Y signedness, units, scaling; delta vs. accumulated | Estimation |  | Resolved (scale rough) | 2026-11-16 (§2.4): signed 16-bit, **low byte first** (as ArduPilot's CX-OF driver, not the datasheet); per-frame deltas; ~510–535 counts per radian of flow, from hand-moved 30 cm runs at 15 and 30 cm. Calibrate properly in #200. |
+| TF-06 | Surface-quality meaning and threshold | Fault handling |  | Partly resolved | 2026-11-16 (§2.4): 5–17 with the lens covered, 125–180 on the carpet, 52–135 on surfaces where the motion is wrong. **No single threshold separates good from bad**; it is a required, per-surface setting of the parser, and quality is not a safety check on its own. Measure again at flight height and on the cage floor. |
+| TF-07 | Staleness interval, disconnection timeout, frame-rate-drop limit (from measurement) | Fault handling |  | Method recommended | Measured rate ~95.4 Hz (gap 10.5 ms, max ~16 ms). The stale interval is a required parser setting; choose it from this rate (for example a few frame periods) with the consumer (#200). |
 | TF-08 | Pin assignments and physical wiring (verified separately) | Any wiring |  | Open | — |
 | TF-09 | Sensor power source and supply conditioning within 3.3–3.6 V | Any wiring |  | Open | — |
 | TF-10 | Acceptable software-serial error/loss threshold, if Option B is pursued | Option B |  | Method recommended | Agree the acceptable error/loss threshold before testing, not after. |
@@ -554,5 +630,15 @@ Evidence (captures, logs, test records) is required for each.
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Telemetry** | Periodic data sent from a system to report state, measurements, or health. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
+| **Counts per radian** | Flow scale: sensor counts for a movement equal to the height (distance ÷ height = 1 rad). It does not depend on the height, so one number calibrates the sensor. |
+| **Little-endian / low byte first** | A 16-bit number sent with its low byte before its high byte. |
+| **Optical flow** | How fast the image of the floor moves under the sensor. It is roughly speed ÷ height, so it needs a height to give a speed. |
+| **Raspberry Pi Pico** | A small microcontroller board, used here only as a bench reader for the sensor. It does not fly (ADR-016). |
+| **Surface quality** | Byte 7 of the frame: how much detail the sensor sees. Low with no image; not a reliable validity check on its own (§2.4). |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
+| **Header / footer byte** | The fixed first (`0xFE`) and last (`0xAA`) bytes of a sensor frame. The parser checks both, plus the length byte and the checksum (PAR-02). |
+| **PAR-xx / VAL-xx / EST-xx** | Parser, validity and estimator requirement IDs of this page (§3.3, §8.3, §7). |
+| **Software serial** | A UART receiver done in firmware on a spare GPIO; timing-sensitive under Wi-Fi load (§6). |
+| **DPS310** | The barometer on the FC, the height source chosen in [[ADR-016 Flow Sensor Path\|ADR-016]] (TF-12). |
+| **CX-OF** | A discontinued optical-flow module whose format the datasheet claims to match; ArduPilot has a driver for it (§3). |

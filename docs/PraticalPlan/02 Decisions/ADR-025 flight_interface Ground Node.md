@@ -3,6 +3,7 @@ title: ADR-025 — flight_interface Ground Node
 type: adr
 status: accepted
 date: 2026-11-16
+updated: 2026-11-18
 project: SEA autonomous drone
 tags:
   - adr
@@ -14,18 +15,51 @@ tags:
 # ADR-025 — flight_interface Ground Node
 
 > [!success] Status: ACCEPTED (#103, PR #187)
-> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
+> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). E3.1 was added on 2026-11-16 (#186). A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
+> 2026-11-18 (#214, PR #215), docs only, no decision changed: §1 Context gets the corrected code path and the `guard.py` constants as a code excerpt; §3 Consequences counts the "about 0.4 s" from the first `FC_HEALTH` and gives the worst case.
 > This ADR replaces the `DECISIONS.md` file that PR #187 carried at the repository root.
 
 ## 1. Context
 
-- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: `drone/ground/src/flight_interface/` (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
+- `flight_interface` (#103) is the ROS 2 lifecycle node between `mission_node` and the drone: `/mission/velocity_target` in, `SETPOINT` to the ESP gateway (#102) out, drone state back on `/flight/state`. Code: ROS package `drone/ground/src/flight_interface/flight_interface/`, modules in its `flight_interface/` folder (`guard.py` safety logic without ROS, `link_node.py` the node, `backends.py` / `esp_backend.py` the drone side, session code in `sd_protocol.ground`).
 - It is the innermost ground layer of the safety chain ([[ADR-004 ESP Failsafe|ADR-004]] §3): the radio and the safety pilot, Betaflight's failsafe and the ESP's link failsafe all act without it.
 - Fixed rules every decision respects:
   - The node never sends ARM or RESUME on its own (REQ-SAF-023). ARM only hands the masked stick channels to the ground; it never arms the motors (only the pilot's switch does).
   - The guard repeats `mission_node`'s limits: a stale target becomes zero within 0.25 s (REQ-SAF-017); no drone `STATE` for 0.5 s means the link is lost (REQ-SAF-012); axes outside the mask are zero (REQ-SAF-018); horizontal speed ≤ 0.5 m/s as a vector, vertical ≤ 0.5 m/s, yaw rate ≤ 45 °/s.
   - The gateway accepts only mask 8 today, and `override_active` is 0 until #176, so no non-zero setpoint passes the gate yet.
   - `px4_offboard_bridge` (simulation) and `flight_interface` both publish `/flight/state`: never run them together.
+
+The limits above and the K6 hold window (§2.1) are constants in `guard.py`:
+
+```python
+# excerpt: guard.py safety constants (seconds, m/s, rad/s)
+CEILING_LINEAR_MPS = 0.5
+CEILING_YAW_RPS = math.radians(45.0)
+
+# The zero must be out no later than this after the last target (the rule of
+# mission_node's REQ-SAF-017).
+MAX_TARGET_TIMEOUT = 0.25
+# The ESP sends STATE at 25 Hz (Protocol Spec v0 §3); mission_node calls a
+# /flight/state older than 0.5 s lost, so the watchdog uses the same 0.5 s.
+LINK_TIMEOUT = 0.5
+
+# esp_state values the drone may report (Protocol Spec v0 §3.1, STATE).
+ESP_STATES = ("BOOT", "NO_SESSION", "SESSION_IDLE", "STREAMING", "LINK_FAILSAFE")
+
+# ARM and RESUME (decision K6, changed by the safety pilot on PR #191,
+# 2026-11-13): the ESP refuses both until the FC has acknowledged RC for 1 s
+# (result 4, Protocol Spec v1.4.1, #188), and RESUME also needs >= 500 ms of
+# mode-0 setpoints with no gap of T_fresh (150 ms). The ground holds the
+# operator's request for a 1.5 s window and allows a smaller gap, so jitter on
+# the way does not make the ESP refuse it.
+NEUTRAL_WINDOW = 1.5
+NEUTRAL_MAX_GAP = 0.1
+# A pending request that never became due is dropped: the operator asks again.
+REQUEST_TIMEOUT = 3.0
+```
+Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py` L53–75](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py#L53-L75) @ `b31960e`
+
+`LINK_TIMEOUT` (0.5 s) and K5's 3 s are two different timers: the first zeroes the setpoints and sets `link_ok` false; the second (`RECONNECT_AFTER` in `esp_backend.py`) decides the session is gone and opens a new one.
 
 ## 2. Decision
 
@@ -71,6 +105,7 @@ tags:
 | E1.2 | `make sim` and `make sim-smoke` use `SUBNET` discovery: with `LOCALHOST` the PX4 image (uid 1000, UDP only) and the other containers never see each other. The simulation runs no `flight_interface` and no drone. Added 2026-11-16. | Claude under BrunoBMFT's go, 2026-11-16 |
 | E2 | Every `ARM_CONTROL_ACK` / `RESUME_ACK` is logged, a refusal as a warning with its reason; `last_ack` on `/flight/state` comes with the docs of #98. | ThiagoTEP, BrunoBMFT |
 | E3 | `load_psk` warns when the secrets file is readable by the group or others; Docker will mount it read-only (never `SEAME_PSK` in the environment) once `flight_interface` has a compose service. | ptorrao-git, BrunoBMFT |
+| E3.1 | The compose service exists (`flight_interface`, its own profile, `restart: "no"`): the secrets file is mounted read-only and a missing file is an error; no `SEAME_PSK` in its environment, no PSK in the image. The container runs the node itself, not the launch file: `ros2 launch` ignores the SIGTERM of `docker stop`, so the node would be killed without its last zero setpoint. E1's defaults then come from `docker-compose.yml`. Added 2026-11-16. | Claude in #186 (PR A), for BrunoBMFT's review |
 | E4 | A new session counts only once a frame under its keys comes back (the `CONFIG_ACK` or a `STATE`); none within 1 s: drop it and redo the handshake, never with ARM ([[ADR-005 TCP Session\|ADR-005]]). | ptorrao-git, BrunoBMFT |
 | E5 | Each test file has its own `TEST_DOMAIN_ID`; a check fails when two share one or use 42. Track D, own PR. | Dot99 |
 | E6 | After a reconnect the ground takes the FC state from `FC_HEALTH` (5 Hz), since the events `0x0201` / `0x0202` report only changes. | BrunoBMFT, ptorrao-git |
@@ -86,9 +121,9 @@ tags:
 
 ## 3. Consequences
 
-- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the node starts streaming, also when no event came.
+- **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the first `FC_HEALTH` (at most about 0.6 s after the node starts streaming), also when no event came (`FC_RESTORE_AFTER` 0.25 s of `fc_alive`, checked on each 5 Hz `FC_HEALTH`, so on the third one).
 - **Negative:** ARM and RESUME answer 1.5 s later than before. Until `override_active` (#176) and the controller (C1) exist, the node only ever sends neutral sticks.
-- **Open:** the C1.4 roll / pitch cap value, E1's SROS2, the Docker half of E3, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
+- **Open:** the C1.4 roll / pitch cap value, E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
 
 ## 4. Related pages
 
@@ -112,3 +147,10 @@ tags:
 | **PSK** | The pre-shared key ([[ADR-002 Message Integrity\|ADR-002]]) from which every session key is derived. |
 | **ROS domain** | `ROS_DOMAIN_ID`: nodes only see nodes with the same number. Not a security boundary. |
 | **SROS2** | ROS 2's security layer: signed and encrypted DDS traffic with per-topic permissions. |
+| **Ceiling** | The guard's hard limit on a target: 0.5 m/s linear, 45 °/s yaw (`CEILING_LINEAR_MPS`, `CEILING_YAW_RPS` in `guard.py`). |
+| **BYE** | Message that ends a session; the ESP then starts its failsafe output at once instead of after `T_loss`. |
+| **FLU** | Body frame: x forward, y left, z up. |
+| **LINK_FAILSAFE / SESSION_IDLE / STREAMING** | ESP link states ([[ESP Link State Machine]]); STREAMING forwards ground setpoints to the FC. |
+| **SETPOINT / STATE** | Protocol messages: ground → ESP sticks (0x60, 50 Hz) and ESP → ground telemetry (0x80, 25 Hz) ([[Protocol Spec v0]] §3). |
+| **PX4 / SITL** | The simulated flight stack used in simulation only (`px4_offboard_bridge`); SITL = Software In The Loop. |
+| **HIL** | Hardware In The Loop: bench tests with the real ESP and FC, props off, no LiPo. |

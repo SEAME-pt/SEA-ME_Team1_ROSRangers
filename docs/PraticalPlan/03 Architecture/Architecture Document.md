@@ -113,7 +113,7 @@ What the two FC telemetry topics carry. Proposed by BrunoBMFT for #96 and merged
 | `header.stamp` | halfway between MSP request and reply, ROS clock | same |
 | No or bad reply | nothing is published; an old value is never sent again with a new stamp. Subscribers judge freshness from the stamp age. Late replies are dropped if they arrived before the next request; MSP v1 has no sequence number, so one that arrives after that can still be taken (rare: ~0.2 % misses on the bench) | same |
 
-Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/telemetry.py` (conversions) and `fc_telemetry.py` (node).
+Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/flight_interface/telemetry.py` (conversions) and `fc_telemetry.py` (node).
 
 ### `fc_telemetry` node
 
@@ -142,7 +142,7 @@ MSP round trip median 13.5–14.4 ms (bridge baseline 12–15 ms, #30). Missed r
 
 ### `flight_interface` node
 
-The decisions behind it are in [[ADR-025 flight_interface Ground Node|ADR-025]]; the code and its parameters in `drone/ground/src/flight_interface/` (`info.md`, `link_node.py`).
+The decisions behind it are in [[ADR-025 flight_interface Ground Node|ADR-025]]; the code and its parameters in `drone/ground/src/flight_interface/flight_interface/` (`flight_interface/link_node.py`); how to run it in Docker: [[05 Flight Interface Node]].
 
 Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file and `docker-compose.yml` default to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1): every terminal that talks to the node needs the same two variables.
 

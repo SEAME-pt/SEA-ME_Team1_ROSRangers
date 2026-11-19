@@ -40,10 +40,18 @@ stamp() {
 # exits with the node's code once the logger has written everything.
 exec 3> >(stamp | tee -a "$dir/$name")
 logger=$!
+# The trap is set before the node starts: a signal that arrives in between is
+# remembered and forwarded at once, not lost (docker stop would then wait 10 s
+# and SIGKILL the node).
+node=''
+stop=''
+trap 'stop=1; if [ -n "$node" ]; then kill -TERM "$node" 2>/dev/null || true; fi' TERM INT
 "$@" >&3 2>&3 &
 node=$!
 exec 3>&-
-trap 'kill -TERM "$node" 2>/dev/null || true' TERM INT
+if [ -n "$stop" ]; then
+    kill -TERM "$node" 2>/dev/null || true
+fi
 set +e
 wait "$node"
 code=$?

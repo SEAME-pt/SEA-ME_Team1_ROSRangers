@@ -31,10 +31,10 @@ PX4 SITL + Gazebo is the flight-behaviour backend of [[ADR-019 Sim Backends|ADR-
 
 ## 2. Build the image
 
-The `Dockerfile` is in the code repo under `drone/simulation/px4/`. It runs PX4's `ubuntu.sh --no-nuttx`, builds the ROS 2 workspace and pre-builds `px4_sitl_default`.
+The `Dockerfile` is in the code repo under `drone/ground/src/simulation/`; its `px4` stage is this image. It runs PX4's `ubuntu.sh --no-nuttx`, builds the ROS 2 workspace and pre-builds `px4_sitl_default`.
 
 ```sh
-docker build -t seame-px4-sim:jazzy-1.17 drone/simulation/px4
+docker build --target px4 -t seame-px4-sim:jazzy-1.17 -f drone/ground/src/simulation/Dockerfile drone/ground
 ```
 
 Your user must be in the `docker` group (`sudo usermod -aG docker $USER`, then log in again).
@@ -121,7 +121,7 @@ The services, in `drone/ground/docker-compose.yml`:
 
 | Service | Runs |
 |---|---|
-| `px4` | PX4 SITL + Gazebo (x500), the Micro XRCE-DDS agent and `px4_offboard_bridge`, in one container. Its start script, `drone/ground/docker/px4/sim_start.sh`, waits for PX4, starts the bridge, arms, takes off and switches to Offboard, then marks the container healthy |
+| `px4` | PX4 SITL + Gazebo (x500), the Micro XRCE-DDS agent and `px4_offboard_bridge`, in one container. Its start script, `drone/ground/src/simulation/sim_start.sh`, waits for PX4, starts the bridge, arms, takes off and switches to Offboard, then marks the container healthy |
 | `gesture`, `intent`, `mission`, `echo` | the usual ground services ([[01 ROS2 Nodes Installation\|01]] §4.2) |
 | `sim_smoke` | the scripted test (§7.3) |
 
@@ -129,9 +129,9 @@ The `flight` service (pretend `/flight/state`) never runs with them: the bridge 
 
 **Discovery.** `make sim` and `make sim-smoke` run every container with `ROS_AUTOMATIC_DISCOVERY_RANGE=SUBNET`; the rest of the ground chain defaults to `LOCALHOST` ([[ADR-025 flight_interface Ground Node|ADR-025]] E1, E1.2). With `LOCALHOST` the `px4` container (uid 1000, UDP only) and the others never see each other. With `SUBNET` other PCs on the same network and `ROS_DOMAIN_ID` see the sim's topics: on a shared network, use your own domain (`export ROS_DOMAIN_ID=<n>` before `make sim`).
 
-**`px4_offboard_bridge`** (`drone/simulation/px4/ros/px4_offboard_bridge/`) turns `/mission/velocity_target` into PX4 offboard velocity setpoints at 20 Hz (body FLU → local NED, using the PX4 heading). It sends zero when the target is older than 0.25 s (REQ-SAF-017), zeroes the axes outside the mask (REQ-SAF-018) and clamps to the ceilings. It publishes `/flight/state` for `mission_node`: `override_active` is "armed and in Offboard", the sim's takeover switch. It never arms or changes mode. Details, the frame formulas and the parameters: its `README.md`.
+**`px4_offboard_bridge`** (`drone/ground/src/simulation/px4_offboard_bridge/`) turns `/mission/velocity_target` into PX4 offboard velocity setpoints at 20 Hz (body FLU → local NED, using the PX4 heading). It sends zero when the target is older than 0.25 s (REQ-SAF-017), zeroes the axes outside the mask (REQ-SAF-018) and clamps to the ceilings. It publishes `/flight/state` for `mission_node`: `override_active` is "armed and in Offboard", the sim's takeover switch. It never arms or changes mode. Details, the frame formulas and the parameters: its `README.md`.
 
-**Images.** `px4` and `sim_smoke` use `rosrangers/px4-sim:jazzy`: the PX4 image of §2 (`seame-px4-sim:jazzy-1.17`) plus `intent_node`, `mission_node` and the bridge (`drone/ground/docker/px4/Dockerfile`). The Makefile builds the PX4 image the first time; that takes a long time and several GB. `make clean` / `fclean` keep it; `make px4-image` rebuilds it after a change to `drone/simulation/px4/Dockerfile`.
+**Images.** `px4` and `sim_smoke` use `rosrangers/px4-sim:jazzy`: the PX4 image of §2 (`seame-px4-sim:jazzy-1.17`) plus `intent_node`, `mission_node` and the bridge (the final stage of the same `drone/ground/src/simulation/Dockerfile`). The Makefile builds the PX4 image the first time; that takes a long time and several GB. `make clean` / `fclean` keep it; `make px4-image` rebuilds it after a change to the `px4` stage.
 
 ### 7.2 Fly it with gestures in Gazebo: `make sim`
 
@@ -215,7 +215,7 @@ To keep a run as evidence, zip its `sim-smoke/<start time>/` folder and attach i
 
 ### 7.5 By hand: `sim_smoke.sh`
 
-`drone/simulation/px4/sim_smoke.sh` runs the same chain in one container (`px4sim-smoke`, the image of §2 with the repo mounted read-only), for debugging inside it: `up [8|11|15] [gui]`, `gui` (open the window again), `check` (topic rates and the last `/flight/state`), `shell` (ROS sourced), `logs`, `down`. It does not arm, take off or switch to Offboard: you do that yourself, as `make sim` does in `sim_start.sh`. The usage is at the top of the script; details in `drone/simulation/px4/README.md`.
+`drone/ground/src/simulation/sim_smoke.sh` runs the same chain in one container (`px4sim-smoke`, the image of §2 with the repo mounted read-only), for debugging inside it: `up [8|11|15] [gui]`, `gui` (open the window again), `check` (topic rates and the last `/flight/state`), `shell` (ROS sourced), `logs`, `down`. It does not arm, take off or switch to Offboard: you do that yourself, as `make sim` does in `sim_start.sh`. The usage is at the top of the script; details in `drone/ground/src/simulation/README.md`.
 
 ## 8. Related pages
 

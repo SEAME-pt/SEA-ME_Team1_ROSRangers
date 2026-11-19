@@ -5,7 +5,8 @@
 #
 #   softap_window.sh SECONDS -- COMMAND [ARGS...]
 #
-# Needs SEAME_AP_SSID and SEAME_AP_PASS (the spare ESP's SoftAP) and
+# Needs SEAME_AP_SSID and SEAME_AP_PASS (the spare ESP's SoftAP; its channel
+# from SEAME_AP_CHANNEL, default 6) and
 # passwordless `sudo nmcli` (/etc/sudoers.d/hil-nmcli on the Pi).
 #
 # If the job dies inside the window, a watchdog started outside the job
@@ -130,10 +131,18 @@ printf '802-11-wireless-security.psk:%s\n' "$SEAME_AP_PASS" >"$psk_file"
 step sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect no
 # Power save off (2 = disable): a dozing Pi makes the ESP's SoftAP hold its
 # packets, which stalled TCP connects and EVENTs (#106, 2026-11-13). The Pi's
-# NetworkManager config sets it too; this keeps it off without that file
+# NetworkManager config sets it too; this keeps it off without that file.
+# Static address, as the ground PC has (scripts/setup_production.py): the
+# ESP's DHCP took 16 s of the 25 s join on 2026-11-16 (#207). No gateway, so
+# the SoftAP never becomes the Pi's default route.
+# Band and channel pinned: the Pi skips the 5 GHz scan and tunes straight to
+# the SoftAP, coming from the lab's 5 GHz network (#207). SEAME_AP_CHANNEL
+# is the one the firmware was built with (hil.yaml, secrets.py; default 6)
 step sudo nmcli connection add save no type wifi ifname "$IFACE" con-name "$con" \
   ssid "$SEAME_AP_SSID" autoconnect yes wifi-sec.key-mgmt wpa-psk \
-  802-11-wireless.powersave 2 >/dev/null
+  802-11-wireless.powersave 2 \
+  802-11-wireless.band bg 802-11-wireless.channel "${SEAME_AP_CHANNEL:-6}" \
+  ipv4.method manual ipv4.addresses 192.168.4.2/24 ipv6.method disabled >/dev/null
 step sudo nmcli --wait "$JOIN_WAIT_S" connection up "$con" passwd-file "$psk_file"
 # What the driver really does, in the log of every run
 iw dev "$IFACE" get power_save 2>/dev/null || echo "Power save: unknown (no iw)"

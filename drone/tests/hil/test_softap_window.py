@@ -124,6 +124,10 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert add.startswith("connection add save no ")  # in memory: gone on reboot
     assert "autoconnect yes" in add and "ssid seame-hil-test" in add
     assert "802-11-wireless.powersave 2" in add  # power save off (#106)
+    # No DHCP wait inside the window (#207)
+    assert "ipv4.method manual ipv4.addresses 192.168.4.2/24" in add
+    assert "ipv6.method disabled" in add
+    assert "802-11-wireless.band bg 802-11-wireless.channel 6" in add  # (#207)
     assert up.startswith(f"--wait 25 connection up hil-softap-{env['GITHUB_RUN_ID']}-")
     assert "passwd-file" in up
     assert delete.startswith("connection delete hil-softap-")
@@ -131,6 +135,13 @@ def test_joins_runs_and_rejoins_the_lab(env):
     assert rejoin == REJOIN
     assert not any(PASSWORD in call for call in calls), "password on the command line"
     assert list(Path(env["RUNNER_TEMP"]).iterdir()) == [], "password file left"
+
+
+def test_channel_comes_from_the_firmware_build(env):
+    # The same SEAME_AP_CHANNEL secrets.py builds into the firmware (hil.yaml)
+    assert run(env | {"SEAME_AP_CHANNEL": "11"}, "10", "--", "true").returncode == 0
+    add = next(c for c in nmcli_calls(env) if c.startswith("connection add "))
+    assert "802-11-wireless.channel 11" in add
 
 
 def test_failing_command_still_rejoins_the_lab(env):

@@ -6,7 +6,7 @@ FROM ros:jazzy-ros-base
 # Before the source: it rarely changes, so its layer stays cached
 COPY docker/entrypoint.sh /entrypoint.sh
 WORKDIR /ws
-COPY src/mission_node src/mission_node
+COPY src/mission/mission_node src/mission_node
 RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select mission_node
 
 ENTRYPOINT ["/entrypoint.sh"]

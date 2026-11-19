@@ -61,11 +61,11 @@ With the rest of the ground nodes, from `drone/ground/`: `make sim` (camera gest
 By hand, from the repo root, in its own container (`px4sim-smoke`):
 
 ```sh
-drone/simulation/px4/sim_smoke.sh up            # headless, mask 15; or: up 11
-drone/simulation/px4/sim_smoke.sh up 15 gui     # also opens the Gazebo window
-drone/simulation/px4/sim_smoke.sh check         # topic rates and the last /flight/state
-drone/simulation/px4/sim_smoke.sh shell         # ROS sourced, for the scenario
-drone/simulation/px4/sim_smoke.sh down
+drone/ground/src/simulation/sim_smoke.sh up            # headless, mask 15; or: up 11
+drone/ground/src/simulation/sim_smoke.sh up 15 gui     # also opens the Gazebo window
+drone/ground/src/simulation/sim_smoke.sh check         # topic rates and the last /flight/state
+drone/ground/src/simulation/sim_smoke.sh shell         # ROS sourced, for the scenario
+drone/ground/src/simulation/sim_smoke.sh down
 ```
 
 `up` stops with an error (and says how to see the logs) if the build fails, PX4 is not ready within 180 s, or a node does not start.
@@ -75,7 +75,7 @@ drone/simulation/px4/sim_smoke.sh down
 The logic tests need no ROS and no `px4_msgs` (`bridge_logic.py` has no ROS imports). They use pytest, and CI runs them in the `sim-bridge-python` job:
 
 ```sh
-cd drone/simulation/px4/ros/px4_offboard_bridge && python3 -m pytest test
+cd drone/ground/src/simulation/px4_offboard_bridge && python3 -m pytest test
 ```
 
 The node itself (`bridge_node.py`) needs `px4_msgs`, so it is checked only in SITL (`sim_smoke.sh`, `make sim-smoke`), not in CI.
