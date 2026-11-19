@@ -10,21 +10,26 @@
 # passwordless `sudo nmcli` (/etc/sudoers.d/hil-nmcli on the Pi).
 #
 # If the job dies inside the window, a watchdog started outside the job
-# re-joins the lab Wi-Fi after SECONDS + 75 s (both joins, kill grace and
-# 10 s; 125 s for a 50 s test), also when the re-join below failed.
+# re-joins the lab Wi-Fi once the longest window with this SECONDS has
+# passed, plus WATCHDOG_GRACE_S, also when the re-join below failed.
 set -euo pipefail
 
 LAB_CON=${HIL_LAB_CON:-netplan-wlan0-SEAME}
 IFACE=${HIL_WIFI_IFACE:-wlan0}
 JOIN_WAIT_S=25 # a join takes about 6 s on the bench
 # The lab's 5 GHz AP sometimes ignores the first login after the window: wpa
-# times out at 10 s, NetworkManager restarts the join at 25 s and is on the
-# lab 0.6 s later (#193, 2026-11-17 and -18). 35 s lets that retry finish.
+# times out at 10 s, NetworkManager restarts the join at its own 25 s limit
+# and is on the lab 0.6 s later (#193, runs of 2026-11-17 and 2026-11-18).
+# REJOIN_WAIT_S lets that retry finish.
 REJOIN_WAIT_S=35
 KILL_GRACE_S=5
-MAX_TEST_S=50 # join 25 + test 50 + kill 5 + re-join 35 = 115 s offline at most
+# A window is JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S offline
+# at most: 105 s, under ADR-020's 2 min. The gateway's Wi-Fi tests take
+# about 30 s.
+MAX_TEST_S=40
 # The watchdog waits for the lock, so it can never race this run's restore:
-# a short grace is enough, and even a killed run is back within 2 min
+# a short grace is enough. It only acts for a job that is already dead
+# (killed), so the 2 min a live job needs (ADR-020) does not bind it.
 WATCHDOG_GRACE_S=10
 
 usage() {
@@ -113,13 +118,16 @@ restore() {
   fi
   sudo nmcli connection delete "$con" >/dev/null 2>&1 || true
   sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect yes || true
-  local t0=$SECONDS
-  if ! sudo nmcli --wait "$REJOIN_WAIT_S" connection up "$LAB_CON"; then
+  local t0
+  t0=$(date +%s.%N)
+  if sudo nmcli --wait "$REJOIN_WAIT_S" connection up "$LAB_CON"; then
+    # Over JOIN_WAIT_S: the AP ignored the first login and REJOIN_WAIT_S
+    # saved the run (#193)
+    awk -v t0="$t0" -v t1="$(date +%s.%N)" 'BEGIN { printf "Lab re-join took %.1f s\n", t1 - t0 }'
+  else
     echo "::error title=HIL Wi-Fi::could not re-join $LAB_CON, the watchdog retries about ${WATCHDOG_GRACE_S} s after the window"
     rc=1
   fi
-  # Over 25 s means the AP ignored the first login and the 35 s saved the run (#193)
-  echo "Lab re-join took $((SECONDS - t0)) s"
   # Then wait for the test, so pytest has let go of /dev/hil-esp before the
   # next step
   [[ -z $bg_pid ]] || wait "$bg_pid" 2>/dev/null || true

@@ -118,7 +118,7 @@ jobs:
           # exec: a cancel or step timeout signals the step's shell, so the
           # script must be that shell to restore the lab Wi-Fi at once.
           # The holder is stopped (port closed) before the tests open it
-          exec drone/tests/hil/softap_window.sh 50 -- bash -c '
+          exec drone/tests/hil/softap_window.sh 40 -- bash -c '
             pid=$(cat esp-join.pid)
             kill "$pid" 2>/dev/null && tail --pid="$pid" -f /dev/null
             exec "$@"' _ \
