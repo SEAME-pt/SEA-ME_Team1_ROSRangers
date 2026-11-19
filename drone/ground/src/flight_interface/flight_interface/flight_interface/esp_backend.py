@@ -90,6 +90,7 @@ from sd_protocol.messages import (
     AckResult,
     EspState,
     EventCode,
+    OverrideActive,
     decode_event,
     decode_fc_health,
     decode_state,
@@ -640,7 +641,9 @@ class EspBackend(Backend):
         armed = self.armed
         return {
             "esp_state": name,
-            "override_active": bool(latest.override_active),
+            # Only ON (1) means the FC takes our sticks; UNKNOWN (2, #176)
+            # must never read as on, so no bool() here (Protocol Spec §3.1).
+            "override_active": latest.override_active == OverrideActive.ON,
             "mask": self.armed_mask,  # B1: confirmed by ARM_CONTROL_ACK OK
             "armed": armed,  # D1: FC_HEALTH's armed flag, None when unknown
             "airborne": armed is True,  # D1: airborne = armed for now
