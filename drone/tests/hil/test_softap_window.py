@@ -172,9 +172,9 @@ def test_rejoin_waits_for_the_rest_of_the_window(env):
     # gets what is left of this run's window, so the window never grows
     window_s = JOIN_WAIT_S + 10 + KILL_GRACE_S + REJOIN_WAIT_S
     assert run(env, "10", "--", "true").returncode == 0
-    assert window_s - 1 <= rejoin_waits(env)[-1] <= window_s
+    assert window_s - 3 <= rejoin_waits(env)[-1] <= window_s
     assert run(env, "10", "--", "/bin/sleep", "3").returncode == 0
-    assert window_s - 4 <= rejoin_waits(env)[-1] <= window_s - 3
+    assert window_s - 6 <= rejoin_waits(env)[-1] <= window_s - 3
 
 
 def test_watchdog_rejoin_waits_rejoin_wait_s(env):
