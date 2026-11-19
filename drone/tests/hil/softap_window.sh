@@ -24,9 +24,9 @@ JOIN_WAIT_S=25 # a join takes about 6 s on the bench
 REJOIN_WAIT_S=35
 KILL_GRACE_S=5
 # A window is JOIN_WAIT_S + MAX_TEST_S + KILL_GRACE_S + REJOIN_WAIT_S offline
-# at most: 105 s, under ADR-020's 2 min. The gateway's Wi-Fi tests take
-# about 30 s.
-MAX_TEST_S=40
+# at most: 115 s, under ADR-020's 2 min. Green runs of the gateway's Wi-Fi
+# tests took 27-39 s (2026-11-13 to 2026-11-17).
+MAX_TEST_S=50
 # The watchdog waits for the lock, so it can never race this run's restore:
 # a short grace is enough. It only acts for a job that is already dead
 # (killed), so the 2 min a live job needs (ADR-020) does not bind it.
