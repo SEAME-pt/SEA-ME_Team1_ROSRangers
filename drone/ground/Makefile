@@ -41,7 +41,8 @@
 #                   drone, no PSK. To rehearse the operator steps at a desk
 #   make real-steps print the operator steps again
 #   make real-down  asks first (it cuts the drone's link: the ESP's failsafe
-#                   takes over), then stops flight_interface and the chain
+#                   takes over), then stops flight_interface, the chain and the
+#                   live table
 #
 # Modes: one compose profile and env file each (env/<mode>.env: profile,
 # parameter file, ROS domain, ADR-025 E1.3). Git ignores env/: copy each
@@ -413,7 +414,9 @@ $(REAL_COMPOSE) up -d --build --force-recreate $(REAL_CHAIN)
 $(REAL_COMPOSE) run -d --rm --build --name $(FI_NAME) flight_interface $(FI_ARGS)
 @$(MAKE) --no-print-directory real-steps
 -$(REAL_COMPOSE) run --rm echo
-@echo "The real stack is still running. Stop it with: make real-down"
+@if docker ps -q --filter name=^$(FI_NAME)$$ | grep -q .; then \
+	echo "The real stack is still running. Stop it with: make real-down"; \
+else echo "The real stack is stopped."; fi
 endef
 
 # The operator steps, printed again any time (nothing else happens)
@@ -435,7 +438,9 @@ real-steps:
 # Stopping the real mode cuts the drone's link on purpose: the ESP's link
 # failsafe takes over. So it asks first, and goes on only on the answer `stop`.
 # flight_interface is stopped first (docker stop: it deactivates, one last
-# zero setpoint, then BYE; --rm removes it), then the chain.
+# zero setpoint, then BYE; --rm removes it), then the chain, then the echo
+# containers started with `run` (the live table of make real / real-dry and
+# the operator steps' commands): compose's down leaves `run` containers alone.
 real-down:
 	@echo "make real-down stops flight_interface: the drone's link is cut and the ESP's"
 	@echo "failsafe takes over. The safety pilot must be ready, holding the radio."
@@ -446,6 +451,10 @@ real-down:
 	if [[ -n $$ids ]]; then docker stop $$ids >/dev/null; fi
 	GROUND_MODE=real GROUND_DOMAIN_ID=0 GROUND_DISCOVERY_RANGE=LOCALHOST \
 		$(COMPOSE) --profile real down
+	@ids=$$(docker ps -q --filter label=com.docker.compose.project=ground \
+		--filter label=com.docker.compose.service=echo \
+		--filter label=com.docker.compose.oneoff=True); \
+	if [[ -n $$ids ]]; then docker stop $$ids >/dev/null; fi
 
 # ---------- Simulation (SIMULATION ONLY, #86) ----------
 
