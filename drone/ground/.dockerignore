@@ -7,3 +7,6 @@ gesture-venv/
 ros2_ws/
 logs/
 Makefile
+# The env files hold the safety pilot's values (ADR-025 E1.3): never in a build context
+.env
+env/

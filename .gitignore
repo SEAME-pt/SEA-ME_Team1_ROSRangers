@@ -9,11 +9,18 @@ __pycache__/
 config/
 # drone/config holds the tracked Betaflight baselines
 !drone/config/
+# ground_bringup's mode parameter files (demo, real, sim): tracked and reviewed
+!drone/ground/src/bringup/ground_bringup/config/
 .claude/settings*.json
 # drone/ground Makefile: native venv and colcon workspace
 drone/ground/gesture-venv/
 drone/ground/ros2_ws/
 drone/ground/logs
+# Env files: the real values (ROS domains, discovery), given by the safety
+# pilot, never committed. Templates with empty values: .env.example, env.example/
+# .env stays unanchored: a .env anywhere is kept out of git
+.env
+/drone/ground/env/
 results/
 .pio
 .vscode/

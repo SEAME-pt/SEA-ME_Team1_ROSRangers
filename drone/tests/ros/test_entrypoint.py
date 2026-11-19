@@ -15,7 +15,7 @@ $LOG_DIR/$LOG_NAME/<start time>.log, so two runs can be compared. Checks:
 Runs the script directly, no Docker: needs bash and ROS 2 Jazzy at
 /opt/ros/jazzy (the script sources it). Without them the tests are skipped,
 unless REQUIRE_ROS_TESTS=1 is set (CI sets it), then they fail.
-docker/smoke_test.sh checks the same files from real containers.
+tools/smoke_test.sh checks the same files from real containers.
 
 Run with:  python3 -m pytest drone/tests/ros -v        (from the repo root)
 """

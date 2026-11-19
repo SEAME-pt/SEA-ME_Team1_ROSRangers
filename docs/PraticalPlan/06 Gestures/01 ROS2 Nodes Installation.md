@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -62,15 +62,36 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 
 ### 4.2 The services
 
-`drone/ground/docker-compose.yml` defines one service per piece, each built from `ros:jazzy-ros-base`:
+`drone/ground/docker-compose.yml` defines one service per piece. Each image builds `FROM` the shared base, `docker/base/Dockerfile` (`ros:jazzy-ros-base`, the entrypoint and a non-root user `ros`). That user gets your uid and gid (`make` sets `GROUND_UID` / `GROUND_GID`), so the files in `logs/` are yours. Compose builds the base first by itself (the build-only `base` service).
 
 | Service | Runs |
 | :--- | :--- |
 | `gesture` | `gesture_node`: webcam, "Gestures" window, `/gesture/raw` |
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
-| `flight` | `fake_flight_state`, a **pretend** `/flight/state` ([[04 Mission Node]] §7.1). Never with a real drone |
+| `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
 | `echo` | the live table of the chain, and the `ros2` CLI (§5) |
+| `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
+| `px4`, `sim_smoke` | the simulation and its test, sim modes only ([[PX4 SITL Setup]] §7) |
+
+Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.env`. The file sets the profile, the parameter file (`ground_bringup`'s `config/<mode>.yaml`), the ROS domain and the discovery range together:
+
+| Mode | Services | `/flight/state` from |
+| :--- | :--- | :--- |
+| `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
+| `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
+| `real` (`make real`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+
+**Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
+
+```bash
+cd drone/ground
+mkdir -p env
+cp env.example/demo.env.example env/demo.env   # and sim, real when you need them
+cp .env.example .env                           # only for a plain `docker compose ...`
+```
+
+Until they are filled in, `make` and `docker compose` refuse to start, and say which value is missing.
 
 The **live table** shows the latest gesture, intent, mission mode and velocity target, and marks a topic `STALE` when it stops. Each node writes its output to `logs/<service>/latest.log` (`tail -f logs/intent/latest.log`).
 
@@ -80,15 +101,18 @@ From `drone/ground/`:
 
 | Target | Does |
 | :--- | :--- |
-| `make` | builds the images and starts all five services; the terminal shows the live table |
-| `make down` | stops them |
-| `make unit` / `make smoke` | the tests (§7) |
+| `make` | the demo mode: builds the images and starts its services from scratch (other modes stopped, containers recreated); the terminal shows the live table |
+| `make down` | stops the demo and the simulation; refuses while `flight_interface` runs |
+| `make test`, `make unit`, `make smoke`, `make test-sitl` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
-| `make fclean` / `make re` | `clean` + removes `logs/` and this project's other Docker objects / `fclean`, then `make` |
-| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `flight`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
+| `make fclean` / `make re` | `clean` + removes the venv, the workspace, `build/`, `logs/` and this project's other Docker objects / `fclean`, then `make` |
+| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
 | `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
+| `make real` | the real mode, the drone: checks `env/real.env`, the PSK file and that the ESP answers, then starts the chain and `flight_interface` unconfigured and prints the operator steps ([[05 Flight Interface Node]] §7). Never configures, activates or ARMs |
+| `make real-dry` | the same without the drone (`flight_interface` on the loopback backend): to rehearse the operator steps |
+| `make real-down` | asks first (it cuts the drone's link), then stops the real mode |
 
-`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). `MASK=` and `AIRBORNE=` set the pretend flight state ([[04 Mission Node]] §8.1).
+`q` in the "Gestures" window stops `gesture_node`; Ctrl+C stops the rest. To run one service alone: `docker compose up --build <service>` (run `xhost +local:` once per login before `gesture`). The pretend flight state's mask and airborne are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: edit it, then `docker compose restart fake_flight_state` ([[04 Mission Node]] §8.1).
 
 ### 4.4 Changing the code
 
@@ -96,7 +120,7 @@ The code is copied into the images, so run `make` again after an edit: it rebuil
 
 ### 4.5 `ROS_DOMAIN_ID`
 
-Nodes on the same network see each other. Export your own number (0–101) before `make` and use it in every terminal: `export ROS_DOMAIN_ID=42`.
+Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). `make` refuses a domain another mode uses, the tests' 81–98, and 0 or 42: the domains a plain terminal and the native launch files use, so a native `flight_interface` can't join a mode (E1.4). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
 
 ---
 
@@ -168,11 +192,14 @@ From `drone/ground/`:
 
 | Command | Needs | Runs |
 | :--- | :--- | :--- |
-| `make unit` | Python 3 | the package tests that need no ROS 2 (the others are skipped) |
+| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `px4_offboard_bridge`, `tests/scripts`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
+| `make unit` | Python 3.12 | the suites that need no ROS 2 (the package tests' ROS cases are skipped), no pre-commit |
+| `make pkg-test` / `make e2e-test` | ROS 2 Jazzy | `colcon test` only / `drone/tests/ros` only |
+| `make test-sitl` | `git`, `gcc`, network on the first run | Betaflight SITL and `drone/tests/sitl`. The first run clones and builds Betaflight into `build/betaflight` (a few minutes); `BF_DIR=<checkout>` uses another one |
 | `make smoke` | Docker | the smoke test (§7.3) |
 | `make sim-smoke` | Docker, several GB for the PX4 image | the chain against PX4 SITL, not in CI ([[PX4 SITL Setup]] §7.3) |
 
-Full output in `logs/test/`.
+The test targets run every suite even if one fails and end with one summary row per suite (per package for `colcon`): `PASS`, `FAIL`, `SKIP` (a tool is missing, e.g. no Jazzy; it does not fail the run) or `TIMEOUT` (each suite is stopped after 20 min, `SUITE_TIMEOUT`). Full output in `logs/test/<suite>.log`. The suites are in `tools/run_tests.sh`. The C++ suite runs `ctest` only: its 80 % coverage gate runs in CI.
 
 ### 7.2 Where the tests are
 
@@ -180,15 +207,15 @@ Package tests in `drone/ground/src/<component>/<package>/test/`, tests of nodes 
 
 ### 7.3 The smoke test
 
-`docker/smoke_test.sh` builds the images (also `flight_interface`), runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs. Last, `flight_interface` (loopback) publishes `/flight/state` and mission stays `IDLE`.
+`tools/smoke_test.sh` builds the images (also `flight_interface`), runs each package's tests inside its image with none skipped, sends a gesture through the gesture, intent and mission containers, and checks the fallbacks, clean stops and logs. Last, `flight_interface` (loopback) publishes `/flight/state` and mission stays `IDLE`.
 
 ### 7.4 Skipped tests
 
-Tests that need ROS 2 are skipped on the host. With `REQUIRE_ROS_TESTS=1` (set in CI and the smoke test) a skip is a failure.
+Tests that need ROS 2 are skipped where ROS 2 is missing (`make unit`). With `REQUIRE_ROS_TESTS=1` (set in CI, the smoke test and the ROS suites of `make test`) a skip is a failure.
 
 ### 7.5 In CI
 
-`ground-ros2` builds and tests the three packages and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
+`ground-ros2` builds and tests the ground packages (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`, `ground_bringup`) and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
 
 ---
 

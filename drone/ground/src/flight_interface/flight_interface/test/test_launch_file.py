@@ -64,7 +64,9 @@ def launch_description():
 def test_ros_stays_on_this_pc_unless_the_caller_says_otherwise(
     monkeypatch, preset, expected
 ):
-    pytest.importorskip("launch")
+    # launch.actions, not launch: run from the package folder without ROS,
+    # its launch/ folder imports as an empty "launch" namespace package
+    pytest.importorskip("launch.actions")
     from launch import LaunchContext
     from launch.actions import SetEnvironmentVariable
 

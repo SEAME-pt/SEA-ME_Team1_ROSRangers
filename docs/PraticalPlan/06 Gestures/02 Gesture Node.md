@@ -3,7 +3,7 @@ title: Gesture Node (webcam + OpenCV + MediaPipe Holistic → /gesture/raw)
 type: architecture
 status: draft
 date: 2026-10-20
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -57,7 +57,7 @@ It reads the camera itself instead of subscribing to a separate camera node: the
 
 **OpenCV** reads the frames and shows the "Gestures" window. **MediaPipe Holistic** returns, for every frame, the **body pose** (33 landmarks: shoulders, elbows, wrists, ...) and the **21 landmarks of each hand**, each hand labelled as the person's left or right. MediaPipe only gives landmarks; our code decides which hands count and what pose they show.
 
-`mediapipe` is pinned to `0.10.21` (`requirements.txt`): 1.x removed the `mp.solutions` API this code uses, so upgrading needs a port to the Tasks API ([[06 Final Connections and Missing Parts|06]] §2.6).
+`mediapipe` is pinned to `0.10.21` (`requirements.txt`): 1.x removed the `mp.solutions` API this code uses, so upgrading needs a port to the Tasks API ([[06 Final Connections and Missing Parts|06]] §2.5).
 
 ### 3.1 Why Holistic
 

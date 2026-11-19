@@ -45,7 +45,7 @@ The rules are in `gesture_filter.py`, which has no ROS imports. `intent_node.py`
 
 JSON packets from `gesture_node`. The format and the 10 Hz keep-alive are described in [[02 Gesture Node]] §8. This node uses the `gesture` field: case and outer spaces are ignored, and `null`, `""`, `NONE`, `NO_HAND`, `UNKNOWN` and `NEUTRAL` all mean "no hand". Packets that aren't JSON objects are ignored. Timeouts use this node's own clock, not the packet's `t`.
 
-`input_source` must be `topic` (the Docker image sets it). The default `udp` is a legacy input that nothing sends to.
+`input_source` must be `topic` (every mode's parameter file in `ground_bringup` sets it). The default `udp` is a legacy input that nothing sends to.
 
 ---
 
@@ -109,14 +109,14 @@ Every fallback is `NEUTRAL`, and `mission_node` hovers in all of them ([[04 Miss
 
 | Parameter | Default | Meaning |
 | :--- | :--- | :--- |
-| `input_source` | `udp` | `topic` reads `raw_topic` (the Docker image sets it); `udp` is the legacy input |
+| `input_source` | `udp` | `topic` reads `raw_topic` (set by `ground_bringup`'s `config/<mode>.yaml`); `udp` is the legacy input |
 | `raw_topic` / `intent_topic` | `/gesture/raw` / `/gesture/intent` | input and output topics |
 | `stable_packets` | `5` | packets in a row to accept a gesture |
 | `neutral_timeout_sec` | `0.3` | hand gone → `no_hand` |
 | `stale_timeout_sec` | `2.0` | hand or packets gone → `no_hand_long` / `no_packets` |
 | `publish_rate_hz` | `20.0` | output rate |
 
-`stable_packets` and the two timeouts are safety settings: agree changes with the team. To try other values, run the node in its image: `docker compose run --rm intent /ws/install/intent_node/lib/intent_node/intent_node --ros-args -p input_source:=topic -p stable_packets:=3`.
+`stable_packets` and the two timeouts are safety settings: agree changes with the team. To try other values, add them to the `intent_node` section of `drone/ground/src/bringup/ground_bringup/config/demo.yaml` and run `docker compose restart intent` (no rebuild), or once: `docker compose run --rm intent /ws/install/intent_node/lib/intent_node/intent_node --ros-args --params-file /config/demo.yaml -p stable_packets:=3`.
 
 ---
 
