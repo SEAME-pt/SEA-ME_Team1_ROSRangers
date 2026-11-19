@@ -716,10 +716,11 @@ TEST(LateCheck, ANewSessionNeedsANewSeed) {
 }
 
 // --- Replay of the ESP-S1-09 cage runs (#171, #204) --------------------------
-// drone/tests/vectors/replay/: built by make_replay.py from the 2026-10-23
-// bench logs. Each frame goes through an ESP Receiver with the 200 ms bound;
-// the T_loss silences (250 ms without an accepted frame, which would fire the
-// failsafe) must be the same as without the check.
+// drone/tests/vectors/replay/: built locally by make_replay.py from the
+// 2026-10-23 bench logs in results/ (not in the repo; skipped without them).
+// Each frame goes through an ESP Receiver with the 200 ms bound; the T_loss
+// silences (250 ms without an accepted frame, which would fire the failsafe)
+// must be the same as without the check.
 
 namespace {
 
@@ -775,6 +776,14 @@ TEST(LateReplay, TheS109CageRunsGetNoExtraFailsafe) {
   } runs[] = {{"s1-09_cage_run1.csv", 29944, 0, 0},
               {"s1-09_cage_run2.csv", 29672, 292, 14},
               {"s1-09_cage_run3.csv", 29962, 8, 0}};
+  // The fixtures are not in the repo (bench data): make_replay.py builds them
+  // from the S1-09 logs in results/. Without them the test is skipped.
+  for (const auto &e : runs) {
+    if (!std::ifstream(std::string(SD_VECTOR_DIR) + "/replay/" + e.run)) {
+      GTEST_SKIP() << e.run << " missing: run drone/tests/vectors/replay/"
+                   << "make_replay.py (needs the S1-09 logs in results/)";
+    }
+  }
   for (const auto &e : runs) {
     const char *run = e.run;
     const ReplayResult off = replay(run, 0);

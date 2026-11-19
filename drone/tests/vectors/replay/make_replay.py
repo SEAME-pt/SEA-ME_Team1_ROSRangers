@@ -13,6 +13,8 @@ those whole-slot steps are added back. Clock drift and Wi-Fi delay stay in
 the data. The S1-09 re-run with the real t_send_us replaces this (#204).
 
 Run from the repository root: python3 drone/tests/vectors/replay/make_replay.py
+The CSVs are bench data and stay out of the repo (.gitignore); the C++ test
+LateReplay.TheS109CageRunsGetNoExtraFailsafe is skipped when they are missing.
 """
 
 import csv

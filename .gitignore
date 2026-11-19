@@ -21,5 +21,6 @@ results/
 temp/
 build*/
 
-# Late-check replay fixtures (#204), built by make_replay.py from results/
-!drone/tests/vectors/replay/*.csv
+# Late-check replay fixtures (#204): bench data, built locally by make_replay.py
+# from results/, never committed (the LateReplay test skips without them)
+drone/tests/vectors/replay/*.csv
