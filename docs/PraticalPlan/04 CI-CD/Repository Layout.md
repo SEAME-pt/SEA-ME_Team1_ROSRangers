@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - ci
@@ -37,7 +37,8 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
-│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke;
+│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make real / real-dry;
+│   │   │                      #   make test (every suite) / unit / test-sitl / smoke;
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
 │   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
 │   │   │                      #   real (... + flight_interface), sim (... + px4; SIM ONLY), sim-smoke (the sim test)
@@ -46,7 +47,9 @@ SEA-ME_Team1_ROSRangers/
 │   │   ├── docker/            # what goes into the images: base/Dockerfile (the base every ground image builds FROM:
 │   │   │                      #   Jazzy, non-root user ros with the host's uid), entrypoint.sh (node logs)
 │   │   ├── tools/             # host helpers: smoke_test.sh (make smoke, CI ground-docker), pkg_dirs.sh (finds each
-│   │   │                      #   ROS package's folder for the Makefile and CI ground-ros2)
+│   │   │                      #   ROS package's folder for the Makefile and CI ground-ros2), run_tests.sh (make test's
+│   │   │                      #   suites), env_check.sh / real_check.sh (checks before a mode starts)
+│   │   ├── build/             # make test's C++ build and Betaflight SITL checkout (ignored by Git)
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/               # one folder per component: its ROS 2 package and its Dockerfile
 │   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)

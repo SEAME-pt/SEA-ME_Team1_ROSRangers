@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -80,7 +80,7 @@ Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.e
 | :--- | :--- | :--- |
 | `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
 | `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
-| `real` (`docker compose --env-file env/real.env ...`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+| `real` (`make real`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
 
 **Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
 
@@ -103,9 +103,9 @@ From `drone/ground/`:
 | :--- | :--- |
 | `make` | the demo mode: builds the images and starts its services from scratch (other modes stopped, containers recreated); the terminal shows the live table |
 | `make down` | stops the demo and the simulation; refuses while `flight_interface` runs |
-| `make unit` / `make smoke` | the tests (§7) |
+| `make test`, `make unit`, `make smoke`, `make test-sitl` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
-| `make fclean` / `make re` | `clean` + removes `logs/` and this project's other Docker objects / `fclean`, then `make` |
+| `make fclean` / `make re` | `clean` + removes the venv, the workspace, `build/`, `logs/` and this project's other Docker objects / `fclean`, then `make` |
 | `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
 | `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
 | `make real` | the real mode, the drone: checks `env/real.env`, the PSK file and that the ESP answers, then starts the chain and `flight_interface` unconfigured and prints the operator steps ([[05 Flight Interface Node]] §7). Never configures, activates or ARMs |
@@ -192,11 +192,14 @@ From `drone/ground/`:
 
 | Command | Needs | Runs |
 | :--- | :--- | :--- |
-| `make unit` | Python 3 | the package tests that need no ROS 2 (the others are skipped) |
+| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `px4_offboard_bridge`, `tests/scripts`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
+| `make unit` | Python 3.12 | the suites that need no ROS 2 (the package tests' ROS cases are skipped), no pre-commit |
+| `make pkg-test` / `make e2e-test` | ROS 2 Jazzy | `colcon test` only / `drone/tests/ros` only |
+| `make test-sitl` | `git`, `gcc`, network on the first run | Betaflight SITL and `drone/tests/sitl`. The first run clones and builds Betaflight into `build/betaflight` (a few minutes); `BF_DIR=<checkout>` uses another one |
 | `make smoke` | Docker | the smoke test (§7.3) |
 | `make sim-smoke` | Docker, several GB for the PX4 image | the chain against PX4 SITL, not in CI ([[PX4 SITL Setup]] §7.3) |
 
-Full output in `logs/test/`.
+The test targets run every suite even if one fails and end with one summary row per suite (per package for `colcon`): `PASS`, `FAIL`, `SKIP` (a tool is missing, e.g. no Jazzy; it does not fail the run) or `TIMEOUT` (each suite is stopped after 20 min, `SUITE_TIMEOUT`). Full output in `logs/test/<suite>.log`. The suites are in `tools/run_tests.sh`. The C++ suite runs `ctest` only: its 80 % coverage gate runs in CI.
 
 ### 7.2 Where the tests are
 
@@ -208,11 +211,11 @@ Package tests in `drone/ground/src/<component>/<package>/test/`, tests of nodes 
 
 ### 7.4 Skipped tests
 
-Tests that need ROS 2 are skipped on the host. With `REQUIRE_ROS_TESTS=1` (set in CI and the smoke test) a skip is a failure.
+Tests that need ROS 2 are skipped where ROS 2 is missing (`make unit`). With `REQUIRE_ROS_TESTS=1` (set in CI, the smoke test and the ROS suites of `make test`) a skip is a failure.
 
 ### 7.5 In CI
 
-`ground-ros2` builds and tests the three packages and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
+`ground-ros2` builds and tests the ground packages (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`, `ground_bringup`) and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
 
 ---
 

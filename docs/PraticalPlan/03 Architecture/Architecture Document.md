@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: draft
 date: 2026-11-02
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - architecture
@@ -144,7 +144,7 @@ MSP round trip median 13.5–14.4 ms (bridge baseline 12–15 ms, #30). Missed r
 
 The decisions behind it are in [[ADR-025 flight_interface Ground Node|ADR-025]]; the code and its parameters in `drone/ground/src/flight_interface/flight_interface/` (`flight_interface/link_node.py`); how to run it in Docker: [[05 Flight Interface Node]].
 
-Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file and `docker-compose.yml` default to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1): every terminal that talks to the node needs the same two variables.
+Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file defaults to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1, E1.4); in Docker (`make real`) the domain and discovery range come from `drone/ground/env/real.env` (E1.3). Every terminal that talks to the node needs the same two variables.
 
 | Service | What it does |
 |---|---|

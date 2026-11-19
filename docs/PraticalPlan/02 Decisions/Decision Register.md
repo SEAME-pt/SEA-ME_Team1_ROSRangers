@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -106,11 +106,17 @@ tags:
 
 - New [[ADR-025 flight_interface Ground Node|ADR-025]] (#103, PR #187): the decisions for the `flight_interface` node, taken by the safety pilot on 2026-11-09 / 2026-11-10 and by the team on PR #187 (2026-11-12), moved here from the PR's `DECISIONS.md`. K6 follows the safety pilot's change on PR #191 (ARM and RESUME held for 1.5 s of neutral, 3 s timeout); E6.2 (how `FC_HEALTH` and the events give the FC state) and E1.2 (simulation on `SUBNET` discovery) were added on 2026-11-16. A7 (an error in the node's tick latches the E-stop) was decided by the safety pilot on the PR #187 review, the same day.
 
-## 10. Still open
+## 10. What changed on 2026-11-18 and 2026-11-19
+
+- 2026-11-18, decision **extended**: [[ADR-025 flight_interface Ground Node|ADR-025]] E3.2: the `flight_interface` container mounts only the PSK (`psk.json`, written by `make psk-file`), never the whole `secrets.json` with the Wi-Fi and OTA passwords (#186 PR B, from the PR #211 review).
+- 2026-11-18, decision **changed**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.3: each compose mode (demo, sim, real) has its own ROS domain and discovery range, set in its git-ignored env file `drone/ground/env/<mode>.env` with the values the safety pilot gives. Replaces E1's domain 42 for the containers (#186 PR B).
+- 2026-11-19, decision **clarified**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.4: E1's domain 42 stays only as the default of the native launch files run on the host without Docker (#186 PR B).
+
+## 11. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 11. Glossary
+## 12. Glossary
 
 | Term | Meaning |
 | --- | --- |

@@ -3,7 +3,7 @@ title: Flight Interface Node (velocity target → drone, drone state → /flight
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -84,7 +84,7 @@ The node starts **unconfigured**. The operator runs `configure`, then `activate`
 | E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop` |
 | Sessions | the `esp` backend reconnects by itself, never with ARM |
 | No restart | a dead node stays dead; the ESP's failsafe takes over |
-| ROS stays on this PC | `ROS_DOMAIN_ID=42` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services |
+| ROS stays on this PC | the real mode's domain from `env/real.env` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services. A native `ros2 launch` on the host defaults to `ROS_DOMAIN_ID=42` (ADR-025 E1.4) |
 
 Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
@@ -202,7 +202,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 ## ❓ 13. Open points
 
 - [ ] **Controller and PX4 backend** ([[06 Final Connections and Missing Parts|06]] §2.1–2.2).
-- [ ] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.5).
+- [ ] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.4).
 - [ ] **E-stop time** measured end to end on the bench (ADR-025 C3).
 - [ ] **A compose service for `fc_telemetry`**, if the bench needs it outside a native workspace.
 

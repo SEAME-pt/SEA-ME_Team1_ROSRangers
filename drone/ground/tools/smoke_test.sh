@@ -343,19 +343,35 @@ lifecycle_cli() {
 # that worked but whose reply was lost (or cut by timeout) is not retried
 # from the new state and reported as failed. Configure and activate only:
 # never ARM.
+# Each CLI call gets at least LIFECYCLE_MIN_S: a fresh container needs a few
+# seconds for discovery, so a 1 s call near the deadline could never answer.
+LIFECYCLE_MIN_S=5
+# cli_time LEFT CAP: LEFT capped at CAP, never under LIFECYCLE_MIN_S
+cli_time() {
+    local t=$(($1 < $2 ? $1 : $2))
+    echo $((t < LIFECYCLE_MIN_S ? LIFECYCLE_MIN_S : t))
+}
+# in_state STATE TIMEOUT: /flight_interface reports STATE
+in_state() {
+    lifecycle_cli "$2" get /flight_interface | grep -E "^$1 \[[0-9]+\]" >/dev/null
+}
 lifecycle() {
     local end=$((SECONDS + 30)) left
     while ((left = end - SECONDS, left > 0)); do
-        if lifecycle_cli $((left < 10 ? left : 10)) get /flight_interface |
-            grep -E "^$2 \[[0-9]+\]" >/dev/null; then
+        if in_state "$2" "$(cli_time "$left" 10)"; then
             echo "    /flight_interface is $2 (ros2 lifecycle set $1)"
             return 0
         fi
         ((left = end - SECONDS, left > 0)) || break
-        lifecycle_cli $((left < 20 ? left : 20)) set /flight_interface "$1" >/dev/null
+        lifecycle_cli "$(cli_time "$left" 20)" set /flight_interface "$1" >/dev/null
         sleep 1
     done
-    fail "/flight_interface did not reach $2 (ros2 lifecycle set $1) within 30 s"
+    # One last read: the last set may have worked after the loop's last get
+    if in_state "$2" "$LIFECYCLE_MIN_S"; then
+        echo "    /flight_interface is $2 (ros2 lifecycle set $1)"
+        return 0
+    fi
+    fail "/flight_interface did not reach $2 (ros2 lifecycle set $1) within about 30 s"
 }
 # mission alone: fake_flight_state (the pretend /flight/state) stopped in
 # step 5, so flight_interface is the only /flight/state publisher here. Its

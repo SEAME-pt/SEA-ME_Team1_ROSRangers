@@ -3,7 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -267,7 +267,7 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 
 ### 9.1 Automated tests
 
-`make unit`, `make smoke` and CI ([[01 ROS2 Nodes Installation|01]] §7).
+`make test`, `make smoke` and CI ([[01 ROS2 Nodes Installation|01]] §7).
 
 ### 9.2 Test files
 
@@ -279,7 +279,7 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 | :--- | :--- |
 | The demo (§8.2) | modes and velocities as in §7.2 |
 | `ros2 param set /fake_flight_state override_active false` | `IDLE` and zero at once |
-| `docker compose stop flight` | `IDLE` within 0.5 s |
+| `docker compose stop fake_flight_state` | `IDLE` within 0.5 s |
 | Real gestures (§8.1), each held 1 s ([[00 Gesture Pipeline]] §3) | mode and velocity follow §5 within about 0.5 s |
 
 Attach `logs/intent/latest.log` and `logs/mission/latest.log` of a webcam run to a Test session issue.
@@ -337,7 +337,6 @@ Registered in [[Requirements]] (status `draft`).
 - [ ] **Who publishes `/flight/state`**, and how `airborne` is decided.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
 - [ ] **Mission and controller in one node?** [[System Overview]] draws them as one box.
-- [ ] **Launch files and parameters** move to a bringup package ([[06 Final Connections and Missing Parts|06]] §2.4).
 
 ---
 

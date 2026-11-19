@@ -18,6 +18,8 @@ The documentation is an Obsidian vault in `docs/`. It was written in the team's 
 | `drone/config/betaflight/` | Betaflight `diff all` / `status` baselines per version |
 | `drone/ground/src/simulation/` | PX4 SITL / Gazebo image, sim scripts, `px4_offboard_bridge` (sim only) |
 | `drone/ground/env.example/` | Templates of the per-mode env files (`demo`, `real`, `sim`: compose profile, parameter file, ROS domain, discovery range; ADR-025 E1.3), values empty. The filled-in `env/<mode>.env` and `.env` are git-ignored: the safety pilot gives the values. Never commit them or put the values in a template |
+| `drone/ground/docker/base/` | The base image every ground image builds `FROM` (Jazzy, non-root user `ros` with the host's uid) |
+| `drone/ground/tools/` | Host helpers: `run_tests.sh` (`make test`'s suites, one summary row each), `smoke_test.sh` (`make smoke`, CI `ground-docker`), `pkg_dirs.sh` (package folders for the Makefile and CI), `env_check.sh` / `real_check.sh` (checks before a mode starts) |
 | `drone/ground/src/bringup/ground_bringup/` | The modes (demo, real, sim): launch files and parameter files (`config/<mode>.yaml`), no code. The containers read the same parameter files |
 | `drone/tests/{sitl,hil,vectors}/` | SITL tests, HIL bench tests, golden test vectors shared by C++ and Python |
 | `.claude/agents/` | Claude Code subagents (`docs-reviewer`: read-only docs review) |

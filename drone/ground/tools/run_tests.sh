@@ -125,6 +125,7 @@ suite_colcon() {
     ) 2>&1 | tee -a "$log"
     code=${PIPESTATUS[0]}
     for p in $PKGS; do
+        # shellcheck disable=SC1090
         line=$(cd "$WS" && source "$ROS" && colcon test-result --all 2>/dev/null | grep "^build/$p/")
         if [[ -z $line ]]; then
             row "$p" FAIL 0 '?' 'no results (crash or not built)'
