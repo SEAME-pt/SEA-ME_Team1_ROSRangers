@@ -678,3 +678,19 @@ def test_late_huge_bound_is_clamped():
         at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_020_000 + 10_500_000)
         is RxResult.LATE
     )
+
+
+def test_late_old_readings_mixed_with_fresh_ones_add_no_time():
+    # #220 (Dot99's review): a fresh reading every 5 ms, each followed by one
+    # 10 ms older, 1000 times: 5 s pass, and the allowance must be 1 ms, not
+    # ~3 ms. A frame 202 ms above the floor is refused (excess 201 ms).
+    rx = late_rx()
+    fresh = 5_010_000
+    for _ in range(1000):
+        fresh += 5_000
+        rx.keep_time(fresh)
+        rx.keep_time(fresh - 10_000)  # older than the last reading: ignored
+    t_send = fresh - 5_010_000 - 202_000
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, t_send), fresh) is RxResult.LATE
+    on_time = late_frame(MsgType.SETPOINT, 2, fresh - 5_010_000 + 1_000)
+    assert is_accepted(at(rx, on_time, fresh + 6_000))

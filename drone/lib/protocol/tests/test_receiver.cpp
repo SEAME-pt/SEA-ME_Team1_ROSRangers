@@ -714,6 +714,28 @@ TEST(LateCheck, TheDriftAllowanceKeepsGrowingPast71Minutes) {
             sd::RxResult::kLate);
 }
 
+TEST(LateCheck, OldReadingsMixedWithFreshOnesAddNoTime) {
+  // #220 (Dot99's review): a fresh reading every 5 ms, each followed by one
+  // 10 ms older, 1000 times: 5 s really pass. Counting the old readings (or
+  // measuring the next fresh one from them) made it ~15 s, an allowance 3x
+  // too wide. A frame 202 ms above the floor is then refused with the right
+  // allowance (1 ms: excess 201 ms) and was accepted with ~3 ms (199 ms).
+  LateRx rx; // floor 5.010 s, set at rx 5.010 s
+  std::uint32_t fresh = 5010000;
+  for (int i = 0; i < 1000; ++i) {
+    fresh += 5000;
+    rx.keep_time(fresh);
+    rx.keep_time(fresh - 10000); // older than the last reading: ignored
+  }
+  const std::uint32_t t_send = fresh - 5010000 - 202000;
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, t_send), fresh),
+            sd::RxResult::kLate);
+  // A normal forward step still counts: on time is accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 2, fresh - 5010000 + 1000),
+         fresh + 6000)));
+}
+
 TEST(LateCheck, AHugeBoundIsClamped) {
   // #205 review: a bound above 2^31 us would read as negative and refuse
   // everything; set_late_bound() clamps it to 10 s.
