@@ -1,11 +1,13 @@
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
+)
 
 import rt_profile  # noqa: E402
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[3]
 TASKS = """# ===== tasks
 Task list             rate/hz  max/us  avg/us maxload avgload  total/ms   late    run reqd/us
 00 - (         SYSTEM)     10       7       0    0.0%    0.0%        19     38  28942       2

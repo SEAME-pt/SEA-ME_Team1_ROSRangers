@@ -1,7 +1,7 @@
 # Protocol library tests, in plain words
 
 Every test of `drone/lib/protocol`: what it does and why it matters.
-`scripts/protocol_tests.py` reads this file and prints these lines next to each test as it runs, so **add a row here when you add a test**.
+`drone/tools/bench/protocol_tests.py` reads this file and prints these lines next to each test as it runs, so **add a row here when you add a test**.
 
 Words used below:
 - **Frame:** one message as bytes. It is a header (20 bytes) + content + seal (8 bytes).

@@ -4,9 +4,9 @@
 Stop every MSP stream first: the bridge forwards whatever the PC sends, so a
 running stream would look like control output after the reboot.
 
-  python3 scripts/esp_wdt.py reason                       # reset reason and uptime
-  python3 scripts/esp_wdt.py cycle -n 5 --csv s1-10.csv   # 5 x hang, reboot, reason
-  python3 scripts/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv   # hardware watchdog
+  python3 drone/tools/bench/esp_wdt.py reason                       # reset reason and uptime
+  python3 drone/tools/bench/esp_wdt.py cycle -n 5 --csv s1-10.csv   # 5 x hang, reboot, reason
+  python3 drone/tools/bench/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv   # hardware watchdog
 """
 
 import argparse
@@ -17,7 +17,7 @@ import time
 
 HOST = "192.168.4.1"
 PORT = 5771
-RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
+RESULTS_DIR = pathlib.Path(__file__).resolve().parents[3] / "results"
 FIELDS = (
     "cycle",
     "command",

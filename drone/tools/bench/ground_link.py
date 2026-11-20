@@ -46,7 +46,7 @@ import struct
 import sys
 import time
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone" / "ground" / "src" / "sd_protocol_py"))
 
 from sd_protocol.crypto import derive_keys  # noqa: E402

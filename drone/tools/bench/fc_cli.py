@@ -5,12 +5,12 @@ Read-only by default. Any command that can change the configuration needs --writ
 and a `diff all` backup is saved before it runs.
 
 Examples:
-  python3 scripts/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → drone/config/betaflight/<ver>/
-  python3 scripts/fc_cli.py run "get failsafe" "serial"
-  python3 scripts/fc_cli.py --write run "set vtx_power = 1" --save
-  python3 scripts/fc_cli.py --write enable-esp-uart    # UART4 = MSP 115200 (ADR-011)
-  python3 scripts/fc_cli.py backup-firmware            # full 512 KB flash over DFU (needs dfu-util)
-  python3 scripts/fc_cli.py compare-diffs              # S2-02: did the config change? (last two diff all)
+  python3 drone/tools/bench/fc_cli.py dump                       # version, status, serial, failsafe... + diff all → drone/config/betaflight/<ver>/
+  python3 drone/tools/bench/fc_cli.py run "get failsafe" "serial"
+  python3 drone/tools/bench/fc_cli.py --write run "set vtx_power = 1" --save
+  python3 drone/tools/bench/fc_cli.py --write enable-esp-uart    # UART4 = MSP 115200 (ADR-011)
+  python3 drone/tools/bench/fc_cli.py backup-firmware            # full 512 KB flash over DFU (needs dfu-util)
+  python3 drone/tools/bench/fc_cli.py compare-diffs              # S2-02: did the config change? (last two diff all)
 
 On exit the FC reboots (Betaflight leaves the CLI that way). Nothing is saved unless you ask.
 """
@@ -29,7 +29,7 @@ import time
 import serial
 from serial.tools import list_ports
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
+REPO = pathlib.Path(__file__).resolve().parents[3]
 CONFIG_DIR = REPO / "drone" / "config" / "betaflight"  # repo layout from #12
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "betaflight"
 FC_USB_ID = (0x0483, 0x5740)  # STM32 virtual COM port

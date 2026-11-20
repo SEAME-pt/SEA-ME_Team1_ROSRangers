@@ -38,7 +38,7 @@ Optional fields:
 
 | Field | Meaning |
 |---|---|
-| `description` | One sentence in plain words. `scripts/protocol_tests.py` shows it next to the test |
+| `description` | One sentence in plain words. `drone/tools/bench/protocol_tests.py` shows it next to the test |
 | `note` | Extra context, e.g. which decision a vector comes from |
 | `state` | Run through a Receiver with this session open (`current_session`). `last_ctrl_seq` is always 0: vectors start from a fresh session. `last_tcp_seq` is where the TCP Receiver starts (default 1: `HELLO` used seq 1). Without `state`, only the frame checks run |
 | `steps`, `final` | Groups 5, 6 and 8: several frames in order, then `last_ctrl_seq` and `last_tcp_seq` (the ESP's UDP and TCP Receivers), `rx_rejected` and `gaps` (totals over all Receivers: both sides, both transports) at the end. A step may say `"transport": "tcp"` (default `udp`) and `"role": "ground"` (default `esp`). Each side and transport has its own Receiver (spec §2, §4 rule 3). A single frame goes to the ground only for a type only the ground receives; otherwise (also BYE, HELLO, HELLO_ACK and unknown types) to the ESP, on its type's transport (UDP if none) |
@@ -63,7 +63,7 @@ Optional fields:
 
 - **Made by `generate.py`** in this folder. It uses only the Python standard library and is written from the spec, so it is independent of both implementations (rule 4 below).
 - **To add a vector:** add it to `generate.py`, run `python3 drone/tests/vectors/generate.py`, and commit both.
-- **CI checks the files are current:** `generate.py --check` runs in `tests/scripts/test_protocol_tests.py`.
+- **CI checks the files are current:** `generate.py --check` runs in `drone/tests/tools/test_protocol_tests.py`.
 - **Who reads them:**
   - C++: `drone/lib/protocol/tests/test_vectors.cpp`, one GoogleTest test per vector (`Golden/Vector.Check/<name>`).
   - Python: `drone/ground/src/sd_protocol_py/tests/test_vectors.py` (#100).

@@ -46,7 +46,7 @@ uint32_t last_rx_us = 0;
 // goes: esp_in (UDP packet read), uart_out (written to the FC), uart_in
 // (first reply byte from the FC), esp_out (reply handed to the Wi-Fi stack).
 // Sent every 100 ms as text lines to the last sender, UDP 5770 (read by
-// scripts/esp_timing.py). The bridge bytes are not changed.
+// drone/tools/bench/esp_timing.py). The bridge bytes are not changed.
 constexpr uint16_t kTimingPort = 5770;
 constexpr uint32_t kReportMs = 100;
 constexpr uint32_t kNoReplyUs = 500000; // no reply after this: unanswered
@@ -131,8 +131,9 @@ void report() {
 
 #if WITH_TCP_ECHO
 // S1-07: one TCP client at a time (ADR-005), everything it sends is echoed
-// back (read by scripts/tcp_load.py). Never blocks the loop: it only moves
-// what the TCP send buffer can take, so a TCP stall cannot stall UDP here.
+// back (read by drone/tools/bench/tcp_load.py). Never blocks the loop: it only
+// moves what the TCP send buffer can take, so a TCP stall cannot stall UDP
+// here.
 constexpr uint16_t kTcpPort = 5759;
 WiFiServer tcp_server(kTcpPort);
 WiFiClient tcp_client;
@@ -165,8 +166,8 @@ void tcp_echo() {
 // S1-10: "HANG" stops the loop without yielding, so the software watchdog
 // resets the ESP after about 3 s. "HANG_HW" also turns the software watchdog
 // off, so the hardware watchdog does it (about 8 s). "REASON?" answers with
-// the reset reason and the uptime (read by scripts/esp_wdt.py). The serial
-// port goes to the FC, so nothing is printed there.
+// the reset reason and the uptime (read by drone/tools/bench/esp_wdt.py). The
+// serial port goes to the FC, so nothing is printed there.
 constexpr uint16_t kWdtPort = 5771;
 WiFiUDP wdt_udp;
 

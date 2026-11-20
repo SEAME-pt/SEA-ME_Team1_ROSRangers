@@ -1,7 +1,9 @@
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
+)
 
 import esp_at  # noqa: E402
 import fc_cli  # noqa: E402
@@ -142,5 +144,5 @@ def test_installed_esptool_accepts_the_command_names():
 
 
 def test_fc_cli_saves_into_the_repo_layout():
-    root = pathlib.Path(__file__).resolve().parents[2]
+    root = pathlib.Path(__file__).resolve().parents[3]
     assert fc_cli.CONFIG_DIR == root / "drone" / "config" / "betaflight"

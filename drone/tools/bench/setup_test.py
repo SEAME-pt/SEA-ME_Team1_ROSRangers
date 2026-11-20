@@ -14,9 +14,9 @@ Only for bench work, props off: anybody on the SEAME network can send packets to
 If this PC gets a new IP (another day, another laptop), run `setup` again.
 
 Examples:
-  python3 scripts/setup_test.py setup          # ESP on its own USB, not wired to the FC
-  python3 scripts/setup_test.py status
-  python3 scripts/setup_test.py setup --ask-password
+  python3 drone/tools/bench/setup_test.py setup          # ESP on its own USB, not wired to the FC
+  python3 drone/tools/bench/setup_test.py status
+  python3 drone/tools/bench/setup_test.py setup --ask-password
 """
 
 import argparse
@@ -117,7 +117,9 @@ def cmd_setup(args):
         ser.close()
     time.sleep(4)
     print(f"\nReady. Scenario TEST saved in {cfg.PROFILE}.")
-    print("Next (cycle 1a, ESP still on USB):  python3 scripts/msp_check.py cycle1a")
+    print(
+        "Next (cycle 1a, ESP still on USB):  python3 drone/tools/bench/msp_check.py cycle1a"
+    )
 
 
 def cmd_status(args):

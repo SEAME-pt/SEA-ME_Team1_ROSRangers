@@ -1,7 +1,7 @@
 """The ground side of one session, without sockets (decision B2, 2026-11-10).
 
 Shared by the flight_interface ESP backend (#103) and, after its move, the
-bench tool scripts/ground_link.py, so the handshake, the sealing and the
+bench tool drone/tools/bench/ground_link.py, so the handshake, the sealing and the
 receive checks exist once. Python only: the ESP side is sd::Link in C++.
 
   GroundSession  HELLO, HELLO_ACK check, keys, sealed frames, receive checks

@@ -7,7 +7,9 @@ import threading
 import pytest
 import serial
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
+)
 
 import msp_check  # noqa: E402
 from fc_cli import is_read_only  # noqa: E402
@@ -127,7 +129,7 @@ def test_save_csv_writes_raw_and_analytics(tmp_path):
 
 def test_resolve_csv_path_defaults_bare_filename_to_results():
     assert resolve_csv_path("bridge.csv") == (
-        pathlib.Path(msp_check.__file__).resolve().parents[1] / "results" / "bridge.csv"
+        pathlib.Path(msp_check.__file__).resolve().parents[3] / "results" / "bridge.csv"
     )
 
 

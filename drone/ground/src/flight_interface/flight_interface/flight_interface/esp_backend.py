@@ -4,7 +4,7 @@
 What it does:
   * Opens a session (HELLO / HELLO_ACK over TCP, keys from the PSK) and keeps it:
     when the session is gone it opens a new one by itself (decision A5), with the
-    rules of scripts/ground_link.py: no STATE for RECONNECT_AFTER while
+    rules of drone/tools/bench/ground_link.py: no STATE for RECONNECT_AFTER while
     setpoints are going out, or no TCP while the ESP is not STREAMING. (The ESP
     sends STATE to the address of the last accepted SETPOINT, so while the node
     is inactive and sends nothing, no STATE comes back: that alone is not a
@@ -79,7 +79,7 @@ What it does:
     hold up the tick (and ~/estop, served by the same executor).
 
 The session code is sd_protocol.ground (decision B2), shared with
-scripts/ground_link.py once that tool moves to it (D4).
+drone/tools/bench/ground_link.py once that tool moves to it (D4).
 """
 
 import errno

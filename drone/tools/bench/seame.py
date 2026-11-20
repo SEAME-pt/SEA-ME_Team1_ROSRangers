@@ -8,11 +8,11 @@ The ESP is soldered to the FC (UART4). This PC reaches the FC in two ways:
 
 Run without arguments for the menu, or give a command:
 
-    python3 scripts/seame.py network connect
-    python3 scripts/seame.py msp info
-    python3 scripts/seame.py msp attitude --usb
-    python3 scripts/seame.py fc dump
-    python3 scripts/seame.py test s2-01
+    python3 drone/tools/bench/seame.py network connect
+    python3 drone/tools/bench/seame.py msp info
+    python3 drone/tools/bench/seame.py msp attitude --usb
+    python3 drone/tools/bench/seame.py fc dump
+    python3 drone/tools/bench/seame.py test s2-01
 
 Arguments after a command go to the specialist script (`<command> --help` lists
 them), so no hardware logic is duplicated here.
@@ -72,7 +72,7 @@ needs a TX-RX jumper, which the soldered wires make impossible.
 
 Only follow a written, reviewed procedure for this (e.g. flashing the custom
 firmware). If that is what you are doing, put --esp-on-usb first:
-    python3 scripts/seame.py --esp-on-usb {command}"""
+    python3 drone/tools/bench/seame.py --esp-on-usb {command}"""
 
 
 # ---------------------------------------------------------------- dispatching

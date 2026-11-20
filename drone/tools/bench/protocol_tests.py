@@ -3,13 +3,13 @@
 
 Run without arguments for the menu, or give a command:
 
-    python3 scripts/protocol_tests.py list
-    python3 scripts/protocol_tests.py run                       # every test
-    python3 scripts/protocol_tests.py run -f 'Receiver.*'       # one suite
-    python3 scripts/protocol_tests.py run -f Frame.DecodesTheReferenceSetpoint
-    python3 scripts/protocol_tests.py run --brief               # no explanations
-    python3 scripts/protocol_tests.py bench -n 200 -f 'Sha256.*:HmacSha256.*'
-    python3 scripts/protocol_tests.py bench -n 100 --csv /tmp/bench.csv
+    python3 drone/tools/bench/protocol_tests.py list
+    python3 drone/tools/bench/protocol_tests.py run                       # every test
+    python3 drone/tools/bench/protocol_tests.py run -f 'Receiver.*'       # one suite
+    python3 drone/tools/bench/protocol_tests.py run -f Frame.DecodesTheReferenceSetpoint
+    python3 drone/tools/bench/protocol_tests.py run --brief               # no explanations
+    python3 drone/tools/bench/protocol_tests.py bench -n 200 -f 'Sha256.*:HmacSha256.*'
+    python3 drone/tools/bench/protocol_tests.py bench -n 100 --csv /tmp/bench.csv
 
 While running, each test shows what it does and why it matters. Those lines
 come from drone/lib/protocol/tests/README.md: add a row there for a new test.
@@ -42,7 +42,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[1]
+REPO = Path(__file__).resolve().parents[3]
 SOURCE_DIR = REPO / "drone" / "lib" / "protocol"
 DEFAULT_BUILD_DIR = Path(tempfile.gettempdir()) / "sd_protocol_build"
 BINARY = "sd_protocol_tests"

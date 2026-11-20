@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-SCRIPTS = pathlib.Path(__file__).resolve().parents[2] / "scripts"
+SCRIPTS = pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench"
 sys.path.insert(0, str(SCRIPTS))
 
 import protocol_tests  # noqa: E402

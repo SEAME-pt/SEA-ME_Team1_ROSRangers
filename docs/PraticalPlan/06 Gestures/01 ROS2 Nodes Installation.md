@@ -192,7 +192,7 @@ From `drone/ground/`:
 
 | Command | Needs | Runs |
 | :--- | :--- | :--- |
-| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `px4_offboard_bridge`, `tests/scripts`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
+| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `px4_offboard_bridge`, `drone/tests/tools`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
 | `make unit` | Python 3.12 | the suites that need no ROS 2 (the package tests' ROS cases are skipped), no pre-commit |
 | `make pkg-test` / `make e2e-test` | ROS 2 Jazzy | `colcon test` only / `drone/tests/ros` only |
 | `make test-sitl` | `git`, `gcc`, network on the first run | Betaflight SITL and `drone/tests/sitl`. The first run clones and builds Betaflight into `build/betaflight` (a few minutes); `BF_DIR=<checkout>` uses another one |

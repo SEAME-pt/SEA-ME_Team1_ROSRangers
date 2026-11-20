@@ -16,7 +16,7 @@
 #                 colcon test of every ground package, the coverage gate (package
 #                 tests + drone/tests/ros, 90 %), sd_protocol_py, the C++ protocol
 #                 library (ctest, no coverage gate), px4_offboard_bridge,
-#                 tests/scripts, the HIL host part, pre-commit --all-files (fixes
+#                 drone/tests/tools, the HIL host part, pre-commit --all-files (fixes
 #                 files in place). Without Jazzy the ROS suites show SKIP and the
 #                 package tests run without ROS. A missing tool shows SKIP
 #   make unit     the suites that need no ROS (no pre-commit)
@@ -230,12 +230,12 @@ no-ros:
 # What the test suites need in the venv, beyond what make venv installs:
 #  * sd_protocol: a .pth file pointing at src/sd_protocol_py (always the
 #    current source, nothing written into the repo: no egg-info);
-#  * tests/scripts' requirements (esptool, pyserial), but not pytest: the
+#  * drone/tests/tools' requirements (esptool, pyserial), but not pytest: the
 #    system's pytest stays, the one ROS's launch_testing plugins work with;
 #  * pytest and pytest-cov only where the system has none (a PC without ROS).
 TEST_DEPS := $(VENV)/.test-deps
-$(TEST_DEPS): $(VENV)/.installed ../../scripts/requirements.txt
-	$(VENV)/bin/pip install -r <(grep -vE '^[[:space:]]*pytest\b' ../../scripts/requirements.txt)
+$(TEST_DEPS): $(VENV)/.installed ../tools/bench/requirements.txt
+	$(VENV)/bin/pip install -r <(grep -vE '^[[:space:]]*pytest\b' ../tools/bench/requirements.txt)
 	$(VENV)/bin/python -c 'import pytest' 2>/dev/null || $(VENV)/bin/pip install pytest
 	$(VENV)/bin/python -c 'import pytest_cov' 2>/dev/null || $(VENV)/bin/pip install pytest-cov
 	site=$$($(VENV)/bin/python -c 'import sysconfig; print(sysconfig.get_path("purelib"))') \
@@ -307,7 +307,7 @@ except (OSError, ValueError, AttributeError) as e:
     sys.exit(f"make psk-file: cannot read the PSK from {src}: {e}")
 if not re.fullmatch(r"[0-9a-f]{64}", psk):
     sys.exit(f"make psk-file: no valid PSK (64 hex characters) in {src}; "
-             "create one with: python3 scripts/ground_link.py --gen-psk")
+             "create one with: python3 drone/tools/bench/ground_link.py --gen-psk")
 text = json.dumps({"psk": psk}) + "\n"
 try:
     with open(dst) as f:

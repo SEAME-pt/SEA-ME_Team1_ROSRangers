@@ -145,7 +145,7 @@ cmake --build build
 ctest --test-dir build   # CMake 3.20 or newer; otherwise: cd build && ctest
 ```
 
-GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are fetched when not installed; this needs network. Every test is explained in `drone/lib/protocol/tests/README.md`. `python3 scripts/protocol_tests.py` builds, runs and explains them.
+GoogleTest v1.14.0 and nlohmann-json 3.11.3 (the vector reader, tests only) are fetched when not installed; this needs network. Every test is explained in `drone/lib/protocol/tests/README.md`. `python3 drone/tools/bench/protocol_tests.py` builds, runs and explains them.
 
 ## 8. Glossary
 

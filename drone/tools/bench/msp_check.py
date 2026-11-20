@@ -9,13 +9,13 @@ By default it talks to the ESP of the active scenario (setup_test.py or setup_pr
 Use --usb to talk to the FC directly.
 
 Examples:
-  python3 scripts/msp_check.py --usb info                 # cycle 0: FC over USB
-  python3 scripts/msp_check.py --usb ping -n 500
-  python3 scripts/msp_check.py cycle1a                    # ESP on USB, this PC plays the FC
-  python3 scripts/msp_check.py info                       # cycle 1b: FC through the bridge
-  python3 scripts/msp_check.py ping -n 1000 --rate 50 --csv bridge_fc.csv
-  python3 scripts/msp_check.py attitude
-  python3 scripts/msp_check.py fake-fc                    # only the fake FC, on the ESP USB port
+  python3 drone/tools/bench/msp_check.py --usb info                 # cycle 0: FC over USB
+  python3 drone/tools/bench/msp_check.py --usb ping -n 500
+  python3 drone/tools/bench/msp_check.py cycle1a                    # ESP on USB, this PC plays the FC
+  python3 drone/tools/bench/msp_check.py info                       # cycle 1b: FC through the bridge
+  python3 drone/tools/bench/msp_check.py ping -n 1000 --rate 50 --csv bridge_fc.csv
+  python3 drone/tools/bench/msp_check.py attitude
+  python3 drone/tools/bench/msp_check.py fake-fc                    # only the fake FC, on the ESP USB port
 
 Bench test plan (vault: ESP Bench Test Plan). The ESP is now soldered to the FC: run
 Stage 2 with `seame.py test <id>`. cycle1a, fake-fc, usb-relay and --loopback need the
@@ -44,7 +44,7 @@ import serial
 from fc_cli import find_port as find_fc_port
 
 # msp.py lives in the flight_interface ROS 2 package (#96)
-REPO = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface/flight_interface"))
 from flight_interface import msp  # noqa: E402
 

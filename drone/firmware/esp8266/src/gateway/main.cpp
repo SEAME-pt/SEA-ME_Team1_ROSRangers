@@ -427,9 +427,10 @@ constexpr uint32_t kFcHealthPeriodMs = 200; // 5 Hz (#179 D3)
 
 #if WITH_LOOP_TIMING
 // REQ-SW-005 (#146): the period of every loop() in a histogram, sent once a
-// second to the UDP peer on port 5770 (read by scripts/rt_profile.py).
-// The window max is exact. Lines: L,<window>,<now_us>,<loops>,<max_us> then
-// B,<lo_us>,<count> per non-empty bucket; the L line starts every packet.
+// second to the UDP peer on port 5770 (read by
+// drone/tools/bench/rt_profile.py). The window max is exact. Lines:
+// L,<window>,<now_us>,<loops>,<max_us> then B,<lo_us>,<count> per non-empty
+// bucket; the L line starts every packet.
 //
 // Buckets: 0..15 us get one bucket each (1 us wide). Above that, each octave
 // (16-31 us, 32-63 us, 64-127 us, ...) is cut into 16 equal buckets, so a

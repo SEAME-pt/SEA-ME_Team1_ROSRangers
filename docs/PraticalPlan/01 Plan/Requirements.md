@@ -104,7 +104,7 @@ Levels, from cheapest to most expensive: **unit** (C++ / Python, golden vectors)
 > The automated HIL tests may send `ARM_CONTROL_REQUEST` on their own, under these conditions only (BrunoBMFT on #106, 2026-11-10):
 > 1. **Scope:** only the tests under `drone/tests/hil/gateway/`, running on the `hil-drone` runner. Nothing else in the repo gets the exception.
 > 2. **The bench stays as it is:** the Pi plays the FC, and there is no real FC, no props and no battery ([[HIL Runner]]). If a real FC is ever connected to that bench, the exception lapses: the three ARM tests (passthrough, failsafe timing, resume) go back to skipped until the safety pilot reviews again.
-> 3. **Production stays operator-only:** the ground node (#103) and `scripts/ground_link.py` never send ARM on their own; REQ-SAF-023 is unchanged for them, and #103 keeps its own test that ARM only goes out after an operator action.
+> 3. **Production stays operator-only:** the ground node (#103) and `drone/tools/bench/ground_link.py` never send ARM on their own; REQ-SAF-023 is unchanged for them, and #103 keeps its own test that ARM only goes out after an operator action.
 >
 > Each line in those tests that sends ARM carries a comment pointing here.
 

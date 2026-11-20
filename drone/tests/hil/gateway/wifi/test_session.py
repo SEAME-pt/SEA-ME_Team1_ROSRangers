@@ -2,7 +2,7 @@
 
 Runs only inside softap_window.sh, after hil.yaml flashed the gateway (env
 esp). The Pi plays the FC on USB (bench.FakeFc) and the ground over Wi-Fi,
-with the same protocol code as scripts/ground_link.py and the HIL PSK
+with the same protocol code as drone/tools/bench/ground_link.py and the HIL PSK
 (SEAME_PSK).
 
 The first tests never arm, so the session stays in SESSION_IDLE, where nothing

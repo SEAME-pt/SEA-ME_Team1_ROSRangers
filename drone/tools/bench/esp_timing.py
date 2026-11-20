@@ -7,9 +7,9 @@ uart_out (written to the FC), uart_in (first reply byte from the FC) and esp_out
 Wi-Fi PC -> ESP, inside the ESP, the FC, and Wi-Fi ESP -> PC.
 
 Run it in a second terminal, start it before the test and stop it (Ctrl+C) after:
-  python3 scripts/esp_timing.py listen --csv s1-09_run1_esp.csv
-  python3 scripts/msp_check.py ...                      # the test itself, as usual
-  python3 scripts/esp_timing.py summary results/s1-09_run1_esp.csv --sent 30000 --pc-lost 12
+  python3 drone/tools/bench/esp_timing.py listen --csv s1-09_run1_esp.csv
+  python3 drone/tools/bench/msp_check.py ...                      # the test itself, as usual
+  python3 drone/tools/bench/esp_timing.py summary results/s1-09_run1_esp.csv --sent 30000 --pc-lost 12
 """
 
 import argparse
@@ -20,7 +20,7 @@ import statistics
 import time
 
 PORT = 5770
-RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
+RESULTS_DIR = pathlib.Path(__file__).resolve().parents[3] / "results"
 STAMP_FIELDS = ("pc_time_s", "seq", "esp_in", "uart_out", "uart_in", "esp_out", "sent")
 REPORT_FIELDS = ("pc_time_s", "report", "now_us", "loop_max_us", "dropped")
 WRAP = 1 << 32  # micros() wraps after about 71 min

@@ -38,7 +38,7 @@ elif ! command -v ping >/dev/null; then
     problem "ping not found: cannot check that the ESP ($host) answers"
 elif ! ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
     problem "the ESP ($host) does not answer: join the drone's Wi-Fi first" \
-        "(python3 scripts/seame.py network connect)"
+        "(python3 drone/tools/bench/seame.py network connect)"
 fi
 
 ((errors)) && exit 1
