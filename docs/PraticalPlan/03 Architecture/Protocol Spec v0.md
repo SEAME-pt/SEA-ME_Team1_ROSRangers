@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.6.1
+version: 1.6.2
 date: 2026-10-12
-updated: 2026-11-16
+updated: 2026-11-20
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.6.1 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
+> [!success] Status: ACCEPTED v1.6.2 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -36,6 +36,20 @@ tags:
 | 16 | 4 | t_send_us | sender monotonic µs (u32, wraps every 71.6 min). The ground uses **`CLOCK_MONOTONIC_RAW`**, which NTP/chrony cannot slew (2026-11-16, #204). Freshness still uses the ESP's receive clock; since v1.5 the ESP also uses `t_send_us` for the late check (§4 rule 3a). |
 | 20 | n | payload | |
 | 20+n | 8 | tag | HMAC-SHA256(key of this direction, bytes 0..20+n-1), first 8 bytes |
+
+The library defines the sizes and the magic as constants in `frame.hpp`:
+
+```cpp
+// excerpt: frame constants
+constexpr std::uint8_t kMagic0 = 0x53; // 'S'
+constexpr std::uint8_t kMagic1 = 0x44; // 'D'
+constexpr std::uint8_t kWireVersion = 1;
+constexpr std::size_t kHeaderSize = 20;
+constexpr std::size_t kTagSize = 8;
+constexpr std::size_t kMaxPayload = 256;
+constexpr std::size_t kMaxFrame = kHeaderSize + kMaxPayload + kTagSize;
+```
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L11–17](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L11-L17) @ `52de267`
 
 Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped (`reject:wrong_direction`), so a reflected `HELLO` or `HELLO_ACK` does nothing. A `HELLO` must have `session_id` 0; a `HELLO_ACK` must carry the same non-zero `session_id` in its header and payload (`reject:wrong_session` otherwise). Both use seq 1 (`reject:bad_seq` otherwise). Payload sizes are checked as in §3. Checked in this order: tag (with the PSK), type, payload size, `session_id`, seq. `HELLO` and `HELLO_ACK` are TCP types (§2): only frames from the TCP connection go to this check.
 
@@ -76,6 +90,29 @@ Each side also accepts only the types the **other** side sends (2026-11-05, #152
 | 0x81 | FC_HEALTH | 42 | fc_alive u8, armed u8 (0, 1, `0xFF` unknown), arming_disable_flags u32, status_age_ms u16, attitude_age_ms u16, analog_age_ms u16, reply_age_ms u16, requests u32, replies u32, timeouts u32, bad_checksum u16, too_long u16, error_replies u16, unexpected u16, rc_sent u32, rc_replaced u32. ESP → ground at 5 Hz (added 2026-11-10, v1.4, #179) |
 
 Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order of §4 (type → transport → direction → size → `mode` → `seq`), so they change no state (REQ-COM-001, REQ-COM-004).
+
+The type numbers are the `MsgType` enum in `frame.hpp`. The values are part of the wire format and are never renumbered:
+
+```cpp
+// excerpt: MsgType
+enum class MsgType : std::uint8_t {
+  kHello = 0x01,
+  kHelloAck = 0x02,
+  kArmControlRequest = 0x03,
+  kArmControlAck = 0x04,
+  kResumeRequest = 0x05,
+  kResumeAck = 0x06,
+  kBye = 0x07,
+  kConfigGet = 0x20,
+  kConfigSet = 0x21,
+  kConfigAck = 0x22,
+  kEvent = 0x40,
+  kSetpoint = 0x60,
+  kState = 0x80,
+  kFcHealth = 0x81, // spec v1.4 (#179): ESP -> ground, 5 Hz
+};
+```
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L20–35](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L20-L35) @ `52de267`
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
 
@@ -191,6 +228,20 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK; a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions (§7.5, §2) |
 | 9 Handshake (added 2026-11-05, #152) | The ESP accepts `HELLO`, the ground `HELLO_ACK`; each refuses the other's frame and any other PSK-tagged type; wrong `session_id` and seq ≠ 1 refused | The pre-session rule (§1) |
+
+For example, group 3 `wrong_magic` is the reference `SETPOINT` with `SE` instead of `SD`. The bytes read: magic `53 45`, version `01`, type `60`, flags `00`, reserved `00`, `payload_len` `0a 00` (10), `session_id` `78 56 34 12`, `seq` `07 00 00 00`, `t_send_us` `e8 03 00 00`, then 10 payload bytes and the 8-byte tag. The tag is recomputed, so the magic is the only fault:
+
+```jsonc
+// excerpt: group 3, wrong_magic (key line left out)
+{
+  "name": "wrong_magic",
+  "description": "Magic 'SE' instead of 'SD'; the tag is recomputed so the magic is the only fault",
+  ...
+  "bytes": "5345016000000a007856341207000000e803000001640038ff0000f40100de307f06c4dd38a3",
+  "expect": "reject:bad_magic"
+}
+```
+Source: [`drone/tests/vectors/3_header.json` L2–8](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/tests/vectors/3_header.json#L2-L8) @ `52de267`
 
 - A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels; group 9 says which side (`handshake`) checks the frame.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
@@ -326,6 +377,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | 2026-11-16 | 1.5 | Late check (§4 rule 3a, #204, safety pilot's decision on spike #171): `reject:late` for `SETPOINT`, `ARM_CONTROL_REQUEST` and `RESUME_REQUEST` more than 200 ms (provisional) late against the session's offset (seeded from `HELLO`, 200 ppm drift). The ground's `t_send_us` is `CLOCK_MONOTONIC_RAW` (§1). Same bytes on the wire; a frame held back is now refused. Vectors `late_setpoint_rejected`, `late_across_both_wraps`, `late_held_40_min`, `late_drift_allowance_past_71_min` (§6, group 5). Every ground client drops a `HELLO_ACK` later than 100 ms and starts a new handshake (REQ-SAF-024): `sd_protocol.ground` (so `flight_interface`'s ESP backend) and `drone/tools/bench/ground_link.py`. The drift allowance's time is 64-bit (no wrap after 71.6 min), `late_bound_ms` is clamped to 10 s (#205 review). (v1.5 was planned for the `override_active` values of #176, PR #198; they become v1.6.) |
 | 2026-11-19 | 1.6 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
 | 2026-11-19 | 1.6.1 | No wire change. §7.5 states when a `rx_rejected` wrap can be missed and why a replayed `STATE` can't fake one; the ground restarts the total after a `STATE` gap longer than 3 s, so a missed wrap needs 65,536 rejects within 3 s (#149, PR #223, BrunoBMFT's and ThiagoTEP's reviews). |
+| 2026-11-20 | 1.6.2 | No wire change. Glossary: `LINK_FAILSAFE` is left through `RESUME_REQUEST`, a confirmed new session or a `BYE`, as in [[ESP Link State Machine]] §1 and §1.1 (it said "only `RESUME_REQUEST`"). Code excerpts from `frame.hpp` and `3_header.json` added in §1, §3 and §6 (#214). |
 
 ## 9. Glossary
 
@@ -345,7 +397,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
 | **T_fresh** | Maximum age of the last accepted setpoint (150 ms, §7.2). Older → neutral sticks until the next valid setpoint; no failsafe. |
-| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left only through `RESUME_REQUEST` ([[ESP Link State Machine]]). |
+| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left through `RESUME_REQUEST`, a confirmed new session, or a `BYE` (to NO_SESSION, the ADR-004 output continues) ([[ESP Link State Machine]]). |
 | **Result / reason code** | Number in a reply (`result`, `reason`, `code`) that says why something happened, so the ground can act on it and log it (§3.1). Never reused. |
 | **Configuration key** | One-byte number in `CONFIG_GET` / `CONFIG_SET` that names one setting on the ESP (§7.3). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |

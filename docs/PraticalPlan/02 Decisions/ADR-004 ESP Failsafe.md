@@ -3,7 +3,7 @@ title: ADR-004 — ESP Link Failsafe
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-13
+updated: 2026-11-20
 project: SEA autonomous drone
 aliases:
   - D04
@@ -91,6 +91,22 @@ The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2
 
 - On 4.5.1, if the **ESP itself** crashes, layer 3 is gone and the FC holds the last values. That is why [[ADR-014 Betaflight Version|ADR-014]] upgrades Betaflight, and why override flights wait for the upgrade.
 - What counts as "safe" stays a flight-safety judgement for the team (OD-12).
+
+### 4.1 Implementation
+
+The protocol library holds the timers of §2.5 and the first second of the 2026.6 output as constants in `link.hpp`:
+
+```cpp
+// excerpt: link timers (ADR-004)
+constexpr std::uint32_t kTLossMs = 250;  // no accepted control -> LINK_FAILSAFE
+constexpr std::uint32_t kTFreshMs = 150; // older setpoint -> neutral sticks
+...
+constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
+                                                   // while the ground is quiet
+```
+Source: [`drone/lib/protocol/include/sd/link.hpp` L27–28 and L32–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `52de267`
+
+After that second the ESP stops sending while the ground is quiet and sends neutral again while a live ground streams (§2.6, #188).
 
 ## 5. Related pages
 
