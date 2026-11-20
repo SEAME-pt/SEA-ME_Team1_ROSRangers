@@ -1,8 +1,9 @@
 """The ground side of one session, without sockets (decision B2, 2026-11-10).
 
-Shared by the flight_interface ESP backend (#103) and, after its move, the
-bench tool drone/tools/bench/ground_link.py, so the handshake, the sealing and the
-receive checks exist once. Python only: the ESP side is sd::Link in C++.
+Shared by the flight_interface ESP backend (#103) and the bench tool
+drone/tools/bench/ground_link.py (its GroundLink is a GroundSession, ADR-025 D4,
+#229), so the handshake, the sealing and the receive checks exist once.
+Python only: the ESP side is sd::Link in C++.
 
   GroundSession  HELLO, HELLO_ACK check, keys, sealed frames, receive checks
   TcpReader      cuts the TCP byte stream into frames (OD-03)
@@ -118,6 +119,7 @@ class GroundSession:
         self._clock_us = clock_us  # t_send_us source; tests inject a fake
         self.hello_sent_us = None
         self.late_acks = 0  # HELLO_ACKs refused for REQ-SAF-024
+        self.fw_version = ""  # from the HELLO_ACK
         self.nonce = nonce if nonce is not None else secrets.token_bytes(NONCE_SIZE)
         self.session_id = 0
         self.keys = None
@@ -141,11 +143,12 @@ class GroundSession:
         header = Header(type=MsgType.HELLO, seq=1, t_send_us=self.hello_sent_us)
         return encode_frame(header, payload, self.psk)
 
-    def take_ack(self, frame):
-        """True if `frame` is this session's HELLO_ACK; then the keys are set.
-        A valid one more than HELLO_ACK_MAX_US after our HELLO is refused and
-        counted in late_acks (REQ-SAF-024): start a new handshake, with a new
-        GroundSession (a nonce never repeats)."""
+    def take_ack(self, frame, rx_us=None):
+        """True if `frame` is this session's HELLO_ACK; then the keys are set,
+        and fw_version holds the ESP's firmware name. A valid one more than
+        HELLO_ACK_MAX_US after our HELLO is refused and counted in late_acks
+        (REQ-SAF-024): start a new handshake with a new nonce. rx_us is when it
+        arrived (u32 us, the clock_us clock); without it, now."""
         result, f = receive_handshake(Role.GROUND, frame, self.psk)
         if result != HandshakeResult.ACCEPTED or f is None:
             return False
@@ -157,11 +160,14 @@ class GroundSession:
         # Measured when the frame is processed, not when it arrived: a slow
         # poll loop counts toward the 100 ms, so an on-time HELLO_ACK can be
         # refused. That errs on the safe side: the next handshake follows.
-        waited_us = (self._clock_us() - self.hello_sent_us) & 0xFFFFFFFF
+        if rx_us is None:
+            rx_us = self._clock_us()
+        waited_us = (rx_us - self.hello_sent_us) & 0xFFFFFFFF
         if waited_us > HELLO_ACK_MAX_US:
             self.late_acks += 1
             return False
         self.session_id = ack.session_id
+        self.fw_version = ack.fw_version.decode("ascii", "replace").strip()
         self.keys = derive_keys(self.psk, self.nonce, ack.esp_nonce)
         self.seq_tcp, self.seq_udp = 1, 0
         self.rx_tcp.start_session(self.session_id, self.keys.esp_to_ground)

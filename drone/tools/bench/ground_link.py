@@ -38,7 +38,6 @@ import errno
 import json
 import os
 import pathlib
-import re
 import secrets
 import select
 import socket
@@ -49,13 +48,9 @@ import time
 REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone" / "ground" / "src" / "sd_protocol_py"))
 
-from sd_protocol.crypto import derive_keys  # noqa: E402
+from sd_protocol import ground  # noqa: E402
 from sd_protocol.frame import (  # noqa: E402
-    HEADER_SIZE,
-    Header,
     MsgType,
-    encode_frame,
-    frame_size,
 )
 from sd_protocol.messages import (  # noqa: E402
     AGE_MAX,
@@ -67,61 +62,42 @@ from sd_protocol.messages import (  # noqa: E402
     EspState,
     EventCode,
     FcHealth,
-    Hello,
     OverrideActive,
-    Role,
     State,
-    Transport,
     decode_config_ack,
     decode_event,
     decode_fc_health,
-    decode_hello_ack,
     decode_state,
     decode_u8_payload,
     encode_config_kv,
-    encode_hello,
     encode_u8_payload,
 )
 from sd_protocol.receiver import (  # noqa: E402
-    HandshakeResult,
-    Receiver,
     is_accepted,
-    receive_handshake,
 )
 from sd_protocol.setpoint import Setpoint, encode_setpoint  # noqa: E402
 
 CONFIG_DIR = pathlib.Path.home() / ".config" / "seame-drone"
 SECRETS = CONFIG_DIR / "secrets.json"
-NONCE_SIZE = 16
 
-
-# t_send_us comes from CLOCK_MONOTONIC_RAW (Protocol Spec §1, #204): NTP/chrony
-# can slew CLOCK_MONOTONIC by up to 500 ppm, which the ESP's late check (200 ppm
-# drift allowance) would refuse after a few minutes. Linux only; elsewhere the
-# plain monotonic clock, for tests.
-_RAW = getattr(time, "CLOCK_MONOTONIC_RAW", None)
-# REQ-SAF-024: a HELLO_ACK more than this after our HELLO is dropped and a new
-# handshake starts, so a delayed handshake cannot move the ESP's late-check
-# offset (seeded from the HELLO).
-HELLO_ACK_MAX_US = 100_000
+# The ground protocol (handshake, the 100 ms HELLO_ACK bound of REQ-SAF-024,
+# frames stamped from CLOCK_MONOTONIC_RAW, receive checks) is
+# sd_protocol.ground, shared with flight_interface (ADR-025 D4, #229). This
+# tool keeps only what is bench-only.
+now_us = ground.raw_now_us  # t_send_us clock (Protocol Spec §1)
+HELLO_ACK_MAX_US = ground.HELLO_ACK_MAX_US
 HELLO_TRIES = 3
-
-
-def now_us() -> int:
-    ns = time.clock_gettime_ns(_RAW) if _RAW is not None else time.monotonic_ns()
-    return ns // 1000 & 0xFFFFFFFF
-
-
-PSK_RE = re.compile(r"[0-9a-f]{64}")
+TcpReader = ground.TcpReader
 
 
 def parse_psk(text: str) -> bytes:
-    text = text.strip().lower()
-    if not PSK_RE.fullmatch(text):
+    """The PSK from 64 hex characters, or exit with a hint."""
+    try:
+        return ground.load_psk(environ={"SEAME_PSK": text})
+    except ValueError:
         raise SystemExit(
             "No valid PSK: set SEAME_PSK or run `ground_link.py --gen-psk` (64 hex characters)."
-        )
-    return bytes.fromhex(text)
+        ) from None
 
 
 def read_secrets(path: pathlib.Path) -> dict:
@@ -134,7 +110,14 @@ def read_secrets(path: pathlib.Path) -> dict:
 
 
 def load_psk(path: pathlib.Path = SECRETS) -> bytes:
-    return parse_psk(os.environ.get("SEAME_PSK") or read_secrets(path).get("psk", ""))
+    """SEAME_PSK, else "psk" in secrets.json (sd_protocol.ground.load_psk),
+    or exit with a hint."""
+    try:
+        return ground.load_psk(path=path)
+    except ValueError:
+        raise SystemExit(
+            "No valid PSK: set SEAME_PSK or run `ground_link.py --gen-psk` (64 hex characters)."
+        ) from None
 
 
 def gen_psk(path: pathlib.Path = SECRETS) -> str:
@@ -161,83 +144,42 @@ def describe_event(code: int) -> str:
         return f"0x{code:04x}"
 
 
-class GroundLink:
-    """The protocol side of one ground session, without sockets (testable)."""
+class GroundLink(ground.GroundSession):
+    """One ground session for the bench, without sockets (testable). The
+    protocol is sd_protocol.ground.GroundSession (ADR-025 D4, #229); this adds
+    the bench-only parts: the methods without `now`, a new nonce for a retry,
+    the garbage and replay frames, and readable descriptions."""
 
     def __init__(self, psk: bytes, nonce: bytes | None = None) -> None:
-        self.psk = psk
-        self.nonce = nonce if nonce is not None else secrets.token_bytes(NONCE_SIZE)
-        self.session_id = 0
-        self.keys = None
-        self.seq_tcp = 1  # HELLO used 1 (spec §1)
-        self.seq_udp = 0
-        self.rx_tcp = Receiver(Role.GROUND, Transport.TCP)
-        self.rx_udp = Receiver(Role.GROUND, Transport.UDP)
+        # The clock is looked up on every call, so a test can replace now_us.
+        super().__init__(psk, nonce, clock_us=lambda: now_us())
         self.last_setpoint: bytes = b""
-        self.hello_sent_us: int | None = None
-        self.late_acks = 0  # HELLO_ACKs dropped for REQ-SAF-024
 
+    # GroundSession takes the caller's `now` (seconds) for its own logs; the
+    # stamp comes from the clock above, so the bench passes 0.
     def hello(self) -> bytes:
-        payload = encode_hello(Hello(proto=1, ground_nonce=self.nonce))
-        self.hello_sent_us = now_us()
-        return encode_frame(
-            Header(type=MsgType.HELLO, seq=1, t_send_us=self.hello_sent_us),
-            payload,
-            self.psk,
-        )
+        return super().hello(0.0)
 
     def new_nonce(self) -> None:
         """For a new handshake: a nonce never repeats (spec §1)."""
-        self.nonce = secrets.token_bytes(NONCE_SIZE)
+        self.nonce = secrets.token_bytes(len(self.nonce))
 
-    def take_ack(self, frame: bytes, rx_us: int | None = None) -> bool:
-        """Takes a HELLO_ACK and opens the session. A valid one that arrives more
-        than HELLO_ACK_MAX_US after our HELLO is dropped (REQ-SAF-024): counted
-        in late_acks, no session."""
-        result, f = receive_handshake(Role.GROUND, frame, self.psk)
-        if result != HandshakeResult.ACCEPTED or f is None:
-            return False
-        ack = decode_hello_ack(f.payload)
-        if ack is None:
-            return False
-        if rx_us is None:
-            rx_us = now_us()
-        if (
-            self.hello_sent_us is None
-            or (rx_us - self.hello_sent_us) & 0xFFFFFFFF > HELLO_ACK_MAX_US
-        ):
-            self.late_acks += 1
-            return False
-        self.session_id = ack.session_id
-        self.fw_version = ack.fw_version.decode("ascii", "replace").strip()
-        self.keys = derive_keys(self.psk, self.nonce, ack.esp_nonce)
-        self.seq_tcp, self.seq_udp = 1, 0
-        self.rx_tcp.start_session(self.session_id, self.keys.esp_to_ground)
-        self.rx_udp.start_session(self.session_id, self.keys.esp_to_ground)
-        return True
+    # Overrides keep GroundSession's own calls working: arm(), resume_request()
+    # and bye() call self.tcp(type, payload, now), neutral() calls setpoint().
+    def tcp(self, msg_type: int, payload: bytes = b"", now: float = 0.0) -> bytes:
+        return super().tcp(msg_type, payload, now)
 
-    def _seal(self, msg_type: int, payload: bytes, seq: int) -> bytes:
-        header = Header(
-            type=msg_type, session_id=self.session_id, seq=seq, t_send_us=now_us()
-        )
-        return encode_frame(header, payload, self.keys.ground_to_esp)
-
-    def tcp(self, msg_type: int, payload: bytes = b"") -> bytes:
-        self.seq_tcp += 1
-        return self._seal(msg_type, payload, self.seq_tcp)
+    def neutral(self, now: float = 0.0) -> bytes:
+        return self.setpoint(0)
 
     def arm(self, mask: int) -> bytes:
-        return self.tcp(MsgType.ARM_CONTROL_REQUEST, encode_u8_payload(mask))
+        return super().arm(mask, 0.0)
 
     def setpoint(
         self, mode: int, roll: int = 0, pitch: int = 0, yaw: int = 0, throttle: int = 0
     ) -> bytes:
-        self.seq_udp += 1
-        sp = Setpoint(
-            mode=mode, roll=roll, pitch=pitch, yaw_rate=yaw, throttle=throttle
-        )
-        self.last_setpoint = self._seal(
-            MsgType.SETPOINT, encode_setpoint(sp), self.seq_udp
+        self.last_setpoint = super().setpoint(
+            0.0, mode=mode, roll=roll, pitch=pitch, yaw_rate=yaw, throttle=throttle
         )
         return self.last_setpoint
 
@@ -249,17 +191,20 @@ class GroundLink:
         # replay below must only ever repeat a frame that was really sent
         # (BrunoBMFT, review of #174: a second `g` sent a valid frame).
         self.seq_udp += 1
-        good = self._seal(MsgType.SETPOINT, neutral, self.seq_udp)
+        good = self.seal(MsgType.SETPOINT, neutral, self.seq_udp, 0.0)
         out.append(("bad tag", good[:-1] + bytes([good[-1] ^ 1])))
         if self.last_setpoint:  # sent by the stream, already accepted
             out.append(("replay (duplicate seq)", self.last_setpoint))
-        old = self._seal(MsgType.SETPOINT, neutral, 1)
+        old = self.seal(MsgType.SETPOINT, neutral, 1, 0.0)
         out.append(("old seq", old))
         bad_mode = bytearray(encode_setpoint(Setpoint(0, 0, 0, 0, 0)))
         bad_mode[0] = 7
         self.seq_udp += 1
         out.append(
-            ("bad mode", self._seal(MsgType.SETPOINT, bytes(bad_mode), self.seq_udp))
+            (
+                "bad mode",
+                self.seal(MsgType.SETPOINT, bytes(bad_mode), self.seq_udp, 0.0),
+            )
         )
         out.append(("random bytes", secrets.token_bytes(38)))
         return out
@@ -346,26 +291,6 @@ def state_line(st) -> str:
         f"msp_errors={st.msp_errors} roll={st.roll / 10:.1f} pitch={st.pitch / 10:.1f} "
         f"vbat={st.vbat / 100:.2f}V"
     )
-
-
-class TcpReader:
-    """Cuts TCP bytes into frames (OD-03)."""
-
-    def __init__(self) -> None:
-        self.buf = b""
-
-    def feed(self, data: bytes) -> list[bytes]:
-        self.buf += data
-        frames = []
-        while len(self.buf) >= HEADER_SIZE:
-            size = frame_size(self.buf)
-            if size == 0:
-                raise ValueError("bad frame length from the ESP")
-            if len(self.buf) < size:
-                break
-            frames.append(self.buf[:size])
-            self.buf = self.buf[size:]
-        return frames
 
 
 def log(t0: float, text: str) -> None:

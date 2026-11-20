@@ -408,3 +408,18 @@ def test_state_line_shows_override_active():
     assert "override=UNKNOWN " in line(2)
     assert "override=?7 " in line(7)  # a value from a newer ESP is never ON
     assert "rx_rejected=3" in line(0)
+
+
+def test_ground_session_methods_still_work_on_a_ground_link():
+    # #229: GroundLink is a GroundSession; the parent's own methods call
+    # self.tcp() and self.setpoint(), which GroundLink overrides. Every frame
+    # they build must still pass the ESP's receivers.
+    link = open_link()
+    tcp = Receiver(Role.ESP, Transport.TCP)
+    udp = Receiver(Role.ESP, Transport.UDP)
+    tcp.start_session(SESSION, link.keys.ground_to_esp)
+    udp.start_session(SESSION, link.keys.ground_to_esp)
+    for frame in (link.arm(8), link.resume_request(0.0), link.bye(0.0)):
+        assert is_accepted(tcp.receive(frame)[0])
+    assert is_accepted(udp.receive(link.neutral())[0])
+    assert isinstance(link, ground_link.ground.GroundSession)
