@@ -10,6 +10,11 @@ target (/mission/velocity_target, body frame FLU). A row is "live" while its
 topic keeps arriving and turns "STALE" when it stops. The screen is only
 redrawn when the text changes, so it does not flicker.
 
+Alerts from /flight/state (E-stop, failsafe, lost link, FC link, the topic
+stopping) go on a line under the title, marked "!!": red for a fault, yellow
+for "not OK yet" (FC link unknown, node not activated). Colour only on a
+terminal; the "!!" text is always there.
+
 Without a terminal (piped, or a service without `tty: true`), it prints one
 line each time something changes instead of redrawing. Ctrl+C or SIGTERM exits 0.
 """
@@ -37,6 +42,9 @@ HOME, EOL, EOS = "\033[H", "\033[K", "\033[J"
 # Synchronized output: terminals that support it (VS Code, kitty, WezTerm,
 # recent GNOME Terminal) show the whole frame at once; others ignore it.
 SYNC_ON, SYNC_OFF = "\033[?2026h", "\033[?2026l"
+# Alert colours, on a terminal only. The "!!" marker carries the alert without
+# colour (piped output, terminals without colour).
+RED, YELLOW, RESET = "\033[31m", "\033[33m", "\033[0m"
 # `docker compose up` writes "echo-1  | " before every line it relays. Each line
 # starts with "\r" and is written over it, then EOL clears what is left: no
 # blank line in between, so nothing flashes. Harmless elsewhere.
@@ -196,11 +204,70 @@ SOURCES = {
 }
 
 
-def table(rows):
+def alerts(rows):
+    """The FLIGHT row's alerts: [(colour, text, flagged field names)], most
+    severe first. RED is a fault; YELLOW is not OK yet, but expected (unknown
+    FC link at the start of a session, node not activated yet).
+
+    Nothing before the first /flight/state ("waiting" is the normal start of
+    make real). Once it stops (STALE), only that alert: the old values on the
+    row are no longer the drone's state.
+    """
+    flight = next(row for row in rows if row[0] == "flight")
+    _, age, fields = flight
+    if age is None:
+        return []
+    if age > STALE_SEC:
+        return [(RED, f"NO /flight/state ({age:.0f} s)", ())]
+    if "bad" in fields:
+        return [(RED, "BAD /flight/state", ("bad",))]
+
+    red = []
+    yellow = []
+    if fields.get("estop") is True:
+        reason = fields.get("estop_reason")
+        if reason:
+            red.append((RED, f"E-STOP: {reason}", ("estop", "estop_reason")))
+        else:
+            red.append((RED, "E-STOP", ("estop",)))
+    failsafe = fields.get("failsafe_output") is True
+    if failsafe or fields.get("esp_state") == "LINK_FAILSAFE":
+        red.append((RED, "FAILSAFE", ("failsafe_output", "esp_state")))
+    if fields.get("fc_link_ok") is False:
+        red.append((RED, "FC LINK LOST", ("fc_link_ok",)))
+    if fields.get("fc_link_ok") == "unknown":
+        yellow.append((YELLOW, "FC LINK UNKNOWN", ("fc_link_ok",)))
+    if fields.get("active") is False:
+        yellow.append((YELLOW, "NOT ACTIVE", ("active",)))
+    # link_ok is false whenever one of the above is true (guard.py: active, no
+    # E-stop, FC link alive, fresh link). NO LINK only when none explains it.
+    link_ok = fields.get("link_ok", True)  # a stand-in may not send it
+    if link_ok is not True and not red and not yellow:
+        red.append((RED, "NO LINK", ("link_ok",)))
+    # Severity order: E-STOP, FAILSAFE, FC LINK LOST / NO LINK, then yellow.
+    return red + yellow
+
+
+def _paint(text, colour, on):
+    if on:
+        return colour + text + RESET
+    return text
+
+
+def table(rows, colour=False):
+    """The frame's lines. colour=True only on a terminal (main())."""
+    found = alerts(rows)
     lines = [
         f"Ground pipeline monitor   {time.strftime('%H:%M:%S')}   (Ctrl+C to quit)",
-        "",
     ]
+    if found:
+        marks = [_paint(f"!! {text}", c, colour) for c, text, _ in found]
+        lines.append("  ".join(marks))
+    lines.append("")
+    flagged = {}  # field -> colour; the most severe alert comes first
+    for c, _, keys in found:
+        for key in keys:
+            flagged.setdefault(key, c)
     for name, age, fields in rows:
         if age is None:
             status = "waiting"
@@ -210,13 +277,19 @@ def table(rows):
             status = "live"  # not the age: it would change, and redraw, every frame
         lines.append(f"{name.upper():9} {SOURCES[name]:42} {status}")
         for key, value in fields.items():
-            lines.append(f"    {key:11} {value}")
+            line = f"    {key:11} {value}"
+            if name == "flight" and key in flagged:
+                line = _paint(line, flagged[key], colour)
+            lines.append(line)
         lines.append("")
     return lines
 
 
 def one_line(rows):
     parts = []
+    found = alerts(rows)
+    if found:
+        parts.append(" ".join(f"!! {text}" for _, text, _ in found))
     for name, age, fields in rows:
         if age is None or age > STALE_SEC:
             parts.append(f"{name}: -")
@@ -250,7 +323,7 @@ def main():
         while not stop.wait(REFRESH_SEC):
             rows = monitor.snapshot()
             if live:
-                lines = table(rows)
+                lines = table(rows, colour=True)
                 if lines == last:
                     continue
                 last = lines

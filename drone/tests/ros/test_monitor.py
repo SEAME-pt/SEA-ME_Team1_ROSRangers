@@ -384,8 +384,147 @@ class TableTests(MonitorTestCase):
         )
         self.feed("/flight/state", String(data="{not json"))
         self.assertTrue(
-            monitor.one_line(self.monitor.snapshot()).startswith("flight: {not json |")
+            monitor.one_line(self.monitor.snapshot()).startswith(
+                "!! BAD /flight/state | flight: {not json |"
+            )
         )
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class AlertTests(MonitorTestCase):
+    """Phase 2 of #227: E-stop, failsafe and lost link stand out."""
+
+    def alerts(self):
+        return [(c, text) for c, text, _ in monitor.alerts(self.monitor.snapshot())]
+
+    def flight(self, **changes):
+        self.feed("/flight/state", string(dict(FLIGHT, **changes)))
+
+    def age_flight(self, seconds):
+        when, fields = self.monitor.rows["flight"]
+        self.monitor.rows["flight"] = (when - seconds, fields)
+
+    def test_none_while_healthy(self):
+        self.flight()
+        self.assertEqual(self.alerts(), [])
+        self.feed("/flight/state", string(FLIGHT_STANDIN))
+        self.assertEqual(self.alerts(), [])
+
+    def test_none_before_the_first_flight_state(self):
+        """'waiting' is the normal start of make real (before configure)."""
+        self.assertEqual(self.alerts(), [])
+
+    def test_estop_with_and_without_reason(self):
+        self.flight(estop=True, estop_reason="service", link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.RED, "E-STOP: service")])
+        self.flight(estop=True, link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.RED, "E-STOP")])
+
+    def test_failsafe_from_the_flag_or_the_esp_state(self):
+        self.flight(failsafe_output=True, link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.RED, "FAILSAFE")])
+        # The sim's bridge has no failsafe_output, only esp_state.
+        self.feed(
+            "/flight/state",
+            string(dict(FLIGHT_STANDIN, link_ok=False, esp_state="LINK_FAILSAFE")),
+        )
+        self.assertEqual(self.alerts(), [(monitor.RED, "FAILSAFE")])
+
+    def test_fc_link_lost_red_unknown_yellow(self):
+        self.flight(fc_link_ok=False, link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.RED, "FC LINK LOST")])
+        self.flight(fc_link_ok=None, link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.YELLOW, "FC LINK UNKNOWN")])
+
+    def test_not_active_is_yellow_not_no_link(self):
+        """Between configure and activate: an expected step, not a fault."""
+        self.flight(active=False, link_ok=False)
+        self.assertEqual(self.alerts(), [(monitor.YELLOW, "NOT ACTIVE")])
+
+    def test_no_link_only_when_nothing_else_explains_it(self):
+        self.flight(link_ok=False)  # e.g. the link to the ESP went stale
+        self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
+        self.flight(link_ok=None)
+        self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
+        self.feed("/flight/state", string(dict(FLIGHT_STANDIN, link_ok=False)))
+        self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
+
+    def test_severity_order(self):
+        self.flight(
+            estop=True,
+            estop_reason="service",
+            failsafe_output=True,
+            fc_link_ok=False,
+            active=False,
+            link_ok=False,
+        )
+        self.assertEqual(
+            self.alerts(),
+            [
+                (monitor.RED, "E-STOP: service"),
+                (monitor.RED, "FAILSAFE"),
+                (monitor.RED, "FC LINK LOST"),
+                (monitor.YELLOW, "NOT ACTIVE"),
+            ],
+        )
+
+    def test_stale_replaces_the_alerts_of_old_values(self):
+        self.flight(estop=True, estop_reason="service", link_ok=False)
+        self.age_flight(4.0)
+        self.assertEqual(self.alerts(), [(monitor.RED, "NO /flight/state (4 s)")])
+
+    def test_bad_json_is_an_alert(self):
+        self.feed("/flight/state", String(data="{not json"))
+        self.assertEqual(self.alerts(), [(monitor.RED, "BAD /flight/state")])
+
+    def test_alert_line_under_the_title_without_colour(self):
+        self.flight(estop=True, estop_reason="service", active=False, link_ok=False)
+        with mock.patch.object(monitor.time, "strftime", return_value="12:00:00"):
+            lines = monitor.table(self.monitor.snapshot())
+        self.assertEqual(lines[1], "!! E-STOP: service  !! NOT ACTIVE")
+        self.assertEqual(lines[2], "")
+        self.assertNotIn("\033", "".join(lines))
+
+    def test_no_alert_line_while_healthy(self):
+        self.flight()
+        lines = monitor.table(self.monitor.snapshot())
+        self.assertEqual(lines[1], "")
+
+    def test_old_values_stay_on_a_stale_row(self):
+        """Decision 8A: the last state before it stopped stays visible."""
+        self.flight()
+        self.age_flight(4.0)
+        lines = monitor.table(self.monitor.snapshot())
+        self.assertIn("!! NO /flight/state (4 s)", lines[1])
+        self.assertTrue(any(line.startswith("    link_ok") for line in lines))
+
+    def test_colour_on_the_alert_line_and_the_flagged_fields(self):
+        self.flight(estop=True, estop_reason="service", fc_link_ok=None, link_ok=False)
+        lines = monitor.table(self.monitor.snapshot(), colour=True)
+        self.assertEqual(
+            lines[1],
+            monitor.RED
+            + "!! E-STOP: service"
+            + monitor.RESET
+            + "  "
+            + monitor.YELLOW
+            + "!! FC LINK UNKNOWN"
+            + monitor.RESET,
+        )
+        estop = next(line for line in lines if "estop " in line)
+        self.assertTrue(estop.startswith(monitor.RED), estop)
+        fc_link = next(line for line in lines if "fc_link_ok" in line)
+        self.assertTrue(fc_link.startswith(monitor.YELLOW), fc_link)
+        armed = next(line for line in lines if "armed" in line)
+        self.assertNotIn("\033", armed)
+
+    def test_one_line_starts_with_the_alerts_no_colour(self):
+        self.flight(estop=True, estop_reason="service", active=False, link_ok=False)
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertTrue(
+            line.startswith("!! E-STOP: service !! NOT ACTIVE | flight: "), line
+        )
+        self.assertNotIn("\033", line)
 
 
 class Publisher:
