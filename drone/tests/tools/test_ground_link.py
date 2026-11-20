@@ -423,3 +423,16 @@ def test_ground_session_methods_still_work_on_a_ground_link():
         assert is_accepted(tcp.receive(frame)[0])
     assert is_accepted(udp.receive(link.neutral())[0])
     assert isinstance(link, ground_link.ground.GroundSession)
+
+
+def test_a_corrupt_secrets_file_is_named_not_reported_as_no_psk(tmp_path, monkeypatch):
+    # #229 review: sd_protocol.ground.load_psk ignores bad JSON; the tool must
+    # still say what's wrong instead of suggesting --gen-psk, which fails on it.
+    monkeypatch.delenv("SEAME_PSK", raising=False)
+    path = tmp_path / "secrets.json"
+    path.write_text("{not json")
+    try:
+        ground_link.load_psk(path)
+        raise AssertionError("accepted a corrupt secrets.json")
+    except SystemExit as e:
+        assert "is not valid JSON" in str(e)

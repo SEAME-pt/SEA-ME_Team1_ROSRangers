@@ -111,7 +111,10 @@ def read_secrets(path: pathlib.Path) -> dict:
 
 def load_psk(path: pathlib.Path = SECRETS) -> bytes:
     """SEAME_PSK, else "psk" in secrets.json (sd_protocol.ground.load_psk),
-    or exit with a hint."""
+    or exit with a hint. A secrets.json that isn't valid JSON is named as such
+    (sd_protocol.ground ignores it, and "--gen-psk" would fail on it too)."""
+    if not os.environ.get("SEAME_PSK"):
+        read_secrets(path)  # exits with "<path> is not valid JSON: ..."
     try:
         return ground.load_psk(path=path)
     except ValueError:
