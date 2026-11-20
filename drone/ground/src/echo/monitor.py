@@ -3,7 +3,8 @@
     docker compose up --build             # from drone/ground/: the whole stack, table here
     docker compose run --rm echo          # or the table alone, in its own terminal
 
-Rows: the gesture gesture_node sees (/gesture/raw), the intent intent_node
+Rows: the drone's link and safety state (/flight/state, from flight_interface,
+or the demo's / sim's stand-in), the gesture gesture_node sees (/gesture/raw), the intent intent_node
 sends (/gesture/intent), mission_node's mode (/mission/state) and its velocity
 target (/mission/velocity_target, body frame FLU). A row is "live" while its
 topic keeps arriving and turns "STALE" when it stops. The screen is only
@@ -49,6 +50,49 @@ def _json(msg):
     return data if isinstance(data, dict) else {"bad": msg.data[:60]}
 
 
+# /flight/state: shown whenever the publisher sends them. flight_interface
+# sends all of them; the demo's fake_flight_state and the sim's bridge only
+# link_ok, esp_state, override_active and mask. A null shows "unknown", never
+# disappears: unknown counts as not OK (ADR-025 E6.1).
+FLIGHT_SAFETY = (
+    "active",
+    "link_ok",
+    "esp_state",
+    "fc_link_ok",
+    "armed",
+    "override_active",
+    "mask",
+    "failsafe_output",
+    "estop",
+)
+# Without a terminal, one line per change: only these, as key=value.
+FLIGHT_ONE_LINE = ("link_ok", "esp_state", "armed", "estop")
+
+
+def _flight_fields(d):
+    """The FLIGHT row: the safety fields, then the extras only when they matter."""
+    if "bad" in d:
+        return {"bad": d["bad"]}
+    fields = {}
+    for key in FLIGHT_SAFETY:
+        if key not in d:
+            continue
+        value = d[key]
+        if value is None:
+            fields[key] = "unknown"
+        else:
+            fields[key] = value
+    if d.get("estop") is True:
+        fields["estop_reason"] = d.get("estop_reason")
+    for key in ("arm_pending", "resume_pending"):
+        if d.get(key) is True:
+            fields[key] = True
+    rejected = d.get("esp_rx_rejected")
+    if isinstance(rejected, int) and not isinstance(rejected, bool) and rejected > 0:
+        fields["esp_rx_rejected"] = rejected
+    return fields
+
+
 def _speed(value, plus, minus, unit):
     if abs(value) < 0.005:
         return "0"
@@ -59,6 +103,7 @@ class Monitor:
     def __init__(self, node):
         self.rows = {}  # name -> (time received, {field: text})
         self.lock = threading.Lock()
+        node.create_subscription(String, "/flight/state", self._flight, 10)
         node.create_subscription(String, "/gesture/raw", self._raw, 10)
         node.create_subscription(String, "/gesture/intent", self._intent, 10)
         node.create_subscription(String, "/mission/state", self._state, 10)
@@ -69,6 +114,9 @@ class Monitor:
     def _set(self, name, fields):
         with self.lock:
             self.rows[name] = (time.monotonic(), fields)
+
+    def _flight(self, msg):
+        self._set("flight", _flight_fields(_json(msg)))
 
     def _raw(self, msg):
         d = _json(msg)
@@ -87,13 +135,20 @@ class Monitor:
         )
 
     def _state(self, msg):
+        # No mask: mission_node copies it from /flight/state (the FLIGHT row).
+        # The reason only in IDLE, where it says why gestures do nothing; in the
+        # other modes it only repeats the mode (engage, lock, unlock, override_on).
         d = _json(msg)
+        mode = d.get("mode")
+        if mode == "IDLE":
+            why = d.get("mode_reason")
+        else:
+            why = None
         self._set(
             "mission",
             {
-                "mode": d.get("mode"),
-                "why": d.get("mode_reason"),
-                "mask": d.get("mask"),
+                "mode": mode,
+                "why": why,
                 "airborne": d.get("airborne"),
                 "limited": ", ".join(d.get("limited") or []) or None,
                 "bad": d.get("bad"),
@@ -118,7 +173,7 @@ class Monitor:
         with self.lock:
             rows = dict(self.rows)
         out = []
-        for name in ("gesture", "intent", "mission", "velocity"):
+        for name in ROW_ORDER:
             if name in rows:
                 t, fields = rows[name]
                 out.append(
@@ -129,7 +184,11 @@ class Monitor:
         return out
 
 
+# The drone first: it is what the pilot and the audience look at first.
+ROW_ORDER = ("flight", "gesture", "intent", "mission", "velocity")
+
 SOURCES = {
+    "flight": "/flight/state",  # the publisher depends on the mode
     "gesture": "gesture_node  /gesture/raw",
     "intent": "intent_node   /gesture/intent",
     "mission": "mission_node  /mission/state",
@@ -161,6 +220,9 @@ def one_line(rows):
     for name, age, fields in rows:
         if age is None or age > STALE_SEC:
             parts.append(f"{name}: -")
+        elif name == "flight" and "bad" not in fields:
+            pairs = [f"{k}={fields[k]}" for k in FLIGHT_ONE_LINE if k in fields]
+            parts.append(f"{name}: " + " ".join(pairs))
         elif name == "velocity":
             parts.append(
                 f"{name}: " + (" ".join(v for v in fields.values() if v != "0") or "0")

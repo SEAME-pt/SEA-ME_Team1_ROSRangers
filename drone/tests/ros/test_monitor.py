@@ -72,6 +72,31 @@ STATE = {
     "limited": ["ramping:y"],
     "intent_age_ms": 12,
 }
+# flight_interface's /flight/state (guard.py flight_state()), healthy and streaming.
+FLIGHT = {
+    "link_ok": True,
+    "esp_state": "STREAMING",
+    "override_active": True,
+    "mask": 8,
+    "airborne": True,
+    "armed": True,
+    "failsafe_output": False,
+    "fc_link_ok": True,
+    "esp_rx_rejected": 0,
+    "active": True,
+    "estop": False,
+    "estop_reason": None,
+    "resume_pending": False,
+    "arm_pending": False,
+}
+# The demo's fake_flight_state and the sim's bridge send only these.
+FLIGHT_STANDIN = {
+    "link_ok": True,
+    "esp_state": "STREAMING",
+    "override_active": True,
+    "mask": 11,
+    "airborne": True,
+}
 
 
 class FakeNode:
@@ -115,6 +140,7 @@ class RowTests(MonitorTestCase):
         self.assertEqual(
             set(self.node.callbacks),
             {
+                "/flight/state",
                 "/gesture/raw",
                 "/gesture/intent",
                 "/mission/state",
@@ -126,9 +152,88 @@ class RowTests(MonitorTestCase):
         snapshot = self.monitor.snapshot()
         self.assertEqual(
             [name for name, _, _ in snapshot],
-            ["gesture", "intent", "mission", "velocity"],
+            ["flight", "gesture", "intent", "mission", "velocity"],
         )
-        self.assertEqual([age for _, age, _ in snapshot], [None] * 4)
+        self.assertEqual([age for _, age, _ in snapshot], [None] * 5)
+
+    def test_flight_row_from_flight_interface(self):
+        self.feed("/flight/state", string(FLIGHT))
+        rows = self.rows()
+        # Safety fields in a fixed order; the extras (estop_reason, the pending
+        # flags, esp_rx_rejected at 0) stay hidden while they do not matter.
+        self.assertEqual(
+            list(rows["flight"].items()),
+            [
+                ("active", True),
+                ("link_ok", True),
+                ("esp_state", "STREAMING"),
+                ("fc_link_ok", True),
+                ("armed", True),
+                ("override_active", True),
+                ("mask", 8),
+                ("failsafe_output", False),
+                ("estop", False),
+            ],
+        )
+
+    def test_flight_row_from_the_demo_or_sim_stand_in(self):
+        self.feed("/flight/state", string(FLIGHT_STANDIN))
+        self.assertEqual(
+            self.rows()["flight"],
+            {
+                "link_ok": True,
+                "esp_state": "STREAMING",
+                "override_active": True,
+                "mask": 11,
+            },
+        )
+
+    def test_flight_unknown_is_shown_not_dropped(self):
+        """ADR-025 E6.1: unknown counts as not OK, so it must stay visible."""
+        self.feed(
+            "/flight/state",
+            string(
+                dict(FLIGHT, armed=None, fc_link_ok=None, esp_state=None, mask=None)
+            ),
+        )
+        flight = self.rows()["flight"]
+        for key in ("armed", "fc_link_ok", "esp_state", "mask"):
+            with self.subTest(key=key):
+                self.assertEqual(flight[key], "unknown")
+
+    def test_flight_extras_only_when_they_matter(self):
+        self.feed(
+            "/flight/state",
+            string(
+                dict(
+                    FLIGHT,
+                    estop=True,
+                    estop_reason="service",
+                    arm_pending=True,
+                    resume_pending=True,
+                    esp_rx_rejected=3,
+                )
+            ),
+        )
+        flight = self.rows()["flight"]
+        self.assertEqual(flight["estop_reason"], "service")
+        self.assertIs(flight["arm_pending"], True)
+        self.assertIs(flight["resume_pending"], True)
+        self.assertEqual(flight["esp_rx_rejected"], 3)
+        # An E-stop with no reason given: no empty field.
+        self.feed("/flight/state", string(dict(FLIGHT, estop=True)))
+        self.assertNotIn("estop_reason", self.rows()["flight"])
+        # null or not a number: hidden, like 0.
+        for value in (None, True, "3"):
+            with self.subTest(esp_rx_rejected=value):
+                self.feed("/flight/state", string(dict(FLIGHT, esp_rx_rejected=value)))
+                self.assertNotIn("esp_rx_rejected", self.rows()["flight"])
+
+    def test_flight_bad_message_is_shown_not_raised(self):
+        for text in ("{not json", "[1, 2]", "null"):
+            with self.subTest(text=text):
+                self.feed("/flight/state", String(data=text))
+                self.assertEqual(self.rows()["flight"], {"bad": text[:60]})
 
     def test_each_row_shows_its_topic(self):
         self.feed("/gesture/raw", string(RAW))
@@ -144,11 +249,41 @@ class RowTests(MonitorTestCase):
             rows["mission"],
             {
                 "mode": "ENGAGED",
-                "why": "engage",
-                "mask": 11,
                 "airborne": True,
                 "limited": "ramping:y",
             },
+        )
+
+    def test_mission_why_only_in_idle_and_no_mask(self):
+        """The mask is on the FLIGHT row (mission_node copies it); the reason
+        only says something new in IDLE."""
+        for mode, reason in (
+            ("WAITING", "override_on"),
+            ("ENGAGED", "unlock"),
+            ("LOCKED", "lock"),
+        ):
+            with self.subTest(mode=mode):
+                self.feed(
+                    "/mission/state", string(dict(STATE, mode=mode, mode_reason=reason))
+                )
+                self.assertNotIn("why", self.rows()["mission"])
+                self.assertNotIn("mask", self.rows()["mission"])
+        self.feed(
+            "/mission/state",
+            string(
+                dict(
+                    STATE,
+                    mode="IDLE",
+                    mode_reason="override_off",
+                    mask=None,
+                    airborne=False,
+                    limited=[],
+                )
+            ),
+        )
+        self.assertEqual(
+            self.rows()["mission"],
+            {"mode": "IDLE", "why": "override_off", "airborne": False},
         )
 
     def test_no_hand_is_shown_without_a_gesture(self):
@@ -226,21 +361,47 @@ class TableTests(MonitorTestCase):
         line = monitor.one_line(self.monitor.snapshot())
         self.assertEqual(
             line,
-            "gesture: - | intent: MOVE_RIGHT ok INDEX_RIGHT | mission: - "
-            "| velocity: right 0.30 m/s",
+            "flight: - | gesture: - | intent: MOVE_RIGHT ok INDEX_RIGHT "
+            "| mission: - | velocity: right 0.30 m/s",
         )
         self.feed("/mission/velocity_target", twist())
         self.assertIn("velocity: 0", monitor.one_line(self.monitor.snapshot()))
 
+    def test_one_line_flight_has_only_the_key_values(self):
+        self.feed("/flight/state", string(dict(FLIGHT, armed=None)))
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertTrue(
+            line.startswith(
+                "flight: link_ok=True esp_state=STREAMING armed=unknown estop=False | "
+            ),
+            line,
+        )
+        # The stand-in has no armed / estop: only what it sends.
+        self.feed("/flight/state", string(FLIGHT_STANDIN))
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertTrue(
+            line.startswith("flight: link_ok=True esp_state=STREAMING | "), line
+        )
+        self.feed("/flight/state", String(data="{not json"))
+        self.assertTrue(
+            monitor.one_line(self.monitor.snapshot()).startswith("flight: {not json |")
+        )
+
 
 class Publisher:
-    """Plays mission_node's side: publishes the chain's topics at 20 Hz."""
+    """Plays the nodes' side: publishes the chain's topics and /flight/state
+    at 20 Hz."""
 
     def __init__(self):
         self.node = rclpy.create_node("monitor_test_publisher")
         self.pubs = {
             topic: self.node.create_publisher(String, topic, 10)
-            for topic in ("/gesture/raw", "/gesture/intent", "/mission/state")
+            for topic in (
+                "/flight/state",
+                "/gesture/raw",
+                "/gesture/intent",
+                "/mission/state",
+            )
         }
         self.vel = self.node.create_publisher(
             TwistStamped, "/mission/velocity_target", 10
@@ -364,12 +525,14 @@ class ProgramTests(unittest.TestCase):
 
     def test_without_a_terminal_one_line_per_change(self):
         process = self.start(tty=False)
+        self.publisher.messages["/flight/state"] = FLIGHT
         self.publisher.messages["/gesture/intent"] = INTENT
         self.publisher.messages["/mission/state"] = STATE
         self.publisher.velocity = (0.0, -0.3, 0.0, 0.0)
         self.assertTrue(
             process.wait_for(
-                lambda out: "intent: MOVE_RIGHT ok INDEX_RIGHT" in out
+                lambda out: "flight: link_ok=True esp_state=STREAMING armed=True" in out
+                and "intent: MOVE_RIGHT ok INDEX_RIGHT" in out
                 and "mission: ENGAGED" in out
                 and "velocity: right 0.30 m/s" in out
             ),
