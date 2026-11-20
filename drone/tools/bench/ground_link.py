@@ -90,16 +90,6 @@ HELLO_TRIES = 3
 TcpReader = ground.TcpReader
 
 
-def parse_psk(text: str) -> bytes:
-    """The PSK from 64 hex characters, or exit with a hint."""
-    try:
-        return ground.load_psk(environ={"SEAME_PSK": text})
-    except ValueError:
-        raise SystemExit(
-            "No valid PSK: set SEAME_PSK or run `ground_link.py --gen-psk` (64 hex characters)."
-        ) from None
-
-
 def read_secrets(path: pathlib.Path) -> dict:
     try:
         return json.loads(path.read_text())

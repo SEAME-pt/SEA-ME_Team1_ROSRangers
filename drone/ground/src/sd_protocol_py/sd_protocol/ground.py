@@ -157,9 +157,10 @@ class GroundSession:
             return False
         if self.hello_sent_us is None:
             return False  # no HELLO of ours: not our HELLO_ACK
-        # Measured when the frame is processed, not when it arrived: a slow
-        # poll loop counts toward the 100 ms, so an on-time HELLO_ACK can be
-        # refused. That errs on the safe side: the next handshake follows.
+        # Without rx_us, measured when the frame is processed, not when it
+        # arrived: a slow poll loop counts toward the 100 ms, so an on-time
+        # HELLO_ACK can be refused. That errs on the safe side: the next
+        # handshake follows.
         if rx_us is None:
             rx_us = self._clock_us()
         waited_us = (rx_us - self.hello_sent_us) & 0xFFFFFFFF
@@ -190,6 +191,11 @@ class GroundSession:
         return self.seal(msg_type, payload, self.seq_tcp, now)
 
     def setpoint(self, now, mode=0, roll=0, pitch=0, yaw_rate=0, throttle=0):
+        """A SETPOINT with the next UDP seq. Careful: the bench tool's
+        GroundLink (drone/tools/bench/ground_link.py) overrides this with a
+        different signature, setpoint(mode, roll, pitch, yaw, throttle), so a
+        method here must not call self.setpoint(now, ...); neutral() is
+        overridden there for that reason (#230 review)."""
         self.seq_udp += 1
         sp = Setpoint(
             mode=mode, roll=roll, pitch=pitch, yaw_rate=yaw_rate, throttle=throttle
