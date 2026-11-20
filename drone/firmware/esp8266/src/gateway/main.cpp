@@ -308,9 +308,10 @@ void service_tcp(sd::Link &link, uint32_t now) {
 //   B,<batch>                                                  first line of
 //                                                               every R packet
 //   R,<session>,<seq>,<t_send_us>,<rx_us>,<micros>,<result>   one SETPOINT
-//   F,<chip_id>,<vendor>,<real_size>,<bus_hz>,<dropped>        every 10 s, and
-//                                                               within 1 s of
-//                                                               a new drop
+//   F,<chip_id>,<vendor>,<real_size>,<bus_hz>,<dropped>,<next_batch>
+//     once when the peer is known, every 10 s, within 1 s of a new drop, and
+//     once 1 s after the stream stops; next_batch lets the ground see a lost
+//     last R packet. It shares the R packets' backoff.
 // rx_us is the receive time the late check uses (millis() * 1000, sd::Link);
 // micros() is the finer clock, for the analysis only. result is sd::RxResult
 // (0 accepted, 1 accepted with a gap, 17 late, ...). session is the header's
@@ -338,6 +339,9 @@ constexpr uint32_t kLateLogBackoffMs = 30; // after a failed send
 // A new drop is reported within this, not on every loop: while a stall keeps
 // the buffer full, every frame is a drop.
 constexpr uint32_t kLateLogDropInfoMs = 1000;
+// The stream has stopped (no record waiting, none sent for this long): the
+// F line tells the ground the last batch number once (#228 review).
+constexpr uint32_t kLateLogIdleMs = 1000;
 struct LateRecord {
   uint32_t session;
   uint32_t seq;
@@ -352,8 +356,9 @@ uint32_t late_log_dropped = 0; // records lost: the buffer was full
 uint32_t late_log_flush_ms = 0;
 uint32_t late_log_info_ms = 0;
 bool late_log_info_sent = false;
-uint32_t late_log_dropped_sent = 0; // the dropped count in the last F line
-uint32_t late_log_batch = 0;        // number of the next R packet
+uint32_t late_log_dropped_sent = 0;   // the dropped count in the last F line
+uint32_t late_log_batch = 0;          // number of the next R packet
+uint32_t late_log_batch_reported = 0; // next_batch in the last F line
 bool late_log_backing_off = false;
 uint32_t late_log_retry_ms = 0;
 
@@ -438,22 +443,37 @@ void late_log_send(uint32_t now_ms) {
   if (sent && due && late_log_count > 0) {
     late_log_send_batch(late_log_count, now_ms);
   }
-  const bool info_due = now_ms - late_log_info_ms >= kLateLogInfoMs;
+  // The F line shares the backoff: never sent while a failed send waits
+  // (#228 review), and a failed F line starts the backoff too.
+  const bool waiting_now = late_log_backing_off &&
+                           static_cast<int32_t>(now_ms - late_log_retry_ms) < 0;
+  const uint32_t since_info = now_ms - late_log_info_ms;
+  const bool first_due = !late_log_info_sent;
+  const bool info_due = since_info >= kLateLogInfoMs;
   const bool dropped_changed = late_log_dropped != late_log_dropped_sent;
   const bool drop_info_due =
-      dropped_changed && now_ms - late_log_info_ms >= kLateLogDropInfoMs;
-  if (have_peer && (!late_log_info_sent || info_due || drop_info_due)) {
-    late_log_info_ms = now_ms;
-    char line[96];
-    const int n = snprintf(line, sizeof line, "F,%08x,%u,%u,%u,%u\n",
+      dropped_changed && since_info >= kLateLogDropInfoMs;
+  const bool idle =
+      late_log_count == 0 && now_ms - late_log_flush_ms >= kLateLogIdleMs;
+  const bool end_info_due = idle && late_log_batch != late_log_batch_reported &&
+                            since_info >= kLateLogDropInfoMs;
+  const bool any_due = first_due || info_due || drop_info_due || end_info_due;
+  if (have_peer && !waiting_now && any_due) {
+    late_log_info_ms = now_ms; // also on a failed try: it waits its next turn
+    char line[112];
+    const int n = snprintf(line, sizeof line, "F,%08x,%u,%u,%u,%u,%u\n",
                            ESP.getFlashChipId(), ESP.getFlashChipVendorId(),
                            ESP.getFlashChipRealSize(), ESP.getFlashChipSpeed(),
-                           late_log_dropped);
+                           late_log_dropped, late_log_batch);
     udp.beginPacket(peer_ip, kLateLogPort);
     udp.write(line, n);
-    late_log_info_sent = udp.endPacket() == 1;
-    if (late_log_info_sent) {
+    if (udp.endPacket() == 1) {
+      late_log_info_sent = true;
       late_log_dropped_sent = late_log_dropped;
+      late_log_batch_reported = late_log_batch;
+    } else {
+      late_log_backing_off = true;
+      late_log_retry_ms = now_ms + kLateLogBackoffMs;
     }
   }
 }
