@@ -378,7 +378,7 @@ NO_FC = {
     "demo": "no data: demo has no drone",
     "sim": "no data: the sim publishes no /fc/*",
     "real-dry": "no data: loopback has no FC",
-    "real": "waiting: activate flight_interface; needs fresh FC data",
+    "real": "waiting: configure flight_interface; needs fresh FC data",
 }
 NO_FLIGHT_STATE = "waiting: configure flight_interface (make real-steps)"
 

@@ -31,7 +31,7 @@
 # or one per terminal (demo):
 #   docker compose up --build gesture      # terminal 1: camera + "Gestures" window (q to quit)
 #   docker compose up --build intent       # terminal 2: filter -> /gesture/intent
-#   docker compose run --rm --build echo   # terminal 3: live table (gesture, intent, mode, velocity)
+#   docker compose run --rm --build echo   # terminal 3: live table (the drone, the chain, alerts)
 #   docker compose up --build mission fake_flight_state  # terminal 4: mode changes in the log
 #   docker compose down                    # stop everything
 #
