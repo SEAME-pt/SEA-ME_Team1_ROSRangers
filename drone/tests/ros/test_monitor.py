@@ -38,7 +38,7 @@ MONITOR = Path(__file__).resolve().parents[2] / "ground" / "src" / "echo" / "mon
 
 if ros_available():
     import rclpy
-    from geometry_msgs.msg import TwistStamped
+    from geometry_msgs.msg import TwistStamped, Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
     from std_msgs.msg import String
 
@@ -120,6 +120,15 @@ def twist(vx=0.0, vy=0.0, vz=0.0, wz=0.0):
     return msg
 
 
+def attitude(roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
+    """An /fc/attitude message from degrees (the topic is in radians)."""
+    msg = Vector3Stamped()
+    msg.vector.x = math.radians(roll_deg)
+    msg.vector.y = math.radians(pitch_deg)
+    msg.vector.z = math.radians(yaw_deg)
+    return msg
+
+
 class MonitorTestCase(unittest.TestCase):
     """A Monitor on a FakeNode: messages go straight to its callbacks."""
 
@@ -141,6 +150,7 @@ class RowTests(MonitorTestCase):
             set(self.node.callbacks),
             {
                 "/flight/state",
+                "/fc/attitude",
                 "/gesture/raw",
                 "/gesture/intent",
                 "/mission/state",
@@ -152,9 +162,9 @@ class RowTests(MonitorTestCase):
         snapshot = self.monitor.snapshot()
         self.assertEqual(
             [name for name, _, _ in snapshot],
-            ["flight", "gesture", "intent", "mission", "velocity"],
+            ["flight", "attitude", "gesture", "intent", "mission", "velocity"],
         )
-        self.assertEqual([age for _, age, _ in snapshot], [None] * 5)
+        self.assertEqual([age for _, age, _ in snapshot], [None] * 6)
 
     def test_flight_row_from_flight_interface(self):
         self.feed("/flight/state", string(FLIGHT))
@@ -527,9 +537,88 @@ class AlertTests(MonitorTestCase):
         self.assertNotIn("\033", line)
 
 
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class AttitudeTests(MonitorTestCase):
+    """Phase 3 of #227: /fc/attitude in whole degrees, REP-103 signs as sent."""
+
+    def angles(self):
+        return self.rows()["attitude"]["angles"]
+
+    def test_signs_are_the_topics_own(self):
+        """Right side 3 deg down, nose 10 deg up, turned 50 deg right."""
+        self.feed("/fc/attitude", attitude(3, -10, -50))
+        self.assertEqual(
+            self.angles(),
+            "roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)",
+        )
+        # Left side down, nose down, turned left: every sign flips.
+        self.feed("/fc/attitude", attitude(-3, 10, 50))
+        self.assertEqual(
+            self.angles(),
+            "roll: -3 deg    pitch: +10 deg    yaw: +50 deg (from start)",
+        )
+
+    def test_whole_degrees_from_radians(self):
+        # 0.1 rad = 5.73 deg -> +6
+        self.assertEqual(monitor._degrees(0.1), "+6 deg")
+        self.assertEqual(monitor._degrees(-0.1), "-6 deg")
+        self.assertEqual(monitor._degrees(math.radians(179.6)), "+180 deg")
+
+    def test_halves_round_away_from_zero(self):
+        self.assertEqual(monitor._degrees(math.radians(2.5)), "+3 deg")
+        self.assertEqual(monitor._degrees(math.radians(-2.5)), "-3 deg")
+        self.assertEqual(monitor._degrees(math.radians(2.49)), "+2 deg")
+
+    def test_zero_has_no_sign(self):
+        for deg in (0.0, 0.4, -0.4):
+            with self.subTest(deg=deg):
+                self.assertEqual(monitor._degrees(math.radians(deg)), "0 deg")
+
+    def test_noise_below_half_a_degree_keeps_the_text(self):
+        """No redraw for sensor noise: the table text only changes on a whole degree."""
+        self.feed("/fc/attitude", attitude(3.1, -9.8, -50.2))
+        first = self.angles()
+        self.feed("/fc/attitude", attitude(2.9, -10.3, -49.7))
+        self.assertEqual(self.angles(), first)
+
+    def test_one_line_under_the_row_heading(self):
+        self.feed("/fc/attitude", attitude(3, -10, -50))
+        lines = monitor.table(self.monitor.snapshot())
+        heading = lines.index(
+            next(line for line in lines if line.startswith("ATTITUDE"))
+        )
+        self.assertIn("/fc/attitude", lines[heading])
+        self.assertEqual(
+            lines[heading + 1],
+            "    roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)",
+        )
+        self.assertEqual(lines[heading + 2], "")
+
+    def test_stale_after_one_second_keeps_the_last_angles(self):
+        self.feed("/fc/attitude", attitude(3, -10, -50))
+        when, fields = self.monitor.rows["attitude"]
+        self.monitor.rows["attitude"] = (when - 2.0, fields)
+        lines = monitor.table(self.monitor.snapshot())
+        heading = next(line for line in lines if line.startswith("ATTITUDE"))
+        self.assertTrue(heading.endswith("STALE 2 s"), heading)
+        self.assertIn(
+            "    roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)", lines
+        )
+
+    def test_no_alert_from_attitude(self):
+        self.feed("/fc/attitude", attitude(60, 60, 170))
+        self.assertEqual(monitor.alerts(self.monitor.snapshot()), [])
+
+    def test_not_in_the_one_line_output(self):
+        self.feed("/fc/attitude", attitude(3, -10, -50))
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertNotIn("attitude", line)
+        self.assertNotIn("roll", line)
+
+
 class Publisher:
-    """Plays the nodes' side: publishes the chain's topics and /flight/state
-    at 20 Hz."""
+    """Plays the nodes' side: publishes the chain's topics, /flight/state and
+    /fc/attitude at 20 Hz."""
 
     def __init__(self):
         self.node = rclpy.create_node("monitor_test_publisher")
@@ -545,8 +634,10 @@ class Publisher:
         self.vel = self.node.create_publisher(
             TwistStamped, "/mission/velocity_target", 10
         )
+        self.att = self.node.create_publisher(Vector3Stamped, "/fc/attitude", 10)
         self.messages = {}
         self.velocity = None
+        self.attitude = None  # (roll, pitch, yaw) in degrees
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
         self.node.create_timer(0.05, self._tick)
@@ -559,6 +650,8 @@ class Publisher:
             self.pubs[topic].publish(string(data))
         if self.velocity is not None:
             self.vel.publish(twist(*self.velocity))
+        if self.attitude is not None:
+            self.att.publish(attitude(*self.attitude))
 
     def _spin(self):
         while not self.stop.is_set():
@@ -668,6 +761,7 @@ class ProgramTests(unittest.TestCase):
         self.publisher.messages["/gesture/intent"] = INTENT
         self.publisher.messages["/mission/state"] = STATE
         self.publisher.velocity = (0.0, -0.3, 0.0, 0.0)
+        self.publisher.attitude = (3.0, -10.0, -50.0)
         self.assertTrue(
             process.wait_for(
                 lambda out: "flight: link_ok=True esp_state=STREAMING armed=True" in out
@@ -687,12 +781,18 @@ class ProgramTests(unittest.TestCase):
         self.assertEqual(process.stop(signal.SIGTERM), 0, process.output)
         self.assertNotIn("\033", process.output)
         self.assertNotIn("Traceback", process.output)
+        self.assertNotIn("roll:", process.output)  # attitude stays out (8A)
 
     def test_on_a_terminal_frames_only_when_something_changes(self):
         process = self.start(tty=True)
         self.publisher.messages["/gesture/intent"] = INTENT
+        self.publisher.attitude = (3.0, -10.0, -50.0)  # same angles at 20 Hz
         self.assertTrue(
-            process.wait_for(lambda out: "MOVE_RIGHT" in out), process.output
+            process.wait_for(
+                lambda out: "MOVE_RIGHT" in out
+                and "roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)" in out
+            ),
+            process.output,
         )
         self.assertTrue(process.output.startswith(monitor.ENTER), process.output[:40])
         before = process.output.count(monitor.SYNC_ON)

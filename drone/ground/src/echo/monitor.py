@@ -4,7 +4,10 @@
     docker compose run --rm echo          # or the table alone, in its own terminal
 
 Rows: the drone's link and safety state (/flight/state, from flight_interface,
-or the demo's / sim's stand-in), the gesture gesture_node sees (/gesture/raw), the intent intent_node
+or the demo's / sim's stand-in), the drone's attitude (/fc/attitude, whole
+degrees, the topic's REP-103 signs; only from flight_interface's ESP backend
+in make real, or fc_telemetry on the bench), the
+gesture gesture_node sees (/gesture/raw), the intent intent_node
 sends (/gesture/intent), mission_node's mode (/mission/state) and its velocity
 target (/mission/velocity_target, body frame FLU). A row is "live" while its
 topic keeps arriving and turns "STALE" when it stops. The screen is only
@@ -27,7 +30,7 @@ import threading
 import time
 
 import rclpy
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, Vector3Stamped
 from rclpy.signals import SignalHandlerOptions
 from std_msgs.msg import String
 
@@ -107,11 +110,30 @@ def _speed(value, plus, minus, unit):
     return f"{plus if value > 0 else minus} {abs(value):.2f} {unit}"
 
 
+def _degrees(rad):
+    """An /fc/attitude angle as whole degrees with its sign: "+3 deg", "-10 deg",
+    "0 deg". The sign is the topic's own (REP-103): roll + right side down,
+    pitch + nose down, yaw + counter-clockwise (left).
+
+    Halves round away from zero, e.g. 2.5 -> +3 and -2.5 -> -3 (Python's
+    round() would give 2 and -2). Worked example: 0.1 rad = 5.73 deg -> "+6 deg".
+    """
+    deg = math.degrees(rad)
+    if deg >= 0:
+        whole = math.floor(deg + 0.5)
+    else:
+        whole = -math.floor(-deg + 0.5)
+    if whole == 0:
+        return "0 deg"  # also for -0.4: no "+0" / "-0"
+    return f"{whole:+d} deg"
+
+
 class Monitor:
     def __init__(self, node):
         self.rows = {}  # name -> (time received, {field: text})
         self.lock = threading.Lock()
         node.create_subscription(String, "/flight/state", self._flight, 10)
+        node.create_subscription(Vector3Stamped, "/fc/attitude", self._attitude, 10)
         node.create_subscription(String, "/gesture/raw", self._raw, 10)
         node.create_subscription(String, "/gesture/intent", self._intent, 10)
         node.create_subscription(String, "/mission/state", self._state, 10)
@@ -125,6 +147,17 @@ class Monitor:
 
     def _flight(self, msg):
         self._set("flight", _flight_fields(_json(msg)))
+
+    def _attitude(self, msg):
+        # One line: x roll, y pitch, z yaw (rad). Yaw is relative: zero at
+        # flight_interface's activate (or fc_telemetry's start), no compass.
+        v = msg.vector
+        angles = (
+            f"roll: {_degrees(v.x)}    "
+            f"pitch: {_degrees(v.y)}    "
+            f"yaw: {_degrees(v.z)} (from start)"
+        )
+        self._set("attitude", {"angles": angles})
 
     def _raw(self, msg):
         d = _json(msg)
@@ -193,10 +226,11 @@ class Monitor:
 
 
 # The drone first: it is what the pilot and the audience look at first.
-ROW_ORDER = ("flight", "gesture", "intent", "mission", "velocity")
+ROW_ORDER = ("flight", "attitude", "gesture", "intent", "mission", "velocity")
 
 SOURCES = {
     "flight": "/flight/state",  # the publisher depends on the mode
+    "attitude": "/fc/attitude",
     "gesture": "gesture_node  /gesture/raw",
     "intent": "intent_node   /gesture/intent",
     "mission": "mission_node  /mission/state",
@@ -277,7 +311,10 @@ def table(rows, colour=False):
             status = "live"  # not the age: it would change, and redraw, every frame
         lines.append(f"{name.upper():9} {SOURCES[name]:42} {status}")
         for key, value in fields.items():
-            line = f"    {key:11} {value}"
+            if name == "attitude":
+                line = f"    {value}"  # roll, pitch and yaw on one line
+            else:
+                line = f"    {key:11} {value}"
             if name == "flight" and key in flagged:
                 line = _paint(line, flagged[key], colour)
             lines.append(line)
@@ -291,6 +328,10 @@ def one_line(rows):
     if found:
         parts.append(" ".join(f"!! {text}" for _, text, _ in found))
     for name, age, fields in rows:
+        if name == "attitude":
+            # Changes on almost every message: it would print up to 10 lines a
+            # second. Record a rosbag to analyse the attitude instead.
+            continue
         if age is None or age > STALE_SEC:
             parts.append(f"{name}: -")
         elif name == "flight" and "bad" not in fields:
