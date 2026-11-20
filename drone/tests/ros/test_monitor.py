@@ -30,6 +30,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from support import ros_available
@@ -101,13 +102,25 @@ FLIGHT_STANDIN = {
 
 
 class FakeNode:
-    """Stands in for the rclpy node: keeps the callback of each topic."""
+    """Stands in for the rclpy node: keeps the callback of each topic and the
+    timer, and answers the graph query from `publishers` (topic -> node names)."""
 
     def __init__(self):
         self.callbacks = {}
+        self.timers = []
+        self.publishers = {}
 
     def create_subscription(self, msg_type, topic, callback, depth):
         self.callbacks[topic] = callback
+
+    def create_timer(self, period, callback):
+        self.timers.append((period, callback))
+
+    def get_publishers_info_by_topic(self, topic):
+        infos = []
+        for name in self.publishers.get(topic, []):
+            infos.append(SimpleNamespace(node_name=name, node_namespace="/"))
+        return infos
 
 
 def string(data):
@@ -858,6 +871,141 @@ class ModeTests(MonitorTestCase):
                     self.assertEqual(below, "")
 
 
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class PublisherTests(MonitorTestCase):
+    """Phase 6 of #227: two publishers on a topic that must have one."""
+
+    def check(self, publishers):
+        """One graph query (the timer's callback) with these publishers."""
+        self.node.publishers = publishers
+        _, callback = self.node.timers[0]
+        callback()
+
+    def hold(self, topic, seconds):
+        since, names = self.monitor.extra[topic]
+        self.monitor.extra[topic] = (since - seconds, names)
+
+    def alerts(self):
+        found = monitor.alerts(self.monitor.snapshot(), self.monitor.doubled())
+        return [(c, text) for c, text, _ in found]
+
+    def test_one_timer_reads_the_graph(self):
+        self.assertEqual(len(self.node.timers), 1)
+        self.assertEqual(self.node.timers[0][0], monitor.PUBLISHERS_CHECK_SEC)
+
+    def test_checked_topics(self):
+        self.assertEqual(
+            monitor.SINGLE_PUBLISHER_TOPICS,
+            (
+                "/flight/state",
+                "/mission/velocity_target",
+                "/fc/attitude",
+                "/fc/battery",
+            ),
+        )
+
+    def test_zero_or_one_publisher_no_alert(self):
+        self.check({})
+        self.check({"/flight/state": ["flight_interface"]})
+        self.assertEqual(self.monitor.extra, {})
+        self.assertEqual(self.alerts(), [])
+
+    def test_two_publishers_alert_after_one_second_with_names(self):
+        self.check({"/flight/state": ["flight_interface", "fake_flight_state"]})
+        self.assertEqual(self.alerts(), [])  # not yet: needs 1 s
+        self.hold("/flight/state", monitor.PUBLISHERS_HOLD_SEC)
+        self.assertEqual(
+            self.alerts(),
+            [
+                (
+                    monitor.RED,
+                    "2 /flight/state PUBLISHERS: fake_flight_state, flight_interface",
+                )
+            ],
+        )
+
+    def test_a_break_restarts_the_second(self):
+        two = {"/flight/state": ["flight_interface", "fake_flight_state"]}
+        self.check(two)
+        self.hold("/flight/state", 0.6)
+        self.check({"/flight/state": ["flight_interface"]})  # the break
+        self.check(two)
+        self.hold("/flight/state", 0.6)
+        self.assertEqual(self.alerts(), [])
+
+    def test_still_two_keeps_the_start_time(self):
+        two = {"/flight/state": ["flight_interface", "fake_flight_state"]}
+        self.check(two)
+        self.hold("/flight/state", 0.6)
+        self.check(two)
+        self.hold("/flight/state", 0.6)
+        self.assertEqual(len(self.alerts()), 1)
+
+    def test_each_topic_has_its_own_alert_in_a_fixed_order(self):
+        self.check(
+            {
+                "/fc/battery": ["flight_interface", "fc_telemetry"],
+                "/mission/velocity_target": ["_ros2cli_1234", "mission_node"],
+            }
+        )
+        self.hold("/fc/battery", 1.0)
+        self.hold("/mission/velocity_target", 1.0)
+        self.assertEqual(
+            [text for _, text in self.alerts()],
+            [
+                "2 /mission/velocity_target PUBLISHERS: _ros2cli_1234, mission_node",
+                "2 /fc/battery PUBLISHERS: fc_telemetry, flight_interface",
+            ],
+        )
+
+    def test_gesture_topics_are_not_checked(self):
+        self.check({"/gesture/raw": ["gesture_node", "_ros2cli_99"]})
+        self.assertEqual(self.monitor.extra, {})
+
+    def test_first_and_the_other_alerts_stay(self):
+        self.feed(
+            "/flight/state",
+            string(dict(FLIGHT, estop=True, estop_reason="service", active=False)),
+        )
+        self.check({"/flight/state": ["flight_interface", "fake_flight_state"]})
+        self.hold("/flight/state", 1.0)
+        self.assertEqual(
+            self.alerts(),
+            [
+                (
+                    monitor.RED,
+                    "2 /flight/state PUBLISHERS: fake_flight_state, flight_interface",
+                ),
+                (monitor.RED, "E-STOP: service"),
+                (monitor.YELLOW, "NOT ACTIVE"),
+            ],
+        )
+
+    def test_namespace_is_part_of_the_name(self):
+        self.node.publishers = {"/flight/state": ["a", "b"]}
+        infos = [
+            SimpleNamespace(node_name="flight_interface", node_namespace="/drone"),
+            SimpleNamespace(node_name="fake_flight_state", node_namespace="/"),
+        ]
+        with mock.patch.object(
+            self.node, "get_publishers_info_by_topic", return_value=infos
+        ):
+            self.node.timers[0][1]()
+        self.assertEqual(
+            self.monitor.extra["/flight/state"][1],
+            ["/drone/flight_interface", "fake_flight_state"],
+        )
+
+    def test_in_the_table_and_the_one_line_output(self):
+        self.check({"/flight/state": ["flight_interface", "fake_flight_state"]})
+        self.hold("/flight/state", 1.0)
+        text = "!! 2 /flight/state PUBLISHERS: fake_flight_state, flight_interface"
+        lines = monitor.table(self.monitor.snapshot(), doubled=self.monitor.doubled())
+        self.assertEqual(lines[1], text)
+        line = monitor.one_line(self.monitor.snapshot(), self.monitor.doubled())
+        self.assertTrue(line.startswith(text + " | "), line)
+
+
 class Publisher:
     """Plays the nodes' side: publishes the chain's topics, /flight/state,
     /fc/attitude and /fc/battery at 20 Hz."""
@@ -1038,6 +1186,20 @@ class ProgramTests(unittest.TestCase):
         first = process.output.splitlines()[0]
         self.assertEqual(first, "mode: MODE ?")
         self.assertEqual(process.output.count("mode: "), 1)
+
+    def test_two_real_flight_state_publishers_are_named(self):
+        """A second node publishing /flight/state on the same domain (as a host
+        `ros2 launch` would) shows up as an alert with both node names."""
+        process = self.start(tty=False)
+        self.publisher.messages["/flight/state"] = FLIGHT
+        second = rclpy.create_node("second_flight_state")
+        self.addCleanup(second.destroy_node)
+        second.create_publisher(String, "/flight/state", 10)
+        alert = (
+            "!! 2 /flight/state PUBLISHERS: monitor_test_publisher, second_flight_state"
+        )
+        self.assertTrue(process.wait_for(lambda out: alert in out), process.output)
+        self.assertEqual(process.stop(signal.SIGTERM), 0, process.output)
 
     def test_without_a_terminal_real_dry_says_so_first(self):
         process = self.start(

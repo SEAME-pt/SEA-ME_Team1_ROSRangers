@@ -15,10 +15,11 @@ topic keeps arriving and turns "STALE" when it stops. The screen is only
 redrawn when the text changes, so it does not flicker.
 
 Alerts from /flight/state (E-stop, failsafe, lost link, FC link, the topic
-stopping) and /fc/battery (LOW BATTERY: at or below 3.5 V/cell for 2 s) go
-on a line under the title, marked "!!": red for a fault, yellow
-for "not OK yet" (FC link unknown, node not activated). Colour only on a
-terminal; the "!!" text is always there.
+stopping), /fc/battery (LOW BATTERY: at or below 3.5 V/cell for 2 s) and two
+publishers on a one-publisher topic (/flight/state, /mission/velocity_target,
+/fc/attitude, /fc/battery; for 1 s) go on a line under the title, marked
+"!!": red for a fault, yellow for "not OK yet" (FC link unknown, node not
+activated). Colour only on a terminal; the "!!" text is always there.
 
 The title line is the mode's banner (GROUND_MODE from env/<mode>.env, plus
 GROUND_DRY=1 from make real-dry): DEMO, REAL, REAL-DRY or SIM, so a demo is
@@ -146,11 +147,34 @@ def _degrees(rad):
     return f"{whole:+d} deg"
 
 
+# Topics where exactly one publisher is the rule. A second one is never part of
+# a mode: /flight/state (mission_node mixes two drone states), the velocity
+# target (commands that skip the gestures reach the drone), /fc/* (fc_telemetry
+# next to flight_interface, which link_node.py forbids). The Makefile guard
+# (ADR-025 E3.2) stops the usual way in; this shows one that got around it, e.g.
+# a host `ros2 launch` on the same domain. Not the gesture topics: a second
+# publisher there is a documented test (ros2 topic pub /gesture/raw,
+# fake_intent, make sim-smoke). Add /control/attitude_setpoint with #199.
+SINGLE_PUBLISHER_TOPICS = (
+    "/flight/state",
+    "/mission/velocity_target",
+    "/fc/attitude",
+    "/fc/battery",
+)
+PUBLISHERS_CHECK_SEC = 0.5  # graph query period
+PUBLISHERS_HOLD_SEC = 1.0  # more than one, without a break, before the alert
+
+
 class Monitor:
     def __init__(self, node):
+        self.node = node
         self.rows = {}  # name -> (time received, {field: text})
         self.lock = threading.Lock()
         self.low_since = None  # when the battery went to or below the land level
+        # Topics with more than one publisher: topic -> (since, [node names]).
+        self.extra = {}
+        # Reads the ROS graph only (who publishes): no client, no publisher.
+        node.create_timer(PUBLISHERS_CHECK_SEC, self._check_publishers)
         node.create_subscription(String, "/flight/state", self._flight, 10)
         node.create_subscription(Vector3Stamped, "/fc/attitude", self._attitude, 10)
         node.create_subscription(BatteryState, "/fc/battery", self._battery, 10)
@@ -251,6 +275,41 @@ class Monitor:
             },
         )
 
+    def _check_publishers(self):
+        """Runs in the spin thread, every PUBLISHERS_CHECK_SEC."""
+        now = time.monotonic()
+        for topic in SINGLE_PUBLISHER_TOPICS:
+            names = []
+            for info in self.node.get_publishers_info_by_topic(topic):
+                namespace = info.node_namespace
+                if namespace in ("", "/"):
+                    names.append(info.node_name)
+                else:
+                    names.append(f"{namespace}/{info.node_name}")
+            with self.lock:
+                if len(names) <= 1:
+                    self.extra.pop(topic, None)  # a break restarts the hold
+                elif topic in self.extra:
+                    since = self.extra[topic][0]
+                    self.extra[topic] = (since, sorted(names))
+                else:
+                    self.extra[topic] = (now, sorted(names))
+
+    def doubled(self):
+        """[(topic, [node names])] for each topic that has had more than one
+        publisher for PUBLISHERS_HOLD_SEC, in SINGLE_PUBLISHER_TOPICS order."""
+        now = time.monotonic()
+        with self.lock:
+            extra = dict(self.extra)
+        out = []
+        for topic in SINGLE_PUBLISHER_TOPICS:
+            if topic not in extra:
+                continue
+            since, names = extra[topic]
+            if now - since >= PUBLISHERS_HOLD_SEC:
+                out.append((topic, names))
+        return out
+
     def snapshot(self):
         """[(row name, age in s or None, {field: text})] in pipeline order."""
         now = time.monotonic()
@@ -344,14 +403,19 @@ def ground_mode(environ):
     return mode
 
 
-def alerts(rows):
-    """[(colour, text, flagged "row.field" names)], most severe first: the
-    FLIGHT row's red alerts, then LOW BATTERY, then FLIGHT's yellow ones. RED
-    is a fault; YELLOW is not OK yet, but expected (unknown FC link at the start
-    of a session, node not activated yet)."""
+def alerts(rows, doubled=()):
+    """[(colour, text, flagged "row.field" names)], most severe first: two
+    publishers on one topic (Monitor.doubled()), the FLIGHT row's red alerts,
+    LOW BATTERY, then FLIGHT's yellow ones. RED is a fault; YELLOW is not OK
+    yet, but expected (unknown FC link at the start of a session, node not
+    activated yet)."""
     by_name = {name: (age, fields) for name, age, fields in rows}
-    red, yellow = _flight_alerts(*by_name["flight"])
-    red = red + _battery_alerts(*by_name["battery"])
+    red = []
+    for topic, names in doubled:
+        text = f"{len(names)} {topic} PUBLISHERS: {', '.join(names)}"
+        red.append((RED, text, ()))
+    flight_red, yellow = _flight_alerts(*by_name["flight"])
+    red = red + flight_red + _battery_alerts(*by_name["battery"])
     return red + yellow
 
 
@@ -416,11 +480,11 @@ def _paint(text, colour, on):
     return text
 
 
-def table(rows, colour=False, mode=None):
+def table(rows, colour=False, mode=None, doubled=()):
     """The frame's lines. colour=True only on a terminal (main()). mode is
     ground_mode()'s value: it picks the banner, the FLIGHT row's publisher and
-    the reasons for rows that never got a message."""
-    found = alerts(rows)
+    the reasons for rows that never got a message. doubled: Monitor.doubled()."""
+    found = alerts(rows, doubled)
     banner = BANNERS[mode]
     lines = [
         f"{banner}   {time.strftime('%H:%M:%S')}   (Ctrl+C to quit)",
@@ -462,9 +526,9 @@ def table(rows, colour=False, mode=None):
     return lines
 
 
-def one_line(rows):
+def one_line(rows, doubled=()):
     parts = []
-    found = alerts(rows)
+    found = alerts(rows, doubled)
     if found:
         parts.append(" ".join(f"!! {text}" for _, text, _ in found))
     for name, age, fields in rows:
@@ -507,8 +571,9 @@ def main():
     try:
         while not stop.wait(REFRESH_SEC):
             rows = monitor.snapshot()
+            doubled = monitor.doubled()
             if live:
-                lines = table(rows, colour=True, mode=mode)
+                lines = table(rows, colour=True, mode=mode, doubled=doubled)
                 if lines == last:
                     continue
                 last = lines
@@ -528,7 +593,7 @@ def main():
                 )
                 sys.stdout.flush()
             else:
-                line = one_line(rows)
+                line = one_line(rows, doubled)
                 if line != last:
                     print(line, flush=True)
                     last = line
