@@ -480,6 +480,51 @@ def _paint(text, colour, on):
     return text
 
 
+# Axes the ground owns per override mask: a copy of mission_logic.MASK_AXES
+# ("04 Mission Node" §5.3; the echo image has no mission_node to import it
+# from). test_monitor.py checks the two stay equal. Any other mask: mission_node
+# stays IDLE (why: bad_mask).
+MASK_AXES = {
+    8: {"yaw"},
+    11: {"x", "y", "yaw"},
+    15: {"x", "y", "z", "yaw"},
+}
+# The velocity row's words for each axis, in its order.
+AXIS_WORDS = (
+    ("x", "fwd/back"),
+    ("y", "left/right"),
+    ("z", "up/down"),
+    ("yaw", "yaw"),
+)
+
+
+def mask_note(rows):
+    """The VELOCITY row's last line: which axes the ground owns, from
+    /flight/state's mask, so "the gesture does nothing" reads as "mask 8: yaw
+    only". None when FLIGHT has no usable mask (waiting, STALE, bad, missing or
+    unknown): the FLIGHT row and its alerts already say why."""
+    _, age, fields = next(row for row in rows if row[0] == "flight")
+    if age is None or age > STALE_SEC or "bad" in fields:
+        return None
+    mask = fields.get("mask")
+    if not isinstance(mask, int) or isinstance(mask, bool):
+        return None  # missing, "unknown" or not a number
+    if mask not in MASK_AXES:
+        return f"mask {mask}: not a ground mask, mission stays IDLE"
+    owned = MASK_AXES[mask]
+    words = []
+    for axis, word in AXIS_WORDS:
+        if axis in owned:
+            words.append(word)
+    if len(words) == len(AXIS_WORDS):
+        text = "all"
+    elif words == ["yaw"]:
+        text = "yaw only"
+    else:
+        text = ", ".join(words)
+    return f"ground owns: {text} (mask {mask})"
+
+
 def table(rows, colour=False, mode=None, doubled=()):
     """The frame's lines. colour=True only on a terminal (main()). mode is
     ground_mode()'s value: it picks the banner, the FLIGHT row's publisher and
@@ -522,6 +567,10 @@ def table(rows, colour=False, mode=None, doubled=()):
             if flag in flagged:
                 line = _paint(line, flagged[flag], colour)
             lines.append(line)
+        if name == "velocity":
+            note = mask_note(rows)
+            if note:
+                lines.append(f"    {note}")
         lines.append("")
     return lines
 

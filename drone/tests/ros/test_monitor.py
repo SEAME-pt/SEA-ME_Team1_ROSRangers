@@ -1006,6 +1006,87 @@ class PublisherTests(MonitorTestCase):
         self.assertTrue(line.startswith(text + " | "), line)
 
 
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class MaskNoteTests(MonitorTestCase):
+    """Phase 7 of #227: which axes the ground owns, on the VELOCITY row."""
+
+    def last_velocity_line(self):
+        lines = monitor.table(self.monitor.snapshot())
+        heading = next(i for i, line in enumerate(lines) if line.startswith("VELOCITY"))
+        end = lines.index("", heading)
+        return lines[end - 1]
+
+    def test_each_ground_mask(self):
+        notes = {
+            8: "ground owns: yaw only (mask 8)",
+            11: "ground owns: fwd/back, left/right, yaw (mask 11)",
+            15: "ground owns: all (mask 15)",
+        }
+        for mask, note in notes.items():
+            with self.subTest(mask=mask):
+                self.feed("/flight/state", string(dict(FLIGHT, mask=mask)))
+                self.assertEqual(monitor.mask_note(self.monitor.snapshot()), note)
+
+    def test_last_line_of_the_velocity_row(self):
+        self.feed("/flight/state", string(FLIGHT))  # mask 8
+        self.feed("/mission/velocity_target", twist(wz=math.radians(20)))
+        self.assertEqual(
+            self.last_velocity_line(), "    ground owns: yaw only (mask 8)"
+        )
+
+    def test_demo_stand_in_mask(self):
+        self.feed("/flight/state", string(FLIGHT_STANDIN))  # mask 11
+        self.assertEqual(
+            monitor.mask_note(self.monitor.snapshot()),
+            "ground owns: fwd/back, left/right, yaw (mask 11)",
+        )
+
+    def test_not_a_ground_mask(self):
+        self.feed("/flight/state", string(dict(FLIGHT, mask=7)))
+        self.assertEqual(
+            monitor.mask_note(self.monitor.snapshot()),
+            "mask 7: not a ground mask, mission stays IDLE",
+        )
+
+    def test_no_note_without_a_usable_mask(self):
+        self.assertIsNone(monitor.mask_note(self.monitor.snapshot()))  # waiting
+        cases = (
+            ("unknown", string(dict(FLIGHT, mask=None))),
+            ("missing", string({"link_ok": True})),
+            ("bool", string(dict(FLIGHT, mask=True))),
+            ("text", string(dict(FLIGHT, mask="8"))),
+            ("bad JSON", String(data="{not json")),
+        )
+        for name, msg in cases:
+            with self.subTest(case=name):
+                self.feed("/flight/state", msg)
+                self.assertIsNone(monitor.mask_note(self.monitor.snapshot()))
+        self.feed("/flight/state", string(FLIGHT))
+        when, fields = self.monitor.rows["flight"]
+        self.monitor.rows["flight"] = (when - 2.0, fields)  # STALE
+        self.assertIsNone(monitor.mask_note(self.monitor.snapshot()))
+        self.assertTrue(self.last_velocity_line().startswith("VELOCITY"))
+
+    def test_not_in_the_one_line_output(self):
+        self.feed("/flight/state", string(FLIGHT))
+        self.feed("/mission/velocity_target", twist())
+        self.assertNotIn("ground owns", monitor.one_line(self.monitor.snapshot()))
+
+    def test_copy_matches_mission_logic(self):
+        """monitor.py keeps its own copy (the echo image has no mission_node)."""
+        try:
+            from mission_node import mission_logic
+        except ImportError:
+            self.skipTest(
+                "mission_node not installed (source the ground workspace; "
+                "make test and CI's ground-ros2 do)"
+            )
+        self.assertEqual(monitor.MASK_AXES, mission_logic.MASK_AXES)
+        self.assertEqual(
+            [axis for axis, _ in monitor.AXIS_WORDS], list(mission_logic.AXES)
+        )
+
+
 class Publisher:
     """Plays the nodes' side: publishes the chain's topics, /flight/state,
     /fc/attitude and /fc/battery at 20 Hz."""
