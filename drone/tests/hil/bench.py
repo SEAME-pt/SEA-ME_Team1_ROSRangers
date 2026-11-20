@@ -24,8 +24,8 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface/flight_interface"))
 # sd_protocol (the ground side of the protocol) for the session tests
 sys.path.insert(0, str(REPO / "drone/ground/src/sd_protocol_py"))
-sys.path.insert(0, str(REPO / "scripts"))  # ground_link.py, the bench ground
-from flight_interface import msp  # noqa: E402  (same MSP code as scripts/msp_check.py)
+sys.path.insert(0, str(REPO / "drone/tools/bench"))  # ground_link.py, the bench ground
+from flight_interface import msp  # noqa: E402  (same MSP code as msp_check.py)
 from sd_protocol.setpoint import Setpoint, setpoint_to_rc  # noqa: E402
 
 PORT = os.environ.get("HIL_ESP_PORT", "/dev/hil-esp")

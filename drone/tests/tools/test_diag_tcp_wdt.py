@@ -4,7 +4,9 @@ import sys
 import threading
 import time
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
+)
 
 import esp_wdt  # noqa: E402
 import tcp_load  # noqa: E402

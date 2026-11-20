@@ -19,7 +19,7 @@ tags:
 
 ## 1. Layout
 
-Each component gets its own folder because the repo mixes C++, firmware and ROS 2 Python. Items marked **(target, #60)** do not exist yet: they are the destination of the bench-tools move tracked in issue #60. It waits until the branches that still change `scripts/` (`feature/transparent-bridge-tools`, `dailys`) are merged.
+Each component gets its own folder because the repo mixes C++, firmware and ROS 2 Python. The bench tools moved from `scripts/` to `drone/tools/bench/` and their tests from `tests/scripts/` to `drone/tests/tools/` on 2026-11-20 (#60).
 
 ```text
 SEA-ME_Team1_ROSRangers/
@@ -71,16 +71,15 @@ SEA-ME_Team1_ROSRangers/
 │   │       │                             # select packages by name (--packages-select), as CI and make do
 │   │       └── sd_protocol_py/   # Python twin of lib/protocol
 │   ├── tools/
-│   │   └── bench/             # (target, #60) bench tools now in scripts/: esp_at, msp_check, fc_cli, seame ...
+│   │   └── bench/             # bench tools (no ROS): seame, esp_at, msp_check, fc_cli, ground_link ...
 │   └── tests/
 │       ├── vectors/           # golden vectors (generate.py + *.json) shared by C++ and Python
 │       ├── sitl/              # MSP integration tests against Betaflight SITL
 │       ├── hil/               # pytest suites run on the self-hosted runner
 │       ├── ros/               # gesture_node, intent_node, mission_node together: contract, pipeline, launch tests; echo table, entrypoint
-│       └── tools/             # (target, #60) unit tests of the bench tools, now in tests/scripts/
+│       └── tools/             # unit tests of the bench tools (CI job scripts-python)
 ├── docs/                      # Obsidian vault (plan, ADRs, architecture, hardware, process)
 ├── scripts/                   # repo tooling: sync-labels.sh
-│                              #   (the bench tools there move to drone/tools/bench, #60)
 ├── .github/
 │   ├── workflows/             # ci.yaml, hil.yaml, close-linked-issues.yaml
 │   ├── ISSUE_TEMPLATE/        # Task, Bug, Incident, Test session, Spike forms
@@ -93,8 +92,8 @@ SEA-ME_Team1_ROSRangers/
 └── README.md
 ```
 
-> [!note] Until #60 lands
-> The bench tools sit in `scripts/` and their tests in `tests/scripts/`. Their MSP library, `msp.py`, moved into the `flight_interface` package with #96 (`drone/ground/src/flight_interface/flight_interface/flight_interface/msp.py`), so the ROS 2 node can import it. `msp_check.py` and `esp_at.py` add that folder to `sys.path` and still run without ROS. #60 has to keep that import working when the tools move.
+> [!note] Bench tools and the MSP library
+> The bench tools sit in `drone/tools/bench/` and their tests in `drone/tests/tools/`. Their MSP library, `msp.py`, moved into the `flight_interface` package with #96 (`drone/ground/src/flight_interface/flight_interface/flight_interface/msp.py`), so the ROS 2 node can import it. `msp_check.py` and `esp_at.py` add that folder to `sys.path` and still run without ROS. The path is computed from the repo root (`parents[3]`), so it keeps working from the new folder (#60).
 
 > [!note] Generated, not committed
 > `make` in `drone/ground/` creates `gesture-venv/` and `ros2_ws/` (`build/`, `install/`, `log/`) there when ROS 2 Jazzy is installed. Both are in `.gitignore` and `make fclean` removes them ([[01 ROS2 Nodes Installation]] §4).

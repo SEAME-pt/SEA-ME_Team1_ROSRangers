@@ -1,11 +1,13 @@
-"""Unit tests of the bench ground (scripts/ground_link.py) against the Python
+"""Unit tests of the bench ground (drone/tools/bench/ground_link.py) against the Python
 twin of the ESP-side checks (sd_protocol): no network, no ESP."""
 
 import pathlib
 import socket
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "scripts"))
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
+)
 
 import ground_link  # noqa: E402
 

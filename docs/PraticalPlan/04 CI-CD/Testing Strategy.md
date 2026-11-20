@@ -96,9 +96,9 @@ Level 1 and 2 above, added with #96 (PR #169). They run without the drone: a fak
 | `test_telemetry.py` | Conversions: radians, REP-103 signs, yaw zero and wrap, battery fields, with a replay of the real trace |
 | `test_fc_telemetry_ros.py` | The real node on real topics over the fake FC: stamps between request and reply, nothing published on a missing, bad, short or late reply, transport errors (including an unplugged USB), no battery |
 | `test_fc_telemetry_process.py` | Start and stop: Ctrl+C and SIGTERM exit 0; unknown transport, missing serial device and UDP port in use exit 1 |
-| `test_msp.py` | MSP v1 parser and `decode()`, moved from `tests/scripts/` with `msp.py` |
+| `test_msp.py` | MSP v1 parser and `decode()`, moved from `tests/scripts/` (now `drone/tests/tools/`) with `msp.py` |
 
-Run locally: `colcon test --packages-select flight_interface`. The bench tools' own tests (`msp_check`, `esp_at`) stay in `tests/scripts/`.
+Run locally: `colcon test --packages-select flight_interface`. The bench tools' own tests (`msp_check`, `esp_at`) stay in `drone/tests/tools/`.
 
 ## 6. Glossary
 

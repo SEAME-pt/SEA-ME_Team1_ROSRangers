@@ -6,7 +6,7 @@
 #              the coverage run (package tests + drone/tests/ros, 90 %, as CI's
 #              ground-ros2); without it, the package tests that need no ROS
 #              and a SKIP row for the ROS suites. Then sd_protocol_py, the C++
-#              protocol library, px4_offboard_bridge, tests/scripts, the HIL
+#              protocol library, px4_offboard_bridge, drone/tests/tools, the HIL
 #              host part and pre-commit
 #   unit       the suites that need no ROS (no pre-commit)
 #   pkg        colcon test only            e2e   drone/tests/ros only
@@ -281,9 +281,9 @@ suite_bridge() {
 
 suite_scripts() {
     local log=$LOG code
-    run "$log" "$PY" "${PYTEST[@]}" "$REPO/tests/scripts"
+    run "$log" "$PY" "${PYTEST[@]}" "$REPO/drone/tests/tools"
     code=$?
-    pytest_row tests/scripts "$code" "$log"
+    pytest_row drone/tests/tools "$code" "$log"
 }
 
 # drone/tests/hil without the bench (as CI's hil-unit)

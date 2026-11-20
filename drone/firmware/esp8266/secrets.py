@@ -1,12 +1,12 @@
 # ruff: noqa: F821  (Import and env are provided by PlatformIO)
 """Pre-build script: Wi-Fi and OTA secrets from ~/.config/seame-drone/.
 
-Same files as scripts/bridge_config.py, so nothing secret lives in the repo.
+Same files as drone/tools/bench/bridge_config.py, so nothing secret lives in the repo.
 Without that folder (CI), set SEAME_AP_SSID, SEAME_AP_PASS and SEAME_OTA_PASS.
 SEAME_AP_CHANNEL overrides the channel (hil.yaml sets it for the HIL window).
 
 The protocol PSK (ADR-002, 64 hex characters = 32 bytes) comes from
-SEAME_PSK or "psk" in secrets.json, the file scripts/ground_link.py reads
+SEAME_PSK or "psk" in secrets.json, the file drone/tools/bench/ground_link.py reads
 too. Only the gateway env needs it: src/gateway/main.cpp stops the build
 without it, so the bridge and HIL builds are unchanged.
 """

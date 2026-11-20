@@ -5,8 +5,8 @@ The ESP echoes everything on TCP 5759. This sends a steady stream, checks the ec
 and reconnects from time to time (a new session, ADR-005), while the UDP latency
 test runs in another terminal. Props off.
 
-  python3 scripts/tcp_load.py --duration 600 --csv s1-07_run1_tcp.csv   # terminal 1
-  python3 scripts/seame.py msp ping --stream --duration 600 --csv s1-07_run1.csv
+  python3 drone/tools/bench/tcp_load.py --duration 600 --csv s1-07_run1_tcp.csv   # terminal 1
+  python3 drone/tools/bench/seame.py msp ping --stream --duration 600 --csv s1-07_run1.csv
 """
 
 import argparse
@@ -19,7 +19,7 @@ import time
 
 HOST = "192.168.4.1"
 PORT = 5759
-RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
+RESULTS_DIR = pathlib.Path(__file__).resolve().parents[3] / "results"
 
 
 def resolve_csv_path(path):

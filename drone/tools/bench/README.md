@@ -9,17 +9,17 @@ For the complete command catalog, see [COMMANDS.md](./COMMANDS.md).
 The recommended way to navigate the scripts is the unified interface:
 
 ```bash
-python3 scripts/seame.py
+python3 drone/tools/bench/seame.py
 ```
 
 This opens an interactive menu. For copy/paste and automation, provide the
 command directly:
 
 ```bash
-python3 scripts/seame.py list
-python3 scripts/seame.py network connect
-python3 scripts/seame.py msp info
-python3 scripts/seame.py test list
+python3 drone/tools/bench/seame.py list
+python3 drone/tools/bench/seame.py network connect
+python3 drone/tools/bench/seame.py msp info
+python3 drone/tools/bench/seame.py test list
 ```
 
 > [!warning] The ESP is soldered to the FC
@@ -58,10 +58,10 @@ and `secrets.json` (Wi-Fi passwords, mode 600). `msp_check.py` reads the active 
 ```bash
 cd SeameProject
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r scripts/requirements.txt
+pip install -r drone/tools/bench/requirements.txt
 sudo usermod -aG dialout $USER      # serial ports; log out and in again
 sudo apt install dfu-util           # only for fc_cli.py backup-firmware
-pytest tests/scripts                # unit tests, no hardware needed
+pytest drone/tests/tools                # unit tests, no hardware needed
 ```
 
 ## Safety rules
@@ -82,9 +82,9 @@ Production:  PC 192.168.4.2   ──UDP 5760── ESP AP 192.168.4.1 ──UART
 ### Cycle 0 · Baseline over USB (no ESP)
 
 ```bash
-python3 scripts/fc_cli.py dump
-python3 scripts/msp_check.py --usb info
-python3 scripts/msp_check.py --usb ping -n 500 --csv baseline_usb.csv
+python3 drone/tools/bench/fc_cli.py dump
+python3 drone/tools/bench/msp_check.py --usb info
+python3 drone/tools/bench/msp_check.py --usb ping -n 500 --csv baseline_usb.csv
 ```
 
 ### Cycle 1a · Bridge without the drone
@@ -92,8 +92,8 @@ python3 scripts/msp_check.py --usb ping -n 500 --csv baseline_usb.csv
 ESP on its USB, FC **not** wired to it. The PC plays the FC on the ESP USB port.
 
 ```bash
-python3 scripts/setup_test.py                     # asks the SEAME Wi-Fi password once
-python3 scripts/msp_check.py cycle1a --csv cycle1a_test.csv
+python3 drone/tools/bench/setup_test.py                     # asks the SEAME Wi-Fi password once
+python3 drone/tools/bench/msp_check.py cycle1a --csv cycle1a_test.csv
 ```
 
 Pass: `Cycle 1a PASS` (≤ 1 % loss at 50 Hz, no bad checksums). Optional: repeat with `setup_production.py`,
@@ -103,24 +103,24 @@ Pass: `Cycle 1a PASS` (≤ 1 % loss at 50 Hz, no bad checksums). Optional: repea
 
 Before: instructor OK for soldering on the lab drone, `ESP_to_FC` §10 checks done (T4/R4 continuity, no shorts, 5 V rail).
 
-1. ESP on USB: `python3 scripts/setup_test.py` (refreshes the PC address).
-2. `python3 scripts/fc_cli.py --write enable-esp-uart` (UART4 = MSP 115200).
+1. ESP on USB: `python3 drone/tools/bench/setup_test.py` (refreshes the PC address).
+2. `python3 drone/tools/bench/fc_cli.py --write enable-esp-uart` (UART4 = MSP 115200).
 3. Unplug the ESP USB. Wire FC **T4 → RX**, **R4 → TX**, **5V → 5V**, **GND → G**.
 4. Connect the battery (props off): the FC USB alone does not power the ESP (#164). The ESP boots straight into the bridge.
-5. `python3 scripts/msp_check.py info` → API 1.46, BTFL 4.5.1.
-6. `python3 scripts/msp_check.py ping -n 1000 --csv cycle1b_test.csv`
-7. `python3 scripts/msp_check.py attitude` and tilt the drone by hand.
+5. `python3 drone/tools/bench/msp_check.py info` → API 1.46, BTFL 4.5.1.
+6. `python3 drone/tools/bench/msp_check.py ping -n 1000 --csv cycle1b_test.csv`
+7. `python3 drone/tools/bench/msp_check.py attitude` and tilt the drone by hand.
 
 ### Cycle 2 · Gateway session and fault injection (#102, props off, battery connected)
 
 The gateway firmware (env `esp` / `esp_ota`, the default since #106) has no 5760 bridge: it speaks Protocol Spec v0 on 5759. `ground_link.py` is the bench ground for it, and the tool for the Sprint 2 demo (ESP-S2-08).
 
 ```bash
-python3 scripts/ground_link.py --gen-psk   # once: PSK in ~/.config/seame-drone/secrets.json
+python3 drone/tools/bench/ground_link.py --gen-psk   # once: PSK in ~/.config/seame-drone/secrets.json
 make -C drone/ground psk-file              # the PSK alone in psk.json, for the flight_interface container
 # build and flash esp_ota (the gateway) with that PSK (drone/firmware/esp8266/README.md, "Gateway")
-python3 scripts/seame.py network connect   # join the drone's network
-python3 scripts/ground_link.py             # session, 50 Hz SETPOINT, STATE twice a second
+python3 drone/tools/bench/seame.py network connect   # join the drone's network
+python3 drone/tools/bench/ground_link.py             # session, 50 Hz SETPOINT, STATE twice a second
 ```
 
 Then type a key and Enter: `a` ARM, `m 300` move (roll 300), `n` neutral, `g` garbage, `h` replayed HELLO, `s` stop UDP (link loss, prints the failsafe time), `u` UDP on, `r` RESUME, `c 40` CONFIG_GET, `k` kill without BYE, `q` BYE and quit.
@@ -141,7 +141,7 @@ Two people, props off, a finger on SA (Safety Rules #15, #18). The tool sends AR
 ### Undo
 
 ```bash
-python3 scripts/setup_production.py disconnect   # back to SEAME
-python3 scripts/esp_at.py exit-bridge            # ESP back to AT mode (ESP on USB, FC wires off)
-python3 scripts/esp_at.py restore                # factory AT settings
+python3 drone/tools/bench/setup_production.py disconnect   # back to SEAME
+python3 drone/tools/bench/esp_at.py exit-bridge            # ESP back to AT mode (ESP on USB, FC wires off)
+python3 drone/tools/bench/esp_at.py restore                # factory AT settings
 ```

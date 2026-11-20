@@ -13,7 +13,7 @@ Use [`seame.py`](./seame.py) as the single entry point. Run it without arguments
 for the menu:
 
 ```bash
-python3 scripts/seame.py
+python3 drone/tools/bench/seame.py
 ```
 
 ```text
@@ -40,12 +40,12 @@ visible until you press Enter.
 Every menu entry is also a direct command, for copy/paste and automation:
 
 ```bash
-python3 scripts/seame.py network connect           # `network` = the drone AP
-python3 scripts/seame.py msp info                  # through the ESP
-python3 scripts/seame.py msp attitude --usb        # over the FC USB
-python3 scripts/seame.py fc dump
-python3 scripts/seame.py test list                 # the guided bench tests
-python3 scripts/seame.py test s2-01
+python3 drone/tools/bench/seame.py network connect           # `network` = the drone AP
+python3 drone/tools/bench/seame.py msp info                  # through the ESP
+python3 drone/tools/bench/seame.py msp attitude --usb        # over the FC USB
+python3 drone/tools/bench/seame.py fc dump
+python3 drone/tools/bench/seame.py test list                 # the guided bench tests
+python3 drone/tools/bench/seame.py test s2-01
 ```
 
 The interface dispatches to the specialist scripts. `<group> --help` lists all
@@ -57,7 +57,7 @@ can go before or after the subcommand.
 The most useful bridge test is:
 
 ```bash
-python3 scripts/seame.py msp ping -n 30000 --rate 50 --timeout 0.5 \
+python3 drone/tools/bench/seame.py msp ping -n 30000 --rate 50 --timeout 0.5 \
   --csv bridge_10min.csv
 ```
 
@@ -90,30 +90,30 @@ The options can be placed before or after the MSP subcommand when using
 
 ```bash
 # Shared option before the subcommand
-python3 scripts/seame.py msp --timeout 1 ping -n 30000 --rate 50
+python3 drone/tools/bench/seame.py msp --timeout 1 ping -n 30000 --rate 50
 
 # Equivalent form, easier to read
-python3 scripts/seame.py msp ping -n 30000 --rate 50 --timeout 1
+python3 drone/tools/bench/seame.py msp ping -n 30000 --rate 50 --timeout 1
 ```
 
 ### Examples
 
 ```bash
 # Quick test: 100 requests at 50 Hz (about 2 seconds)
-python3 scripts/seame.py msp ping
+python3 drone/tools/bench/seame.py msp ping
 
 # One-minute test: 3,000 requests at 50 Hz
-python3 scripts/seame.py msp ping -n 3000 --rate 50 --csv bridge_1min.csv
+python3 drone/tools/bench/seame.py msp ping -n 3000 --rate 50 --csv bridge_1min.csv
 
 # Ten-minute test: 30,000 requests at 50 Hz
-python3 scripts/seame.py msp ping -n 30000 --rate 50 --csv bridge_10min.csv
+python3 drone/tools/bench/seame.py msp ping -n 30000 --rate 50 --csv bridge_10min.csv
 
 # Ten-minute test with a 1-second response timeout
-python3 scripts/seame.py msp ping -n 30000 --rate 50 --timeout 1 \
+python3 drone/tools/bench/seame.py msp ping -n 30000 --rate 50 --timeout 1 \
   --csv bridge_10min_timeout_1s.csv
 
 # Five low-rate requests with raw frame output
-python3 scripts/seame.py msp ping -n 5 --rate 1 --trace
+python3 drone/tools/bench/seame.py msp ping -n 5 --rate 1 --trace
 ```
 
 The printed `lost` value means requests without a matching response before
@@ -152,7 +152,7 @@ one of these values. The exact options are listed below.
 production scenario.
 
 ```bash
-python3 scripts/seame.py network test setup [--port PORT] \
+python3 drone/tools/bench/seame.py network test setup [--port PORT] \
   [--ssid SSID] [--ask-password]
 ```
 
@@ -166,13 +166,13 @@ Examples:
 
 ```bash
 # Use the default SEAME network and stored password
-python3 scripts/seame.py network test setup
+python3 drone/tools/bench/seame.py network test setup
 
 # Join another Wi-Fi network
-python3 scripts/seame.py network test setup --ssid MyNetwork
+python3 drone/tools/bench/seame.py network test setup --ssid MyNetwork
 
 # Ask for the password again
-python3 scripts/seame.py network test setup --ask-password
+python3 drone/tools/bench/seame.py network test setup --ask-password
 ```
 
 `network test status` has no additional options. It reads the saved profile
@@ -185,7 +185,7 @@ means this scenario (`seame.py network connect`). `setup` and `reboot-test` need
 the ESP on USB, so `--esp-on-usb` first.
 
 ```bash
-python3 scripts/seame.py network production setup [--port PORT] \
+python3 drone/tools/bench/seame.py network production setup [--port PORT] \
   [--ssid SSID] [--channel 1-13] [--max-clients 1-4] [--ask-password]
 ```
 
@@ -201,10 +201,10 @@ Examples:
 
 ```bash
 # Default production access point
-python3 scripts/seame.py network production setup
+python3 drone/tools/bench/seame.py network production setup
 
 # Fixed name and channel
-python3 scripts/seame.py network production setup \
+python3 drone/tools/bench/seame.py network production setup \
   --ssid seame-drone-lab --channel 11
 ```
 
@@ -225,16 +225,16 @@ Commands:
 
 ```bash
 # Read-only diagnostics and diff backup
-python3 scripts/seame.py fc dump
+python3 drone/tools/bench/seame.py fc dump
 
 # Configure UART4 for MSP and save the FC configuration
-python3 scripts/seame.py fc --write enable-esp-uart
+python3 drone/tools/bench/seame.py fc --write enable-esp-uart
 
 # Run one or more Betaflight CLI commands
-python3 scripts/seame.py fc run "get failsafe" "serial"
+python3 drone/tools/bench/seame.py fc run "get failsafe" "serial"
 
 # Run write commands and save the result
-python3 scripts/seame.py fc --write run \
+python3 drone/tools/bench/seame.py fc --write run \
   "set vtx_power = 1" --save
 ```
 
@@ -250,9 +250,9 @@ menu any more.
 ### MSP information and attitude
 
 ```bash
-python3 scripts/seame.py msp [shared-options] info
-python3 scripts/seame.py msp [shared-options] core
-python3 scripts/seame.py msp [shared-options] attitude
+python3 drone/tools/bench/seame.py msp [shared-options] info
+python3 drone/tools/bench/seame.py msp [shared-options] core
+python3 drone/tools/bench/seame.py msp [shared-options] attitude
 ```
 
 | Command | Extra option | Default |
@@ -265,9 +265,9 @@ python3 scripts/seame.py msp [shared-options] attitude
 Examples:
 
 ```bash
-python3 scripts/seame.py msp info
-python3 scripts/seame.py msp --usb core --trace
-python3 scripts/seame.py msp attitude --rate 5
+python3 drone/tools/bench/seame.py msp info
+python3 drone/tools/bench/seame.py msp --usb core --trace
+python3 drone/tools/bench/seame.py msp attitude --rate 5
 ```
 
 In the menu, **Read the FC** asks for the path first (ESP or FC USB). Direct
@@ -275,13 +275,13 @@ commands:
 
 ```bash
 # Through the ESP bridge
-python3 scripts/seame.py msp attitude --rate 10
+python3 drone/tools/bench/seame.py msp attitude --rate 10
 
 # Directly from the FC over USB
-python3 scripts/seame.py msp --usb attitude --rate 10
+python3 drone/tools/bench/seame.py msp --usb attitude --rate 10
 
 # Select a specific FC USB port
-python3 scripts/seame.py msp --usb --fc-port /dev/ttyACM0 attitude
+python3 drone/tools/bench/seame.py msp --usb --fc-port /dev/ttyACM0 attitude
 ```
 
 Both modes use `--rate 10` updates per second by default and accept
@@ -294,7 +294,7 @@ does not require the ESP to be connected or configured. Stop `attitude` with
 Stage 1 only, before soldering: needs `--esp-on-usb` first.
 
 ```bash
-python3 scripts/seame.py msp cycle1a [options]
+python3 drone/tools/bench/seame.py msp cycle1a [options]
 ```
 
 Cycle 1a uses a fake FC on the ESP USB port and tests the bridge without the
@@ -315,7 +315,7 @@ real FC.
 Example:
 
 ```bash
-python3 scripts/seame.py msp cycle1a \
+python3 drone/tools/bench/seame.py msp cycle1a \
   -n 500 --rate 50 --max-loss 1 --wait 20 --csv cycle1a.csv
 ```
 
@@ -325,9 +325,9 @@ Bench ground for the gateway firmware (env `esp` / `esp_ota`, Protocol Spec v0 o
 
 | Command | What it does |
 |---|---|
-| `python3 scripts/ground_link.py --gen-psk` | Creates the 32-byte PSK in `~/.config/seame-drone/secrets.json` (mode 600). The gateway build reads the same file |
-| `python3 scripts/ground_link.py` | Session with the drone at 192.168.4.1 |
-| `python3 scripts/ground_link.py --host 127.0.0.1` | Any other address (for example a host test harness) |
+| `python3 drone/tools/bench/ground_link.py --gen-psk` | Creates the 32-byte PSK in `~/.config/seame-drone/secrets.json` (mode 600). The gateway build reads the same file |
+| `python3 drone/tools/bench/ground_link.py` | Session with the drone at 192.168.4.1 |
+| `python3 drone/tools/bench/ground_link.py --host 127.0.0.1` | Any other address (for example a host test harness) |
 | `--mask 8` | Override mask sent with ARM (ADR-010; 8 = yaw) |
 | `--rate 50` | SETPOINT rate in Hz |
 | `--print-every 0.5` | STATE print period in seconds |
@@ -385,9 +385,9 @@ The `raw` command has one additional option:
 Examples:
 
 ```bash
-python3 scripts/seame.py esp query
-python3 scripts/seame.py esp raw --wait 5 "AT+CWLAP"
-python3 scripts/seame.py esp raw "AT+GMR" "AT+CIFSR"
+python3 drone/tools/bench/seame.py esp query
+python3 drone/tools/bench/seame.py esp raw --wait 5 "AT+CWLAP"
+python3 drone/tools/bench/seame.py esp raw "AT+GMR" "AT+CIFSR"
 ```
 
 `restore` asks for confirmation by requiring the user to type `yes`.
@@ -409,7 +409,7 @@ read-only MSP requests with predefined mock data:
 | Analog | Battery value `0 V` |
 
 ```bash
-python3 scripts/seame.py --esp-on-usb msp fake-fc
+python3 drone/tools/bench/seame.py --esp-on-usb msp fake-fc
 ```
 
 Optional arguments:
@@ -422,7 +422,7 @@ Optional arguments:
 Example:
 
 ```bash
-python3 scripts/seame.py msp fake-fc --trace
+python3 drone/tools/bench/seame.py msp fake-fc --trace
 ```
 
 This command keeps running until `Ctrl+C`. It only responds to the predefined
@@ -460,13 +460,13 @@ connected directly to the PC by USB. The PC software acts as the missing
 serial wire. It does not connect the ESP USB pins physically to the FC.
 
 ```bash
-python3 scripts/seame.py --esp-on-usb msp usb-relay
+python3 drone/tools/bench/seame.py --esp-on-usb msp usb-relay
 ```
 
 The defaults auto-detect both ports. To select them explicitly:
 
 ```bash
-python3 scripts/seame.py msp usb-relay \
+python3 drone/tools/bench/seame.py msp usb-relay \
   --esp-port-usb /dev/ttyUSB0 \
   --fc-port /dev/ttyACM0
 ```
@@ -481,9 +481,9 @@ Before starting:
 6. In another terminal, run a client command through the ESP bridge:
 
 ```bash
-python3 scripts/seame.py msp info
-python3 scripts/seame.py msp ping -n 1000 --rate 50
-python3 scripts/seame.py msp attitude
+python3 drone/tools/bench/seame.py msp info
+python3 drone/tools/bench/seame.py msp ping -n 1000 --rate 50
+python3 drone/tools/bench/seame.py msp attitude
 ```
 
 The relay is a byte forwarder, so it does not decode or modify MSP frames.

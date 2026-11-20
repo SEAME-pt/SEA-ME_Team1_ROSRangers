@@ -199,7 +199,7 @@ Still to measure: the end-to-end gesture → motors latency and the failsafe-tim
 
 ### Real-time profile (REQ-SW-005, #146)
 
-Plotted by `scripts/rt_profile.py` from two logs, never by hand. Commands and log format are in the script's docstring.
+Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Commands and log format are in the script's docstring.
 
 | Log | How it is captured | Plot |
 |---|---|---|

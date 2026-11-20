@@ -156,7 +156,7 @@ step sudo nmcli connection modify --temporary "$LAB_CON" connection.autoconnect 
 # Power save off (2 = disable): a dozing Pi makes the ESP's SoftAP hold its
 # packets, which stalled TCP connects and EVENTs (#106, 2026-11-13). The Pi's
 # NetworkManager config sets it too; this keeps it off without that file.
-# Static address, as the ground PC has (scripts/setup_production.py): the
+# Static address, as the ground PC has (drone/tools/bench/setup_production.py): the
 # ESP's DHCP took 16 s of the 25 s join on 2026-11-16 (#207). No gateway, so
 # the SoftAP never becomes the Pi's default route.
 # Band and channel pinned: the Pi skips the 5 GHz scan and tunes straight to

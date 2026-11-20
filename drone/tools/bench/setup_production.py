@@ -15,11 +15,11 @@
 While this PC is on the drone network it has no internet (unless it also has a cable).
 
 Examples:
-  python3 scripts/setup_production.py setup            # ESP on its own USB, not wired to the FC
-  python3 scripts/setup_production.py connect         # join the drone network
-  python3 scripts/setup_production.py disconnect       # back to the usual Wi-Fi (SEAME)
-  python3 scripts/setup_production.py status
-  python3 scripts/setup_production.py reboot-test       # S1-04: 20 resets, time to reconnect
+  python3 drone/tools/bench/setup_production.py setup            # ESP on its own USB, not wired to the FC
+  python3 drone/tools/bench/setup_production.py connect         # join the drone network
+  python3 drone/tools/bench/setup_production.py disconnect       # back to the usual Wi-Fi (SEAME)
+  python3 drone/tools/bench/setup_production.py status
+  python3 drone/tools/bench/setup_production.py reboot-test       # S1-04: 20 resets, time to reconnect
 """
 
 import argparse
@@ -150,7 +150,7 @@ def cmd_setup(args):
     )
     print(f"\nReady. Scenario PRODUCTION saved in {cfg.PROFILE}.")
     print(
-        "Next:  python3 scripts/setup_production.py connect   (this PC loses internet until disconnect)"
+        "Next:  python3 drone/tools/bench/setup_production.py connect   (this PC loses internet until disconnect)"
     )
 
 
@@ -188,7 +188,7 @@ def cmd_connect(args):
     time.sleep(3)
     nm_up(password)
     print(
-        f"Connected to '{p['ssid']}' as {PC_IP}. Test with: python3 scripts/msp_check.py info"
+        f"Connected to '{p['ssid']}' as {PC_IP}. Test with: python3 drone/tools/bench/msp_check.py info"
     )
 
 
@@ -275,7 +275,9 @@ def cmd_reboot_test(args):
     print(
         f"S1-04 {'PASS' if passed else 'FAIL'}  ({args.reboots}/{args.reboots} connects)"
     )
-    print("Back to the usual Wi-Fi: python3 scripts/setup_production.py disconnect")
+    print(
+        "Back to the usual Wi-Fi: python3 drone/tools/bench/setup_production.py disconnect"
+    )
 
 
 def main():

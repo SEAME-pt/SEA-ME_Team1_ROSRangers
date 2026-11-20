@@ -6,14 +6,14 @@ The ESP must be on its own USB port. Never connect the ESP USB and the FC to the
 TX/RX at the same time.
 
 Examples:
-  python3 scripts/esp_at.py query          # read-only state
-  python3 scripts/esp_at.py backup         # full flash → ~/Projects/SEAME/backups/esp8266/ (never in Git)
-  python3 scripts/esp_at.py write-flash blink.bin   # S1-02: flash another image (asks first)
-  python3 scripts/esp_at.py write-flash      # S1-02: write the newest backup back
-  python3 scripts/esp_at.py boot-log         # S1-03: boot bytes at 74880 and as the FC sees them
-  python3 scripts/esp_at.py exit-bridge    # leave transparent mode and stop it at boot
-  python3 scripts/esp_at.py raw "AT+CWLAP"
-  python3 scripts/esp_at.py restore        # AT+RESTORE (asks for confirmation)
+  python3 drone/tools/bench/esp_at.py query          # read-only state
+  python3 drone/tools/bench/esp_at.py backup         # full flash → ~/Projects/SEAME/backups/esp8266/ (never in Git)
+  python3 drone/tools/bench/esp_at.py write-flash blink.bin   # S1-02: flash another image (asks first)
+  python3 drone/tools/bench/esp_at.py write-flash      # S1-02: write the newest backup back
+  python3 drone/tools/bench/esp_at.py boot-log         # S1-03: boot bytes at 74880 and as the FC sees them
+  python3 drone/tools/bench/esp_at.py exit-bridge    # leave transparent mode and stop it at boot
+  python3 drone/tools/bench/esp_at.py raw "AT+CWLAP"
+  python3 drone/tools/bench/esp_at.py restore        # AT+RESTORE (asks for confirmation)
 """
 
 import argparse
@@ -29,12 +29,12 @@ import serial
 from serial.tools import list_ports
 
 # msp.py lives in the flight_interface ROS 2 package (#96)
-REPO = pathlib.Path(__file__).resolve().parents[1]
+REPO = pathlib.Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "drone/ground/src/flight_interface/flight_interface"))
 from flight_interface import msp  # noqa: E402
 
 BACKUP_DIR = pathlib.Path.home() / "Projects" / "SEAME" / "backups" / "esp8266"
-RESULTS_DIR = pathlib.Path(__file__).resolve().parents[1] / "results"
+RESULTS_DIR = pathlib.Path(__file__).resolve().parents[3] / "results"
 ROM_BAUD = 74880  # ESP8266 boot ROM messages
 FC_BAUD = 115200  # what the FC UART reads
 SLEEP_MODES = {"none": 0, "light": 1, "modem": 2}  # AT+SLEEP

@@ -6,10 +6,10 @@ Two logs go in, the plots come out (no hand-made plots):
   `fc_cli.py dump` (FC on USB, props off), or a file with only the `tasks` output.
 - ESP loop periods: the histogram the gateway built with env esp_loop_timing sends
   once a second to UDP 5770. Record it during a UDP control stream:
-    python3 scripts/rt_profile.py listen --csv esp_loop.csv   # Ctrl+C to stop
-    python3 scripts/ground_link.py ...                        # the stream, as usual
+    python3 drone/tools/bench/rt_profile.py listen --csv esp_loop.csv   # Ctrl+C to stop
+    python3 drone/tools/bench/ground_link.py ...                        # the stream, as usual
 Then:
-  python3 scripts/rt_profile.py plot --tasks drone/config/betaflight/<ver>/cli_read_<date>.txt \
+  python3 drone/tools/bench/rt_profile.py plot --tasks drone/config/betaflight/<ver>/cli_read_<date>.txt \
       --esp results/esp_loop.csv --out "docs/PraticalPlan/03 Architecture/rt-profile"
 """
 

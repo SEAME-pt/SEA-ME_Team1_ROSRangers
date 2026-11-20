@@ -172,7 +172,7 @@ Topic contract, signs, exit codes and bench results: [[Architecture Document]] Â
 
 ## ðŸ”Œ 10. `msp.py`
 
-The MSP v1 client. It lives in this package so `fc_telemetry` can import it; the bench tools in `scripts/` (`msp_check.py`, `esp_at.py`) and `drone/tests/hil/bench.py` add its folder to `sys.path` and still run without ROS ([[Repository Layout]]).
+The MSP v1 client. It lives in this package so `fc_telemetry` can import it; the bench tools in `drone/tools/bench/` (`msp_check.py`, `esp_at.py`) and `drone/tests/hil/bench.py` add its folder to `sys.path` and still run without ROS ([[Repository Layout]]).
 
 ---
 

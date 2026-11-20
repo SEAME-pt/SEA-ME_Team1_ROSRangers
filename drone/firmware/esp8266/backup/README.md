@@ -25,7 +25,7 @@ Board: **ESP-12F module** (`ESP8266MOD`, Ai-Thinker style, PCB antenna) on a dev
 
 All were checked with `esptool verify_flash 0 <image>` (digest matched).
 
-The 22 Oct image was read with `scripts/esp_at.py backup` (ESP off the drone, on USB). `flash_id` on the same day: ESP8266EX, 26 MHz, MAC `80:7d:3a:1d:08:50`, flash `0x5e`/`0x4016`, 4 MB, as above. Its first 333 888 bytes are exactly the `esp_ota` app build. To restore it, use `esp_at.py write-flash` and check `verify_flash`: the `AT` check at the end fails because the custom firmware does not answer AT commands.
+The 22 Oct image was read with `drone/tools/bench/esp_at.py backup` (ESP off the drone, on USB). `flash_id` on the same day: ESP8266EX, 26 MHz, MAC `80:7d:3a:1d:08:50`, flash `0x5e`/`0x4016`, 4 MB, as above. Its first 333 888 bytes are exactly the `esp_ota` app build. To restore it, use `esp_at.py write-flash` and check `verify_flash`: the `AT` check at the end fails because the custom firmware does not answer AT commands.
 
 The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and ESP-S1-02: blink was flashed, then this image was written back and verified, and the ESP booted into the AT firmware again (`ready`, same boot output as before).
 
@@ -45,7 +45,7 @@ The 16 Oct image passed ESP-S1-01 (size = the 4 MB reported by `flash_id`) and E
 ## How it was made
 
 Command names use underscores: esptool 4.x accepts only those, esptool 5 accepts both.
-`scripts/esp_at.py backup` runs the same three commands and checks the size.
+`drone/tools/bench/esp_at.py backup` runs the same three commands and checks the size.
 
 ```bash
 esptool --port /dev/ttyUSB0 flash_id
@@ -60,4 +60,4 @@ esptool --port /dev/ttyUSB0 --baud 460800 write_flash 0 <image>
 esptool --port /dev/ttyUSB0 verify_flash 0 <image>
 ```
 
-Or `scripts/esp_at.py write-flash [<image>]` (default: the newest backup); it asks for confirmation and verifies.
+Or `drone/tools/bench/esp_at.py write-flash [<image>]` (default: the newest backup); it asks for confirmation and verifies.

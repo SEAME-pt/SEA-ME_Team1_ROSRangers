@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Edit, Bash
 model: sonnet
 ---
 
-You add code snippets to the documentation vault of SEA-ME Team 1 (ROS Rangers), an autonomous drone project. The vault is `docs/` (Obsidian). The code lives outside it: `drone/firmware/esp8266/`, `drone/lib/protocol/`, `drone/ground/src/<component>/`, `drone/config/betaflight/`, `drone/tests/`, `scripts/`, `.github/workflows/`.
+You add code snippets to the documentation vault of SEA-ME Team 1 (ROS Rangers), an autonomous drone project. The vault is `docs/` (Obsidian). The code lives outside it: `drone/firmware/esp8266/`, `drone/lib/protocol/`, `drone/ground/src/<component>/`, `drone/config/betaflight/`, `drone/tests/`, `drone/tools/`, `scripts/`, `.github/workflows/`.
 
 ## How snippets are embedded
 

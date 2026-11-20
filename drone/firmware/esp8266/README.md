@@ -51,7 +51,7 @@ Not there yet in the bridge: no TCP session (ADR-005), no version query, no coun
    ```
 2. **Secrets.** `secrets.py` runs before every build and compiles in `AP_SSID`, `AP_PASS`, `OTA_PASS` and `AP_CHANNEL`. Nothing secret is in the repo. It reads, in order:
    - environment variables `SEAME_AP_SSID`, `SEAME_AP_PASS`, `SEAME_OTA_PASS`;
-   - otherwise `~/.config/seame-drone/bridge.json` (SSID, channel, default 6) and `secrets.json` (`wifi:<ssid>`, written by `scripts/setup_production.py`, and `ota`, which you add by hand: no script writes it yet).
+   - otherwise `~/.config/seame-drone/bridge.json` (SSID, channel, default 6) and `secrets.json` (`wifi:<ssid>`, written by `drone/tools/bench/setup_production.py`, and `ota`, which you add by hand: no script writes it yet).
 
    Both passwords must be at least 8 characters and different from each other, or the build stops (ADR-024 D3). The build also stops if `bridge.json` is the TEST scenario: run `setup_production.py` first. The current AP password is still the tutorial example and must be changed.
 3. **Build:**
@@ -77,19 +77,19 @@ This is the procedure of ADR-024 D5. Follow `docs/PraticalPlan/05 Hardware/Safet
 pio run -d drone/firmware/esp8266 -e esp -t upload
 ```
 
-Back up the flash before the first custom flash (`scripts/esp_at.py backup`, see `backup/README.md`). That file also lists the known-good images and how to restore one.
+Back up the flash before the first custom flash (`drone/tools/bench/esp_at.py backup`, see `backup/README.md`). That file also lists the known-good images and how to restore one.
 
 ### Every later update (OTA)
 
 1. **Battery connected** (the ESP needs it; VTX antenna on before the battery goes in, Safety Rules #2), props off, FC disarmed, **arm switch and takeover (MSP Override) switch off**, two people present (#15), the battery never left unattended (#8): the ESP sends no neutral frames while it updates and reboots.
 2. No ground session: stop the ground node (`flight_interface`) and `ground_link.py`. The gateway keeps the OTA port closed while a session is open or the FC is armed or silent (ADR-024 D2).
-3. Join the drone network: `python3 scripts/seame.py network connect`.
+3. Join the drone network: `python3 drone/tools/bench/seame.py network connect`.
 4. Upload (the OTA password comes from `secrets.py`). The gateway checks the arm state and the session (ADR-024 gate and lock); steps 1 and 2 still apply. If `espota` fails with `No Answer`, the gate is closed (see "Gateway").
    ```bash
    pio run -d drone/firmware/esp8266 -e esp_ota -t upload
    ```
 5. The ESP reboots and the PC loses the network for 5–20 s. Wait until it has rejoined before any test.
-6. Check the link: `python3 scripts/ground_link.py` (a session opens and STATE shows the FC values; `seame.py msp info` only works on the bridge), and note the SHA-256. If the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
+6. Check the link: `python3 drone/tools/bench/ground_link.py` (a session opens and STATE shows the FC values; `seame.py msp info` only works on the bridge), and note the SHA-256. If the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
@@ -109,11 +109,11 @@ What it does (ADR-009, `docs/PraticalPlan/03 Architecture/ESP Link State Machine
 - **OTA is gated (ADR-024, #102):** the OTA port is open only with **no ground session** and the FC **disarmed** (an `MSP_STATUS` under 500 ms old). The start callback locks arming on the FC (`MSP_SET_ARMING_DISABLED` 1, read back) or restarts the ESP; the lock is released at every boot and after a failed upload.
 - **FC link health (#179, spec v1.4):** the FC counts as lost after 250 ms without a reply. The session gets `EVENT FC_LINK_LOST` / `FC_LINK_RESTORED`, ARM and RESUME are refused while the FC is silent or has not acknowledged RC continuously for 1 s (result 4, #188), `FC_LINK_RESTORED` comes after 250 ms of replies, and `FC_HEALTH` at 5 Hz carries alive, armed, the arming flags, the value ages and the FC link counters (`rc_sent`, `rc_replaced`).
 - **Not yet:** `STATE.override_active` (#176, needs the MSP box IDs); reading the override mask from the FC (fixed at **8** in `main.cpp`).
-- **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `scripts/ground_link.py` shows STATE and, since #179, the `FC_HEALTH` line (armed, arming flags, value ages, request/reply counts), so all of ESP-S2-07 can be repeated with the gateway.
+- **The 5770 bench view is gone** (spec §7.1: dropped once STATE is sent). `drone/tools/bench/ground_link.py` shows STATE and, since #179, the `FC_HEALTH` line (armed, arming flags, value ages, request/reply counts), so all of ESP-S2-07 can be repeated with the gateway.
 
-**PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 scripts/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
+**PSK (ADR-002):** the build needs the 32-byte protocol key as 64 hex characters, from `SEAME_PSK` or `"psk"` in `~/.config/seame-drone/secrets.json`. Without it the gateway build stops; the bridge envs do not need it. Create one with `python3 drone/tools/bench/ground_link.py --gen-psk`, then build and flash. The ground uses the same file.
 
-Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_ota`. **Quit `ground_link.py` first:** with a session open, or with the FC not answering or armed, the gate stays closed: the OTA port is closed, so `espota` gets no answer to its invitation and fails with `No Answer` after its 10 s timeout. Nothing is written. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 scripts/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_bridge_ota` (or a diag env). **Then power-cycle the FC** (battery out, FC USB out): the gateway locked arming for the upload, and the bridge never sends the release (value 0), so the FC refuses to arm until it restarts (ADR-024: the safe side).
+Flash it like any OTA update (battery connected, props off, FC disarmed, arm and takeover switches off, see "Flash"), with `-e esp_ota`. **Quit `ground_link.py` first:** with a session open, or with the FC not answering or armed, the gate stays closed: the OTA port is closed, so `espota` gets no answer to its invitation and fails with `No Answer` after its 10 s timeout. Nothing is written. Step 6 of the OTA steps (`seame.py msp info`) does not work on the gateway (no 5760 bridge). Check with `python3 drone/tools/bench/ground_link.py` instead: a session opens and STATE shows the FC values. To go back to the bridge, flash `-e esp_bridge_ota` (or a diag env). **Then power-cycle the FC** (battery out, FC USB out): the gateway locked arming for the upload, and the bridge never sends the release (value 0), so the FC refuses to arm until it restarts (ADR-024: the safe side).
 
 ## Diagnosis test: link dead periods (2026-10-22)
 
@@ -140,13 +140,13 @@ Flash it like any OTA update (battery connected, props off, FC disarmed, arm and
 
 ```bash
 # 1. the bridge, 10 min at 50 Hz (CSV: s1-05_diag_run4.csv). Request i is sent at start + i × 20 ms
-date +%T; python3 scripts/seame.py test latency
+date +%T; python3 drone/tools/bench/seame.py test latency
 
 # 2. ICMP to the ESP: answered by the ESP itself, the FC is not involved (-D = timestamps)
 ping -D -i 0.2 192.168.4.1 | tee results/icmp_run4.txt
 
 # 3. the FC over its own USB, 5 Hz for 10 min
-python3 scripts/seame.py msp --usb ping -n 3000 --rate 5 --timeout 0.15 --csv usb_run4.csv
+python3 drone/tools/bench/seame.py msp --usb ping -n 3000 --rate 5 --timeout 0.15 --csv usb_run4.csv
 ```
 
 **Reading it** (during a dead period in terminal 1):
@@ -157,7 +157,7 @@ python3 scripts/seame.py msp --usb ping -n 3000 --rate 5 --timeout 0.15 --csv us
 | Dead | any | The ESP or the Wi-Fi after all | Rerun with `esp_diag_udp` / `esp_diag_uart` to split the directions |
 | OK | Dead | The FC is not answering | Check the FC (uptime, reboot, CLI open) |
 
-**Joint check.** With `python3 scripts/seame.py msp attitude` running, press each UART4 joint (T4, R4, GND) gently with an insulated tool. If the readout freezes when you touch one, that joint is the cause. Post the result on #30 and #69.
+**Joint check.** With `python3 drone/tools/bench/seame.py msp attitude` running, press each UART4 joint (T4, R4, GND) gently with an insulated tool. If the readout freezes when you touch one, that joint is the cause. Post the result on #30 and #69.
 
 Post run2, run3 and this run on #30 as they are, failures included.
 
@@ -178,10 +178,10 @@ Flashing a diag env over OTA from the gateway locks arming on the FC until it is
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_timing -t upload           # OTA
-python3 scripts/esp_timing.py listen --csv s1-09_run1_esp.csv            # terminal 1, start first
-python3 scripts/msp_check.py ...                                         # terminal 2, the test as usual
+python3 drone/tools/bench/esp_timing.py listen --csv s1-09_run1_esp.csv            # terminal 1, start first
+python3 drone/tools/bench/msp_check.py ...                                         # terminal 2, the test as usual
 # Ctrl+C in terminal 1 after the test; split the loss with the PC's numbers:
-python3 scripts/esp_timing.py summary s1-09_run1_esp.csv --sent 30000 --pc-lost 12
+python3 drone/tools/bench/esp_timing.py summary s1-09_run1_esp.csv --sent 30000 --pc-lost 12
 pio run -d drone/firmware/esp8266 -e esp_ota -t upload                   # back to the gateway
 ```
 
@@ -193,9 +193,9 @@ The ESP accepts one TCP client on 5759 (a second one is refused, as in ADR-005) 
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_tcp -t upload            # OTA, then wait for the network
-python3 scripts/esp_timing.py listen --csv s1-07_run1_esp.csv          # terminal 1
-python3 scripts/tcp_load.py --duration 600 --csv s1-07_run1_tcp.csv    # terminal 2: 20 kbit/s, new connection every 30 s
-python3 scripts/seame.py msp ping --stream --duration 600 --csv s1-07_run1.csv   # terminal 3
+python3 drone/tools/bench/esp_timing.py listen --csv s1-07_run1_esp.csv          # terminal 1
+python3 drone/tools/bench/tcp_load.py --duration 600 --csv s1-07_run1_tcp.csv    # terminal 2: 20 kbit/s, new connection every 30 s
+python3 drone/tools/bench/seame.py msp ping --stream --duration 600 --csv s1-07_run1.csv   # terminal 3
 ```
 
 Pass: the longest silence of the `msp ping` run is at most **203 ms**, the S1-05 maximum. `tcp_load.py` also reports the TCP echo times; slow TCP with fine UDP is allowed, as ADR-005 says UDP decides liveness.
@@ -214,9 +214,9 @@ Flashing a diag env over OTA from the gateway locks arming on the FC until it is
 
 ```bash
 pio run -d drone/firmware/esp8266 -e esp_diag_wdt -t upload            # OTA, then wait for the network
-python3 scripts/seame.py msp --usb status-watch --csv s1-10_fc.csv     # terminal 1, FC over USB
-python3 scripts/esp_wdt.py cycle -n 5 --csv s1-10_sw.csv               # terminal 2, software watchdog
-python3 scripts/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv          # hardware watchdog
+python3 drone/tools/bench/seame.py msp --usb status-watch --csv s1-10_fc.csv     # terminal 1, FC over USB
+python3 drone/tools/bench/esp_wdt.py cycle -n 5 --csv s1-10_sw.csv               # terminal 2, software watchdog
+python3 drone/tools/bench/esp_wdt.py cycle -n 2 --hw --csv s1-10_hw.csv          # hardware watchdog
 pio run -d drone/firmware/esp8266 -e esp_ota -t upload                 # back to the gateway
 ```
 
@@ -229,7 +229,7 @@ Pass: every cycle comes back by itself with the expected reason (`Software Watch
 | `platformio.ini` | Envs and platform version |
 | `secrets.py` | Pre-build script: Wi-Fi and OTA secrets, channel |
 | `src/main.cpp` | The bridge (and the `WITH_*` diagnosis switches) |
-| `../../../scripts/esp_timing.py` | Reads the `esp_diag_timing` reports |
-| `../../../scripts/tcp_load.py` | S1-07 TCP load against `esp_diag_tcp` |
-| `../../../scripts/esp_wdt.py` | S1-10 hang / reason cycles against `esp_diag_wdt` |
+| `../../tools/bench/esp_timing.py` | Reads the `esp_diag_timing` reports |
+| `../../tools/bench/tcp_load.py` | S1-07 TCP load against `esp_diag_tcp` |
+| `../../tools/bench/esp_wdt.py` | S1-10 hang / reason cycles against `esp_diag_wdt` |
 | `backup/README.md` | Flash backups (AT and custom), SHA-256, restore |
