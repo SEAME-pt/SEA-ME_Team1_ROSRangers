@@ -37,6 +37,20 @@ tags:
 | 20 | n | payload | |
 | 20+n | 8 | tag | HMAC-SHA256(key of this direction, bytes 0..20+n-1), first 8 bytes |
 
+The library defines the sizes and the magic as constants in `frame.hpp`:
+
+```cpp
+// excerpt: frame constants
+constexpr std::uint8_t kMagic0 = 0x53; // 'S'
+constexpr std::uint8_t kMagic1 = 0x44; // 'D'
+constexpr std::uint8_t kWireVersion = 1;
+constexpr std::size_t kHeaderSize = 20;
+constexpr std::size_t kTagSize = 8;
+constexpr std::size_t kMaxPayload = 256;
+constexpr std::size_t kMaxFrame = kHeaderSize + kMaxPayload + kTagSize;
+```
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L11–17](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L11-L17) @ `52de267`
+
 Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped (`reject:wrong_direction`), so a reflected `HELLO` or `HELLO_ACK` does nothing. A `HELLO` must have `session_id` 0; a `HELLO_ACK` must carry the same non-zero `session_id` in its header and payload (`reject:wrong_session` otherwise). Both use seq 1 (`reject:bad_seq` otherwise). Payload sizes are checked as in §3. Checked in this order: tag (with the PSK), type, payload size, `session_id`, seq. `HELLO` and `HELLO_ACK` are TCP types (§2): only frames from the TCP connection go to this check.
 
 Random values: `ground_nonce` comes from the ground's operating-system random source, `esp_nonce` and `session_id` from the ESP8266 hardware random number generator (#101/#102). They must never repeat: a repeated pair of nonces gives the same keys, and a recorded session could then be replayed whole. Every `HELLO` (type 0x01) goes to this check, also during a session: a new `HELLO` opens a pending session, which replaces the current one only once its first valid frame arrives (§3.1, `BYE` reason 3, #156), and the in-session receiver never accepts it.
@@ -76,6 +90,29 @@ Each side also accepts only the types the **other** side sends (2026-11-05, #152
 | 0x81 | FC_HEALTH | 42 | fc_alive u8, armed u8 (0, 1, `0xFF` unknown), arming_disable_flags u32, status_age_ms u16, attitude_age_ms u16, analog_age_ms u16, reply_age_ms u16, requests u32, replies u32, timeouts u32, bad_checksum u16, too_long u16, error_replies u16, unexpected u16, rc_sent u32, rc_replaced u32. ESP → ground at 5 Hz (added 2026-11-10, v1.4, #179) |
 
 Bytes is the payload size (`EVENT`: 2 + text length, text ≤ 64). A payload of any other size is rejected as `reject:bad_payload_size`, a type not in this table as `reject:bad_type`. Each has its own counter and counts in `rx_rejected`. Both are checked after §4 rule 2 and before rule 3, in the order of §4 (type → transport → direction → size → `mode` → `seq`), so they change no state (REQ-COM-001, REQ-COM-004).
+
+The type numbers are the `MsgType` enum in `frame.hpp`. The values are part of the wire format and are never renumbered:
+
+```cpp
+// excerpt: MsgType
+enum class MsgType : std::uint8_t {
+  kHello = 0x01,
+  kHelloAck = 0x02,
+  kArmControlRequest = 0x03,
+  kArmControlAck = 0x04,
+  kResumeRequest = 0x05,
+  kResumeAck = 0x06,
+  kBye = 0x07,
+  kConfigGet = 0x20,
+  kConfigSet = 0x21,
+  kConfigAck = 0x22,
+  kEvent = 0x40,
+  kSetpoint = 0x60,
+  kState = 0x80,
+  kFcHealth = 0x81, // spec v1.4 (#179): ESP -> ground, 5 Hz
+};
+```
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L20–35](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L20-L35) @ `52de267`
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
 
@@ -191,6 +228,20 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 | 7 Configuration (added 2026-11-05) | One `CONFIG_ACK` encoding per result 0–5 | Config replies (§3.1). The check order (state first) and the replies per key group need the ESP state and key table, so they are tested in the link state machine (#102), not in the shared vectors |
 | 8 Reserved bits and transports (added 2026-11-05) | Header `flags` bit 0 set and `SETPOINT.flags` ≠ 0 are accepted and ignored; TCP and UDP `seq` counted apart; `HELLO_ACK` tagged with the PSK; a frame on the wrong transport or from the wrong side refused | The 2026-11-05 decisions (§7.5, §2) |
 | 9 Handshake (added 2026-11-05, #152) | The ESP accepts `HELLO`, the ground `HELLO_ACK`; each refuses the other's frame and any other PSK-tagged type; wrong `session_id` and seq ≠ 1 refused | The pre-session rule (§1) |
+
+For example, group 3 `wrong_magic` is the reference `SETPOINT` with `SE` instead of `SD`. The bytes read: magic `53 45`, version `01`, type `60`, flags `00`, reserved `00`, `payload_len` `0a 00` (10), `session_id` `78 56 34 12`, `seq` `07 00 00 00`, `t_send_us` `e8 03 00 00`, then 10 payload bytes and the 8-byte tag. The tag is recomputed, so the magic is the only fault:
+
+```json
+// excerpt: group 3, wrong_magic (key line left out)
+{
+  "name": "wrong_magic",
+  "description": "Magic 'SE' instead of 'SD'; the tag is recomputed so the magic is the only fault",
+  ...
+  "bytes": "5345016000000a007856341207000000e803000001640038ff0000f40100de307f06c4dd38a3",
+  "expect": "reject:bad_magic"
+}
+```
+Source: [`drone/tests/vectors/3_header.json` L2–8](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/tests/vectors/3_header.json#L2-L8) @ `52de267`
 
 - A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels; group 9 says which side (`handshake`) checks the frame.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.
@@ -345,7 +396,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
 | **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
 | **T_fresh** | Maximum age of the last accepted setpoint (150 ms, §7.2). Older → neutral sticks until the next valid setpoint; no failsafe. |
-| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left only through `RESUME_REQUEST` ([[ESP Link State Machine]]). |
+| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left through `RESUME_REQUEST`, a confirmed new session, or a `BYE` (to NO_SESSION, the ADR-004 output continues) ([[ESP Link State Machine]]). |
 | **Result / reason code** | Number in a reply (`result`, `reason`, `code`) that says why something happened, so the ground can act on it and log it (§3.1). Never reused. |
 | **Configuration key** | One-byte number in `CONFIG_GET` / `CONFIG_SET` that names one setting on the ESP (§7.3). |
 | **Test vector** | One fixed example (fields, exact bytes, expected result) that both the C++ and the Python implementation must pass (§6). |

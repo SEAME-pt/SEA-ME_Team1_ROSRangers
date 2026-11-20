@@ -66,6 +66,18 @@ The decision and the value are unchanged: **`T_loss` stays at 250 ms**. ESP-S1-0
 
 The decision and `T_loss` = 250 ms are unchanged. The protocol review of 2026-11-03 (#97) set **`T_fresh` = 150 ms** as a separate timer (OD-06, [[Protocol Spec v0]] §7.2). A setpoint older than 150 ms is replaced by neutral sticks, and the next valid setpoint is used at once, with no failsafe and no handshake. Only `T_loss` enters `LINK_FAILSAFE`. The ground streams `SETPOINT` at 50 Hz at all times (`mode 0` when there is no gesture), so an operator who does not gesture never triggers the failsafe.
 
+The library holds these timers as constants in `link.hpp`:
+
+```cpp
+// excerpt: link timers (ADR-004)
+constexpr std::uint32_t kTLossMs = 250;  // no accepted control -> LINK_FAILSAFE
+constexpr std::uint32_t kTFreshMs = 150; // older setpoint -> neutral sticks
+...
+constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
+                                                   // while the ground is quiet
+```
+Source: [`drone/lib/protocol/include/sd/link.hpp` L27–28 and L32–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `52de267`
+
 ### 2.6 Neutral again while a live ground streams (2026-11-13, #188)
 
 The trigger, `T_loss` and the first second of neutral are unchanged. On 2026.6.2 the output after that second changes:

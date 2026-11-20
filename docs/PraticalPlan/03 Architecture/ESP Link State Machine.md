@@ -37,6 +37,20 @@ stateDiagram-v2
 
 **A new `HELLO` does not end the current session** (2026-11-06, #156, [[ADR-005 TCP Session|ADR-005]] entry). In any state the ESP answers a valid `HELLO` with `HELLO_ACK` and keeps its current state and session. The new session is *pending*: it takes over only when its first valid frame under the new keys arrives; then the ESP sends `BYE` reason 3 to the old session and continues in SESSION_IDLE with the new one. A pending session with no valid frame within 2 s is dropped. `HELLO` is rate-limited (at most one per 500 ms). A replayed `HELLO` therefore never ends a live session.
 
+The timers of this machine are constants in `link.hpp`:
+
+```cpp
+// excerpt: link timers
+constexpr std::uint32_t kTLossMs = 250;  // no accepted control -> LINK_FAILSAFE
+constexpr std::uint32_t kTFreshMs = 150; // older setpoint -> neutral sticks
+constexpr std::uint32_t kResumeNeutralMs = 500; // neutral stream before RESUME
+constexpr std::uint32_t kPendingMaxMs = 2000;   // pending session lifetime
+constexpr std::uint32_t kHelloMinGapMs = 500;   // HELLO rate limit
+constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
+                                                   // while the ground is quiet
+```
+Source: [`drone/lib/protocol/include/sd/link.hpp` L27–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `52de267`
+
 Details of the pending session:
 - **TCP:** a new TCP connection by itself changes nothing. While a session holds the one TCP slot, the ESP accepts one extra connection only to carry a `HELLO`, for at most 2 s; TCP keep-alive (seconds) frees a dead connection's slot ([[ADR-005 TCP Session|ADR-005]] entry). UDP and the failsafe are not affected.
 - **No current session (NO_SESSION):** there is nothing to protect, so a valid `HELLO` opens the session at once (SESSION_IDLE).
@@ -118,5 +132,9 @@ Rules the code (`drone/lib/protocol/include/sd/link.hpp`) follows where this not
 | **T_fresh** | Setpoint freshness timeout: a setpoint older than this (150 ms) is replaced by neutral sticks, with no failsafe ([[Protocol Spec v0]] §7.2). |
 | **ADR-004 output** | What the ESP sends to the FC once the link failsafe is active: on 2026.6 neutral sticks for 1 s, then nothing while the ground is quiet, so Betaflight falls back to the radio sticks; neutral again while a live ground streams (ADR-004 §2.6, #188). |
 | **T_loss** | The ESP link-failsafe timeout: no accepted control message for this long enters LINK_FAILSAFE (initial 250 ms, ADR-004). |
+| **HELLO / HELLO_ACK** | The handshake that opens a session over TCP ([[Protocol Spec v0]] §1). |
+| **ARM / RESUME** | `ARM_CONTROL_REQUEST` / `RESUME_REQUEST`: the operator asks the ESP to pass the ground's sticks on the masked axes to the FC. Neither arms the motors. |
+| **LINK_FAILSAFE** | ESP state after `T_loss` without an accepted control message. Left through `RESUME_REQUEST`, a confirmed new session, or a `BYE` (to NO_SESSION, the ADR-004 output continues) (§1). |
+| **SESSION_IDLE** | ESP link state: a session is open and control is off; the ESP sends neutral frames to the FC, except after a switch or `BYE` from control, when the ADR-004 output runs until ARM OK (§1.1). |
 | **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
