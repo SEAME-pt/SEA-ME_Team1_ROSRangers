@@ -753,6 +753,111 @@ class BatteryTests(MonitorTestCase):
         self.assertNotIn("13.80 V", line)
 
 
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class ModeTests(MonitorTestCase):
+    """Phase 5 of #227: the mode banner and why a row has no data."""
+
+    MODES = ("demo", "real", "real-dry", "sim", None)
+
+    def table(self, mode):
+        with mock.patch.object(monitor.time, "strftime", return_value="12:00:00"):
+            return monitor.table(self.monitor.snapshot(), mode=mode)
+
+    def under(self, lines, name):
+        """The line right under a row's heading."""
+        heading = next(i for i, line in enumerate(lines) if line.startswith(name))
+        return lines[heading], lines[heading + 1]
+
+    def test_ground_mode_from_the_environment(self):
+        cases = (
+            ({"GROUND_MODE": "demo"}, "demo"),
+            ({"GROUND_MODE": "real"}, "real"),
+            ({"GROUND_MODE": "sim"}, "sim"),
+            ({"GROUND_MODE": "real", "GROUND_DRY": "1"}, "real-dry"),
+            ({"GROUND_MODE": "real", "GROUND_DRY": "0"}, "real"),
+            ({"GROUND_MODE": "demo", "GROUND_DRY": "1"}, "demo"),  # dry: real only
+            ({"GROUND_MODE": ""}, None),
+            ({"GROUND_MODE": "flight"}, None),
+            ({}, None),
+        )
+        for environ, mode in cases:
+            with self.subTest(environ=environ):
+                self.assertEqual(monitor.ground_mode(environ), mode)
+
+    def test_banner_is_the_title(self):
+        banners = {
+            "demo": "DEMO: PRETEND /flight/state",
+            "real": "REAL: DRONE",
+            "real-dry": "REAL-DRY: NO DRONE (loopback)",
+            "sim": "SIM: PX4 SITL",
+            None: "MODE ?",
+        }
+        for mode, banner in banners.items():
+            with self.subTest(mode=mode):
+                self.assertEqual(
+                    self.table(mode)[0], f"{banner}   12:00:00   (Ctrl+C to quit)"
+                )
+                self.assertNotIn("\033", self.table(mode)[0])  # no colour (5A)
+
+    def test_flight_publisher_per_mode(self):
+        sources = {
+            "demo": "fake_flight_state  /flight/state",
+            "real": "flight_interface  /flight/state",
+            "real-dry": "flight_interface  /flight/state",
+            "sim": "px4_offboard_bridge  /flight/state",
+            None: "/flight/state",
+        }
+        for mode, source in sources.items():
+            with self.subTest(mode=mode):
+                heading, _ = self.under(self.table(mode), "FLIGHT")
+                self.assertEqual(heading, f"{'FLIGHT':9} {source:42} waiting")
+
+    def test_why_attitude_and_battery_have_no_data(self):
+        reasons = {
+            "demo": "no data: demo has no drone",
+            "sim": "no data: the sim publishes no /fc/*",
+            "real-dry": "no data: loopback has no FC",
+            "real": "waiting: activate flight_interface; needs fresh FC data",
+        }
+        for mode, reason in reasons.items():
+            for row in ("ATTITUDE", "BATTERY"):
+                with self.subTest(mode=mode, row=row):
+                    heading, below = self.under(self.table(mode), row)
+                    self.assertTrue(heading.endswith("waiting"), heading)
+                    self.assertEqual(below, f"    {reason}")
+
+    def test_why_flight_has_no_data_in_real_only(self):
+        for mode in ("real", "real-dry"):
+            with self.subTest(mode=mode):
+                _, below = self.under(self.table(mode), "FLIGHT")
+                self.assertEqual(
+                    below, "    waiting: configure flight_interface (make real-steps)"
+                )
+        for mode in ("demo", "sim", None):
+            with self.subTest(mode=mode):
+                _, below = self.under(self.table(mode), "FLIGHT")
+                self.assertEqual(below, "")
+
+    def test_no_reason_without_a_mode_or_once_data_arrives(self):
+        _, below = self.under(self.table(None), "ATTITUDE")
+        self.assertEqual(below, "")
+        self.feed("/fc/attitude", attitude(3, -10, -50))
+        _, below = self.under(self.table("real"), "ATTITUDE")
+        self.assertEqual(
+            below, "    roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)"
+        )
+        self.feed("/flight/state", string(FLIGHT))
+        _, below = self.under(self.table("real"), "FLIGHT")
+        self.assertEqual(below, "    active      True")
+
+    def test_gesture_rows_have_no_reason(self):
+        for mode in self.MODES:
+            for row in ("GESTURE", "INTENT", "MISSION", "VELOCITY"):
+                with self.subTest(mode=mode, row=row):
+                    _, below = self.under(self.table(mode), row)
+                    self.assertEqual(below, "")
+
+
 class Publisher:
     """Plays the nodes' side: publishes the chain's topics, /flight/state,
     /fc/attitude and /fc/battery at 20 Hz."""
@@ -808,8 +913,12 @@ class Publisher:
 class MonitorProcess:
     """monitor.py as a program, on a pipe or on a pty."""
 
-    def __init__(self, tty):
+    def __init__(self, tty, mode_env=None):
         env = dict(os.environ, ROS_DOMAIN_ID=str(TEST_DOMAIN_ID), PYTHONUNBUFFERED="1")
+        # The mode comes only from the test, never from the shell running it.
+        env.pop("GROUND_MODE", None)
+        env.pop("GROUND_DRY", None)
+        env.update(mode_env or {})
         self.master = None
         if tty:
             self.master, slave = pty.openpty()
@@ -891,8 +1000,8 @@ class ProgramTests(unittest.TestCase):
         self.publisher = Publisher()
         self.addCleanup(self.publisher.close)
 
-    def start(self, tty):
-        process = MonitorProcess(tty)
+    def start(self, tty, mode_env=None):
+        process = MonitorProcess(tty, mode_env)
         self.addCleanup(process.close)
         return process
 
@@ -925,6 +1034,22 @@ class ProgramTests(unittest.TestCase):
         self.assertNotIn("Traceback", process.output)
         self.assertNotIn("roll:", process.output)  # attitude stays out (8A)
         self.assertNotIn("V/cell", process.output)  # battery too (phase 4, 8A)
+        # The mode once, as the first line (no GROUND_MODE here: "MODE ?").
+        first = process.output.splitlines()[0]
+        self.assertEqual(first, "mode: MODE ?")
+        self.assertEqual(process.output.count("mode: "), 1)
+
+    def test_without_a_terminal_real_dry_says_so_first(self):
+        process = self.start(
+            tty=False, mode_env={"GROUND_MODE": "real", "GROUND_DRY": "1"}
+        )
+        self.publisher.messages["/gesture/intent"] = INTENT
+        self.assertTrue(
+            process.wait_for(lambda out: "intent: MOVE_RIGHT" in out), process.output
+        )
+        first = process.output.splitlines()[0]
+        self.assertEqual(first, "mode: REAL-DRY: NO DRONE (loopback)")
+        self.assertEqual(process.stop(signal.SIGTERM), 0, process.output)
 
     def test_on_a_terminal_frames_only_when_something_changes(self):
         process = self.start(tty=True)
@@ -958,9 +1083,9 @@ class ProgramTests(unittest.TestCase):
         self.assertNotIn("Traceback", out)
 
     def test_on_a_terminal_sigterm_shows_the_cursor_again(self):
-        process = self.start(tty=True)
+        process = self.start(tty=True, mode_env={"GROUND_MODE": "demo"})
         self.assertTrue(
-            process.wait_for(lambda out: "Ground pipeline monitor" in out),
+            process.wait_for(lambda out: "DEMO: PRETEND /flight/state" in out),
             process.output,
         )
         self.assertEqual(process.stop(signal.SIGTERM), 0, process.output)

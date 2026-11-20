@@ -60,6 +60,9 @@ x-ros: &ros
   environment:
     - ROS_DOMAIN_ID=${GROUND_DOMAIN_ID:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}
     - ROS_AUTOMATIC_DISCOVERY_RANGE=${GROUND_DISCOVERY_RANGE:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}
+    # For echo's mode banner (src/echo/monitor.py). The nodes replace this
+    # list with *node-env, so in practice only echo gets it.
+    - GROUND_MODE=${GROUND_MODE:-}
   volumes:
     - /etc/localtime:/etc/localtime:ro   # host time zone in logs and the table
 

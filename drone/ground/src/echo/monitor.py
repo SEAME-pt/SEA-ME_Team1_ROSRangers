@@ -1,4 +1,4 @@
-"""Live table of the gesture -> intent -> mission chain, redrawn in place like `top`.
+"""Live table of the ground and the drone, redrawn in place like `top`.
 
     docker compose up --build             # from drone/ground/: the whole stack, table here
     docker compose run --rm echo          # or the table alone, in its own terminal
@@ -20,12 +20,19 @@ on a line under the title, marked "!!": red for a fault, yellow
 for "not OK yet" (FC link unknown, node not activated). Colour only on a
 terminal; the "!!" text is always there.
 
+The title line is the mode's banner (GROUND_MODE from env/<mode>.env, plus
+GROUND_DRY=1 from make real-dry): DEMO, REAL, REAL-DRY or SIM, so a demo is
+never taken for the drone. A row that never got a message says why under its
+heading (e.g. no /fc/* in demo or sim).
+
 Without a terminal (piped, or a service without `tty: true`), it prints one
-line each time something changes instead of redrawing. Ctrl+C or SIGTERM exits 0.
+line each time something changes instead of redrawing (after one first
+"mode: ..." line). Ctrl+C or SIGTERM exits 0.
 """
 
 import json
 import math
+import os
 import signal
 import sys
 import threading
@@ -288,6 +295,54 @@ SOURCES = {
     "velocity": "mission_node  /mission/velocity_target",
 }
 
+# ---------- The ground mode (env/<mode>.env, ADR-025 E1.3) ----------
+# GROUND_MODE comes from the mode's env file through docker-compose.yml (x-ros).
+# make real-dry uses env/real.env too, so it also passes GROUND_DRY=1 (Makefile):
+# without it a dry run would look exactly like the real drone.
+BANNERS = {
+    "demo": "DEMO: PRETEND /flight/state",
+    "real": "REAL: DRONE",
+    "real-dry": "REAL-DRY: NO DRONE (loopback)",
+    "sim": "SIM: PX4 SITL",
+    None: "MODE ?",  # GROUND_MODE empty or unknown, e.g. monitor.py on the host
+}
+# Who publishes /flight/state in each mode. sim changes with #199 (flight_interface
+# with the PX4 backend replaces the bridge).
+FLIGHT_SOURCES = {
+    "demo": "fake_flight_state  /flight/state",
+    "real": "flight_interface  /flight/state",
+    "real-dry": "flight_interface  /flight/state",
+    "sim": "px4_offboard_bridge  /flight/state",
+}
+# Why ATTITUDE and BATTERY have had no message yet, per mode.
+NO_FC = {
+    "demo": "no data: demo has no drone",
+    "sim": "no data: the sim publishes no /fc/*",
+    "real-dry": "no data: loopback has no FC",
+    "real": "waiting: activate flight_interface; needs fresh FC data",
+}
+NO_FLIGHT_STATE = "waiting: configure flight_interface (make real-steps)"
+
+
+def waiting_reason(mode, name):
+    """The line under a row that never got a message, or None."""
+    if name in ("attitude", "battery"):
+        return NO_FC.get(mode)
+    if name == "flight" and mode in ("real", "real-dry"):
+        return NO_FLIGHT_STATE  # flight_interface publishes from configure on
+    return None
+
+
+def ground_mode(environ):
+    """ "demo", "real", "real-dry", "sim", or None when GROUND_MODE is empty or
+    unknown."""
+    mode = environ.get("GROUND_MODE", "")
+    if mode not in ("demo", "real", "sim"):
+        return None
+    if mode == "real" and environ.get("GROUND_DRY") == "1":
+        return "real-dry"
+    return mode
+
 
 def alerts(rows):
     """[(colour, text, flagged "row.field" names)], most severe first: the
@@ -361,11 +416,14 @@ def _paint(text, colour, on):
     return text
 
 
-def table(rows, colour=False):
-    """The frame's lines. colour=True only on a terminal (main())."""
+def table(rows, colour=False, mode=None):
+    """The frame's lines. colour=True only on a terminal (main()). mode is
+    ground_mode()'s value: it picks the banner, the FLIGHT row's publisher and
+    the reasons for rows that never got a message."""
     found = alerts(rows)
+    banner = BANNERS[mode]
     lines = [
-        f"Ground pipeline monitor   {time.strftime('%H:%M:%S')}   (Ctrl+C to quit)",
+        f"{banner}   {time.strftime('%H:%M:%S')}   (Ctrl+C to quit)",
     ]
     if found:
         marks = [_paint(f"!! {text}", c, colour) for c, text, _ in found]
@@ -382,7 +440,13 @@ def table(rows, colour=False):
             status = f"STALE {age:.0f} s"
         else:
             status = "live"  # not the age: it would change, and redraw, every frame
-        lines.append(f"{name.upper():9} {SOURCES[name]:42} {status}")
+        source = SOURCES[name]
+        if name == "flight" and mode in FLIGHT_SOURCES:
+            source = FLIGHT_SOURCES[mode]
+        lines.append(f"{name.upper():9} {source:42} {status}")
+        reason = waiting_reason(mode, name)
+        if age is None and reason:
+            lines.append(f"    {reason}")
         for key, value in fields.items():
             if name in ONE_TEXT_LINE:
                 if key != ONE_TEXT_LINE[name]:
@@ -433,15 +497,18 @@ def main():
     spinner = threading.Thread(target=lambda: _spin(node, stop), daemon=True)
     spinner.start()
 
+    mode = ground_mode(os.environ)  # read once: the container's mode is fixed
     live = sys.stdout.isatty()
     last = None
     if live:
         sys.stdout.write(ENTER)
+    else:
+        print(f"mode: {BANNERS[mode]}", flush=True)  # once, not on every line
     try:
         while not stop.wait(REFRESH_SEC):
             rows = monitor.snapshot()
             if live:
-                lines = table(rows, colour=True)
+                lines = table(rows, colour=True, mode=mode)
                 if lines == last:
                     continue
                 last = lines

@@ -384,6 +384,7 @@ ESP_HOST      = $(shell sed -n 's/^[[:space:]]*esp_host:[[:space:]]*\([0-9.]*\).
 # prints the operator steps, then shows the live table. Ctrl+C closes only
 # the table; the stack keeps running until make real-down.
 real: FI_ARGS =
+real: ECHO_ARGS =
 real: no-flight-interface env-real real-check
 	$(REAL_START)
 
@@ -396,6 +397,8 @@ real: no-flight-interface env-real real-check
 # PSK file (the service always mounts one): no psk.json needed.
 real-dry: FI_ARGS = $(FI_EXE) --ros-args --params-file /config/real.yaml -p backend:=loopback
 real-dry: export SEAME_SECRETS_FILE := /dev/null
+# The live table says REAL-DRY, not REAL: the same env/real.env, no drone.
+real-dry: ECHO_ARGS = -e GROUND_DRY=1
 real-dry: no-flight-interface env-real
 	$(REAL_START)
 
@@ -413,7 +416,7 @@ $(STOP_COMPOSE) down
 $(REAL_COMPOSE) up -d --build --force-recreate $(REAL_CHAIN)
 $(REAL_COMPOSE) run -d --rm --build --name $(FI_NAME) flight_interface $(FI_ARGS)
 @$(MAKE) --no-print-directory real-steps
--$(REAL_COMPOSE) run --rm echo
+-$(REAL_COMPOSE) run --rm $(ECHO_ARGS) echo
 @if docker ps -q --filter name=^$(FI_NAME)$$ | grep -q .; then \
 	echo "The real stack is still running. Stop it with: make real-down"; \
 else echo "The real stack is stopped."; fi
