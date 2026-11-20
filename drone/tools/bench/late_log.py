@@ -2,25 +2,41 @@
 """Late-check log (#219, ESP-S1-09 re-run): record and analyse it.
 
 The gateway built with env esp_late_log(_ota) sends one record per SETPOINT it
-receives to UDP 5770 (src/gateway/main.cpp, WITH_LATE_LOG), plus the flash
-chip once a second (#218). Run the control stream as usual with
-drone/tools/bench/ground_link.py (its t_send_us is CLOCK_MONOTONIC_RAW, spec §1) and:
+receives to UDP 5770 (src/gateway/main.cpp, WITH_LATE_LOG), plus a flash chip
+line every 10 s (#218). Run the control stream as usual with
+drone/tools/bench/ground_link.py (its t_send_us is CLOCK_MONOTONIC_RAW, spec §1)
+and:
 
   python3 drone/tools/bench/late_log.py listen --csv s1-09_late_run1.csv   # Ctrl+C to stop
   python3 drone/tools/bench/late_log.py analyze results/s1-09_late_run1.csv
 
-`analyze` replays every logged SETPOINT through the Python twin of the ESP's
+`listen` writes the records to the CSV and the flash chip line, with the ESP's
+count of dropped records, to <csv>.chip.json next to it.
+
+`analyze` replays the logged SETPOINTs through the Python twin of the ESP's
 Receiver at several bounds (Protocol Spec §4 rule 3a) and prints, per bound,
 the frames refused as late and the T_loss silences (250 ms without an
 accepted SETPOINT, each one a LINK_FAILSAFE). Pass criteria (#219, BrunoBMFT
 on #171): no extra silence compared with the check off, no late refusal in a
 run without Wi-Fi stalls, and a frame held back 250 ms or more is refused.
+
+What the replay takes into account (#225 review):
+- Arrival order comes from micros() measured from the first record, so the
+  71.6 min wrap of the ESP's micros() during a run changes nothing.
+- A new session_id (a reconnect, `R` in ground_link.py) starts a new replay
+  Receiver: seq starts again at 1, and the ESP seeded a new offset.
+- Only frames the ESP judged on lateness or seq are replayed. A frame it
+  refused for anything else (bad tag, wrong or no session, ...) is skipped,
+  since the replay would wrongly accept it.
+- Records the ESP had to drop (its buffer was full) are reported, because the
+  counts are then incomplete.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import pathlib
 import socket
 import sys
@@ -41,11 +57,33 @@ from sd_protocol.receiver import Receiver, RxResult, is_accepted  # noqa: E402
 from sd_protocol.setpoint import SETPOINT_SIZE  # noqa: E402
 
 PORT = 5770
-FIELDS = ("pc_time_s", "seq", "t_send_us", "rx_us", "micros", "result")
+FIELDS = ("pc_time_s", "session", "seq", "t_send_us", "rx_us", "micros", "result")
+CHIP_FIELDS = ("chip_id", "vendor", "real_size", "bus_hz")
 BOUNDS_MS = (100, 150, 200, 250)
 T_LOSS_US = 250_000
 REPLAY_KEY = bytes(32)  # the replay seals its own frames; any key works
-REPLAY_SESSION = 0x219
+# The ESP results the replay can reproduce: decided by the late check or the
+# seq window. Anything else (bad tag, wrong or no session, ...) is skipped.
+REPLAYED = {
+    RxResult.ACCEPTED,
+    RxResult.ACCEPTED_GAP,
+    RxResult.DUPLICATE_SEQ,
+    RxResult.OLD_SEQ,
+    RxResult.SEQ_TOO_HIGH,
+    RxResult.LATE,
+}
+REPLAYED_CODES = {int(x) for x in REPLAYED}
+
+
+def int32(value: int) -> int:
+    """A u32 difference read as signed, so a clock that wrapped in between
+    still gives the right step. Example: 0x00000010 - 0xFFFFFFF0 is
+    0x00000020 as a u32, so +32 us: the clock wrapped 32 us after
+    0xFFFFFFF0. And 0xFFFFFFF0 - 0x00000010 is 0xFFFFFFE0, read as -32 us."""
+    value &= 0xFFFFFFFF
+    if value >= 0x80000000:
+        return value - 0x100000000
+    return value
 
 
 def parse_packet(data: bytes, pc_time_s: float):
@@ -54,20 +92,15 @@ def parse_packet(data: bytes, pc_time_s: float):
     records, chip = [], None
     for line in data.decode("ascii", "replace").splitlines():
         parts = line.split(",")
-        if parts[0] == "R" and len(parts) == 6:
+        if parts[0] == "R" and len(parts) == 7:
             try:
                 values = [int(v) for v in parts[1:]]
             except ValueError:
                 continue
             records.append(dict(zip(FIELDS, (pc_time_s, *values))))
         elif parts[0] == "F" and len(parts) == 6:
-            chip = {
-                "chip_id": parts[1],
-                "vendor": parts[2],
-                "real_size": parts[3],
-                "speed_hz": parts[4],
-                "dropped": parts[5],
-            }
+            chip = dict(zip(CHIP_FIELDS, parts[1:5]))
+            chip["dropped"] = int(parts[5]) if parts[5].isdigit() else None
     return records, chip
 
 
@@ -79,76 +112,144 @@ def read_csv(path):
         ]
 
 
-def _frame(seq: int, t_send_us: int) -> bytes:
+def chip_path(csv_path) -> pathlib.Path:
+    return pathlib.Path(f"{csv_path}.chip.json")
+
+
+def arrival_order(records):
+    """The records in the order they reached the ESP. Each record's time is
+    micros() measured from the first record (received order, step by step
+    with int32()), so a wrap of the ESP's micros() during the run keeps the
+    order. The sort is stable, and for records in the same microsecond keeps
+    the received order."""
+    elapsed, total, previous = [], 0, None
+    for r in records:
+        if previous is not None:
+            total += int32(r["micros"] - previous)
+        elapsed.append(total)
+        previous = r["micros"]
+    order = sorted(range(len(records)), key=lambda i: elapsed[i])
+    return [(elapsed[i], records[i]) for i in order]
+
+
+def _frame(session: int, seq: int, t_send_us: int) -> bytes:
     header = Header(
-        type=MsgType.SETPOINT, session_id=REPLAY_SESSION, seq=seq, t_send_us=t_send_us
+        type=MsgType.SETPOINT, session_id=session, seq=seq, t_send_us=t_send_us
     )
     return encode_frame(header, bytes(SETPOINT_SIZE), REPLAY_KEY)
 
 
-def replay(records, bound_ms: int):
-    """The records, in arrival order, through an ESP UDP Receiver with the late
-    check at bound_ms (0: off), seeded from the first record (the log has no
-    HELLO). Returns (frames refused as late, T_loss silences)."""
-    rx = Receiver(Role.ESP, Transport.UDP)
-    rx.start_session(REPLAY_SESSION, REPLAY_KEY)
-    rx.set_late_bound(bound_ms * 1000)
-    late = silences = 0
-    last_ok = None
-    for i, r in enumerate(records):
-        if i == 0:
+def replay(timed, bound_ms: int):
+    """The (elapsed_us, record) list, in arrival order, through an ESP UDP
+    Receiver with the late check at bound_ms (0: off). Every new session
+    starts a new Receiver, seeded from its first record (the log has no
+    HELLO). Returns a dict: late (refused as late), silences (T_loss),
+    accepted, other (refused for anything else) and skipped (not replayed)."""
+    late = 0
+    silences = 0
+    skipped = 0
+    accepted = 0
+    other = 0
+    rx = None
+    session = None
+    last_ok_us = None  # silences run across sessions: a reconnect gap counts
+    for elapsed_us, r in timed:
+        if r["result"] not in REPLAYED_CODES:
+            skipped += 1
+            continue
+        if r["session"] != session:
+            session = r["session"]
+            rx = Receiver(Role.ESP, Transport.UDP)
+            rx.start_session(session, REPLAY_KEY)
+            rx.set_late_bound(bound_ms * 1000)
             rx.seed_lag(r["t_send_us"], r["rx_us"])
-        result, _ = rx.receive(_frame(r["seq"], r["t_send_us"]), r["rx_us"])
+        result, _ = rx.receive(_frame(session, r["seq"], r["t_send_us"]), r["rx_us"])
         if result is RxResult.LATE:
             late += 1
-        if is_accepted(result):
-            if (
-                last_ok is not None
-                and (r["micros"] - last_ok) & 0xFFFFFFFF >= T_LOSS_US
-            ):
+        elif is_accepted(result):
+            accepted += 1
+            if last_ok_us is not None and elapsed_us - last_ok_us >= T_LOSS_US:
                 silences += 1
-            last_ok = r["micros"]
-    return late, silences
+            last_ok_us = elapsed_us
+        else:
+            other += 1
+    return {
+        "late": late,
+        "silences": silences,
+        "accepted": accepted,
+        "other": other,
+        "skipped": skipped,
+    }
 
 
-def lateness_ms(records):
-    """How far each frame arrived above the fastest one (ms), with the finer
-    micros() clock: the lag floor is the run's minimum lag."""
-    lags = [(r["micros"] - r["t_send_us"]) & 0xFFFFFFFF for r in records]
-    # lags are u32 differences of two free-running clocks: centre them on the
-    # first one so the wrap of either clock does not matter
-    first = lags[0]
-    rel = [((lag - first + 2**31) & 0xFFFFFFFF) - 2**31 for lag in lags]
-    floor = min(rel)
-    return [(x - floor) / 1000 for x in rel]
+def lateness_ms(timed):
+    """How far each replayed frame arrived above the fastest one of its
+    session (ms), with the finer micros() clock."""
+    by_session = {}
+    for _, r in timed:
+        if r["result"] in REPLAYED_CODES:
+            by_session.setdefault(r["session"], []).append(r)
+    out = []
+    for records in by_session.values():
+        first = records[0]["micros"] - records[0]["t_send_us"]
+        rel = [int32(r["micros"] - r["t_send_us"] - first) for r in records]
+        floor = min(rel)
+        out += [(x - floor) / 1000 for x in rel]
+    return out
 
 
-def analyze(records):
-    records = sorted(records, key=lambda r: r["micros"])  # arrival order
-    late_ms = sorted(lateness_ms(records))
+def analyze(records, dropped=None):
+    timed = arrival_order(records)
+    late_ms = sorted(lateness_ms(timed))
     n = len(late_ms)
-    off_late, off_silences = replay(records, 0)
+    off = replay(timed, 0)
     rows = []
     for bound in BOUNDS_MS:
-        late, silences = replay(records, bound)
-        rows.append({"bound_ms": bound, "late": late, "silences": silences})
+        on = replay(timed, bound)
+        rows.append({"bound_ms": bound, "late": on["late"], "silences": on["silences"]})
     firmware_late = sum(r["result"] == int(RxResult.LATE) for r in records)
     return {
-        "frames": n,
-        "p50_ms": late_ms[n // 2],
-        "p99_ms": late_ms[int(0.99 * (n - 1))],
-        "max_ms": late_ms[-1],
-        "silences_off": off_silences,
+        "frames": len(records),
+        "replayed": n,
+        "skipped": off["skipped"],
+        # With the check off the replay should accept what the ESP judged on
+        # lateness or seq; a refusal here (old seq, wrong session) means the
+        # order or the sessions are wrong, and the table can't be trusted.
+        "refused_off": off["other"],
+        "accepted_off": off["accepted"],
+        "sessions": len({r["session"] for r in records}),
+        "dropped": dropped,
+        "p50_ms": late_ms[n // 2] if n else 0.0,
+        "p99_ms": late_ms[int(0.99 * (n - 1))] if n else 0.0,
+        "max_ms": late_ms[-1] if n else 0.0,
+        "silences_off": off["silences"],
         "firmware_late": firmware_late,
         "bounds": rows,
     }
 
 
 def report(stats) -> str:
-    lines = [
-        f"{stats['frames']} SETPOINTs; lateness above the fastest frame: "
-        f"median {stats['p50_ms']:.1f} ms, p99 {stats['p99_ms']:.1f} ms, "
-        f"max {stats['max_ms']:.1f} ms",
+    lines = []
+    if stats["dropped"] is None:
+        lines.append(
+            "WARNING: no chip file, so the ESP's dropped-record count is unknown"
+        )
+    elif stats["dropped"] > 0:
+        lines.append(
+            f"WARNING: the ESP dropped {stats['dropped']} records (its buffer was full): "
+            "the counts below are incomplete"
+        )
+    if stats["refused_off"] > 0:
+        lines.append(
+            f"WARNING: {stats['refused_off']} frames refused by the replay with the "
+            "check off (seq or session): the arrival order or sessions are wrong"
+        )
+    lines += [
+        f"{stats['frames']} SETPOINTs in {stats['sessions']} session(s); "
+        f"{stats['replayed']} replayed, {stats['skipped']} skipped (refused by the ESP "
+        "for something other than lateness or seq)",
+        f"Lateness above the fastest frame: median {stats['p50_ms']:.1f} ms, "
+        f"p99 {stats['p99_ms']:.1f} ms, max {stats['max_ms']:.1f} ms",
         f"Refused as late by the ESP itself (firmware bound): {stats['firmware_late']}",
         f"T_loss silences with the check off: {stats['silences_off']}",
         "",
@@ -177,9 +278,19 @@ def cmd_listen(args):
                 continue
             records, info = parse_packet(data, round(time.monotonic() - start, 3))
             rows += records
-            if info is not None and info != chip:
-                chip = info
-                print(f"flash chip: {chip}", flush=True)
+            if info is None:
+                continue
+            same_chip = chip is not None and all(
+                chip[k] == info[k] for k in CHIP_FIELDS
+            )
+            if not same_chip:
+                print(
+                    f"flash chip: id {info['chip_id']}, vendor {info['vendor']}, "
+                    f"{info['real_size']} bytes, bus {info['bus_hz']} Hz (the clock "
+                    "this build set, not the chip's rating: look the ID up for #218)",
+                    flush=True,
+                )
+            chip = info
     except KeyboardInterrupt:
         pass
     finally:
@@ -190,16 +301,23 @@ def cmd_listen(args):
         writer = csv.DictWriter(fh, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"\nSaved {out}: {len(rows)} SETPOINT records")
+    if chip is not None:
+        chip_path(out).write_text(json.dumps(chip, indent=2) + "\n")
+    dropped = chip["dropped"] if chip else "unknown (no chip line)"
+    print(f"\nSaved {out}: {len(rows)} SETPOINT records; dropped by the ESP: {dropped}")
     if not rows:
         print("no data: is env esp_late_log(_ota) on the ESP and a session streaming?")
 
 
 def cmd_analyze(args):
-    rows = read_csv(resolve_csv_path(args.csv))
+    path = resolve_csv_path(args.csv)
+    rows = read_csv(path)
     if not rows:
         raise SystemExit(f"No records in {args.csv}")
-    print(report(analyze(rows)))
+    dropped = None
+    if chip_path(path).exists():
+        dropped = json.loads(chip_path(path).read_text()).get("dropped")
+    print(report(analyze(rows, dropped)))
 
 
 def main():
