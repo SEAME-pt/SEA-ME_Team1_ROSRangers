@@ -51,10 +51,11 @@ def test_int32_reads_a_wrapped_difference_as_signed():
 
 def test_parse_packet_reads_records_and_the_flash_chip():
     data = (
-        b"R,4660,7,1000,5009000,5009123,0\nR,4660,8,21000,5240000,5240456,17\n"
+        b"B,41\nR,4660,7,1000,5009000,5009123,0\nR,4660,8,21000,5240000,5240456,17\n"
         b"F,001640ef,239,4194304,40000000,3\nR,bad\n"
     )
-    records, chip = late_log.parse_packet(data, 1.5)
+    records, chip, batch = late_log.parse_packet(data, 1.5)
+    assert batch == 41
     assert [r["seq"] for r in records] == [7, 8]
     assert records[0]["session"] == 4660 and records[1]["result"] == 17
     assert chip["chip_id"] == "001640ef" and chip["bus_hz"] == "40000000"
@@ -128,12 +129,15 @@ def test_frames_refused_for_other_reasons_are_skipped():
 
 def test_report_warns_about_dropped_records():
     assert "WARNING: the ESP dropped 4 records" in late_log.report(
-        late_log.analyze(stream(50), dropped=4)
+        late_log.analyze(stream(50), dropped=4, lost=0)
     )
     assert "dropped-record count is unknown" in late_log.report(
-        late_log.analyze(stream(50), dropped=None)
+        late_log.analyze(stream(50), dropped=None, lost=0)
     )
-    clean = late_log.report(late_log.analyze(stream(50), dropped=0))
+    assert "2 record packets were lost" in late_log.report(
+        late_log.analyze(stream(50), dropped=0, lost=2)
+    )
+    clean = late_log.report(late_log.analyze(stream(50), dropped=0, lost=0))
     assert "WARNING" not in clean and "| 200 ms | 0 | 0 | 0 |" in clean
 
 
@@ -142,3 +146,15 @@ def test_report_warns_when_the_replay_refuses_frames_with_the_check_off():
     records = stream(20) + stream(20, start_us=20 * 20_000)  # seq 1..20 twice
     text = late_log.report(late_log.analyze(records, dropped=0))
     assert "refused by the replay with the check off" in text
+
+
+def test_lost_batches_counts_the_gaps():
+    # #225 follow-up: 6 and 8 never arrived; duplicates count once.
+    assert late_log.lost_batches([4, 5, 7, 9, 9]) == 2
+    assert late_log.lost_batches([3, 4, 5]) == 0
+    assert late_log.lost_batches([]) == 0
+
+
+def test_a_packet_without_a_batch_line_has_no_batch():
+    _, chip, batch = late_log.parse_packet(b"F,001640ef,239,4194304,40000000,0\n", 0.0)
+    assert batch is None and chip["dropped"] == 0

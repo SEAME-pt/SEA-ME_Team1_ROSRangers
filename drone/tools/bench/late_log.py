@@ -11,7 +11,8 @@ and:
   python3 drone/tools/bench/late_log.py analyze results/s1-09_late_run1.csv
 
 `listen` writes the records to the CSV and the flash chip line, with the ESP's
-count of dropped records, to <csv>.chip.json next to it.
+count of dropped records and the record packets lost on the way (gaps in the
+batch numbers), to <csv>.info.json next to it.
 
 `analyze` replays the logged SETPOINTs through the Python twin of the ESP's
 Receiver at several bounds (Protocol Spec §4 rule 3a) and prints, per bound,
@@ -28,8 +29,9 @@ What the replay takes into account (#225 review):
 - Only frames the ESP judged on lateness or seq are replayed. A frame it
   refused for anything else (bad tag, wrong or no session, ...) is skipped,
   since the replay would wrongly accept it.
-- Records the ESP had to drop (its buffer was full) are reported, because the
-  counts are then incomplete.
+- Records the ESP had to drop (its buffer was full), and record packets lost
+  in the air (a gap in the batch numbers), are reported: the counts are then
+  incomplete, and a lost packet looks like a silence (#225 follow-up).
 """
 
 from __future__ import annotations
@@ -87,12 +89,17 @@ def int32(value: int) -> int:
 
 
 def parse_packet(data: bytes, pc_time_s: float):
-    """One UDP packet: R lines (SETPOINT records) and F lines (flash chip).
-    Returns (records, chip); bad lines are skipped."""
-    records, chip = [], None
+    """One UDP packet: a B line (its batch number) then R lines (SETPOINT
+    records), or an F line (flash chip). Returns (records, chip, batch); bad
+    lines are skipped, and batch is None for a packet without a B line."""
+    records = []
+    chip = None
+    batch = None
     for line in data.decode("ascii", "replace").splitlines():
         parts = line.split(",")
-        if parts[0] == "R" and len(parts) == 7:
+        if parts[0] == "B" and len(parts) == 2 and parts[1].isdigit():
+            batch = int(parts[1])
+        elif parts[0] == "R" and len(parts) == 7:
             try:
                 values = [int(v) for v in parts[1:]]
             except ValueError:
@@ -101,7 +108,17 @@ def parse_packet(data: bytes, pc_time_s: float):
         elif parts[0] == "F" and len(parts) == 6:
             chip = dict(zip(CHIP_FIELDS, parts[1:5]))
             chip["dropped"] = int(parts[5]) if parts[5].isdigit() else None
-    return records, chip
+    return records, chip, batch
+
+
+def lost_batches(numbers) -> int:
+    """Record packets lost on the way: the numbers missing between the first
+    and the last batch received. Example: 4, 5, 7, 9 received -> 6 and 8
+    missing -> 2. Duplicates count once."""
+    seen = set(numbers)
+    if not seen:
+        return 0
+    return (max(seen) - min(seen) + 1) - len(seen)
 
 
 def read_csv(path):
@@ -112,8 +129,8 @@ def read_csv(path):
         ]
 
 
-def chip_path(csv_path) -> pathlib.Path:
-    return pathlib.Path(f"{csv_path}.chip.json")
+def info_path(csv_path) -> pathlib.Path:
+    return pathlib.Path(f"{csv_path}.info.json")
 
 
 def arrival_order(records):
@@ -198,7 +215,7 @@ def lateness_ms(timed):
     return out
 
 
-def analyze(records, dropped=None):
+def analyze(records, dropped=None, lost=None):
     timed = arrival_order(records)
     late_ms = sorted(lateness_ms(timed))
     n = len(late_ms)
@@ -219,6 +236,7 @@ def analyze(records, dropped=None):
         "accepted_off": off["accepted"],
         "sessions": len({r["session"] for r in records}),
         "dropped": dropped,
+        "lost_batches": lost,
         "p50_ms": late_ms[n // 2] if n else 0.0,
         "p99_ms": late_ms[int(0.99 * (n - 1))] if n else 0.0,
         "max_ms": late_ms[-1] if n else 0.0,
@@ -232,12 +250,19 @@ def report(stats) -> str:
     lines = []
     if stats["dropped"] is None:
         lines.append(
-            "WARNING: no chip file, so the ESP's dropped-record count is unknown"
+            "WARNING: no info file, so the ESP's dropped-record count is unknown"
         )
     elif stats["dropped"] > 0:
         lines.append(
             f"WARNING: the ESP dropped {stats['dropped']} records (its buffer was full): "
             "the counts below are incomplete"
+        )
+    if stats["lost_batches"] is None:
+        lines.append("WARNING: no info file, so lost record packets are unknown")
+    elif stats["lost_batches"] > 0:
+        lines.append(
+            f"WARNING: {stats['lost_batches']} record packets were lost on the way: "
+            "their frames are missing, which can look like silences"
         )
     if stats["refused_off"] > 0:
         lines.append(
@@ -269,6 +294,7 @@ def cmd_listen(args):
     sock.bind(("", args.port))
     sock.settimeout(0.5)
     rows, chip, start = [], None, time.monotonic()
+    batches = []
     print(f"Listening on UDP {args.port}. Start ground_link.py now; Ctrl+C when done.")
     try:
         while args.duration is None or time.monotonic() - start < args.duration:
@@ -276,8 +302,12 @@ def cmd_listen(args):
                 data, _ = sock.recvfrom(4096)
             except socket.timeout:
                 continue
-            records, info = parse_packet(data, round(time.monotonic() - start, 3))
+            records, info, batch = parse_packet(
+                data, round(time.monotonic() - start, 3)
+            )
             rows += records
+            if batch is not None:
+                batches.append(batch)
             if info is None:
                 continue
             same_chip = chip is not None and all(
@@ -301,10 +331,17 @@ def cmd_listen(args):
         writer = csv.DictWriter(fh, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(rows)
-    if chip is not None:
-        chip_path(out).write_text(json.dumps(chip, indent=2) + "\n")
-    dropped = chip["dropped"] if chip else "unknown (no chip line)"
-    print(f"\nSaved {out}: {len(rows)} SETPOINT records; dropped by the ESP: {dropped}")
+    info = dict(chip or {})
+    info["dropped"] = chip["dropped"] if chip else None
+    info["batches_received"] = len(set(batches))
+    info["lost_batches"] = lost_batches(batches)
+    info_path(out).write_text(json.dumps(info, indent=2) + "\n")
+    dropped = info["dropped"] if chip else "unknown (no chip line)"
+    print(
+        f"\nSaved {out}: {len(rows)} SETPOINT records; dropped by the ESP: {dropped}; "
+        f"record packets lost on the way: {info['lost_batches']}"
+    )
+    print("Wait at least 1 s after `q` before Ctrl+C, so the last drop count arrives.")
     if not rows:
         print("no data: is env esp_late_log(_ota) on the ESP and a session streaming?")
 
@@ -315,9 +352,12 @@ def cmd_analyze(args):
     if not rows:
         raise SystemExit(f"No records in {args.csv}")
     dropped = None
-    if chip_path(path).exists():
-        dropped = json.loads(chip_path(path).read_text()).get("dropped")
-    print(report(analyze(rows, dropped)))
+    lost = None
+    if info_path(path).exists():
+        info = json.loads(info_path(path).read_text())
+        dropped = info.get("dropped")
+        lost = info.get("lost_batches")
+    print(report(analyze(rows, dropped, lost)))
 
 
 def main():
