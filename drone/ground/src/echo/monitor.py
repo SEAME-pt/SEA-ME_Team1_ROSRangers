@@ -461,12 +461,21 @@ def _flight_alerts(age, fields):
         red.append((RED, "FAILSAFE", ("flight.failsafe_output", "flight.esp_state")))
     if fields.get("fc_link_ok") is False:
         red.append((RED, "FC LINK LOST", ("flight.fc_link_ok",)))
-    if fields.get("fc_link_ok") == "unknown":
+    # esp_state null: no fresh state from the drone (guard.py blanks every
+    # drone field when the ESP goes silent), so the link to the ESP is lost.
+    # The FC link is unknown then only because of that: NO LINK, red, also
+    # next to the yellow alerts. The demo's and the sim's stand-ins always
+    # send an esp_state.
+    drone_silent = fields.get("esp_state") == "unknown"
+    if drone_silent:
+        red.append((RED, "NO LINK", ("flight.link_ok", "flight.esp_state")))
+    elif fields.get("fc_link_ok") == "unknown":
         yellow.append((YELLOW, "FC LINK UNKNOWN", ("flight.fc_link_ok",)))
     if fields.get("active") is False:
         yellow.append((YELLOW, "NOT ACTIVE", ("flight.active",)))
     # link_ok is false whenever one of the above is true (guard.py: active, no
-    # E-stop, FC link alive, fresh link). NO LINK only when none explains it.
+    # E-stop, FC link alive, fresh link). Otherwise NO LINK only when none
+    # explains it (a silent drone added it above already).
     link_ok = fields.get("link_ok", True)  # a stand-in may not send it
     if link_ok is not True and not red and not yellow:
         red.append((RED, "NO LINK", ("flight.link_ok",)))

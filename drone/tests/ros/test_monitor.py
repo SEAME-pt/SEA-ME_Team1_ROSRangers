@@ -485,12 +485,46 @@ class AlertTests(MonitorTestCase):
         self.assertEqual(self.alerts(), [(monitor.YELLOW, "NOT ACTIVE")])
 
     def test_no_link_only_when_nothing_else_explains_it(self):
-        self.flight(link_ok=False)  # e.g. the link to the ESP went stale
+        # link_ok false, every other field fine: nothing else says why. (A
+        # silent drone is test_no_link_when_the_drone_goes_silent.)
+        self.flight(link_ok=False)
         self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
         self.flight(link_ok=None)
         self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
         self.feed("/flight/state", string(dict(FLIGHT_STANDIN, link_ok=False)))
         self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
+
+    def test_no_link_when_the_drone_goes_silent(self):
+        """The ESP stops answering: guard.py flight_state() blanks every drone
+        field (esp_state, fc_link_ok, armed and mask null). Red NO LINK, not
+        the yellow FC LINK UNKNOWN, also next to the other alerts."""
+        silent = {
+            "link_ok": False,
+            "esp_state": None,
+            "override_active": False,
+            "mask": None,
+            "airborne": False,
+            "armed": None,
+            "failsafe_output": False,
+            "fc_link_ok": None,
+            "esp_rx_rejected": None,
+        }
+        self.flight(**silent)
+        self.assertEqual(self.alerts(), [(monitor.RED, "NO LINK")])
+        self.flight(**silent, active=False)
+        self.assertEqual(
+            self.alerts(),
+            [(monitor.RED, "NO LINK"), (monitor.YELLOW, "NOT ACTIVE")],
+        )
+        self.flight(**dict(silent, estop=True, estop_reason="service"))
+        self.assertEqual(
+            self.alerts(),
+            [(monitor.RED, "E-STOP: service"), (monitor.RED, "NO LINK")],
+        )
+        self.flight(**silent)
+        lines = monitor.table(self.monitor.snapshot(), colour=True)
+        esp_state = next(line for line in lines if "esp_state" in line)
+        self.assertTrue(esp_state.startswith(monitor.RED), esp_state)
 
     def test_severity_order(self):
         self.flight(

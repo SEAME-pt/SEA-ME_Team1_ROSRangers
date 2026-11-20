@@ -70,7 +70,7 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
 | `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
-| `echo` | the live table of the chain, and the `ros2` CLI (§5) |
+| `echo` | the live table (the drone and the chain, §4.6), and the `ros2` CLI (§5) |
 | `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
 | `px4`, `sim_smoke` | the simulation and its test, sim modes only ([[PX4 SITL Setup]] §7) |
 
@@ -81,6 +81,7 @@ Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.e
 | `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
 | `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
 | `real` (`make real`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+| `real-dry` (`make real-dry`) | the same as `real`, with `env/real.env` | `flight_interface`, loopback backend: no drone ([[05 Flight Interface Node]] §7.1) |
 
 **Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
 
@@ -169,7 +170,7 @@ VELOCITY  mission_node  /mission/velocity_target     live
 - **Title:** the mode: `DEMO: PRETEND /flight/state`, `REAL: DRONE`, `REAL-DRY: NO DRONE (loopback)` or `SIM: PX4 SITL`. `MODE ?` means it was started outside a mode (§8).
 - **Status:** `live` while the topic arrives, `STALE N s` when it stops (the last values stay), `waiting` before the first message, with the reason on the line below (e.g. no `/fc/*` in demo or sim).
 - **FLIGHT:** the drone's link and safety state from `/flight/state`; its publisher depends on the mode (§4.2). A value the drone doesn't know shows `unknown`.
-- **ATTITUDE:** whole degrees, signs as on `/fc/attitude` (REP-103): roll + right side down, pitch + nose down, yaw + left. Yaw counts from the start, not a compass ([[Architecture Document]] §2). Only from `flight_interface`'s ESP backend (`make real`), or `fc_telemetry` on the bench.
+- **ATTITUDE:** whole degrees, signs as on `/fc/attitude` (REP-103): roll + right side down, pitch + nose down, yaw + left. Yaw counts from `activate` (zero at the first sample after it), not a compass ([[Architecture Document]] §2). Only from `flight_interface`'s ESP backend (`make real`), or `fc_telemetry` on the bench.
 - **BATTERY:** pack voltage and the average per cell. It can't see single cells: the per-cell check before a session stays ([[Battery Log]]). Same sources as ATTITUDE.
 - **MISSION:** `why` appears only in `IDLE`: why the gestures do nothing.
 - **VELOCITY:** the target in words; its last line says which axes the ground owns (the mask), so "the gesture does nothing" reads as "yaw only".
@@ -180,12 +181,12 @@ VELOCITY  mission_node  /mission/velocity_target     live
 | :--- | :--- | :--- |
 | `<N> <topic> PUBLISHERS: <nodes>` | more than one node publishes `/flight/state`, `/mission/velocity_target` or `/fc/*`, which must have one | stop the extra node it names |
 | `E-STOP: <reason>` | `flight_interface` is in E-stop: nothing goes to the drone | find the cause in `logs/flight_interface/latest.log`; `~/reset_estop` ([[05 Flight Interface Node]] §5) |
-| `FAILSAFE` | the ESP sends its own failsafe output | the safety pilot flies; check the Wi-Fi and the ground |
+| `FAILSAFE` | the ESP sends its own failsafe output (sim: no PX4 data yet, or it stopped) | the safety pilot flies; check the Wi-Fi and the ground (sim: wait for PX4, [[PX4 SITL Setup]] §7) |
 | `FC LINK LOST` | the ESP gets no answer from the FC | the safety pilot flies; check the FC wiring and power |
-| `NO LINK` | the ground can't command the drone, and nothing above says why | check the ESP and the Wi-Fi |
+| `NO LINK` | no recent state from the ESP (Wi-Fi lost, ESP off), or the ground can't command the drone and nothing above says why | check the ESP and the Wi-Fi |
 | `NO /flight/state (N s)` / `BAD /flight/state` | its publisher stopped / sent something unreadable | check that publisher's log |
 | `LOW BATTERY: <V>/cell` | the pack has been at or below 3.5 V per cell for 2 s | land ([[Safety Rules]] #8) |
-| `FC LINK UNKNOWN` (yellow) | a new session, no FC health report yet | wait a second; if it stays, as `FC LINK LOST` |
+| `FC LINK UNKNOWN` (yellow) | the ESP answers, but no FC health report yet (a new session) | wait a second; if it stays, as `FC LINK LOST` |
 | `NOT ACTIVE` (yellow) | `flight_interface` is configured, not activated | `activate` ([[05 Flight Interface Node]] §7) |
 
 Without a terminal (piped, `docker compose run --rm -T echo`) it prints `mode: …` once, then one line per change, alerts first. Attitude and battery are left out there: they change on almost every message.
