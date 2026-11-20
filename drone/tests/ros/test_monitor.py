@@ -40,6 +40,7 @@ if ros_available():
     import rclpy
     from geometry_msgs.msg import TwistStamped, Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
+    from sensor_msgs.msg import BatteryState
     from std_msgs.msg import String
 
     sys.path.insert(0, str(MONITOR.parent))
@@ -129,6 +130,16 @@ def attitude(roll_deg=0.0, pitch_deg=0.0, yaw_deg=0.0):
     return msg
 
 
+def battery(voltage, cells=4, present=True):
+    """An /fc/battery message as flight_interface sends it: only the voltage
+    is measured, cell_voltage holds one NaN per cell (telemetry.py)."""
+    msg = BatteryState()
+    msg.voltage = voltage
+    msg.present = present
+    msg.cell_voltage = [float("nan")] * cells
+    return msg
+
+
 class MonitorTestCase(unittest.TestCase):
     """A Monitor on a FakeNode: messages go straight to its callbacks."""
 
@@ -151,6 +162,7 @@ class RowTests(MonitorTestCase):
             {
                 "/flight/state",
                 "/fc/attitude",
+                "/fc/battery",
                 "/gesture/raw",
                 "/gesture/intent",
                 "/mission/state",
@@ -162,9 +174,17 @@ class RowTests(MonitorTestCase):
         snapshot = self.monitor.snapshot()
         self.assertEqual(
             [name for name, _, _ in snapshot],
-            ["flight", "attitude", "gesture", "intent", "mission", "velocity"],
+            [
+                "flight",
+                "attitude",
+                "battery",
+                "gesture",
+                "intent",
+                "mission",
+                "velocity",
+            ],
         )
-        self.assertEqual([age for _, age, _ in snapshot], [None] * 6)
+        self.assertEqual([age for _, age, _ in snapshot], [None] * 7)
 
     def test_flight_row_from_flight_interface(self):
         self.feed("/flight/state", string(FLIGHT))
@@ -616,9 +636,126 @@ class AttitudeTests(MonitorTestCase):
         self.assertNotIn("roll", line)
 
 
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class BatteryTests(MonitorTestCase):
+    """Phase 4 of #227: /fc/battery and the 3.5 V/cell land warning."""
+
+    def line(self):
+        return self.rows()["battery"]["line"]
+
+    def alerts(self):
+        return [(c, text) for c, text, _ in monitor.alerts(self.monitor.snapshot())]
+
+    def hold_low(self, seconds):
+        """Pretend the pack went low `seconds` ago."""
+        self.monitor.low_since -= seconds
+
+    def test_pack_and_per_cell_voltage(self):
+        # 14.80 V / 4 cells = 3.70 V/cell
+        self.feed("/fc/battery", battery(14.8))
+        self.assertEqual(self.line(), "14.80 V    3.70 V/cell (4 cells)")
+
+    def test_no_battery_on_usb_power(self):
+        for msg in (battery(float("nan"), present=False), battery(float("nan"))):
+            with self.subTest(present=msg.present):
+                self.feed("/fc/battery", msg)
+                self.assertEqual(self.line(), "no battery (USB power)")
+                self.assertEqual(self.alerts(), [])
+
+    def test_no_cells_shows_the_total_only(self):
+        self.feed("/fc/battery", battery(14.8, cells=0))
+        self.assertEqual(self.line(), "14.80 V")
+        self.assertIsNone(self.monitor.low_since)
+
+    def test_at_the_land_level_for_the_hold_time_alerts(self):
+        self.feed("/fc/battery", battery(14.0))  # exactly 3.50 V/cell
+        self.assertEqual(self.alerts(), [])  # not yet: needs the hold time
+        self.hold_low(monitor.LOW_BATTERY_HOLD_SEC)
+        self.assertEqual(self.alerts(), [(monitor.RED, "LOW BATTERY: 3.50 V/cell")])
+
+    def test_above_the_land_level_never_alerts(self):
+        self.feed("/fc/battery", battery(14.04))  # 3.51 V/cell
+        self.assertIsNone(self.monitor.low_since)
+        self.assertEqual(self.alerts(), [])
+
+    def test_a_short_sag_does_not_alert(self):
+        """Sag under throttle: low for a moment, then back up."""
+        self.feed("/fc/battery", battery(13.8))  # 3.45 V/cell
+        self.hold_low(1.5)
+        self.feed("/fc/battery", battery(14.4))  # 3.60: the break restarts the hold
+        self.assertIsNone(self.monitor.low_since)
+        self.feed("/fc/battery", battery(13.8))
+        self.hold_low(1.5)
+        self.assertEqual(self.alerts(), [])
+
+    def test_severity_order_and_no_link_still_shown(self):
+        self.feed(
+            "/flight/state",
+            string(dict(FLIGHT, estop=True, estop_reason="service", link_ok=False)),
+        )
+        self.feed("/fc/battery", battery(13.8))
+        self.hold_low(3.0)
+        self.feed(
+            "/flight/state",
+            string(dict(FLIGHT, estop=True, estop_reason="service", active=False)),
+        )
+        self.assertEqual(
+            self.alerts(),
+            [
+                (monitor.RED, "E-STOP: service"),
+                (monitor.RED, "LOW BATTERY: 3.45 V/cell"),
+                (monitor.YELLOW, "NOT ACTIVE"),
+            ],
+        )
+        # LOW BATTERY does not explain a lost link: NO LINK stays.
+        self.feed("/flight/state", string(dict(FLIGHT, link_ok=False)))
+        self.assertEqual(
+            self.alerts(),
+            [(monitor.RED, "NO LINK"), (monitor.RED, "LOW BATTERY: 3.45 V/cell")],
+        )
+
+    def test_low_battery_without_flight_state(self):
+        """fc_telemetry on the bench has no /flight/state: the alert still shows."""
+        self.feed("/fc/battery", battery(13.8))
+        self.hold_low(3.0)
+        self.assertEqual(self.alerts(), [(monitor.RED, "LOW BATTERY: 3.45 V/cell")])
+
+    def test_stale_row_gives_no_alert(self):
+        self.feed("/fc/battery", battery(13.8))
+        self.hold_low(3.0)
+        when, fields = self.monitor.rows["battery"]
+        self.monitor.rows["battery"] = (when - 2.0, fields)
+        self.assertEqual(self.alerts(), [])
+
+    def test_one_line_under_the_heading_red_when_low(self):
+        self.feed("/fc/battery", battery(13.8))
+        lines = monitor.table(self.monitor.snapshot())
+        heading = lines.index(
+            next(line for line in lines if line.startswith("BATTERY"))
+        )
+        self.assertIn("/fc/battery", lines[heading])
+        self.assertEqual(lines[heading + 1], "    13.80 V    3.45 V/cell (4 cells)")
+        self.assertEqual(lines[heading + 2], "")  # per_cell, low_for not shown
+        self.hold_low(3.0)
+        lines = monitor.table(self.monitor.snapshot(), colour=True)
+        self.assertEqual(
+            lines[heading + 2],  # the alert line moved every row down by one
+            monitor.RED + "    13.80 V    3.45 V/cell (4 cells)" + monitor.RESET,
+        )
+
+    def test_not_in_the_one_line_output_but_the_alert_is(self):
+        self.feed("/fc/battery", battery(14.8))
+        self.assertNotIn("V/cell", monitor.one_line(self.monitor.snapshot()))
+        self.feed("/fc/battery", battery(13.8))
+        self.hold_low(3.0)
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertTrue(line.startswith("!! LOW BATTERY: 3.45 V/cell | "), line)
+        self.assertNotIn("13.80 V", line)
+
+
 class Publisher:
-    """Plays the nodes' side: publishes the chain's topics, /flight/state and
-    /fc/attitude at 20 Hz."""
+    """Plays the nodes' side: publishes the chain's topics, /flight/state,
+    /fc/attitude and /fc/battery at 20 Hz."""
 
     def __init__(self):
         self.node = rclpy.create_node("monitor_test_publisher")
@@ -635,9 +772,11 @@ class Publisher:
             TwistStamped, "/mission/velocity_target", 10
         )
         self.att = self.node.create_publisher(Vector3Stamped, "/fc/attitude", 10)
+        self.bat = self.node.create_publisher(BatteryState, "/fc/battery", 10)
         self.messages = {}
         self.velocity = None
         self.attitude = None  # (roll, pitch, yaw) in degrees
+        self.battery = None  # pack voltage, 4 cells
         self.executor = SingleThreadedExecutor()
         self.executor.add_node(self.node)
         self.node.create_timer(0.05, self._tick)
@@ -652,6 +791,8 @@ class Publisher:
             self.vel.publish(twist(*self.velocity))
         if self.attitude is not None:
             self.att.publish(attitude(*self.attitude))
+        if self.battery is not None:
+            self.bat.publish(battery(self.battery))
 
     def _spin(self):
         while not self.stop.is_set():
@@ -762,6 +903,7 @@ class ProgramTests(unittest.TestCase):
         self.publisher.messages["/mission/state"] = STATE
         self.publisher.velocity = (0.0, -0.3, 0.0, 0.0)
         self.publisher.attitude = (3.0, -10.0, -50.0)
+        self.publisher.battery = 14.8
         self.assertTrue(
             process.wait_for(
                 lambda out: "flight: link_ok=True esp_state=STREAMING armed=True" in out
@@ -782,15 +924,18 @@ class ProgramTests(unittest.TestCase):
         self.assertNotIn("\033", process.output)
         self.assertNotIn("Traceback", process.output)
         self.assertNotIn("roll:", process.output)  # attitude stays out (8A)
+        self.assertNotIn("V/cell", process.output)  # battery too (phase 4, 8A)
 
     def test_on_a_terminal_frames_only_when_something_changes(self):
         process = self.start(tty=True)
         self.publisher.messages["/gesture/intent"] = INTENT
         self.publisher.attitude = (3.0, -10.0, -50.0)  # same angles at 20 Hz
+        self.publisher.battery = 14.8  # same voltage at 20 Hz
         self.assertTrue(
             process.wait_for(
                 lambda out: "MOVE_RIGHT" in out
                 and "roll: +3 deg    pitch: -10 deg    yaw: -50 deg (from start)" in out
+                and "14.80 V    3.70 V/cell (4 cells)" in out
             ),
             process.output,
         )

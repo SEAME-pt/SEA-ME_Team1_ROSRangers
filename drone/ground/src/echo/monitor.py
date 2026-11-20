@@ -6,7 +6,8 @@
 Rows: the drone's link and safety state (/flight/state, from flight_interface,
 or the demo's / sim's stand-in), the drone's attitude (/fc/attitude, whole
 degrees, the topic's REP-103 signs; only from flight_interface's ESP backend
-in make real, or fc_telemetry on the bench), the
+in make real, or fc_telemetry on the bench), its battery (/fc/battery: pack
+voltage and the average per cell; same sources), the
 gesture gesture_node sees (/gesture/raw), the intent intent_node
 sends (/gesture/intent), mission_node's mode (/mission/state) and its velocity
 target (/mission/velocity_target, body frame FLU). A row is "live" while its
@@ -14,7 +15,8 @@ topic keeps arriving and turns "STALE" when it stops. The screen is only
 redrawn when the text changes, so it does not flicker.
 
 Alerts from /flight/state (E-stop, failsafe, lost link, FC link, the topic
-stopping) go on a line under the title, marked "!!": red for a fault, yellow
+stopping) and /fc/battery (LOW BATTERY: at or below 3.5 V/cell for 2 s) go
+on a line under the title, marked "!!": red for a fault, yellow
 for "not OK yet" (FC link unknown, node not activated). Colour only on a
 terminal; the "!!" text is always there.
 
@@ -32,10 +34,19 @@ import time
 import rclpy
 from geometry_msgs.msg import TwistStamped, Vector3Stamped
 from rclpy.signals import SignalHandlerOptions
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 REFRESH_SEC = 0.1
 STALE_SEC = 1.0  # every topic here arrives at 2 Hz or faster
+
+# Battery: land at 3.5 V per cell (Safety Rules #8, Battery Log §1). The alert
+# needs LOW_BATTERY_HOLD_SEC below it without a break, so the short sag under
+# throttle does not flash it. Betaflight's own warnings and the radio stay
+# authoritative; the table only adds information. It sees the pack voltage only,
+# never single cells, so it does not replace the per-cell check (REQ-PWR-001).
+LAND_PER_CELL_V = 3.5
+LOW_BATTERY_HOLD_SEC = 2.0
 
 # ANSI: clear the screen and hide the cursor / show it again, cursor home,
 # clear to end of line / screen. No alternate screen: `docker compose up` stops
@@ -132,8 +143,10 @@ class Monitor:
     def __init__(self, node):
         self.rows = {}  # name -> (time received, {field: text})
         self.lock = threading.Lock()
+        self.low_since = None  # when the battery went to or below the land level
         node.create_subscription(String, "/flight/state", self._flight, 10)
         node.create_subscription(Vector3Stamped, "/fc/attitude", self._attitude, 10)
+        node.create_subscription(BatteryState, "/fc/battery", self._battery, 10)
         node.create_subscription(String, "/gesture/raw", self._raw, 10)
         node.create_subscription(String, "/gesture/intent", self._intent, 10)
         node.create_subscription(String, "/mission/state", self._state, 10)
@@ -158,6 +171,29 @@ class Monitor:
             f"yaw: {_degrees(v.z)} (from start)"
         )
         self._set("attitude", {"angles": angles})
+
+    def _battery(self, msg):
+        # Only msg.voltage is measured; cell_voltage holds one NaN per cell
+        # (telemetry.py), so the cell count is its length and the per-cell
+        # voltage the average: 14.80 V / 4 cells = 3.70 V/cell.
+        voltage = msg.voltage
+        cells = len(msg.cell_voltage)
+        per_cell = None
+        if not msg.present or math.isnan(voltage):
+            line = "no battery (USB power)"
+        elif cells == 0:
+            line = f"{voltage:.2f} V"
+        else:
+            per_cell = voltage / cells
+            line = f"{voltage:.2f} V    {per_cell:.2f} V/cell ({cells} cells)"
+        now = time.monotonic()
+        with self.lock:
+            low = per_cell is not None and per_cell <= LAND_PER_CELL_V
+            if not low:
+                self.low_since = None
+            elif self.low_since is None:
+                self.low_since = now
+            self.rows["battery"] = (now, {"line": line, "per_cell": per_cell})
 
     def _raw(self, msg):
         d = _json(msg)
@@ -213,10 +249,14 @@ class Monitor:
         now = time.monotonic()
         with self.lock:
             rows = dict(self.rows)
+            low_since = self.low_since
         out = []
         for name in ROW_ORDER:
             if name in rows:
                 t, fields = rows[name]
+                if name == "battery" and low_since is not None:
+                    # How long it has been at or below the land level (not shown).
+                    fields = dict(fields, low_for=now - low_since)
                 out.append(
                     (name, now - t, {k: v for k, v in fields.items() if v is not None})
                 )
@@ -226,11 +266,22 @@ class Monitor:
 
 
 # The drone first: it is what the pilot and the audience look at first.
-ROW_ORDER = ("flight", "attitude", "gesture", "intent", "mission", "velocity")
+ROW_ORDER = (
+    "flight",
+    "attitude",
+    "battery",
+    "gesture",
+    "intent",
+    "mission",
+    "velocity",
+)
+# The drone's rows that print one line of text, not "key  value" lines.
+ONE_TEXT_LINE = {"attitude": "angles", "battery": "line"}
 
 SOURCES = {
     "flight": "/flight/state",  # the publisher depends on the mode
     "attitude": "/fc/attitude",
+    "battery": "/fc/battery",
     "gesture": "gesture_node  /gesture/raw",
     "intent": "intent_node   /gesture/intent",
     "mission": "mission_node  /mission/state",
@@ -239,47 +290,69 @@ SOURCES = {
 
 
 def alerts(rows):
-    """The FLIGHT row's alerts: [(colour, text, flagged field names)], most
-    severe first. RED is a fault; YELLOW is not OK yet, but expected (unknown
-    FC link at the start of a session, node not activated yet).
+    """[(colour, text, flagged "row.field" names)], most severe first: the
+    FLIGHT row's red alerts, then LOW BATTERY, then FLIGHT's yellow ones. RED
+    is a fault; YELLOW is not OK yet, but expected (unknown FC link at the start
+    of a session, node not activated yet)."""
+    by_name = {name: (age, fields) for name, age, fields in rows}
+    red, yellow = _flight_alerts(*by_name["flight"])
+    red = red + _battery_alerts(*by_name["battery"])
+    return red + yellow
+
+
+def _battery_alerts(age, fields):
+    """LOW BATTERY once the pack has been at or below LAND_PER_CELL_V for
+    LOW_BATTERY_HOLD_SEC. None from a STALE row: the old value is no longer
+    the drone's (FC LINK LOST on the FLIGHT row says why)."""
+    if age is None or age > STALE_SEC:
+        return []
+    low_for = fields.get("low_for")
+    if low_for is None or low_for < LOW_BATTERY_HOLD_SEC:
+        return []
+    text = f"LOW BATTERY: {fields['per_cell']:.2f} V/cell"
+    return [(RED, text, ("battery.line",))]
+
+
+def _flight_alerts(age, fields):
+    """(red, yellow) from the FLIGHT row.
 
     Nothing before the first /flight/state ("waiting" is the normal start of
     make real). Once it stops (STALE), only that alert: the old values on the
     row are no longer the drone's state.
     """
-    flight = next(row for row in rows if row[0] == "flight")
-    _, age, fields = flight
     if age is None:
-        return []
+        return [], []
     if age > STALE_SEC:
-        return [(RED, f"NO /flight/state ({age:.0f} s)", ())]
+        return [(RED, f"NO /flight/state ({age:.0f} s)", ())], []
     if "bad" in fields:
-        return [(RED, "BAD /flight/state", ("bad",))]
+        return [(RED, "BAD /flight/state", ("flight.bad",))], []
 
     red = []
     yellow = []
     if fields.get("estop") is True:
         reason = fields.get("estop_reason")
         if reason:
-            red.append((RED, f"E-STOP: {reason}", ("estop", "estop_reason")))
+            red.append(
+                (RED, f"E-STOP: {reason}", ("flight.estop", "flight.estop_reason"))
+            )
         else:
-            red.append((RED, "E-STOP", ("estop",)))
+            red.append((RED, "E-STOP", ("flight.estop",)))
     failsafe = fields.get("failsafe_output") is True
     if failsafe or fields.get("esp_state") == "LINK_FAILSAFE":
-        red.append((RED, "FAILSAFE", ("failsafe_output", "esp_state")))
+        red.append((RED, "FAILSAFE", ("flight.failsafe_output", "flight.esp_state")))
     if fields.get("fc_link_ok") is False:
-        red.append((RED, "FC LINK LOST", ("fc_link_ok",)))
+        red.append((RED, "FC LINK LOST", ("flight.fc_link_ok",)))
     if fields.get("fc_link_ok") == "unknown":
-        yellow.append((YELLOW, "FC LINK UNKNOWN", ("fc_link_ok",)))
+        yellow.append((YELLOW, "FC LINK UNKNOWN", ("flight.fc_link_ok",)))
     if fields.get("active") is False:
-        yellow.append((YELLOW, "NOT ACTIVE", ("active",)))
+        yellow.append((YELLOW, "NOT ACTIVE", ("flight.active",)))
     # link_ok is false whenever one of the above is true (guard.py: active, no
     # E-stop, FC link alive, fresh link). NO LINK only when none explains it.
     link_ok = fields.get("link_ok", True)  # a stand-in may not send it
     if link_ok is not True and not red and not yellow:
-        red.append((RED, "NO LINK", ("link_ok",)))
-    # Severity order: E-STOP, FAILSAFE, FC LINK LOST / NO LINK, then yellow.
-    return red + yellow
+        red.append((RED, "NO LINK", ("flight.link_ok",)))
+    # Severity order: E-STOP, FAILSAFE, FC LINK LOST / NO LINK.
+    return red, yellow
 
 
 def _paint(text, colour, on):
@@ -298,7 +371,7 @@ def table(rows, colour=False):
         marks = [_paint(f"!! {text}", c, colour) for c, text, _ in found]
         lines.append("  ".join(marks))
     lines.append("")
-    flagged = {}  # field -> colour; the most severe alert comes first
+    flagged = {}  # "row.field" -> colour; the most severe alert comes first
     for c, _, keys in found:
         for key in keys:
             flagged.setdefault(key, c)
@@ -311,12 +384,15 @@ def table(rows, colour=False):
             status = "live"  # not the age: it would change, and redraw, every frame
         lines.append(f"{name.upper():9} {SOURCES[name]:42} {status}")
         for key, value in fields.items():
-            if name == "attitude":
-                line = f"    {value}"  # roll, pitch and yaw on one line
+            if name in ONE_TEXT_LINE:
+                if key != ONE_TEXT_LINE[name]:
+                    continue  # per_cell, low_for: for the alerts, not shown
+                line = f"    {value}"
             else:
                 line = f"    {key:11} {value}"
-            if name == "flight" and key in flagged:
-                line = _paint(line, flagged[key], colour)
+            flag = f"{name}.{key}"
+            if flag in flagged:
+                line = _paint(line, flagged[flag], colour)
             lines.append(line)
         lines.append("")
     return lines
@@ -328,9 +404,10 @@ def one_line(rows):
     if found:
         parts.append(" ".join(f"!! {text}" for _, text, _ in found))
     for name, age, fields in rows:
-        if name == "attitude":
-            # Changes on almost every message: it would print up to 10 lines a
-            # second. Record a rosbag to analyse the attitude instead.
+        if name in ("attitude", "battery"):
+            # Change on almost every message (angles, the voltage's last digit):
+            # up to 10 lines a second. LOW BATTERY still shows in the "!!" part.
+            # Record a rosbag to analyse them instead.
             continue
         if age is None or age > STALE_SEC:
             parts.append(f"{name}: -")
