@@ -5,6 +5,8 @@ import pathlib
 import socket
 import sys
 
+import pytest
+
 sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
 )
@@ -172,16 +174,18 @@ def test_gen_psk_creates_a_private_file_and_never_replaces(tmp_path):
 
 
 def test_bad_psks_are_refused(tmp_path, monkeypatch):
-    monkeypatch.delenv("SEAME_PSK", raising=False)
-    for text in ("ab" * 31, "ab" * 33, "zz" * 32, " ab" * 21 + "a"):
-        try:
-            ground_link.parse_psk(text)
-            raise AssertionError(f"accepted {text!r}")
-        except SystemExit:
-            pass
-    assert ground_link.parse_psk(" " + "AB" * 32 + "\n") == bytes([0xAB] * 32)
+    # Through load_psk with SEAME_PSK set (#230 review: parse_psk is gone).
+    # The secrets file path doesn't exist, so a refused SEAME_PSK can never
+    # fall back to the real one in $HOME.
+    none = tmp_path / "none.json"
+    for text in ("ab" * 31, "ab" * 33, "zz" * 32, " ab" * 21 + "a", ""):
+        monkeypatch.setenv("SEAME_PSK", text)
+        with pytest.raises(SystemExit, match="No valid PSK"):
+            ground_link.load_psk(none)
+    monkeypatch.setenv("SEAME_PSK", " " + "AB" * 32 + "\n")
+    assert ground_link.load_psk(none) == bytes([0xAB] * 32)
     monkeypatch.setenv("SEAME_PSK", "cd" * 32)
-    assert ground_link.load_psk(tmp_path / "none.json") == bytes([0xCD] * 32)
+    assert ground_link.load_psk(none) == bytes([0xCD] * 32)
 
 
 def test_when_a_new_session_is_needed():
@@ -408,3 +412,28 @@ def test_state_line_shows_override_active():
     assert "override=UNKNOWN " in line(2)
     assert "override=?7 " in line(7)  # a value from a newer ESP is never ON
     assert "rx_rejected=3" in line(0)
+
+
+def test_ground_session_methods_still_work_on_a_ground_link():
+    # #229: GroundLink is a GroundSession; the parent's own methods call
+    # self.tcp() and self.setpoint(), which GroundLink overrides. Every frame
+    # they build must still pass the ESP's receivers.
+    link = open_link()
+    tcp = Receiver(Role.ESP, Transport.TCP)
+    udp = Receiver(Role.ESP, Transport.UDP)
+    tcp.start_session(SESSION, link.keys.ground_to_esp)
+    udp.start_session(SESSION, link.keys.ground_to_esp)
+    for frame in (link.arm(8), link.resume_request(0.0), link.bye(0.0)):
+        assert is_accepted(tcp.receive(frame)[0])
+    assert is_accepted(udp.receive(link.neutral())[0])
+    assert isinstance(link, ground_link.ground.GroundSession)
+
+
+def test_a_corrupt_secrets_file_is_named_not_reported_as_no_psk(tmp_path, monkeypatch):
+    # #229 review: sd_protocol.ground.load_psk ignores bad JSON; the tool must
+    # still say what's wrong instead of suggesting --gen-psk, which fails on it.
+    monkeypatch.delenv("SEAME_PSK", raising=False)
+    path = tmp_path / "secrets.json"
+    path.write_text("{not json")
+    with pytest.raises(SystemExit, match="is not valid JSON"):
+        ground_link.load_psk(path)
