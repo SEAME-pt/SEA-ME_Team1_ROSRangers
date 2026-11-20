@@ -258,3 +258,26 @@ def test_hello_ack_without_our_hello_is_refused():
     s = GroundSession(PSK)
     frame, _ = esp_ack(GroundSession(PSK))  # another session's HELLO
     assert not s.take_ack(frame) and not s.is_open
+
+
+def test_take_ack_can_be_given_the_arrival_time():
+    # #229: a caller that knows when the frame arrived (a test, a log) passes
+    # it; the 100 ms bound is then measured to that time.
+    clock = FakeClock()
+    s = GroundSession(PSK, clock_us=clock)
+    frame, _ = esp_ack(s)
+    sent = s.hello_sent_us
+    assert not s.take_ack(frame, rx_us=sent + 100_001) and s.late_acks == 1
+    assert s.take_ack(frame, rx_us=sent + 100_000)
+
+
+def test_take_ack_keeps_the_esps_firmware_name():
+    s = GroundSession(PSK)
+    assert s.fw_version == ""
+    s.hello(0.0)
+    ack = HelloAck(SID, ESP_NONCE, b"sd-gw 0.2.0L")
+    frame = encode_frame(
+        Header(MsgType.HELLO_ACK, session_id=SID, seq=1), encode_hello_ack(ack), PSK
+    )
+    assert s.take_ack(frame)
+    assert s.fw_version == "sd-gw 0.2.0L"
