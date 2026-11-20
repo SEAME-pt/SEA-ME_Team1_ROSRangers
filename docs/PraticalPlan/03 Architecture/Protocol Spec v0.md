@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.6.1
+version: 1.6.2
 date: 2026-10-12
-updated: 2026-11-16
+updated: 2026-11-20
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.6.1 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
+> [!success] Status: ACCEPTED v1.6.2 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -231,7 +231,7 @@ Stored in `drone/tests/vectors/*.json` in the software repo (format in `drone/te
 
 For example, group 3 `wrong_magic` is the reference `SETPOINT` with `SE` instead of `SD`. The bytes read: magic `53 45`, version `01`, type `60`, flags `00`, reserved `00`, `payload_len` `0a 00` (10), `session_id` `78 56 34 12`, `seq` `07 00 00 00`, `t_send_us` `e8 03 00 00`, then 10 payload bytes and the 8-byte tag. The tag is recomputed, so the magic is the only fault:
 
-```json
+```jsonc
 // excerpt: group 3, wrong_magic (key line left out)
 {
   "name": "wrong_magic",
@@ -377,6 +377,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | 2026-11-16 | 1.5 | Late check (§4 rule 3a, #204, safety pilot's decision on spike #171): `reject:late` for `SETPOINT`, `ARM_CONTROL_REQUEST` and `RESUME_REQUEST` more than 200 ms (provisional) late against the session's offset (seeded from `HELLO`, 200 ppm drift). The ground's `t_send_us` is `CLOCK_MONOTONIC_RAW` (§1). Same bytes on the wire; a frame held back is now refused. Vectors `late_setpoint_rejected`, `late_across_both_wraps`, `late_held_40_min`, `late_drift_allowance_past_71_min` (§6, group 5). Every ground client drops a `HELLO_ACK` later than 100 ms and starts a new handshake (REQ-SAF-024): `sd_protocol.ground` (so `flight_interface`'s ESP backend) and `drone/tools/bench/ground_link.py`. The drift allowance's time is 64-bit (no wrap after 71.6 min), `late_bound_ms` is clamped to 10 s (#205 review). (v1.5 was planned for the `override_active` values of #176, PR #198; they become v1.6.) |
 | 2026-11-19 | 1.6 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
 | 2026-11-19 | 1.6.1 | No wire change. §7.5 states when a `rx_rejected` wrap can be missed and why a replayed `STATE` can't fake one; the ground restarts the total after a `STATE` gap longer than 3 s, so a missed wrap needs 65,536 rejects within 3 s (#149, PR #223, BrunoBMFT's and ThiagoTEP's reviews). |
+| 2026-11-20 | 1.6.2 | No wire change. Glossary: `LINK_FAILSAFE` is left through `RESUME_REQUEST`, a confirmed new session or a `BYE`, as in [[ESP Link State Machine]] §1 and §1.1 (it said "only `RESUME_REQUEST`"). Code excerpts from `frame.hpp` and `3_header.json` added in §1, §3 and §6 (#214). |
 
 ## 9. Glossary
 
