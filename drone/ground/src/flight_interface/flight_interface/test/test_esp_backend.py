@@ -190,6 +190,37 @@ def test_no_gateway_is_an_error_not_an_exception(fake):
 
 
 # ---------- A5: reconnect, never ARM ----------
+def test_a_late_hello_ack_is_dropped_and_a_new_handshake_follows(
+    clock, fake, backend, monkeypatch
+):
+    # REQ-SAF-024 (#204): the first HELLO_ACK comes 150 ms after the HELLO (a
+    # fake clock), so no session opens; the next attempt, with a new
+    # GroundSession and so a new nonce, answers in time and opens one.
+    from sd_protocol.ground import GroundSession
+
+    made = []
+
+    def session(psk):
+        step_us = 150_000 if not made else 1  # per clock read
+        now_us = [0]
+
+        def clock_us():
+            now_us[0] += step_us
+            return now_us[0]
+
+        made.append(GroundSession(psk, clock_us=clock_us))
+        return made[-1]
+
+    monkeypatch.setattr(esp_backend, "GroundSession", session)
+    clock.run(0.3)
+    assert not backend.session_open and backend.late_hello_acks == 1
+    assert "REQ-SAF-024" in backend.last_error
+    clock.run(RECONNECT_EVERY + 0.5)
+    assert backend.session_open and fake.hellos == 2
+    assert made[0].nonce != made[1].nonce  # a nonce never repeats (spec §1)
+    assert fake.arm_requests == 0
+
+
 def test_reconnects_after_an_esp_restart_without_arm(clock, fake, backend):
     clock.run(0.3)
     first = backend.session_id
@@ -483,6 +514,42 @@ def test_the_esps_rx_rejected_wraps_are_counted_per_session(clock, fake, backend
     assert clock.states[-1]["esp_rx_rejected"] == 3
 
 
+def test_a_long_state_gap_restarts_the_esps_reject_total(clock, fake, backend):
+    """#223 review (BrunoBMFT): an inactive node keeps its session with no
+    STATE for any length of time, and meanwhile the ESP's u16 count can wrap
+    unseen. Total 65,541 (one wrap counted), then 70,000 rejects during a 4 s
+    gap: the raw value comes back as 4,469, higher than 5, so no new wrap is
+    seen. Without the restart the total would read 70,005, silently 65,536 too
+    low (the true total is 135,541). After a gap longer than RECONNECT_AFTER
+    the total restarts from the raw value instead, and wraps are counted from
+    there."""
+    fake.rx_rejected = 65_530
+    clock.run(0.2)
+    fake.rx_rejected = 5  # one wrap
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+    fake.send_state = False
+    clock.run(RECONNECT_AFTER + 1.0, send=False)  # quiet node, session kept
+    assert backend.session_open
+    fake.rx_rejected = (5 + 70_000) % 65_536  # 4,469
+    fake.send_state = True
+    assert clock.run(0.2)["esp_rx_rejected"] == 4_469  # restarted, not 70,005
+    fake.rx_rejected = 65_530
+    clock.run(0.2)
+    fake.rx_rejected = 5  # a wrap after the restart is still counted
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+
+
+def test_a_short_state_gap_keeps_counting_wraps(clock, fake, backend):
+    # 2 s without STATE (under RECONNECT_AFTER): the total goes on, wraps counted.
+    fake.rx_rejected = 65_530
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_530
+    fake.send_state = False
+    clock.run(2.0)
+    fake.rx_rejected = 5
+    fake.send_state = True
+    assert clock.run(0.2)["esp_rx_rejected"] == 65_536 + 5
+
+
 def test_arm_refused_fc_not_answering_is_kept_raw(clock, fake, backend):
     """#179 D2: ARM_CONTROL_ACK result 4. This node never sends ARM; a stray
     ACK is recorded, not raised."""
@@ -503,6 +570,15 @@ def test_the_esp_wants_1_s_of_streaming_before_arm(
     assert backend.arm_control(8, clock.now, backend.session_id)
     clock.run(0.1)
     assert backend.last_ack == ("ARM_CONTROL_ACK", result)
+
+
+@pytest.mark.parametrize("raw, on", [(0, False), (1, True), (2, False), (7, False)])
+def test_override_active_is_on_only_for_1(clock, fake, backend, raw, on):
+    # Protocol Spec §3.1 (#176): 2 = unknown (no box list, no MSP OVERRIDE box,
+    # or an old MSP_STATUS) and any newer value must never read as "on".
+    fake.override_value = raw
+    state = clock.run(0.3)
+    assert state["override_active"] is on
 
 
 # ---------- A4: ARM on the operator's request; B1: the mask from the ACK ----------

@@ -3,7 +3,7 @@ title: MSP Cheat Sheet
 type: reference
 status: active
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-16
 project: SEA autonomous drone
 tags:
   - msp
@@ -46,10 +46,13 @@ tags:
 | 108 | MSP_ATTITUDE | roll/pitch (0.1°), heading (°) | yes |
 | 109 | MSP_ALTITUDE | baro altitude (if the baro is detected) | no |
 | 110 | MSP_ANALOG | battery voltage | yes |
+| 119 | MSP_BOXIDS | permanent ID of each active box, in `MSP_STATUS` bit order, 32 per page (optional u8 page) | yes, read-only, ESP-originated (#176, accepted 2026-11-16) |
 | 150 | MSP_STATUS_EX | extended status | no |
 | 200 | MSP_SET_RAW_RC | setpoints (AETR order) | yes |
 
 The gateway (#101) can build a request only for the IDs marked **yes** (`sd::msp::encode_request`); every other ID, read or write, is refused. `MSP_SET_ARMING_DISABLED` (99) is not on that list on purpose: #102 sends it through a separate internal encoder, only for the ADR-024 lock. **2026-11-09:** done, `sd::msp::encode_set_arming_disabled()`, called only by `sd::ota_lock()` / `sd::ota_release()`.
+
+**2026-11-16 (#176, accepted by the team the same day):** `MSP_BOXIDS` (119) is added as a read. `sd::FcLink` polls it at 1 Hz and looks for MSP OVERRIDE (permanent ID 50). Its position in the list is its bit in the `MSP_STATUS` flight mode flags (4 bytes, then the extra bytes), and that gives `STATE.override_active` (Protocol Spec §3.1). Recorded on Betaflight 2026.6.2 SITL: with `msp_override_channels_mask = 8`, box 50 is entry 22 of 27, and with the mode on, `MSP_STATUS` sets bit 22. **With mask 0, Betaflight leaves the box out**, so `override_active` reads 2 (unknown) until the mask is set ([[ADR-010 MSP Override|ADR-010]]). The list is paged at 32 boxes; the ESP reads page 1 and on only when page 0 is full. Like every read, the network can never trigger it.
 
 > [!danger] Never forwarded from the network (gateway allow-list)
 > `MSP_SET_MOTOR` (214, spins motors when disarmed), `MSP_EEPROM_WRITE` (250), `MSP_REBOOT` (68), and every other `MSP_SET_*` except 200. `MSP_SET_ARMING_DISABLED` (99) is sent only by the ESP itself, for the OTA lock ([[ADR-024 OTA Firmware Updates|ADR-024]]), never forwarded. The gateway (#101) enforces this list in code: `sd::msp::encode_request` refuses every other command. The week-2 transparent-bridge spike forwards all of these: use it only with props off ([[Safety Rules]] #13). Network isolation is still an open item ([[Safety Rules]] §2).
@@ -64,6 +67,7 @@ The gateway (#101) can build a request only for the IDs marked **yes** (`sd::msp
 | --- | --- |
 | **API** | Application Programming Interface: a defined way for software components to communicate. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
+| **Box** | One flight mode in Betaflight (ARM, ANGLE, MSP OVERRIDE, …). Each has a fixed permanent ID (MSP OVERRIDE = 50); `MSP_BOXIDS` lists the active ones, in the order of their bits in `MSP_STATUS`. |
 | **Allow-list** | The only MSP commands the gateway may send to the FC (§3, "Gateway may send"); everything else is refused in code. |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101) and talks MSP to the FC itself. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |

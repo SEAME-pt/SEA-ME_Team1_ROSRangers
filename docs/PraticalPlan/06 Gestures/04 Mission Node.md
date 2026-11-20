@@ -3,7 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -53,7 +53,7 @@ flowchart LR
 | `mission_logic.py` | all the rules of §5, no ROS imports, so they are unit-tested anywhere |
 | `mission_node.py` | the ROS wrapper: subscriptions, the 20 Hz timer, publishers, logs |
 | `fake_flight_state`, `fake_intent` | pretend inputs for testing without a drone or `intent_node` (§7) |
-| `launch/` | `mission_demo.launch.py` (the node with pretend inputs) and `mission_with_gestures.launch.py` (with `intent_node`, used by the CI tests) |
+| `launch/` | `mission_demo.launch.py` (the node with pretend inputs, for testing it alone). The node with the rest of the chain: `ground_bringup`'s mode launch files (`demo.launch.py`, `real.launch.py`, `sim.launch.py`) |
 
 ---
 
@@ -211,7 +211,7 @@ The velocity controller turns the target into attitude setpoints, and `flight_in
 
 ### 7.1 `fake_flight_state`
 
-The `flight` service. Publishes `/flight/state` at 10 Hz; every field is a parameter you can change live with `ros2 param set /fake_flight_state <field> <value>` ([[01 ROS2 Nodes Installation|01]] §5): `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`. `publish false` simulates a dead `flight_interface`; `raw` sends any text to try bad messages. Each fault drops the node to `IDLE`.
+The `fake_flight_state` service (demo mode only). Publishes `/flight/state` at 10 Hz; every field is a parameter you can change live with `ros2 param set /fake_flight_state <field> <value>` ([[01 ROS2 Nodes Installation|01]] §5): `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`. `publish false` simulates a dead `flight_interface`; `raw` sends any text to try bad messages. Each fault drops the node to `IDLE`.
 
 ### 7.2 `fake_intent`
 
@@ -241,7 +241,9 @@ Starting the services, the CLI and the logs: [[01 ROS2 Nodes Installation|01]] �
 
 ### 8.1 With the webcam
 
-`make` starts `mission` and `flight` with the rest of the chain. `MASK=15 make` gives the ground throttle; `AIRBORNE=false make` puts the pretend drone on the ground.
+`make` starts `mission` and `fake_flight_state` with the rest of the chain. The pretend drone's settings are in `drone/ground/src/bringup/ground_bringup/config/demo.yaml`: `mask: 15` gives the ground throttle, `airborne: false` puts it on the ground. Edit the file, then `docker compose restart fake_flight_state` (no rebuild).
+
+Without Docker, the same mode: `ros2 launch ground_bringup demo.launch.py` (`camera:=false` leaves out `gesture_node`).
 
 ### 8.2 On its own: the demo
 
@@ -249,11 +251,11 @@ Starting the services, the CLI and the logs: [[01 ROS2 Nodes Installation|01]] �
 docker compose run --rm mission ros2 launch mission_node mission_demo.launch.py   # mask:=15, loop:=true also work
 ```
 
-Compare the output with the table in §7.2. Don't run it next to the `mission` and `flight` services.
+Compare the output with the table in §7.2. Don't run it next to the `mission` and `fake_flight_state` services.
 
 ### 8.3 With `intent_node`, no camera
 
-`docker compose up -d --build intent mission flight`, then publish gestures on `/gesture/raw` with `ros2 topic pub` (one at a time, `null` first so the engage counts).
+`docker compose up -d --build intent mission fake_flight_state`, then publish gestures on `/gesture/raw` with `ros2 topic pub` (one at a time, `null` first so the engage counts).
 
 ### 8.4 In the simulator
 
@@ -265,7 +267,7 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 
 ### 9.1 Automated tests
 
-`make unit`, `make smoke` and CI ([[01 ROS2 Nodes Installation|01]] §7).
+`make test`, `make smoke` and CI ([[01 ROS2 Nodes Installation|01]] §7).
 
 ### 9.2 Test files
 
@@ -277,7 +279,7 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 | :--- | :--- |
 | The demo (§8.2) | modes and velocities as in §7.2 |
 | `ros2 param set /fake_flight_state override_active false` | `IDLE` and zero at once |
-| `docker compose stop flight` | `IDLE` within 0.5 s |
+| `docker compose stop fake_flight_state` | `IDLE` within 0.5 s |
 | Real gestures (§8.1), each held 1 s ([[00 Gesture Pipeline]] §3) | mode and velocity follow §5 within about 0.5 s |
 
 Attach `logs/intent/latest.log` and `logs/mission/latest.log` of a webcam run to a Test session issue.
@@ -286,10 +288,10 @@ Attach `logs/intent/latest.log` and `logs/mission/latest.log` of a webcam run to
 
 | Symptom | Fix |
 | :--- | :--- |
-| Mode stays `IDLE` / `no_flight_state` | start the `flight` service |
+| Mode stays `IDLE` / `no_flight_state` | start the `fake_flight_state` service |
 | Mode stays `WAITING` with both open hands | lower both arms, then show them again (§5.1) |
 | Gestures do nothing, mode `LOCKED` | hold both fists 1 s to unlock |
-| `CLIMB_UP` does nothing | expected with mask 11; use `MASK=15 make` |
+| `CLIMB_UP` does nothing | expected with mask 11; set `mask: 15` in `config/demo.yaml` (§8.1) |
 | Intents jump between two values | `fake_intent` and `intent_node` both running: stop one |
 
 ---
@@ -335,7 +337,6 @@ Registered in [[Requirements]] (status `draft`).
 - [ ] **Who publishes `/flight/state`**, and how `airborne` is decided.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
 - [ ] **Mission and controller in one node?** [[System Overview]] draws them as one box.
-- [ ] **Launch files and parameters** move to a bringup package ([[06 Final Connections and Missing Parts|06]] §2.4).
 
 ---
 

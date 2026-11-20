@@ -15,6 +15,10 @@ What it does:
     drops it after 2 s unless a frame under its keys arrives (ESP Link State
     Machine §1, #156); an inactive node sends no setpoints, so without this its
     new session would expire.
+  * Late check (#204): every frame's t_send_us comes from CLOCK_MONOTONIC_RAW
+    (sd_protocol.ground), which the ESP compares with its own clock, and a
+    HELLO_ACK more than 100 ms after the HELLO is refused and the attempt
+    dropped (REQ-SAF-024).
   * Checks that the ESP answers (decision E4, ADR-005): a new session counts
     only once a frame under its keys came back (the CONFIG_ACK, or a STATE).
     None within HANDSHAKE_TIMEOUT means the HELLO_ACK was a replayed one (the
@@ -46,7 +50,11 @@ What it does:
     armed is true for now.
   * The ESP's own reject count (STATE.rx_rejected, a u16 that wraps) goes
     through sd_protocol's WrapCounter, reset on every new session (Protocol
-    Spec §7.5, #149), and is reported as esp_rx_rejected.
+    Spec §7.5, #149), and is reported as esp_rx_rejected. A STATE that comes
+    more than RECONNECT_AFTER after the previous one restarts the total from
+    its own value, as after a reboot: in that gap the count may have wrapped
+    unseen (an inactive node keeps its session with no STATE; #223 review), so
+    a silently low total is never reported.
   * Every ARM_CONTROL_ACK / RESUME_ACK goes to take_acks() (decision E2), so
     the node can tell the operator what the ESP answered.
   * The FC values of every STATE (roll, pitch, heading, vbat) go with the drone
@@ -90,6 +98,7 @@ from sd_protocol.messages import (
     AckResult,
     EspState,
     EventCode,
+    OverrideActive,
     decode_event,
     decode_fc_health,
     decode_state,
@@ -169,6 +178,7 @@ class EspBackend(Backend):
         self._session = None  # the open session
         self._deadline = 0.0
         self._next_attempt = 0.0  # the first poll connects
+        self.late_hello_acks = 0  # REQ-SAF-024: handshakes dropped as late
         self._last_state_t = 0.0
         self._last_udp_t = None  # last SETPOINT sent
         self._waiting_since = None  # sending, and no STATE since then
@@ -187,6 +197,7 @@ class EspBackend(Backend):
         self._health = None  # the last FC_HEALTH of this session
         self._health_t = None  # when it was received
         self._esp_rejected = WrapCounter()  # #149: STATE.rx_rejected, wrapped
+        self._last_counted_t = None  # when the last STATE fed _esp_rejected
         self.esp_rx_rejected = None  # its total in this session, None before
         self.armed_mask = None  # B1: the mask the ESP confirmed with ARM ACK OK
         self._arm_requested = None
@@ -286,6 +297,17 @@ class EspBackend(Backend):
     def tcp_open(self):
         return self._tcp is not None
 
+    def _count_esp_rejected(self, raw, now):
+        """Feeds STATE.rx_rejected to the WrapCounter (#149). After a STATE
+        gap longer than RECONNECT_AFTER the count may have wrapped unseen, so
+        the total starts again from this value (#223 review, BrunoBMFT).
+        Within RECONNECT_AFTER a missed wrap needs 65,536 rejects in 3 s."""
+        gap = None if self._last_counted_t is None else now - self._last_counted_t
+        if gap is not None and gap > RECONNECT_AFTER:
+            self._esp_rejected.reset()
+        self.esp_rx_rejected = self._esp_rejected.update(raw)
+        self._last_counted_t = now
+
     @property
     def rx_rejected(self):
         """Frames of this session the GROUND dropped in its receive checks
@@ -361,6 +383,16 @@ class EspBackend(Backend):
                 if self._open(now):  # e.g. EVENT 0x0104 in the same read
                     self._handle_tcp_frames(frames[i + 1 :], now)
                 return
+            if self._pending.late_acks:
+                # REQ-SAF-024 (#204): the ESP seeds its late-check offset from
+                # our HELLO, so a delayed handshake never opens a session. The
+                # next attempt makes a new GroundSession: a new nonce.
+                self.late_hello_acks += 1
+                self._error(
+                    "handshake", "HELLO_ACK more than 100 ms after HELLO (REQ-SAF-024)"
+                )
+                self._drop(now, retry_after=RECONNECT_EVERY)
+                return
 
     def _open(self, now):
         """The HELLO_ACK came: the session is open. False if it could not be
@@ -416,6 +448,7 @@ class EspBackend(Backend):
         self._fc_alive_since = None
         self._health = self._health_t = None
         self._esp_rejected.reset()
+        self._last_counted_t = None
         self.esp_rx_rejected = None
 
     def _check_confirmed(self, now):
@@ -609,7 +642,7 @@ class EspBackend(Backend):
                 state = decode_state(f.payload)
                 if state is not None:
                     self._confirmed = True  # E4: the ESP has this session's keys
-                    self.esp_rx_rejected = self._esp_rejected.update(state.rx_rejected)
+                    self._count_esp_rejected(state.rx_rejected, now)
                     latest = state
             elif f.header.type == MsgType.FC_HEALTH:
                 health = decode_fc_health(f.payload)
@@ -640,7 +673,9 @@ class EspBackend(Backend):
         armed = self.armed
         return {
             "esp_state": name,
-            "override_active": bool(latest.override_active),
+            # Only ON (1) means the FC takes our sticks; UNKNOWN (2, #176)
+            # must never read as on, so no bool() here (Protocol Spec §3.1).
+            "override_active": latest.override_active == OverrideActive.ON,
             "mask": self.armed_mask,  # B1: confirmed by ARM_CONTROL_ACK OK
             "armed": armed,  # D1: FC_HEALTH's armed flag, None when unknown
             "airborne": armed is True,  # D1: airborne = armed for now

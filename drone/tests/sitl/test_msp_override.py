@@ -167,3 +167,41 @@ def test_takeover_returns_every_channel_to_the_pilot(msp, radio):
     switch(radio, False)
     want = pick(PILOT, *range(8))
     assert rc_held(msp, radio, want) == want
+
+
+def override_active(link):
+    """STATE.override_active as the gateway computes it (#176, sd::FcLink):
+    MSP OVERRIDE's position in MSP_BOXIDS is its bit in MSP_STATUS's mode
+    flags (4 bytes at offset 6, then the extra bytes after the count at 15)."""
+    boxes = request(link, MSP_BOXIDS)  # page 0: SITL has fewer than 32 boxes
+    if BOX_MSP_OVERRIDE not in boxes:
+        return 2  # unknown: the FC has no MSP OVERRIDE box
+    index = boxes.index(BOX_MSP_OVERRIDE)
+    status = request(link, codec.MSP_STATUS)
+    extra = status[15] & 0x0F
+    flags = status[6:10] + status[16 : 16 + extra]
+    if index // 8 >= len(flags):
+        return 2  # unknown: the FC sent no bit for it
+    return (flags[index // 8] >> (index % 8)) & 1
+
+
+def override_held(link, radio, want, timeout=2.0):
+    """Waits up to timeout for override_active to read `want`."""
+    deadline = time.monotonic() + timeout
+    while (got := override_active(link)) != want:
+        if time.monotonic() > deadline:
+            return got
+        read_rc(link, radio, ())  # keep the ESP streaming
+        time.sleep(0.02)
+    return got
+
+
+def test_override_active_follows_the_takeover_switch(msp, radio):
+    # #176: the bit the gateway reports as STATE.override_active follows the
+    # pilot's switch on a real Betaflight 2026.6.2 (0 off, 1 on, 0 off again).
+    switch(radio, False)
+    assert override_held(msp, radio, 0) == 0
+    switch(radio, True)
+    assert override_held(msp, radio, 1) == 1
+    switch(radio, False)
+    assert override_held(msp, radio, 0) == 0

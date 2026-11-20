@@ -1,3 +1,4 @@
 pyserial>=3.5
 esptool>=4.7
 pytest>=8
+matplotlib>=3.5

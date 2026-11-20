@@ -1,0 +1,11 @@
+# Simulation mode: the ground nodes against PX4 SITL + Gazebo.
+# ros2 launch ground_bringup sim.launch.py (make sim runs PX4, the XRCE agent
+# and px4_offboard_bridge in the px4 container; the bridge publishes
+# /flight/state). SIMULATION ONLY.
+#
+# Only the values this mode sets; every other parameter keeps the default its
+# node declares. Each key must be a parameter its node declares
+# (test/test_config.py checks it).
+intent_node:
+  ros__parameters:
+    input_source: topic   # gesture_node's /gesture/raw, not UDP

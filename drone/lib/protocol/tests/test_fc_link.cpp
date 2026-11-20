@@ -28,6 +28,28 @@ Bytes status_payload(bool armed) {
   return p;
 }
 
+// Recorded from Betaflight 2026.6.2 SITL on 2026-11-16 (#176). MSP_BOXIDS
+// page 0 with msp_override_channels_mask = 8: MSP OVERRIDE (50, 0x32) is box
+// 22. With mask 0 the FC has no such box.
+const Bytes kBoxIdsMask8 = {0x00, 0x01, 0x02, 0x05, 0x03, 0x06, 0x1B,
+                            0x0B, 0x2E, 0x38, 0x07, 0x0D, 0x13, 0x1A,
+                            0x1E, 0x20, 0x21, 0x22, 0x24, 0x25, 0x2D,
+                            0x31, 0x32, 0x33, 0x34, 0x35, 0x39};
+const Bytes kBoxIdsMask0 = {0x00, 0x01, 0x02, 0x05, 0x03, 0x06, 0x1B,
+                            0x0B, 0x2E, 0x38, 0x07, 0x0D, 0x13, 0x1A,
+                            0x1E, 0x20, 0x21, 0x22, 0x24, 0x25, 0x2D,
+                            0x31, 0x33, 0x34, 0x35, 0x39};
+// MSP_STATUS with mask 8 and an aux range that keeps MSP OVERRIDE on: bit 22
+// (byte 8 = 0x40); and the same FC with it off.
+const Bytes kStatusOverrideOn = {0xED, 0x03, 0x00, 0x00, 0x27, 0x00, 0x00,
+                                 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                 0x00, 0x00, 0x1E, 0x04, 0x03, 0x00, 0x00,
+                                 0x00, 0x00, 0x00, 0x04, 0x03, 0x00};
+const Bytes kStatusOverrideOff = {0xC2, 0x03, 0x00, 0x00, 0x27, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                                  0x00, 0x00, 0x1E, 0x04, 0x03, 0x00, 0x00,
+                                  0x00, 0x00, 0x00, 0x04, 0x03, 0x00};
+
 // The command of the request written by poll(), or -1 for none.
 int poll_cmd(sd::FcLink &fc, std::uint32_t now) {
   std::uint8_t out[sd::msp::kMaxFrame];
@@ -65,6 +87,8 @@ void run_ideal_fc(sd::FcLink &fc, std::uint32_t until,
       answer(fc, reply_frame(sd::msp::kAnalog, Bytes(9, 0)), t);
     } else if (cmd == sd::msp::kApiVersion) {
       answer(fc, reply_frame(sd::msp::kApiVersion, {0, 1, 47}), t);
+    } else if (cmd == sd::msp::kBoxIds) {
+      answer(fc, reply_frame(sd::msp::kBoxIds, kBoxIdsMask8), t);
     }
   }
 }
@@ -115,7 +139,8 @@ TEST(FcLink, OnlyPollRequestsEverLeave) {
   run_ideal_fc(fc, 5000, &sent);
   for (const int c : sent) {
     EXPECT_TRUE(c == sd::msp::kAttitude || c == sd::msp::kStatus ||
-                c == sd::msp::kAnalog || c == sd::msp::kApiVersion)
+                c == sd::msp::kAnalog || c == sd::msp::kApiVersion ||
+                c == sd::msp::kBoxIds)
         << c;
   }
 }
@@ -598,4 +623,194 @@ TEST(FcLink, APollTimeoutDoesNotRestartTheRcSecond) {
     return Answer::kGood;
   });
   EXPECT_TRUE(fc.rc_accepted(1599));
+}
+
+// --- #176: STATE.override_active from MSP_BOXIDS + MSP_STATUS ---------------
+
+namespace {
+
+// An FC that answers every poll at once: MSP_BOXIDS with `boxes`, MSP_STATUS
+// with `status`. From `from` to `until` (ms).
+void run_fc(sd::FcLink &fc, std::uint32_t from, std::uint32_t until,
+            const Bytes &boxes, const Bytes &status) {
+  for (std::uint32_t t = from; t <= until; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kBoxIds) {
+      answer(fc, reply_frame(sd::msp::kBoxIds, boxes), t);
+    } else if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, status), t);
+    } else if (cmd == sd::msp::kAttitude) {
+      answer(fc, reply_frame(sd::msp::kAttitude, Bytes(6, 0)), t);
+    } else if (cmd == sd::msp::kAnalog) {
+      answer(fc, reply_frame(sd::msp::kAnalog, Bytes(9, 0)), t);
+    } else if (cmd == sd::msp::kApiVersion) {
+      answer(fc, reply_frame(sd::msp::kApiVersion, {0, 1, 48}), t);
+    }
+  }
+}
+
+} // namespace
+
+TEST(FcLink, OverrideFollowsMspStatusFromTheSitlRecording) {
+  sd::FcLink fc;
+  EXPECT_EQ(fc.override_state(0), sd::OverrideState::kUnknown);
+  run_fc(fc, 0, 1000, kBoxIdsMask8, kStatusOverrideOff);
+  ASSERT_TRUE(fc.has_boxes());
+  EXPECT_EQ(fc.override_box(), 22);
+  EXPECT_EQ(fc.override_state(1000), sd::OverrideState::kOff);
+  run_fc(fc, 1001, 1400, kBoxIdsMask8, kStatusOverrideOn);
+  EXPECT_EQ(fc.override_state(1400), sd::OverrideState::kOn);
+  run_fc(fc, 1401, 1800, kBoxIdsMask8, kStatusOverrideOff);
+  EXPECT_EQ(fc.override_state(1800), sd::OverrideState::kOff);
+}
+
+TEST(FcLink, OverrideUnknownBeforeTheBoxList) {
+  // MSP_STATUS says bit 22 is on, but without the box list nobody knows
+  // which mode that is: never 1 (#176 acceptance criterion).
+  sd::FcLink fc;
+  for (std::uint32_t t = 0; t <= 1000; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, kStatusOverrideOn), t);
+    } else if (cmd >= 0 && cmd != sd::msp::kBoxIds) {
+      answer(fc, reply_frame(static_cast<std::uint8_t>(cmd), {0, 1, 48}), t);
+    }
+  }
+  EXPECT_TRUE(fc.status_fresh(1000, 500));
+  EXPECT_FALSE(fc.has_boxes());
+  EXPECT_EQ(fc.override_state(1000), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, OverrideUnknownWhenTheFcHasNoOverrideBox) {
+  // msp_override_channels_mask = 0: Betaflight leaves MSP OVERRIDE out.
+  sd::FcLink fc;
+  run_fc(fc, 0, 1000, kBoxIdsMask0, kStatusOverrideOn);
+  EXPECT_TRUE(fc.has_boxes());
+  EXPECT_EQ(fc.override_box(), -1);
+  EXPECT_EQ(fc.override_state(1000), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, OverrideUnknownWhenTheStatusIsOld) {
+  sd::FcLink fc;
+  run_fc(fc, 0, 1000, kBoxIdsMask8, kStatusOverrideOn);
+  ASSERT_EQ(fc.override_state(1000), sd::OverrideState::kOn);
+  const std::uint32_t last = fc.telemetry().status_ms;
+  EXPECT_EQ(fc.override_state(last + 499), sd::OverrideState::kOn);
+  EXPECT_EQ(fc.override_state(last + 500), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, BoxListIsForgottenAfterAnFcSilence) {
+  // A reboot (> kFcLostMs of silence) may bring another box list: the old one
+  // is dropped, and override_active is unknown until it is read again.
+  sd::FcLink fc;
+  run_fc(fc, 0, 1000, kBoxIdsMask8, kStatusOverrideOn);
+  ASSERT_TRUE(fc.has_boxes());
+  std::uint32_t t = 1001;
+  for (; t < 1400; ++t) {
+    (void)poll_cmd(fc, t); // the FC is silent
+  }
+  // The FC is back, with mask 0 now: only its STATUS has come so far.
+  for (;; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, kStatusOverrideOn), t);
+      break;
+    }
+  }
+  EXPECT_FALSE(fc.has_boxes());
+  EXPECT_EQ(fc.override_state(t), sd::OverrideState::kUnknown);
+  run_fc(fc, t + 1, t + 1200, kBoxIdsMask0, kStatusOverrideOn);
+  EXPECT_EQ(fc.override_box(), -1);
+  EXPECT_EQ(fc.override_state(t + 1200), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, OverrideBoxOnTheSecondPage) {
+  // More than 32 active boxes: page 0 is full without box 50, so the next
+  // request asks for page 1, where it is the 4th entry (box 35, extra byte).
+  sd::FcLink fc;
+  Bytes page0;
+  for (std::uint8_t i = 0; i < 32; ++i) {
+    page0.push_back(i < 30 ? i : static_cast<std::uint8_t>(i + 30));
+  }
+  const Bytes page1 = {51, 52, 53, 50, 57};
+  Bytes status = kStatusOverrideOff;
+  status[15] = 1;                           // one extra mode byte ...
+  status.insert(status.begin() + 16, 0x08); // ... with bit 35 on
+  int pages = 0;
+  for (std::uint32_t t = 0; t <= 1000; ++t) {
+    Bytes req;
+    const int cmd = poll_frame(fc, t, req);
+    if (cmd == sd::msp::kBoxIds) {
+      const bool page1_req = req[3] == 1 && req[5] == 1;
+      EXPECT_EQ(page1_req, pages == 1) << "request " << pages;
+      answer(fc, reply_frame(sd::msp::kBoxIds, page1_req ? page1 : page0), t);
+      ++pages;
+    } else if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, status), t);
+    } else if (cmd >= 0) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         {0, 1, 48, 0, 0, 0, 0, 0, 0}),
+             t);
+    }
+  }
+  EXPECT_EQ(pages, 2);
+  EXPECT_EQ(fc.override_box(), 35);
+  EXPECT_EQ(fc.override_state(1000), sd::OverrideState::kOn);
+}
+
+TEST(FcLink, BoxListExpiresWhenNotReadFor10Seconds) {
+  // The FC answers every poll but MSP_BOXIDS: after kMaxValueAgeMs the old
+  // list is dropped and override_active is unknown, never a stale "on".
+  sd::FcLink fc;
+  run_fc(fc, 0, 1000, kBoxIdsMask8, kStatusOverrideOn);
+  ASSERT_EQ(fc.override_state(1000), sd::OverrideState::kOn);
+  const std::uint32_t read_at = 1000;
+  std::uint32_t t = 1001;
+  for (; t <= read_at + sd::kMaxValueAgeMs + 1000; ++t) {
+    const int cmd = poll_cmd(fc, t);
+    if (cmd == sd::msp::kStatus) {
+      answer(fc, reply_frame(sd::msp::kStatus, kStatusOverrideOn), t);
+    } else if (cmd >= 0 && cmd != sd::msp::kBoxIds) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         {0, 1, 48, 0, 0, 0, 0, 0, 0}),
+             t);
+    }
+  }
+  EXPECT_TRUE(fc.fc_alive(t - 1));
+  EXPECT_FALSE(fc.has_boxes());
+  EXPECT_EQ(fc.override_state(t - 1), sd::OverrideState::kUnknown);
+}
+
+TEST(FcLink, ALostBoxIdsPageRestartsFromPageZero) {
+  // Page 0 is full, the page-1 request times out: the next MSP_BOXIDS asks
+  // for page 0 again, not page 1 forever (#198 review).
+  sd::FcLink fc;
+  Bytes page0;
+  for (std::uint8_t i = 0; i < 32; ++i) {
+    page0.push_back(i);
+  }
+  std::vector<int> pages; // the page of each MSP_BOXIDS request
+  for (std::uint32_t t = 0; t <= 2500; ++t) {
+    Bytes req;
+    const int cmd = poll_frame(fc, t, req);
+    if (cmd == sd::msp::kBoxIds) {
+      const int page = req[3] == 1 ? req[5] : 0;
+      pages.push_back(page);
+      if (page == 0) {
+        answer(fc, reply_frame(sd::msp::kBoxIds, page0), t);
+      } // page 1: no answer, it times out
+    } else if (cmd >= 0) {
+      answer(fc,
+             reply_frame(static_cast<std::uint8_t>(cmd),
+                         {0, 1, 48, 0, 0, 0, 0, 0, 0}),
+             t);
+    }
+  }
+  ASSERT_GE(pages.size(), 3U);
+  EXPECT_EQ(pages[0], 0);
+  EXPECT_EQ(pages[1], 1);
+  EXPECT_EQ(pages[2], 0);
+  EXPECT_FALSE(fc.has_boxes());
 }

@@ -1,17 +1,18 @@
-"""`ros2 launch mission_node mission_with_gestures.launch.py`, end to end.
+"""`ros2 launch ground_bringup demo.launch.py camera:=false`, end to end.
 
-Starts the launch file as a subprocess (intent_node on the topic input,
-fake_flight_state, mission_node) and plays gesture_node: JSON packets on
-/gesture/raw at 10 Hz, like gesture_sender.py. Checks that both open hands,
+Starts the demo mode as a subprocess without the camera (intent_node on the
+topic input, mission_node, fake_flight_state, all with the mode's parameter
+file) and plays gesture_node: JSON packets on /gesture/raw at 10 Hz, like
+gesture_sender.py. Checks that both open hands,
 shown after the hands were seen down, engage, an index finger moves the
 target, and Ctrl+C stops everything cleanly: ros2 launch exits 0 and none of
 its nodes is left running.
 
-Launched with airborne:=false (also checks that the launch argument reaches
-fake_flight_state).
+Launched with a copy of config/demo.yaml that sets airborne: false (also
+checks that params_file reaches fake_flight_state).
 
-Needs ROS 2 Jazzy sourced and intent_node + mission_node installed (colcon
-build, workspace sourced). Without them the test is skipped, unless
+Needs ROS 2 Jazzy sourced and intent_node, mission_node and ground_bringup
+installed (colcon build, workspace sourced). Without them the test is skipped, unless
 REQUIRE_ROS_TESTS=1 is set (CI sets it), then it fails.
 
 Run with:  python3 -m pytest drone/tests/ros -v        (from the repo root, ROS sourced)
@@ -22,10 +23,13 @@ import os
 import shutil
 import signal
 import subprocess
+import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 
+import yaml
 from support import kill_group, ros_available, wait_group_gone
 
 if ros_available():
@@ -58,10 +62,11 @@ TEST_DOMAIN_ID = 90
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
 @unittest.skipIf(
-    rclpy is not None and not installed("intent_node", "mission_node"),
-    "intent_node or mission_node not installed",
+    rclpy is not None
+    and not installed("intent_node", "mission_node", "ground_bringup"),
+    "intent_node, mission_node or ground_bringup not installed",
 )
-class GesturesLaunchTests(unittest.TestCase):
+class DemoLaunchTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         rclpy.init(domain_id=TEST_DOMAIN_ID)
@@ -70,17 +75,32 @@ class GesturesLaunchTests(unittest.TestCase):
     def tearDownClass(cls):
         rclpy.shutdown()
 
+    def params_file(self):
+        """The installed demo.yaml, with the pretend drone on the ground."""
+        from ament_index_python.packages import get_package_share_directory
+
+        share = Path(get_package_share_directory("ground_bringup"))
+        params = yaml.safe_load((share / "config" / "demo.yaml").read_text())
+        params["fake_flight_state"]["ros__parameters"]["airborne"] = False
+        folder = tempfile.TemporaryDirectory(prefix="demo-launch-test-")
+        self.addCleanup(folder.cleanup)
+        path = Path(folder.name) / "demo.yaml"
+        path.write_text(yaml.safe_dump(params))
+        return path
+
     def setUp(self):
         env = dict(os.environ, ROS_DOMAIN_ID=str(TEST_DOMAIN_ID), PYTHONUNBUFFERED="1")
+        params = self.params_file()
         # Own process group, stopped as a whole (see support.py). stdin not
         # a terminal: ros2 launch behaves the same wherever the tests run.
         self.launch = subprocess.Popen(
             [
                 "ros2",
                 "launch",
-                "mission_node",
-                "mission_with_gestures.launch.py",
-                "airborne:=false",
+                "ground_bringup",
+                "demo.launch.py",
+                "camera:=false",
+                f"params_file:={params}",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -93,7 +113,7 @@ class GesturesLaunchTests(unittest.TestCase):
         self.lines = []
         self.reader = threading.Thread(target=self._read, daemon=True)
         self.reader.start()
-        self.probe = rclpy.create_node("mission_launch_test_probe")
+        self.probe = rclpy.create_node("demo_launch_test_probe")
         self.raw_pub = self.probe.create_publisher(String, "/gesture/raw", 10)
         self.mode = None
         self.reason = None
@@ -154,7 +174,11 @@ class GesturesLaunchTests(unittest.TestCase):
             ),
             output(),
         )
-        self.assertIs(self.airborne, False, "airborne:=false did not reach the node")
+        self.assertIs(
+            self.airborne,
+            False,
+            "airborne: false in params_file did not reach fake_flight_state",
+        )
         self.assertTrue(
             self.show(
                 "L:OPEN_HAND_UP+R:OPEN_HAND_UP", lambda: self.mode == "ENGAGED", 5.0

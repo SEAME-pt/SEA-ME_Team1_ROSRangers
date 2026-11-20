@@ -3,7 +3,7 @@ title: Flight Interface Node (velocity target → drone, drone state → /flight
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - gestures
@@ -22,7 +22,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Backends: `loopback` (no drone) and `esp` (the gateway firmware). The PX4 backend for the simulator is planned ([[06 Final Connections and Missing Parts|06]] §2.2).
-> - Every setpoint is **neutral** until the controller exists ([[06 Final Connections and Missing Parts|06]] §2.1), and `override_active` stays false until the ESP reports it (§2.5 there), so no non-zero setpoint passes the gate yet.
+> - Every setpoint is **neutral** until the controller exists ([[06 Final Connections and Missing Parts|06]] §2.1), so no non-zero setpoint passes the gate yet. `override_active` comes from the ESP (#176, PR #198; §2.4 there): true only when the ESP reports the pilot's override on.
 > - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
 ---
@@ -61,7 +61,7 @@ The gesture nodes know nothing about the radio link. `flight_interface` is the o
 
 - `/mission/velocity_target` (`TwistStamped`, body FLU) from `mission_node`. Only a target that arrives after the activation counts; one older than 0.25 s gives zero.
 - From the drone: `STATE`, `FC_HEALTH`, events and acks over [[Protocol Spec v0]].
-- The PSK, from `~/.config/seame-drone/secrets.json` (never a ROS parameter, never in the image).
+- The PSK, from `~/.config/seame-drone/secrets.json` (never a ROS parameter, never in the image). In Docker, only `psk.json` (the PSK alone) is mounted there ([[ADR-025 flight_interface Ground Node|ADR-025]] E3.2, §7.2).
 - Parameters, declared at the top of `link_node.py`: `backend`, `mask` (8 / 11 / 15, default 8), `esp_host`, `esp_port`, `rate_hz`, `state_rate_hz`, the timeouts, `publish_fc`. A bad value fails `configure`.
 
 ---
@@ -84,7 +84,7 @@ The node starts **unconfigured**. The operator runs `configure`, then `activate`
 | E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop` |
 | Sessions | the `esp` backend reconnects by itself, never with ARM |
 | No restart | a dead node stays dead; the ESP's failsafe takes over |
-| ROS stays on this PC | `ROS_DOMAIN_ID=42` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services |
+| ROS stays on this PC | the real mode's domain from `env/real.env` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services. A native `ros2 launch` on the host defaults to `ROS_DOMAIN_ID=42` (ADR-025 E1.4) |
 
 Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
@@ -101,36 +101,52 @@ Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
 ## ▶️ 7. Run (Docker)
 
-The service has its own profile, so `make` never starts it. Only one node may publish `/flight/state`: stop the pretend `flight` service first. The `ros2` CLI goes through `echo` ([[01 ROS2 Nodes Installation|01]] §5).
+The service belongs to the **real** mode only: profile `real`, `drone/ground/env/real.env` (its ROS domain and `LOCALHOST`; copy it from `env.example/real.env.example` and fill in the values the safety pilot gives you, [[01 ROS2 Nodes Installation|01]] §4.2) and `ground_bringup`'s `config/real.yaml` (backend `esp`). Without a filled-in `env/real.env`, compose refuses to start. `make` (demo) and `make sim` never start it, and refuse to start while it runs. The demo's `fake_flight_state` and the sim's bridge never run next to it, so `/flight/state` has one publisher. Every command below passes `--env-file env/real.env`, `echo` included (the `ros2` CLI, [[01 ROS2 Nodes Installation|01]] §5). Without it, `echo` is on the demo's domain and never sees the node.
 
-### 7.1 Loopback (no drone)
+### 7.1 Without the drone: `make real-dry`
+
+From `drone/ground/`. The real mode with `flight_interface` on the loopback backend: no drone, no PSK, nothing leaves the PC. Use it to rehearse the steps of §7.2 at a desk.
 
 ```bash
-docker compose --profile flight_interface up -d --build flight_interface
-docker compose run --rm echo ros2 lifecycle set /flight_interface configure
-docker compose run --rm echo ros2 lifecycle set /flight_interface activate
+make real-dry
 ```
 
-`/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`; `mission_node` stays `IDLE`.
+It starts gesture, intent, mission and `flight_interface` (unconfigured), prints the operator steps and shows the live table. Run the steps in another terminal: after `configure` and `activate`, `/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`, and `mission_node` stays `IDLE`. Stop with `make real-down`.
 
-### 7.2 With the drone (ESP backend)
+### 7.2 With the drone: `make real`
 
 Follow [[Safety Rules]]: props off on the bench, the safety pilot holds the radio.
 
 ```bash
-docker compose --profile flight_interface run --rm flight_interface \
-  /ws/install/flight_interface/lib/flight_interface/flight_interface \
-  --ros-args -p backend:=esp
+make real
 ```
 
-Then `configure`, `activate` as in §7.1, and ARM only by hand:
+1. **Checks, and refuses on any failure:** `env/real.env` is filled in, the PSK file (§ below) exists with mode 600 and holds a valid key, and the ESP (`esp_host` in `ground_bringup`'s `config/real.yaml`) answers ping. It never opens a TCP connection to the gateway.
+2. **Starts** the chain and `flight_interface` with `real.yaml` (backend `esp`), **unconfigured**. It never configures, activates or ARMs it (REQ-SAF-023).
+3. **Prints the operator steps** (again any time: `make real-steps`) and shows the live table. Ctrl+C closes only the table: the stack keeps running.
+
+The operator steps, in another terminal in `drone/ground/`:
 
 ```bash
-docker compose run --rm echo ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger
-docker compose run --rm echo ros2 service call /flight_interface/estop std_srvs/srv/Trigger
+R='docker compose --env-file env/real.env run --rm echo'
+L='ros2 lifecycle set --no-daemon --spin-time 5'   # waits for discovery: each run is a fresh container
+$R $L /flight_interface configure
+$R $L /flight_interface activate
+$R ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger   # ARM: by hand only
+$R ros2 service call /flight_interface/estop std_srvs/srv/Trigger         # E-stop
 ```
 
-The secrets file must exist on the host (`chmod 600`); `SEAME_SECRETS_FILE=<path>` points to another one.
+**Stop:** `make real-down`. It cuts the drone's link on purpose (the ESP's failsafe takes over), so it asks you to type `stop` first, and the safety pilot must be ready. It stops `flight_interface` first (one last zero setpoint, then BYE), then the chain.
+
+The container mounts only the PSK, never the whole `secrets.json` (it also holds the Wi-Fi and OTA passwords, [[ADR-025 flight_interface Ground Node|ADR-025]] E3.2). Create that file once, and again after the PSK changes:
+
+```bash
+make psk-file   # ~/.config/seame-drone/secrets.json -> psk.json (PSK only, mode 600)
+```
+
+- A missing `psk.json` stops the container from starting. `SEAME_SECRETS_FILE=<path>` mounts another file.
+- The container keeps the file it started with. After the PSK changes (`make psk-file` says so), stop the container and start it again; otherwise `configure` fails with no `HELLO_ACK`.
+- While `flight_interface` runs, `make`, `make sim`, `make sim-smoke`, `make down` and `make clean` refuse: each would add a second `/flight/state` publisher or stop its chain. Stop the real mode with `make real-down`.
 
 ---
 
@@ -170,7 +186,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 | ARM and RESUME only from the operator | The ground never takes control by itself |
 | The container runs the node itself, not the launch file | `ros2 launch` ignores `docker stop`'s SIGTERM, so the last zero setpoint would be lost |
 | PSK mounted read-only, never in the environment or the image | The key stays a file only the operator can read |
-| One `/flight/state` publisher | `flight`, `px4_offboard_bridge` and `flight_interface` never run together |
+| One `/flight/state` publisher | `fake_flight_state` (demo), `px4_offboard_bridge` (sim) and `flight_interface` (real) are in different modes and never run together |
 
 ---
 
@@ -186,7 +202,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 ## ❓ 13. Open points
 
 - [ ] **Controller and PX4 backend** ([[06 Final Connections and Missing Parts|06]] §2.1–2.2).
-- [ ] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.5).
+- [x] **`override_active` from the ESP** ([[06 Final Connections and Missing Parts|06]] §2.4; #176, PR #198).
 - [ ] **E-stop time** measured end to end on the bench (ADR-025 C3).
 - [ ] **A compose service for `fc_telemetry`**, if the bench needs it outside a native workspace.
 

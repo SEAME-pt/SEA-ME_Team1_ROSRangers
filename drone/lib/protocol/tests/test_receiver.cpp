@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <fstream>
+#include <iostream>
 #include <string>
 #include <vector>
 
@@ -501,7 +503,7 @@ TEST(Receiver, ResultNumbersMatchThePythonTwin) {
       {R::kBadLength, 6},       {R::kBadTag, 7},          {R::kWrongSession, 8},
       {R::kDuplicateSeq, 9},    {R::kOldSeq, 10},         {R::kSeqTooHigh, 11},
       {R::kBadType, 12},        {R::kBadPayloadSize, 13}, {R::kBadMode, 14},
-      {R::kWrongTransport, 15}, {R::kWrongDirection, 16}};
+      {R::kWrongTransport, 15}, {R::kWrongDirection, 16}, {R::kLate, 17}};
   for (const auto &e : expected) {
     EXPECT_EQ(static_cast<int>(e.r), e.n);
   }
@@ -516,4 +518,346 @@ TEST(Receiver, IsAccepted) {
   EXPECT_TRUE(sd::is_accepted(sd::RxResult::kAcceptedGap));
   EXPECT_FALSE(sd::is_accepted(sd::RxResult::kBadTag));
   EXPECT_FALSE(sd::is_accepted(sd::RxResult::kDuplicateSeq));
+}
+
+// --- Late check (spec §4 rule 3a, #171, #204) --------------------------------
+
+namespace {
+
+std::vector<std::uint8_t> late_frame(sd::MsgType type, std::uint32_t seq,
+                                     std::uint32_t t_send_us) {
+  std::uint8_t payload[sd::kSetpointSize] = {};
+  std::size_t n = 0;
+  if (type == sd::MsgType::kSetpoint) {
+    n = sd::kSetpointSize; // neutral, mode 0
+  } else if (type == sd::MsgType::kArmControlRequest) {
+    payload[0] = 8;
+    n = 1;
+  } else if (type == sd::MsgType::kConfigGet) {
+    n = sd::kConfigKvSize;
+  }
+  const sd::Header h{
+      static_cast<std::uint8_t>(type), 0, 0, kSession, seq, t_send_us};
+  std::vector<std::uint8_t> out(sd::kMaxFrame);
+  out.resize(
+      sd::encode_frame(h, payload, n, test_key(), out.data(), out.size()));
+  return out;
+}
+
+sd::RxResult at(sd::Receiver &rx, const std::vector<std::uint8_t> &b,
+                std::uint32_t rx_us) {
+  sd::Frame f{};
+  return rx.receive(b.data(), b.size(), f, rx_us);
+}
+
+constexpr std::uint32_t kBound = 200000; // 200 ms
+
+// UDP Receiver with the check on; the ground clock is 5 s behind the ESP's
+// and the HELLO took 10 ms.
+struct LateRx : OpenRx {
+  LateRx() {
+    set_late_bound(kBound);
+    seed_lag(0, 5010000);
+  }
+};
+
+} // namespace
+
+TEST(LateCheck, OnTimeAcceptedHeldBackRejected) {
+  LateRx rx;
+  // Sent at 1.000 s (ground), arrives 15 ms later: accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 1000000), 6015000)));
+  // Sent at 1.020 s, held back 250 ms: refused.
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 2, 1020000), 6270000),
+            sd::RxResult::kLate);
+  EXPECT_EQ(rx.counters().late, 1U);
+  EXPECT_EQ(rx.counters().rejected, 1U);
+  // 195 ms above the floor (5.000 s): accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 3, 1100000), 6295000)));
+}
+
+TEST(LateCheck, ALateFrameUsesUpNothing) {
+  LateRx rx;
+  ASSERT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, 0), 5300000),
+            sd::RxResult::kLate);
+  EXPECT_EQ(rx.last_seq(), 0U); // the window did not move
+  // The same seq, fresh: accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 300000), 5305000)));
+}
+
+TEST(LateCheck, TheHelloSeedCatchesADelayFromTheStart) {
+  // Every UDP frame is held back 300 ms from the first one on: the offset
+  // comes from the HELLO, so the first frame is already late.
+  LateRx rx;
+  for (std::uint32_t i = 1; i <= 5; ++i) {
+    EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, i, i * 20000),
+                 5000000 + i * 20000 + 300000),
+              sd::RxResult::kLate)
+        << i;
+  }
+}
+
+TEST(LateCheck, AFasterPathLowersTheFloor) {
+  LateRx rx; // floor 5.010 s (HELLO)
+  ASSERT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 1000000), 6002000)));
+  // The floor is now 5.002 s: 205 ms above it is late, though only 197 ms
+  // above the HELLO's.
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 2, 1020000), 6227000),
+            sd::RxResult::kLate);
+}
+
+TEST(LateCheck, DriftUpTo200PpmIsFollowed) {
+  // The ESP clock runs 190 ppm fast for 1 h, every frame with 10 ms of path
+  // (one every 100 ms, to keep the test fast): no frame is refused, the floor
+  // rises with it.
+  LateRx rx;
+  std::uint32_t seq = 0;
+  for (std::uint64_t t = 100000; t <= 3600ULL * 1000000; t += 100000) {
+    const std::uint32_t rx_us =
+        static_cast<std::uint32_t>(5000000 + t + t * 190 / 1000000 + 10000);
+    ASSERT_TRUE(sd::is_accepted(at(rx,
+                                   late_frame(sd::MsgType::kSetpoint, ++seq,
+                                              static_cast<std::uint32_t>(t)),
+                                   rx_us)))
+        << t;
+  }
+}
+
+TEST(LateCheck, AnNtpSlewedGroundClockIsRefused) {
+  // A ground clock slewed by 500 ppm (CLOCK_MONOTONIC under NTP, not RAW):
+  // the lag grows 300 ppm faster than allowed and frames end up refused.
+  // That is why the spec fixes CLOCK_MONOTONIC_RAW (#171).
+  LateRx rx;
+  std::uint32_t seq = 0;
+  bool refused = false;
+  for (std::uint64_t t = 100000; t <= 3600ULL * 1000000 && !refused;
+       t += 100000) {
+    const std::uint32_t rx_us =
+        static_cast<std::uint32_t>(5000000 + t + t * 500 / 1000000 + 10000);
+    refused = at(rx,
+                 late_frame(sd::MsgType::kSetpoint, ++seq,
+                            static_cast<std::uint32_t>(t)),
+                 rx_us) == sd::RxResult::kLate;
+  }
+  EXPECT_TRUE(refused);
+}
+
+TEST(LateCheck, BothClocksWrap) {
+  // t_send_us wraps (71.6 min) between two frames, and the ESP clock wraps
+  // between two others: lags are compared as int32 differences.
+  sd::Receiver rx(sd::Role::kEsp, sd::Transport::kUdp);
+  ASSERT_TRUE(rx.start_session(kSession, test_key()));
+  rx.set_late_bound(kBound);
+  rx.seed_lag(0xFFFF0000U, 0xFFFFF000U); // HELLO
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 0xFFFFC000U), 0x00000100U)));
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 2, 0x00001000U), 0x00011100U)));
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 3, 0x00002000U),
+               0x00012100U + 250000),
+            sd::RxResult::kLate);
+}
+
+TEST(LateCheck, HeldBackLongEnoughToWrapIsStillRefused) {
+  // Held back 40 min and 60 min: the u32 lag difference wraps negative, which
+  // must not pass as a faster path (#205 review). Only a frame held back
+  // 71.58 min (2^32 µs) give or take ~1.2 s can pass: the u32 limit, spec §4.
+  for (const std::uint64_t held_min : {40ULL, 60ULL}) {
+    LateRx rx;
+    const std::uint32_t sent = 1000000;
+    const auto rx_us =
+        static_cast<std::uint32_t>(5000000ULL + sent + held_min * 60 * 1000000);
+    EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, sent), rx_us),
+              sd::RxResult::kLate)
+        << held_min;
+    // and the offset did not move: an on-time frame right after is fine,
+    // one 250 ms late is refused
+    EXPECT_TRUE(sd::is_accepted(
+        at(rx, late_frame(sd::MsgType::kSetpoint, 2, rx_us - 5000000),
+           rx_us + 10)));
+    EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 3, rx_us - 5000000),
+                 rx_us + 260000),
+              sd::RxResult::kLate);
+  }
+}
+
+TEST(LateCheck, TheDriftAllowanceKeepsGrowingPast71Minutes) {
+  // #205 review (BrunoBMFT): on TCP the offset only moves on an ARM or
+  // RESUME. 72 min (> 2^32 us) after the HELLO, with the ESP clock 60 ppm
+  // fast, a RESUME's lag has grown 259 ms; the 200 ppm allowance (864 ms)
+  // covers it. A u32 elapsed time would have wrapped to ~25 s (5 ms of
+  // allowance) and refused it. keep_time() every 10 min, as sd::Link does.
+  sd::Receiver tcp(sd::Role::kEsp, sd::Transport::kTcp);
+  ASSERT_TRUE(tcp.start_session(kSession, test_key()));
+  tcp.set_late_bound(kBound);
+  tcp.seed_lag(0, 5010000);
+  const std::uint64_t end_us = 72ULL * 60 * 1000000; // ground time
+  const auto esp_us = [](std::uint64_t ground_us) {
+    return static_cast<std::uint32_t>(5010000 + ground_us +
+                                      ground_us * 60 / 1000000);
+  };
+  for (std::uint64_t t = 0; t < end_us; t += 600ULL * 1000000) {
+    tcp.keep_time(esp_us(t));
+  }
+  const auto t_send = static_cast<std::uint32_t>(end_us);
+  EXPECT_TRUE(sd::is_accepted(
+      at(tcp, late_frame(sd::MsgType::kResumeRequest, 2, t_send),
+         esp_us(end_us))));
+  // Still a real late check: 1.2 s above the floor (more than 200 ms plus
+  // the 864 ms allowance) is refused.
+  EXPECT_EQ(at(tcp, late_frame(sd::MsgType::kResumeRequest, 3, t_send + 100),
+               esp_us(end_us) + 1300000),
+            sd::RxResult::kLate);
+}
+
+TEST(LateCheck, OldReadingsMixedWithFreshOnesAddNoTime) {
+  // #220 (Dot99's review): a fresh reading every 5 ms, each followed by one
+  // 10 ms older, 1000 times: 5 s really pass. Counting the old readings (or
+  // measuring the next fresh one from them) made it ~15 s, an allowance 3x
+  // too wide. A frame 202 ms above the floor is then refused with the right
+  // allowance (1 ms: excess 201 ms) and was accepted with ~3 ms (199 ms).
+  LateRx rx; // floor 5.010 s, set at rx 5.010 s
+  std::uint32_t fresh = 5010000;
+  for (int i = 0; i < 1000; ++i) {
+    fresh += 5000;
+    rx.keep_time(fresh);
+    rx.keep_time(fresh - 10000); // older than the last reading: ignored
+  }
+  const std::uint32_t t_send = fresh - 5010000 - 202000;
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 1, t_send), fresh),
+            sd::RxResult::kLate);
+  // A normal forward step still counts: on time is accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 2, fresh - 5010000 + 1000),
+         fresh + 6000)));
+}
+
+TEST(LateCheck, AHugeBoundIsClamped) {
+  // #205 review: a bound above 2^31 us would read as negative and refuse
+  // everything; set_late_bound() clamps it to 10 s.
+  LateRx rx;
+  rx.set_late_bound(0xFFFFFFFFU);
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 1000000), 6015000)));
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 2, 1020000),
+               6020000 + 10500000),
+            sd::RxResult::kLate); // 10.5 s late: above the 10 s clamp
+}
+
+TEST(LateCheck, ArmIsCheckedConfigIsNot) {
+  sd::Receiver tcp(sd::Role::kEsp, sd::Transport::kTcp);
+  ASSERT_TRUE(tcp.start_session(kSession, test_key()));
+  tcp.set_late_bound(kBound);
+  tcp.seed_lag(0, 5010000);
+  // Both 300 ms late: ARM refused, CONFIG_GET accepted (never steers, #204).
+  EXPECT_EQ(at(tcp, late_frame(sd::MsgType::kArmControlRequest, 2, 0), 5300000),
+            sd::RxResult::kLate);
+  EXPECT_TRUE(sd::is_accepted(
+      at(tcp, late_frame(sd::MsgType::kConfigGet, 2, 0), 5300000)));
+}
+
+TEST(LateCheck, WithoutAReceiveTimeControlFramesAreRefused) {
+  LateRx rx;
+  EXPECT_EQ(feed(rx, kSeq1), sd::RxResult::kLate);       // fails closed
+  sd::Receiver off(sd::Role::kEsp, sd::Transport::kUdp); // check off
+  ASSERT_TRUE(off.start_session(kSession, test_key()));
+  EXPECT_TRUE(sd::is_accepted(feed(off, kSeq1)));
+}
+
+TEST(LateCheck, ANewSessionNeedsANewSeed) {
+  LateRx rx;
+  ASSERT_TRUE(rx.start_session(kSession, test_key())); // clears the seed
+  // Unseeded: the first control frame seeds the offset and is accepted.
+  EXPECT_TRUE(sd::is_accepted(
+      at(rx, late_frame(sd::MsgType::kSetpoint, 1, 0), 9000000)));
+  EXPECT_EQ(at(rx, late_frame(sd::MsgType::kSetpoint, 2, 20000), 9250000),
+            sd::RxResult::kLate);
+}
+
+// --- Replay of the ESP-S1-09 cage runs (#171, #204) --------------------------
+// drone/tests/vectors/replay/: built locally by make_replay.py from the
+// 2026-10-23 bench logs in results/ (not in the repo; skipped without them).
+// Each frame goes through an ESP Receiver with the 200 ms bound; the T_loss
+// silences (250 ms without an accepted frame, which would fire the failsafe)
+// must be the same as without the check.
+
+namespace {
+
+struct ReplayResult {
+  std::size_t frames = 0;
+  std::uint32_t late = 0;
+  int silences = 0;
+};
+
+ReplayResult replay(const std::string &name, std::uint32_t bound_us) {
+  std::ifstream in(std::string(SD_VECTOR_DIR) + "/replay/" + name);
+  EXPECT_TRUE(in.good()) << name;
+  std::string line;
+  std::getline(in, line); // header
+  sd::Receiver rx(sd::Role::kEsp, sd::Transport::kUdp);
+  EXPECT_TRUE(rx.start_session(kSession, test_key()));
+  rx.set_late_bound(bound_us);
+  ReplayResult out;
+  std::uint32_t t_send = 0;
+  std::uint32_t rx_us = 0;
+  std::uint32_t last_ok = 0;
+  bool any_ok = false;
+  std::uint32_t seq = 0;
+  while (std::getline(in, line)) {
+    const std::size_t comma = line.find(',');
+    t_send += static_cast<std::uint32_t>(std::stoul(line.substr(0, comma)));
+    rx_us += static_cast<std::uint32_t>(std::stoul(line.substr(comma + 1)));
+    if (out.frames == 0) {
+      rx.seed_lag(t_send, rx_us); // as if the HELLO took this path
+    }
+    ++out.frames;
+    const auto frame = late_frame(sd::MsgType::kSetpoint, ++seq, t_send);
+    if (sd::is_accepted(at(rx, frame, rx_us))) {
+      if (any_ok && rx_us - last_ok >= 250000) {
+        ++out.silences;
+      }
+      last_ok = rx_us;
+      any_ok = true;
+    }
+  }
+  out.late = rx.counters().late;
+  return out;
+}
+
+} // namespace
+
+TEST(LateReplay, TheS109CageRunsGetNoExtraFailsafe) {
+  const struct {
+    const char *run;
+    std::size_t frames;
+    std::uint32_t late;
+    int silences;
+  } runs[] = {{"s1-09_cage_run1.csv", 29944, 0, 0},
+              {"s1-09_cage_run2.csv", 29672, 292, 14},
+              {"s1-09_cage_run3.csv", 29962, 8, 0}};
+  // The fixtures are not in the repo (bench data): make_replay.py builds them
+  // from the S1-09 logs in results/. Without them the test is skipped.
+  for (const auto &e : runs) {
+    if (!std::ifstream(std::string(SD_VECTOR_DIR) + "/replay/" + e.run)) {
+      GTEST_SKIP() << e.run << " missing: run drone/tests/vectors/replay/"
+                   << "make_replay.py (needs the S1-09 logs in results/)";
+    }
+  }
+  for (const auto &e : runs) {
+    const char *run = e.run;
+    const ReplayResult off = replay(run, 0);
+    const ReplayResult on = replay(run, kBound);
+    EXPECT_EQ(on.frames, e.frames) << run;
+    EXPECT_EQ(off.late, 0U) << run;
+    EXPECT_EQ(on.late, e.late) << run;
+    EXPECT_EQ(off.silences, e.silences) << run;
+    EXPECT_EQ(on.silences, off.silences) << run; // no extra failsafe
+    std::cout << run << ": " << on.frames << " frames, " << on.late
+              << " late, silences >= T_loss " << off.silences << " -> "
+              << on.silences << "\n";
+  }
 }

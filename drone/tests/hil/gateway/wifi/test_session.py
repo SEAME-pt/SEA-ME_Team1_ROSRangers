@@ -19,7 +19,9 @@ import time
 import pytest
 from bench import (
     APP_BAUD,
+    BOX_MSP_OVERRIDE,
     FAKE_ARMING_FLAGS,
+    FAKE_BOXIDS,
     FAKE_HEADING,
     FAKE_PITCH,
     FAKE_ROLL,
@@ -34,7 +36,7 @@ from bench import (
     setpoint_to_rc,
     skip_or_fail,
 )
-from ground_link import GroundLink, TcpReader, take_ack
+from ground_link import HELLO_ACK_MAX_US, GroundLink, TcpReader, take_ack
 
 from sd_protocol.frame import MsgType
 from sd_protocol.messages import (
@@ -97,10 +99,13 @@ class Ground:
             except OSError:  # not associated yet, or the ESP restarting
                 time.sleep(0.5)
                 continue
+            # A new nonce for every HELLO: a nonce never repeats (spec §1, #204)
+            self.link.new_nonce()
+            late_before = self.link.late_acks
             try:
                 tcp.sendall(self.link.hello())
                 self.reader = TcpReader()
-                while True:
+                while self.link.late_acks == late_before:
                     data = tcp.recv(512)
                     if not data:
                         break
@@ -109,6 +114,13 @@ class Ground:
                         return tcp
             except OSError:
                 pass
+            if self.link.late_acks != late_before:
+                # REQ-SAF-024 (#204): shown in the failure output, so a late
+                # HELLO_ACK is not mistaken for the #194 TCP stall
+                print(
+                    f"HELLO_ACK more than {HELLO_ACK_MAX_US // 1000} ms after "
+                    f"HELLO, dropped ({self.link.late_acks} so far): new handshake"
+                )
             tcp.close()
             time.sleep(0.6)  # HELLO is rate-limited to one per 500 ms
         return None
@@ -179,7 +191,7 @@ def session(fake_fc):
     fake_fc.check()
     assert (
         ground.tcp is not None
-    ), "no HELLO_ACK: wrong PSK, or not the gateway firmware?"
+    ), f"no HELLO_ACK: wrong PSK, or not the gateway firmware? ({ground.link.late_acks} late HELLO_ACKs dropped)"
     yield ground
     ground.close()
 
@@ -229,6 +241,26 @@ def test_garbage_is_rejected_and_never_reaches_the_fc(fake_fc, session):
     check_frames(*fake_fc.snapshot())
 
 
+def test_override_active_follows_the_fc(fake_fc, session):
+    """#176 on the real ESP: STATE.override_active is 1 only while MSP_STATUS
+    has MSP OVERRIDE's bit (found through MSP_BOXIDS), 0 when it is clear, and
+    2 (unknown) for an FC without the box (msp_override_channels_mask 0)."""
+    try:
+        session.stream(1.5)  # the ESP reads the box list (1 Hz) and learns the peer
+        assert session.stream(0.6)[-1].override_active == 0
+        fake_fc.override_on = True
+        assert session.stream(0.6)[-1].override_active == 1  # STATUS at 5 Hz
+        fake_fc.override_on = False
+        assert session.stream(0.6)[-1].override_active == 0
+        fake_fc.boxes = bytes(b for b in FAKE_BOXIDS if b != BOX_MSP_OVERRIDE)
+        fake_fc.override_on = True  # the bit alone means nothing without the box
+        assert session.stream(1.5)[-1].override_active == 2  # next box list read
+    finally:
+        fake_fc.boxes = FAKE_BOXIDS  # module-scoped fake FC: leave it as found
+        fake_fc.override_on = False
+    check_frames(*fake_fc.snapshot())
+
+
 def test_wrong_psk_hello_gets_no_ack_and_the_session_keeps_running(fake_fc, session):
     intruder = GroundLink(os.urandom(32))
     tcp = socket.create_connection(ESP, timeout=2)
@@ -249,6 +281,9 @@ def test_wrong_psk_hello_gets_no_ack_and_the_session_keeps_running(fake_fc, sess
     states = session.stream(2.5, each=read_intruder)
     tcp.close()
     assert not acked, "HELLO_ACK for a HELLO signed with another PSK"
+    # A late HELLO_ACK (REQ-SAF-024) is refused before the session opens, so
+    # without this "not acked" could hide one the ESP sent with the wrong PSK.
+    assert intruder.late_acks == 0, "a HELLO_ACK came back (late) for another PSK"
     assert len(states) >= 40, "the session stopped sending STATE"
     assert states[-1].esp_state == EspState.SESSION_IDLE
     check_frames(*fake_fc.snapshot())
@@ -312,7 +347,9 @@ LOSS_RC = msp.encode_rc(setpoint_to_rc(Setpoint(1, 500, 0, 0, 0)))
 def armed(fake_fc):
     """A new session, armed with the gateway's override mask: STREAMING."""
     ground = Ground(psk())
-    assert ground.tcp is not None, "no HELLO_ACK for the armed session"
+    assert (
+        ground.tcp is not None
+    ), f"no HELLO_ACK for the armed session ({ground.link.late_acks} late HELLO_ACKs dropped)"
     # Confirms the session (first UDP frame) and the peer. 1.5 s: after the
     # previous armed test's ADR-004 output stopped, neutral RC restarts with
     # this stream, and ARM needs 1 s of RC acks (#188); the same margin as

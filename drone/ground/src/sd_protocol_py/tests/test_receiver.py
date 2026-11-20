@@ -513,3 +513,184 @@ def test_session_id_u32_bounds_accepted():
     assert rx.start_session(1, TEST_KEY)
     assert rx.start_session(0xFFFFFFFF, TEST_KEY)
     assert rx.session_id == 0xFFFFFFFF
+
+
+# --- Late check (spec §4 rule 3a, #171, #204); same cases as test_receiver.cpp
+
+
+BOUND = 200_000  # 200 ms
+
+
+def late_frame(msg_type: MsgType, seq: int, t_send_us: int) -> bytes:
+    payload = {
+        MsgType.SETPOINT: bytes(SETPOINT_SIZE),
+        MsgType.ARM_CONTROL_REQUEST: bytes([8]),
+        MsgType.CONFIG_GET: bytes(5),
+        MsgType.RESUME_REQUEST: b"",
+    }[msg_type]
+    header = Header(
+        type=msg_type, session_id=SESSION, seq=seq, t_send_us=t_send_us & 0xFFFFFFFF
+    )
+    return encode_frame(header, payload, TEST_KEY)
+
+
+def late_rx(transport: Transport = Transport.UDP) -> Receiver:
+    """The ground clock is 5 s behind the ESP's and the HELLO took 10 ms."""
+    rx = open_receiver(transport)
+    rx.set_late_bound(BOUND)
+    rx.seed_lag(0, 5_010_000)
+    return rx
+
+
+def at(rx: Receiver, buf: bytes, rx_us: int) -> RxResult:
+    return rx.receive(buf, rx_us & 0xFFFFFFFF)[0]
+
+
+def test_late_on_time_accepted_held_back_rejected():
+    assert RxResult.LATE == 17  # same number as the C++ kLate
+    rx = late_rx()
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_015_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_270_000) is RxResult.LATE
+    )
+    assert rx.counters.late == 1 and rx.counters.rejected == 1
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 3, 1_100_000), 6_295_000))
+
+
+def test_late_frame_uses_up_nothing():
+    rx = late_rx()
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, 0), 5_300_000) is RxResult.LATE
+    assert rx.last_seq == 0
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 300_000), 5_305_000))
+
+
+def test_late_hello_seed_catches_a_delay_from_the_start():
+    rx = late_rx()
+    for i in range(1, 6):
+        got = at(
+            rx,
+            late_frame(MsgType.SETPOINT, i, i * 20_000),
+            5_000_000 + i * 20_000 + 300_000,
+        )
+        assert got is RxResult.LATE, i
+
+
+def test_late_faster_path_lowers_the_floor():
+    rx = late_rx()
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_002_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_227_000) is RxResult.LATE
+    )
+
+
+@pytest.mark.parametrize("ppm, refused", [(190, False), (500, True)])
+def test_late_drift(ppm, refused):
+    # 190 ppm is followed for 1 h; an NTP-slewed clock (500 ppm) ends up refused,
+    # which is why the spec fixes CLOCK_MONOTONIC_RAW (#171).
+    rx = late_rx()
+    got_late = False
+    for i, t in enumerate(range(100_000, 3600 * 1_000_000 + 1, 100_000), start=1):
+        r = at(
+            rx,
+            late_frame(MsgType.SETPOINT, i, t),
+            5_000_000 + t + t * ppm // 1_000_000 + 10_000,
+        )
+        if r is RxResult.LATE:
+            got_late = True
+            break
+        assert is_accepted(r)
+    assert got_late is refused
+
+
+def test_late_both_clocks_wrap():
+    rx = open_receiver()
+    rx.set_late_bound(BOUND)
+    rx.seed_lag(0xFFFF0000, 0xFFFFF000)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 0xFFFFC000), 0x00000100))
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 2, 0x00001000), 0x00011100))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 3, 0x00002000), 0x00012100 + 250_000)
+        is RxResult.LATE
+    )
+
+
+@pytest.mark.parametrize("held_min", [40, 60])
+def test_late_held_back_long_enough_to_wrap_is_still_refused(held_min):
+    rx = late_rx()
+    sent = 1_000_000
+    rx_us = (5_000_000 + sent + held_min * 60 * 1_000_000) & 0xFFFFFFFF
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, sent), rx_us) is RxResult.LATE
+    assert is_accepted(
+        at(rx, late_frame(MsgType.SETPOINT, 2, rx_us - 5_000_000), rx_us + 10)
+    )
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 3, rx_us - 5_000_000), rx_us + 260_000)
+        is RxResult.LATE
+    )
+
+
+def test_late_arm_is_checked_config_is_not():
+    tcp = late_rx(Transport.TCP)
+    assert (
+        at(tcp, late_frame(MsgType.ARM_CONTROL_REQUEST, 2, 0), 5_300_000)
+        is RxResult.LATE
+    )
+    assert is_accepted(at(tcp, late_frame(MsgType.CONFIG_GET, 2, 0), 5_300_000))
+
+
+def test_late_without_a_receive_time_fails_closed():
+    assert late_rx().receive(SEQ1)[0] is RxResult.LATE
+    assert is_accepted(open_receiver().receive(SEQ1)[0])  # check off
+
+
+def test_late_new_session_needs_a_new_seed():
+    rx = late_rx()
+    assert rx.start_session(SESSION, TEST_KEY)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 0), 9_000_000))
+    assert at(rx, late_frame(MsgType.SETPOINT, 2, 20_000), 9_250_000) is RxResult.LATE
+
+
+def test_late_drift_allowance_keeps_growing_past_71_minutes():
+    # #205 review: 72 min after the HELLO with the ESP clock 60 ppm fast, a
+    # RESUME's lag has grown 259 ms; the allowance (864 ms) covers it. A u32
+    # elapsed time would have wrapped and refused it. keep_time() every 10 min.
+    tcp = open_receiver(Transport.TCP)
+    tcp.set_late_bound(BOUND)
+    tcp.seed_lag(0, 5_010_000)
+    end_us = 72 * 60 * 1_000_000
+
+    def esp_us(ground_us):
+        return (5_010_000 + ground_us + ground_us * 60 // 1_000_000) & 0xFFFFFFFF
+
+    for t in range(0, end_us, 600 * 1_000_000):
+        tcp.keep_time(esp_us(t))
+    resume = late_frame(MsgType.RESUME_REQUEST, 2, end_us)
+    assert is_accepted(at(tcp, resume, esp_us(end_us)))
+    later = late_frame(MsgType.RESUME_REQUEST, 3, end_us + 100)
+    assert at(tcp, later, esp_us(end_us) + 1_300_000) is RxResult.LATE
+
+
+def test_late_huge_bound_is_clamped():
+    rx = late_rx()
+    rx.set_late_bound(0xFFFFFFFF)
+    assert is_accepted(at(rx, late_frame(MsgType.SETPOINT, 1, 1_000_000), 6_015_000))
+    assert (
+        at(rx, late_frame(MsgType.SETPOINT, 2, 1_020_000), 6_020_000 + 10_500_000)
+        is RxResult.LATE
+    )
+
+
+def test_late_old_readings_mixed_with_fresh_ones_add_no_time():
+    # #220 (Dot99's review): a fresh reading every 5 ms, each followed by one
+    # 10 ms older, 1000 times: 5 s pass, and the allowance must be 1 ms, not
+    # ~3 ms. A frame 202 ms above the floor is refused (excess 201 ms).
+    rx = late_rx()
+    fresh = 5_010_000
+    for _ in range(1000):
+        fresh += 5_000
+        rx.keep_time(fresh)
+        rx.keep_time(fresh - 10_000)  # older than the last reading: ignored
+    t_send = fresh - 5_010_000 - 202_000
+    assert at(rx, late_frame(MsgType.SETPOINT, 1, t_send), fresh) is RxResult.LATE
+    on_time = late_frame(MsgType.SETPOINT, 2, fresh - 5_010_000 + 1_000)
+    assert is_accepted(at(rx, on_time, fresh + 6_000))

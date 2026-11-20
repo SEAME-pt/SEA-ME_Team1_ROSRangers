@@ -284,6 +284,29 @@ def sequence(
     }
 
 
+def late(
+    name: str,
+    description: str,
+    hello: tuple[int, int],
+    steps: list[tuple[int, int, int, str]],
+    final: dict,
+) -> dict:
+    """Late check (spec §4 rule 3a, #204): the ESP Receivers have the 200 ms bound,
+    seeded from the HELLO (t_send_us, rx_us); each step is (seq, t_send_us, rx_us, expect)."""
+    return {
+        "name": name,
+        "description": description,
+        "key": TEST_KEY.hex(),
+        "state": {"current_session": SESSION, "last_ctrl_seq": 0},
+        "late": {"bound_us": 200_000, "hello_t_send_us": hello[0], "hello_rx_us": hello[1]},
+        "steps": [
+            {"bytes": encode(setpoint(seq, t_send_us=t, mode=0)).hex(), "rx_us": rx, "expect": e}
+            for seq, t, rx, e in steps
+        ],
+        "final": final,
+    }  # fmt: skip
+
+
 def channels(name: str, description: str, **values) -> dict:
     fields = setpoint(1, **values)
     return valid(name, description, fields, channels=rc_channels(fields))
@@ -445,6 +468,40 @@ def group5() -> list[dict]:
                  {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
         sequence("seq_too_high", "1, then 2^31: the sender must open a new session", [1, 2**31],
                  [a, "reject:seq_too_high"], {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
+        late("late_setpoint_rejected",
+             "Ground clock 5 s behind, HELLO 10 ms: seq 1 15 ms on its way is accepted, seq 2 held back 250 ms is "
+             "refused, then seq 2 sent again on time is accepted (the late frame used up nothing)",
+             (0, 5_010_000),
+             [(1, 1_000_000, 6_015_000, a), (2, 1_020_000, 6_270_000, "reject:late"), (2, 1_040_000, 6_050_000, a)],
+             {"last_ctrl_seq": 2, "rx_rejected": 1, "gaps": 0}),
+        late("late_across_both_wraps",
+             "t_send_us and the ESP clock both wrap (u32 us): on-time frames are accepted, one 250 ms late is refused",
+             (0xFFFF0000, 0xFFFFF000),
+             [(1, 0xFFFFC000, 0x00000100, a), (2, 0x00001000, 0x00011100, a),
+              (3, 0x00002000, 0x00012100 + 250_000, "reject:late")],
+             {"last_ctrl_seq": 2, "rx_rejected": 1, "gaps": 0}),
+        {
+            "name": "late_drift_allowance_past_71_min",
+            "description": "No control frame for 72 min (> 2^32 us; the ESP's clock ticks every 10 min) with the ESP "
+                           "clock 60 ppm fast: the SETPOINT's lag has grown 259 ms, and the 200 ppm allowance (864 ms) "
+                           "still covers it; a u32 elapsed time would have wrapped and refused it (#205 review)",
+            "key": TEST_KEY.hex(),
+            "state": {"current_session": SESSION, "last_ctrl_seq": 0},
+            "late": {"bound_us": 200_000, "hello_t_send_us": 0, "hello_rx_us": 5_010_000},
+            "steps": [{"keep_time_us": (5_010_000 + t + t * 60 // 1_000_000) & 0xFFFFFFFF}
+                      for t in range(0, 72 * 60 * 1_000_000, 600 * 1_000_000)]
+                     + [{"bytes": encode(setpoint(1, t_send_us=(72 * 60 * 1_000_000) & 0xFFFFFFFF, mode=0)).hex(),
+                         "rx_us": (5_010_000 + 72 * 60 * 1_000_000 + 72 * 60 * 60) & 0xFFFFFFFF,
+                         "expect": "accept"}],
+            "final": {"last_ctrl_seq": 1, "rx_rejected": 0, "gaps": 0},
+        },
+        late("late_held_40_min",
+             "Held back 40 min: the u32 lag difference wraps negative and must not pass as a faster path; "
+             "then the same seq on time is accepted",
+             (0, 5_010_000),
+             [(1, 1_000_000, 6_000_000 + 40 * 60 * 1_000_000, "reject:late"),
+              (1, 40 * 60 * 1_000_000 + 1_000_000, 6_000_000 + 40 * 60 * 1_000_000 + 10, a)],
+             {"last_ctrl_seq": 1, "rx_rejected": 1, "gaps": 0}),
     ]  # fmt: skip
 
 

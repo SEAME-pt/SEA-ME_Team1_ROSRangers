@@ -1,11 +1,9 @@
-"""Static checks of the launch files: which nodes they start, with what.
+"""Static checks of mission_demo.launch.py: which nodes it starts, with what.
 
-Loads each file in launch/ and checks the nodes it describes, without
-starting them: the right packages and executables, every mission_node
-executable exists in setup.py, and mission_with_gestures.launch.py starts
-intent_node on the topic input (not gesture_node, and not fake_intent, which
-would fight intent_node on /gesture/intent). test_mission_node_process.py runs
-the demo launch for real.
+Loads the file and checks the nodes it describes, without starting them: the
+node and both pretend inputs, and every mission_node executable exists in
+setup.py. test_mission_node_process.py runs it for real. The modes (the node
+with the rest of the chain) are in ground_bringup.
 
 Needs the ROS 2 launch packages (ROS 2 Jazzy sourced). Without them the tests
 are skipped, unless REQUIRE_ROS_TESTS=1 is set (CI sets it).
@@ -95,29 +93,14 @@ class LaunchFileTests(unittest.TestCase):
             arguments("mission_demo.launch.py"), {"mask", "airborne", "loop"}
         )
 
-    def test_gestures_starts_intent_node_on_the_topic_input(self):
-        found = nodes("mission_with_gestures.launch.py")
-        self.assertEqual(
-            set(found),
-            {
-                ("intent_node", "intent_node"),
-                ("mission_node", "fake_flight_state"),
-                ("mission_node", "mission_node"),
-            },
-        )
-        self.assertEqual(
-            found[("intent_node", "intent_node")], {"input_source": "topic"}
-        )
-        self.assertEqual(
-            arguments("mission_with_gestures.launch.py"), {"mask", "airborne"}
-        )
-
     def test_every_mission_node_executable_exists(self):
-        for name in ("mission_demo.launch.py", "mission_with_gestures.launch.py"):
-            for package, executable in nodes(name):
-                if package == "mission_node":
-                    with self.subTest(launch=name, executable=executable):
-                        self.assertIn(executable, console_scripts())
+        self.assertEqual(
+            {package for package, _ in nodes("mission_demo.launch.py")},
+            {"mission_node"},
+        )
+        for _, executable in nodes("mission_demo.launch.py"):
+            with self.subTest(executable=executable):
+                self.assertIn(executable, console_scripts())
 
 
 if __name__ == "__main__":

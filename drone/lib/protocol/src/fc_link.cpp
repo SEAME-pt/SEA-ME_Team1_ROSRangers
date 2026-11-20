@@ -10,7 +10,8 @@ FcLink::FcLink()
              {msp::kStatus, kStatusPeriodMs, 0, false},
              {msp::kAnalog, kAnalogPeriodMs, 0, false},
              // Last: at start-up the polls above go first, as before.
-             {msp::kApiVersion, kApiVersionPeriodMs, 0, false}} {}
+             {msp::kApiVersion, kApiVersionPeriodMs, 0, false},
+             {msp::kBoxIds, kBoxIdsPeriodMs, 0, false}} {}
 
 void FcLink::set_rc(const std::uint16_t channels[msp::kRcChannels]) {
   if (rc_pending_) {
@@ -38,6 +39,9 @@ void FcLink::expire(std::uint32_t now_ms) {
   if (telemetry_.has_api_version &&
       now_ms - telemetry_.api_version_ms > kMaxValueAgeMs) {
     telemetry_.has_api_version = false;
+  }
+  if (has_boxes_ && now_ms - boxes_ms_ > kMaxValueAgeMs) {
+    forget_boxes();
   }
   // Like the values: never "alive" again just because millis() wrapped.
   if (any_reply_ && now_ms - last_reply_ms_ > kMaxValueAgeMs) {
@@ -67,6 +71,9 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     alive_run_ = false; // #188: a missed reply ends the run of good replies
     if (in_flight_cmd_ == msp::kSetRawRc) {
       rc_run_ = false;
+    }
+    if (in_flight_cmd_ == msp::kBoxIds) {
+      box_page_ = 0; // a lost page: read the list again from the start
     }
     // A silent FC must not starve the polls: after an RC timeout one due poll
     // goes before the next RC, so the FC is seen when it answers again.
@@ -113,8 +120,11 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
   if (next == nullptr) {
     return 0;
   }
-  const std::size_t n =
-      msp::encode_request(next->cmd, nullptr, 0, out, out_cap);
+  // MSP_BOXIDS page 0 goes without a payload (Betaflight's default), later
+  // pages with the page number.
+  const bool paged = next->cmd == msp::kBoxIds && box_page_ > 0;
+  const std::size_t n = msp::encode_request(
+      next->cmd, paged ? &box_page_ : nullptr, paged ? 1 : 0, out, out_cap);
   if (n == 0) {
     return 0;
   }
@@ -156,6 +166,11 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   if (!alive_run_ || !any_reply_ || now_ms - last_reply_ms_ >= kFcLostMs) {
     alive_run_ = true;
     alive_since_ms_ = now_ms;
+  }
+  // #176: after kFcLostMs of silence the FC may have rebooted with another
+  // box list, so the old one is never matched with a new MSP_STATUS.
+  if (any_reply_ && now_ms - last_reply_ms_ >= kFcLostMs) {
+    forget_boxes();
   }
   any_reply_ = true; // an error reply too: the FC is answering (#179)
   last_reply_ms_ = now_ms;
@@ -199,6 +214,10 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
       telemetry_.api_version_ms = now_ms;
     }
     break;
+  case msp::kBoxIds:
+    ok = true; // any list of IDs is valid, an empty one too
+    on_box_ids(reply, now_ms);
+    break;
   case msp::kSetRawRc:
     ok = true; // empty acknowledgement
     // #188: a new run after a gap (RC stopped, e.g. the ADR-004 output)
@@ -214,6 +233,61 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   if (!ok) {
     ++counters_.unexpected;
   }
+}
+
+void FcLink::on_box_ids(const msp::Reply &reply, std::uint32_t now_ms) {
+  for (std::size_t i = 0; i < reply.len; ++i) {
+    if (reply.payload[i] == msp::kBoxMspOverride) {
+      override_box_ = static_cast<int>(box_page_ * msp::kBoxesPerPage + i);
+      if (!has_boxes_) {
+        boxes_since_ms_ = now_ms;
+      }
+      has_boxes_ = true;
+      boxes_ms_ = now_ms;
+      box_page_ = 0;
+      return;
+    }
+  }
+  // A full page: the box may be on the next one (Betaflight sends at most
+  // 128 mode bits, 4 pages). Ask for it at once.
+  if (reply.len == msp::kBoxesPerPage &&
+      box_page_ + 1U < msp::kMaxModeBytes * 8 / msp::kBoxesPerPage) {
+    ++box_page_;
+    for (Poll &p : polls_) {
+      if (p.cmd == msp::kBoxIds) {
+        p.sent_once = false;
+      }
+    }
+    return;
+  }
+  override_box_ = -1; // the FC has no MSP OVERRIDE box
+  if (!has_boxes_) {
+    boxes_since_ms_ = now_ms;
+  }
+  has_boxes_ = true;
+  boxes_ms_ = now_ms;
+  box_page_ = 0;
+}
+
+void FcLink::forget_boxes() {
+  has_boxes_ = false;
+  override_box_ = -1;
+  box_page_ = 0;
+}
+
+OverrideState FcLink::override_state(std::uint32_t now_ms) const {
+  // The STATUS must come from the same FC boot as the box list (#198 review).
+  if (!has_boxes_ || override_box_ < 0 ||
+      !status_fresh(now_ms, kOverrideStatusMaxAgeMs) ||
+      static_cast<std::int32_t>(telemetry_.status_ms - boxes_since_ms_) < 0) {
+    return OverrideState::kUnknown;
+  }
+  const std::size_t box = static_cast<std::size_t>(override_box_);
+  if (box / 8 >= telemetry_.status.mode_bytes) {
+    return OverrideState::kUnknown; // the FC sent no bit for it
+  }
+  return msp::mode_active(telemetry_.status, box) ? OverrideState::kOn
+                                                  : OverrideState::kOff;
 }
 
 bool FcLink::fc_up(bool was_up, std::uint32_t now_ms) const {

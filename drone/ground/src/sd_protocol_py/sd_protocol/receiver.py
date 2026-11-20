@@ -2,8 +2,8 @@
 
 Order (spec §4, v1.3): frame checks (rule 1), session (rule 2), message type,
 transport (§2), direction (§2: only what the other side sends, #152), payload
-size (§3, REQ-COM-001), SETPOINT mode (rule 4), then the sequence window
-(rule 3, ADR-003). A frame refused before the window changes no state. Use one
+size (§3, REQ-COM-001), SETPOINT mode (rule 4), the late check on the ESP
+(rule 3a, #204), then the sequence window (rule 3, ADR-003). A frame refused before the window changes no state. Use one
 Receiver per transport (UDP control, TCP session): each has its own seq, and
 each accepts only the types of its transport, so a frame captured on one cannot
 be replayed on the other.
@@ -58,6 +58,9 @@ class RxResult(IntEnum):
     BAD_MODE = 14  # SETPOINT mode other than 0 or 1 (spec §4 rule 4, REQ-COM-002)
     WRONG_TRANSPORT = 15  # a TCP type on the UDP Receiver or the other way (spec §2)
     WRONG_DIRECTION = 16  # a type this side never receives: its own, sent back (§2)
+    LATE = (
+        17  # a control frame that arrived too long after it was sent (§4 rule 3a, #204)
+    )
 
 
 def is_accepted(result: RxResult) -> bool:
@@ -78,6 +81,7 @@ class RxCounters:
     duplicate_seq: int = 0
     old_seq: int = 0
     seq_too_high: int = 0
+    late: int = 0
     bad_type: int = 0
     bad_payload_size: int = 0
     bad_mode: int = 0
@@ -122,6 +126,28 @@ _SEQ_RESULTS = {
 }
 
 
+# Late check (spec §4 rule 3a, #171, #204): the offset between the ground's
+# t_send_us clock and this side's receive clock may rise by at most this much.
+LATE_DRIFT_PPM = 200
+# A lag this far below the offset is a frame held back 35.8-71.6 min whose u32
+# difference wrapped, not a faster path: refused as late too (#205 review).
+LATE_MAX_EARLY_US = 1_000_000
+# The largest late bound (10 s): set_late_bound() clamps to it (#205 review).
+LATE_BOUND_MAX_US = 10_000_000
+_CONTROL_TYPES = (MsgType.SETPOINT, MsgType.ARM_CONTROL_REQUEST, MsgType.RESUME_REQUEST)
+_U32 = 0xFFFFFFFF
+
+
+def is_control_type(msg_type: int) -> bool:
+    """The types the late check applies to: the frames that start or keep control."""
+    return msg_type in _CONTROL_TYPES
+
+
+def _int32(v: int) -> int:
+    v &= _U32
+    return v - 0x100000000 if v & 0x80000000 else v
+
+
 class Receiver:
     def __init__(self, role: Role, transport: Transport) -> None:
         """The role and the transport are fixed for the Receiver's lifetime (#152)."""
@@ -132,6 +158,57 @@ class Receiver:
         self._in_session = False
         self._window = SeqWindow()
         self.counters = RxCounters()
+        self._late_bound_us = 0
+        self._seeded = False
+        self._offset_us = 0
+        # The receive clock in 64 bits (#205 review): the last u32 reading,
+        # the time it extends to, and when the offset was set.
+        self._clock_started = False
+        self._last_rx_us = 0
+        self._now_us = 0
+        self._offset_at_us = 0
+
+    def set_late_bound(self, bound_us: int) -> None:
+        """Late check (ESP only, spec §4 rule 3a). SETPOINT, ARM_CONTROL_REQUEST
+        and RESUME_REQUEST whose lag (rx_us - t_send_us) is more than bound_us
+        above the session's offset are refused as LATE. The offset is the lowest
+        lag seen, seeded from the HELLO with seed_lag(); it may rise by
+        LATE_DRIFT_PPM of the time since it was last lowered. 0 turns it off;
+        a bound above LATE_BOUND_MAX_US is clamped to it."""
+        self._late_bound_us = min(bound_us, LATE_BOUND_MAX_US)
+
+    def keep_time(self, rx_us: int) -> None:
+        """Keeps the drift allowance's clock going between control frames
+        (#205 review). rx_us is a u32 that wraps every 71.6 min, so the elapsed
+        time is counted from every reading. Call it at least every 35 min (the
+        ESP's sd::Link does it on every loop); receive() with a time does too."""
+        rx_us &= _U32
+        if not self._clock_started:
+            self._clock_started = True
+            self._last_rx_us = rx_us
+            return
+        # The u32 step since the last reading: across the wrap,
+        # 0xFFFFFF00 -> 0x00000100 is a step of 0x200 us.
+        step = (rx_us - self._last_rx_us) & _U32
+        # A step of 2^31 us or more is a reading older than the last one (time
+        # going back), not 35.8-71.6 min passing. It changes nothing, not even
+        # the last reading, so mixing fresh and old readings never counts a gap
+        # twice (#220, Dot99's review): 1000 -> 900 is ignored, and a later
+        # 1010 counts 10 us (from 1000), not 110 us (from 900).
+        backward = step >= 0x80000000
+        if backward:
+            return
+        self._now_us += step
+        self._last_rx_us = rx_us
+
+    def seed_lag(self, t_send_us: int, rx_us: int) -> None:
+        """Seeds the offset from the HELLO that opened this session. Call after
+        start_session(), which clears it; without a seed, the first control
+        frame seeds it."""
+        self.keep_time(rx_us)
+        self._offset_us = (rx_us - t_send_us) & _U32
+        self._offset_at_us = self._now_us
+        self._seeded = True
 
     @property
     def role(self) -> Role:
@@ -185,6 +262,7 @@ class Receiver:
         self._session_id = session_id
         self._in_session = True
         self._window.reset(1 if self._transport is Transport.TCP else 0)
+        self._seeded = False
         return True
 
     def end_session(self) -> None:
@@ -192,6 +270,7 @@ class Receiver:
         self._session_id = 0
         self._in_session = False
         self._window.reset()
+        self._seeded = False
 
     def _reject(self, result: RxResult) -> tuple[RxResult, None]:
         self.counters.rejected += 1
@@ -199,8 +278,14 @@ class Receiver:
         setattr(self.counters, name, getattr(self.counters, name) + 1)
         return result, None
 
-    def receive(self, buf: bytes) -> tuple[RxResult, Frame | None]:
-        """Returns (ACCEPTED or ACCEPTED_GAP, frame) or (the reason, None)."""
+    def receive(
+        self, buf: bytes, rx_us: int | None = None
+    ) -> tuple[RxResult, Frame | None]:
+        """Returns (ACCEPTED or ACCEPTED_GAP, frame) or (the reason, None).
+
+        `rx_us` is the receive time in µs (a u32 that wraps, like t_send_us),
+        for the late check. Without it, a Receiver with the check on refuses
+        every control frame as LATE (fails closed)."""
         if not self._in_session:
             return self._reject(RxResult.NO_SESSION)
 
@@ -236,10 +321,35 @@ class Receiver:
         ):
             return self._reject(RxResult.BAD_MODE)
 
+        # Rule 3a (#204): a control frame that arrived too long after it was
+        # sent. Before the window, so a late frame uses up nothing. Lags are
+        # u32 that wrap; only their differences are read, as int32.
+        new_floor = False
+        if self._late_bound_us and is_control_type(frame.header.type):
+            if rx_us is None:
+                return self._reject(RxResult.LATE)  # no receive time: fail closed
+            rx_us &= _U32
+            lag = (rx_us - frame.header.t_send_us) & _U32
+            if not self._seeded:
+                new_floor = True
+            else:
+                self.keep_time(rx_us)
+                # Elapsed time without a u32 wrap (#205 review): after 71.6 min
+                # a u32 difference would drop the allowance back to about 0.
+                since_offset_us = self._now_us - self._offset_at_us
+                drift = since_offset_us * LATE_DRIFT_PPM // 1_000_000
+                early = _int32(lag - self._offset_us)
+                excess = _int32(lag - self._offset_us - drift)
+                if excess > self._late_bound_us or early < -LATE_MAX_EARLY_US:
+                    return self._reject(RxResult.LATE)
+                new_floor = excess < 0  # a faster path, or allowed drift
+
         # Rule 3: newer than the last accepted message (ADR-003).
         result = _SEQ_RESULTS[self._window.accept(frame.header.seq)]
         if not is_accepted(result):
             return self._reject(result)
+        if new_floor:
+            self.seed_lag(frame.header.t_send_us, rx_us)  # only for an accepted frame
         self.counters.accepted += 1
         return result, frame
 

@@ -14,9 +14,11 @@ if [ -z "${LOG_DIR:-}" ]; then
     exec "$@"
 fi
 
-# Files the host user can delete (the container runs as root). LOG_DIR too:
-# when the host folder is missing, Docker creates it as root with mode 755,
-# and nothing in it could then be removed without sudo.
+# Files the host user can delete, whoever this container runs as: the ground
+# images run as the host user's uid (docker/base/), the PX4 image as uid 1000,
+# and a plain `docker run` may be root. LOG_DIR too: when the host folder is
+# missing, Docker creates it as root with mode 755, and nothing in it could
+# then be removed without sudo.
 umask 000
 mkdir -p "$LOG_DIR"
 chmod 777 "$LOG_DIR" 2>/dev/null || true

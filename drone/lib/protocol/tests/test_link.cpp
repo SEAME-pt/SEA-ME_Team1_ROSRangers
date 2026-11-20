@@ -68,6 +68,7 @@ struct Ground {
   sd::DirectionKeys keys{};
   std::uint32_t seq_tcp = 1; // HELLO used 1
   std::uint32_t seq_udp = 0;
+  std::uint32_t t_send_us = 0; // stamped on every frame (late check, #204)
 
   explicit Ground(std::uint8_t seed = 0x11) {
     for (std::size_t i = 0; i < sd::kNonceSize; ++i) {
@@ -82,7 +83,7 @@ struct Ground {
     std::uint8_t p[sd::kHelloSize];
     const std::size_t n = sd::encode_hello(h, p, sizeof p);
     const sd::Header hd{
-        static_cast<std::uint8_t>(MsgType::kHello), 0, 0, 0, 1, 0};
+        static_cast<std::uint8_t>(MsgType::kHello), 0, 0, 0, 1, t_send_us};
     Bytes out(sd::kMaxFrame);
     out.resize(sd::encode_frame(hd, p, n, psk(), out.data(), out.size()));
     return out;
@@ -119,7 +120,8 @@ struct Ground {
   }
 
   Bytes seal(MsgType type, const Bytes &payload, std::uint32_t seq) const {
-    const sd::Header hd{static_cast<std::uint8_t>(type), 0, 0, session, seq, 0};
+    const sd::Header hd{
+        static_cast<std::uint8_t>(type), 0, 0, session, seq, t_send_us};
     Bytes out(sd::kMaxFrame);
     out.resize(sd::encode_frame(hd, payload.data(), payload.size(),
                                 keys.ground_to_esp, out.data(), out.size()));
@@ -159,6 +161,9 @@ protected:
     c.failsafe_output = fo;
     std::memcpy(c.fw_version, "gw-test-0001", sd::kFwVersionSize);
     c.random = fake_random;
+    // The Ground below stamps t_send_us 0 unless a test sets it, so the late
+    // check (#204) is off here; the LateCheck tests turn it on.
+    c.late_bound_ms = 0;
     return c;
   }
 
@@ -1333,3 +1338,102 @@ TEST_F(LinkTest, EspFramesAreAcceptedByTheGroundReceiver) {
 }
 
 } // namespace
+
+// --- Late check through the Link (spec §4 rule 3a, #204) --------------------
+
+namespace {
+
+// A Link with the default late bound (200 ms, as in the firmware) and a ground
+// whose clock is 3 s behind the ESP's. send() stamps t_send_us = sent_ms of
+// the ground clock; the frame reaches the ESP at arrive_ms.
+struct LateLink {
+  Io io;
+  sd::Link link;
+  Ground g;
+  static sd::LinkConfig config() {
+    sd::LinkConfig c{};
+    c.psk = psk();
+    c.override_mask = kMask;
+    c.failsafe_output = sd::FailsafeOutput::kNeutralThenStop;
+    std::memcpy(c.fw_version, "gw-test-0001", sd::kFwVersionSize);
+    c.random = fake_random;
+    EXPECT_EQ(c.late_bound_ms, 200U); // the default is on
+    return c;
+  }
+  explicit LateLink(std::uint32_t esp_ms = 3000) : link(config(), io) {
+    g_rng = 1;
+    g_rng_zero = false;
+    link.set_fc_alive(true, esp_ms);
+    link.set_rc_accepted(true);
+    link.boot_done(esp_ms);
+    g.t_send_us = (esp_ms - 3000) * 1000U;
+    const Bytes hello = g.hello();
+    EXPECT_EQ(link.on_tcp_frame(0, hello.data(), hello.size(), esp_ms + 5),
+              sd::TcpVerdict::kKeep);
+    EXPECT_TRUE(g.take_ack(io.tcp.back().second));
+  }
+  sd::RxResult setpoint(std::uint32_t sent_ms, std::uint32_t arrive_ms) {
+    g.t_send_us = (sent_ms - 3000) * 1000U;
+    const Bytes f = g.setpoint(1, 0, 0);
+    return link.on_udp(f.data(), f.size(), arrive_ms);
+  }
+};
+
+} // namespace
+
+TEST(LateLinkTest, HeldBackSetpointsNeverKeepStreamingAlive) {
+  LateLink l;
+  std::uint32_t t = 3010;
+  for (; t < 3200; t += 20) {
+    ASSERT_TRUE(sd::is_accepted(l.setpoint(t, t + 8)));
+  }
+  l.g.t_send_us = (t - 3000) * 1000U;
+  const Bytes arm = l.g.tcp(MsgType::kArmControlRequest, u8(kMask));
+  l.link.on_tcp_frame(0, arm.data(), arm.size(), t + 5);
+  ASSERT_EQ(l.link.state(), EspState::kStreaming);
+  // The attacker jams from t on, records, and releases everything 300 ms
+  // later in order: each frame is refused, so T_loss still ends STREAMING.
+  const std::uint32_t jam = t;
+  for (; t < jam + 600; t += 20) {
+    EXPECT_EQ(l.setpoint(t, t + 300), sd::RxResult::kLate) << t;
+  }
+  EXPECT_EQ(l.link.state(), EspState::kLinkFailsafe);
+  EXPECT_GE(l.link.rx_rejected(), 25U);
+}
+
+TEST(LateLinkTest, ALateArmIsRefused) {
+  LateLink l;
+  ASSERT_TRUE(sd::is_accepted(l.setpoint(3010, 3020)));
+  l.g.t_send_us = 30 * 1000U; // sent at ESP time 3030, arrives at 3330
+  const Bytes arm = l.g.tcp(MsgType::kArmControlRequest, u8(kMask));
+  l.link.on_tcp_frame(0, arm.data(), arm.size(), 3330);
+  EXPECT_EQ(l.link.state(), EspState::kSessionIdle);
+}
+
+TEST(LateLinkTest, WorksAcrossTheMillisWrap) {
+  // The ESP's millis() wraps while streaming: now_ms * 1000 wraps with it.
+  LateLink l(0xFFFFFF00U);
+  std::uint32_t t = 0xFFFFFF10U;
+  for (int i = 0; i < 40; ++i, t += 20) {
+    ASSERT_TRUE(sd::is_accepted(l.setpoint(t, t + 8))) << i;
+  }
+  EXPECT_EQ(l.setpoint(t, t + 260), sd::RxResult::kLate);
+}
+
+TEST(LateLinkTest, LinkKeepsTheDriftClockGoingForAnHour) {
+  // #205 review: no control frame for 72 min (only the loop runs, tick()
+  // every 10 min), the ESP clock 60 ppm fast; then ARM on TCP is accepted.
+  LateLink l;
+  const std::uint32_t start = 3010;
+  const std::uint32_t idle_ms = 72U * 60 * 1000;
+  for (std::uint32_t t = 0; t < idle_ms; t += 600000) {
+    l.link.tick(start + t + t / 16667); // ~60 ppm
+  }
+  const std::uint32_t sent = start + idle_ms;
+  const std::uint32_t arrive = sent + idle_ms / 16667 + 8;
+  ASSERT_TRUE(sd::is_accepted(l.setpoint(sent - 20, arrive - 20)));
+  l.g.t_send_us = (sent - 3000) * 1000U;
+  const Bytes arm = l.g.tcp(MsgType::kArmControlRequest, u8(kMask));
+  l.link.on_tcp_frame(0, arm.data(), arm.size(), arrive);
+  EXPECT_EQ(l.link.state(), EspState::kStreaming);
+}

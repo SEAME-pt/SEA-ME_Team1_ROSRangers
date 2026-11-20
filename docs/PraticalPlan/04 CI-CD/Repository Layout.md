@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-19
 project: SEA autonomous drone
 tags:
   - ci
@@ -37,11 +37,19 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
-│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make unit/test/smoke;
+│   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make real / real-dry;
+│   │   │                      #   make test (every suite) / unit / test-sitl / smoke;
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
-│   │   ├── docker-compose.yml # gesture, intent, mission, flight (pretend /flight/state), echo (no local ROS 2 needed);
-│   │   │                      #   flight_interface behind its own profile; px4 + sim_smoke behind sim / sim-smoke (SIM ONLY)
-│   │   ├── docker/            # shared only: entrypoint.sh (node logs), smoke_test.sh (make smoke, CI ground-docker)
+│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
+│   │   │                      #   real (... + flight_interface), sim (... + px4; SIM ONLY), sim-smoke (the sim test)
+│   │   ├── env.example/       # demo|real|sim.env.example: each mode's env file, values empty (copy to env/, ignored by Git,
+│   │   │                      #   and fill in the safety pilot's values); .env.example likewise for .env
+│   │   ├── docker/            # what goes into the images: base/Dockerfile (the base every ground image builds FROM:
+│   │   │                      #   Jazzy, non-root user ros with the host's uid), entrypoint.sh (node logs)
+│   │   ├── tools/             # host helpers: smoke_test.sh (make smoke, CI ground-docker), pkg_dirs.sh (finds each
+│   │   │                      #   ROS package's folder for the Makefile and CI ground-ros2), run_tests.sh (make test's
+│   │   │                      #   suites), env_check.sh / real_check.sh (checks before a mode starts)
+│   │   ├── build/             # make test's C++ build and Betaflight SITL checkout (ignored by Git)
 │   │   ├── logs/              # node and test logs (ignored by Git, only .gitignore committed)
 │   │   └── src/               # one folder per component: its ROS 2 package and its Dockerfile
 │   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
@@ -50,8 +58,11 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── flight_interface/ # flight_interface: the lifecycle node ground <-> drone (ADR-025), fc_telemetry,
 │   │       │                     #   msp.py (MSP client, shared with the bench tools)
 │   │       ├── echo/             # monitor.py: the live table of docker compose up (not a ROS package)
+│   │       ├── bringup/          # ground_bringup: the modes, no code. launch/demo|real|sim.launch.py (the mode
+│   │       │                     #   without Docker), config/demo|real|sim.yaml (its parameters; the containers
+│   │       │                     #   mount config/ and pass --params-file /config/<mode>.yaml)
 │   │       ├── simulation/       # SIM ONLY: PX4 SITL + Gazebo Dockerfile (stage px4 + ground nodes), README,
-│   │       │   │                 #   sim_start.sh (make sim: arms and takes off), sim_smoke.sh (by hand, one container)
+│   │       │   │                 #   sim_start.sh (make sim: arms and takes off)
 │   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):
 │   │       │                             # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
 │   │       │                             # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
