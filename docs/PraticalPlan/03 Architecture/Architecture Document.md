@@ -1,9 +1,9 @@
 ---
 title: Architecture Document (Module 1)
 type: architecture
-status: draft
+status: active
 date: 2026-11-02
-updated: 2026-11-19
+updated: 2026-11-20
 project: SEA autonomous drone
 tags:
   - architecture
@@ -12,7 +12,7 @@ tags:
 
 # Architecture Document (Module 1)
 
-> [!warning] Status: DRAFT, due 2026-11-06 (week 3). Final version 2026-12-11.
+> [!info] Status: complete for Module 1 (2026-11-20): every section is filled from merged code and bench results. One figure is still open: the gesture → motors latency (§4), which needs the controller. Final review 2026-12-11.
 > Module 1 deliverable, REQ-SYS-001, issue #98. This page brings together what is decided elsewhere and links to the sources instead of copying them: [[System Overview]] (target picture), [[Protocol Spec v0]] (wire format), [[ESP Link State Machine]] (ESP behaviour), the ADRs in the [[Decision Register]].
 >
 > **Owners per section:** §1 layers Dot99 · §2 node graph **BrunoBMFT** (he wrote the nodes) · §3 message contracts follow the Protocol Spec v0 freeze (ptorrao-git, #97) · §4 timing budget Dot99 with ptorrao-git.
@@ -44,9 +44,8 @@ flowchart TB
   end
   MIS -->|"/mission/velocity_target"| FI
   FI -->|"/flight/state"| MIS
-  FI <-->|"SETPOINT / STATE, FC_HEALTH<br/>UDP + TCP 5759"| ESP([ESP gateway])
-  FI -->|"/fc/attitude, /fc/battery<br/>from STATE (ESP backend)"| OUT
-  FI <-->|"Wi-Fi SoftAP, WPA2<br/>UDP 5759: control 50 Hz / telemetry 25 Hz<br/>TCP 5759: session + events, HMAC"| ESP
+  FI -->|"/fc/attitude, /fc/battery<br/>from STATE (ESP backend)"| OUT([logs, rosbag])
+  FI <-->|"Wi-Fi SoftAP, WPA2<br/>UDP 5759: SETPOINT 50 Hz, STATE 25 Hz, FC_HEALTH 5 Hz<br/>TCP 5759: session + events, HMAC"| ESP
   ESP <-->|"MSP over UART4, 115200"| FC
   PILOT["Safety pilot<br/>RadioMaster Pocket"] -->|"ELRS 2.4 GHz → CRSF, UART2<br/>arm, modes, override switch"| FC
 ```
@@ -74,26 +73,26 @@ flowchart LR
   FI -->|"/flight/state"| MIS
   FI <-->|"SETPOINT / STATE, FC_HEALTH<br/>UDP + TCP 5759"| ESP([ESP gateway])
   FI -->|"/fc/attitude, /fc/battery<br/>from STATE (ESP backend)"| OUT
-  FC([FC over MSP:<br/>USB or ESP bridge UDP 5760]) --> FCT["fc_telemetry<br/>flight_interface package (#96)"]
+  FC([bench only: FC on USB,<br/>or esp_bridge firmware UDP 5760]) -.-> FCT["fc_telemetry<br/>flight_interface package (#96)"]
   FCT -->|"/fc/attitude 20 Hz<br/>/fc/battery 5 Hz"| OUT
-  FFS["fake_flight_state<br/>until #103"] -.->|"/flight/state 10 Hz"| MIS
+  FFS["fake_flight_state<br/>demo mode only"] -.->|"/flight/state 10 Hz"| MIS
 ```
 
 | Node | Subscribes | Publishes | Rate | State |
 |---|---|---|---|---|
 | `gesture_node` | webcam | `/gesture/raw` (`String`, JSON), or UDP to `intent_node` | per frame, with keep-alive; MediaPipe Holistic 14.5 FPS measured 2026-10-27 | in `dev`, CI + Docker |
 | `intent_node` | `/gesture/raw` or UDP `:5005` (parameter `input_source`) | `/gesture/intent` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, CI + Docker |
-| `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, fed by `fake_flight_state` |
-| `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` |
-| `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06 |
-| `flight_interface` lifecycle node (`flight_interface` package) | `/mission/velocity_target` (`TwistStamped`, body FLU) | `/flight/state` (JSON as above, plus the fields below); `/fc/attitude`, `/fc/battery` from `STATE` (ESP backend, `publish_fc`); services `~/estop`, `~/reset_estop`, `~/resume`, `~/arm_control` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | #103: `loopback` and `esp` backends (PR #187); every setpoint is neutral until the controller (C1); the PX4 backend has its own issue. Details below and in [[ADR-025 flight_interface Ground Node\|ADR-025]] |
+| `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`. Demo mode: `fake_flight_state` feeds `/flight/state`. Real mode: `ground_bringup` `real.launch.py` (`make real`) starts `flight_interface` with `backend: esp` and `mask: 8` (`config/real.yaml`), which publishes the real `/flight/state` |
+| `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` in `ground_bringup`'s `demo.launch.py` (`make`) and `mission_node`'s `mission_demo.launch.py` (no ESP needed) |
+| `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06. A bench tool now: UDP 5760 needs the `esp_bridge` firmware, and with the gateway `flight_interface` publishes these topics |
+| `flight_interface` lifecycle node (`flight_interface` package) | `/mission/velocity_target` (`TwistStamped`, body FLU) | `/flight/state` (JSON as above, plus the fields below); `/fc/attitude`, `/fc/battery` from `STATE` (ESP backend, `publish_fc`); services `~/estop`, `~/reset_estop`, `~/resume`, `~/arm_control` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | in `dev` (#103, PR #187): `loopback` and `esp` backends; every setpoint is neutral until the controller (C1); the PX4 backend has its own issue. Details below and in [[ADR-025 flight_interface Ground Node\|ADR-025]] |
 
 **QoS:** every topic uses the rclpy default for a depth of 10: reliable, volatile, keep last 10.
 
 **What each rate depends on:**
 
 - `gesture_node`: the camera and MediaPipe frame rate. `intent_node` turns it into a steady 20 Hz.
-- `mission_node`: 20 Hz, below the 50 Hz `SETPOINT` stream that `flight_interface` will send to the ESP ([[Protocol Spec v0]]).
+- `mission_node`: 20 Hz, below the 50 Hz `SETPOINT` stream that `flight_interface` sends to the ESP ([[Protocol Spec v0]]).
 - `fc_telemetry`: how fast the FC answers MSP. Each poll waits for its reply (100 ms timeout, `request_timeout_sec`) before the next one starts, so attitude and battery requests never interleave.
 
 ### `/fc/attitude` and `/fc/battery`
@@ -113,7 +112,7 @@ What the two FC telemetry topics carry. Proposed by BrunoBMFT for #96 and merged
 | `header.stamp` | halfway between MSP request and reply, ROS clock | same |
 | No or bad reply | nothing is published; an old value is never sent again with a new stamp. Subscribers judge freshness from the stamp age. Late replies are dropped if they arrived before the next request; MSP v1 has no sequence number, so one that arrives after that can still be taken (rare: ~0.2 % misses on the bench) | same |
 
-Every backend (MSP today, `STATE` from the gateway firmware with #103, PX4 SITL later) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/flight_interface/telemetry.py` (conversions) and `fc_telemetry.py` (node).
+Every backend (MSP in `fc_telemetry`, `STATE` in `flight_interface`'s ESP backend, PX4 SITL with #199) must deliver these topics in the same form. Code: `drone/ground/src/flight_interface/flight_interface/flight_interface/telemetry.py` (conversions) and `fc_telemetry.py` (node).
 
 ### `fc_telemetry` node
 
@@ -144,7 +143,7 @@ MSP round trip median 13.5–14.4 ms (bridge baseline 12–15 ms, #30). Missed r
 
 The decisions behind it are in [[ADR-025 flight_interface Ground Node|ADR-025]]; the code and its parameters in `drone/ground/src/flight_interface/flight_interface/` (`flight_interface/link_node.py`); how to run it in Docker: [[05 Flight Interface Node]].
 
-Run: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file defaults to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1, E1.4); in Docker (`make real`) the domain and discovery range come from `drone/ground/env/real.env` (E1.3). Every terminal that talks to the node needs the same two variables.
+Run: `make real`, or `ros2 launch ground_bringup real.launch.py` outside Docker. The container mounts only the PSK (`~/.config/seame-drone/psk.json`, written by `make psk-file`), never the whole `secrets.json`, and only one `/flight/state` publisher may run at a time ([[ADR-025 flight_interface Ground Node|ADR-025]] E3.2). To run the node alone: `ros2 launch flight_interface flight_interface.launch.py backend:=esp`. The node starts unconfigured: `ros2 lifecycle set /flight_interface configure`, then `activate`. Setpoints go out only while active, only from a target that arrives after the activation. The launch file defaults to `ROS_DOMAIN_ID=42` and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (ADR-025 E1, E1.4); in Docker (`make real`) the domain and discovery range come from `drone/ground/env/real.env` (E1.3). Every terminal that talks to the node needs the same two variables.
 
 | Service | What it does |
 |---|---|
@@ -175,7 +174,7 @@ Ground ↔ ESP messages are defined only in [[Protocol Spec v0]]. This document 
 | ESP polls `MSP_ATTITUDE` (25 Hz), `MSP_ANALOG` / `MSP_STATUS` (5 Hz) | [[ADR-009 ESP to FC Link\|ADR-009]] | UART4 MSP | ESP ↔ FC |
 | ROS 2 topics | §2 above | DDS, ground only | ground nodes |
 
-Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts are frozen: Protocol Spec v0 v1.2: accepted at the design review of 2026-11-03 (#97), with the open items decided on 2026-11-05 (#142, spec §7.5) and one key per direction (#150, spec §1). Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 stays the transparent bridge's port until the gateway firmware (#101) replaces it.
+Both implementations (C++ #99, Python #100) must pass the shared golden vectors in `drone/tests/vectors/`. The contracts were accepted at the design review of 2026-11-03 (#97); every change since is a dated entry in the spec's §8 changelog. Ports are in spec §7.1: UDP 5759 for control and telemetry, TCP 5759 for the session; 5760 is the transparent bridge's port; the gateway is the default firmware since 2026-11-13 (#106), and the bridge (`esp_bridge`) is a bench tool.
 
 ## 4. Timing budget (ground → ESP → FC)
 
@@ -190,12 +189,17 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 | Longest silence, close / cage | 163–203 ms / 247–343 ms | #30 |
 | **Setpoint freshness `T_fresh`** | **150 ms** since the last accepted `SETPOINT` → neutral sticks (roll/pitch/yaw 1500); the next valid `SETPOINT` is used at once. No failsafe, no handshake | Protocol Spec v0 §7.2 |
 | **ESP link failsafe `T_loss`** | **250 ms** without an accepted control packet → neutral | [[ADR-004 ESP Failsafe\|ADR-004]] |
+| Link loss on the HIL bench (gateway firmware, fake FC, props off) | First neutral RC on the UART at `T_fresh` (150 ms, −5/+90 ms), `LINK_FAILSAFE_ENTERED` at `T_loss` (250 ms, −5/+180 ms for Wi-Fi both ways), RC stops 1 s later. Resume only through `RESUME_REQUEST` | #106, `test_link_loss_failsafe_within_250_ms` in `drone/tests/hil/gateway/wifi/test_session.py`; in CI since PR #180 (2026-11-10), last green `dev` run 44568215644 (2026-11-19) |
+| FC link lost / back (ESP ↔ FC) | lost after 250 ms without a reply; back only after 250 ms of replies; ARM and RESUME need 1 s of acknowledged RC | #179, #188 (`sd::FcLink`, `drone/lib/protocol/include/sd/fc_link.hpp`) |
+| `flight_interface` held ARM / RESUME | sent after 1.5 s of neutral setpoints, dropped after 3 s | [[ADR-025 flight_interface Ground Node\|ADR-025]] K6 |
 | Failsafe trips at cage distance | 0–1 per 10 min normally, 11 in the worst run | #30, accepted: a trip is safe by design |
 | `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters `neutral_timeout_sec`, `stale_timeout_sec` |
 | FC attitude → ground topic (`/fc/attitude` delay, `fc_telemetry` over the transparent bridge) | avg 11 ms, max 50 ms; MSP round trip median 13.5–14.4 ms | #96, bench 2026-11-06 |
-| Gesture → motors end to end | **not measured yet** | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
+| Gesture → motors end to end | **not measured yet**: every `flight_interface` setpoint is neutral until the controller (C1), so a gesture doesn't reach the motors yet | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
 
-Still to measure: the end-to-end gesture → motors latency and the failsafe-timing test on the HIL bench (#106, 250 ms ± tolerance).
+Still to measure: the end-to-end gesture → motors latency, once the controller sends real setpoints.
+
+On the HIL bench, Wi-Fi power saving on the Pi delayed TCP connects and `EVENT`s in some runs (#106); the `LINK_FAILSAFE_ENTERED` tolerance above covers normal Wi-Fi delay, not those stalls.
 
 ### Real-time profile (REQ-SW-005, #146)
 
@@ -231,6 +235,8 @@ Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Comma
 | **E-stop** | The operator's `~/estop` on `flight_interface`: latched until `~/reset_estop`. |
 | **`FC_HEALTH`** | ESP → ground message (0x81, 5 Hz): FC alive, armed flag, value ages, counters. |
 | **Held request** | An operator ARM or RESUME that `flight_interface` keeps until 1.5 s of neutral setpoints went out (ADR-025 K6). |
+| **Gateway firmware** | The ESP firmware on the drone since 2026-11-13 (#106): the [[ESP Link State Machine]], HMAC-checked frames, and MSP to the FC only from an allow-list. |
+| **HIL** | Hardware-in-the-loop: the real ESP on a bench, driven by a Raspberry Pi that plays the ground and a fake FC, run from CI (props off, no LiPo). |
 | **Lifecycle node** | A ROS 2 node with explicit states (unconfigured, inactive, active) changed with `ros2 lifecycle set`. |
 | **ESP8266** | The Wi-Fi microcontroller on the drone that bridges the ground to the FC over UART4. |
 | **FC** | Flight Controller: the OddityRC F7 AIO running Betaflight. |
@@ -246,5 +252,5 @@ Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Comma
 | **SoftAP** | The Wi-Fi network the ESP creates itself, which the ground PC joins. |
 | **`T_fresh`** | Maximum age of the last accepted setpoint (150 ms). Older → neutral sticks until the next valid setpoint; no failsafe. |
 | **`T_loss`** | Time without an accepted control packet after which the ESP enters link failsafe (250 ms). |
-| **Transparent bridge** | Today's ESP firmware: it forwards raw MSP between UDP 5760 and the FC unchanged. The gateway firmware (#101) replaces it. |
+| **Transparent bridge** | The first custom ESP firmware (`esp_bridge`): forwards raw MSP between UDP 5760 and the FC unchanged. Replaced by the gateway on the drone (#106); kept as a bench tool. |
 | **Yaw zero** | The FC yaw reading taken as 0 at the node's first attitude sample. Needed because the drone has no magnetometer, so Betaflight's yaw only counts from FC power-up and drifts. |
