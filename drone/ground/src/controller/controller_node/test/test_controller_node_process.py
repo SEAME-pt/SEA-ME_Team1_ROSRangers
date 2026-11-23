@@ -6,7 +6,7 @@ Runs `python3 -m controller_node.controller_node` (the same main() that
     seconds, no traceback, and the last /control/attitude_setpoint is
     inactive with reason "stopped".
   * A bad parameter: exit 1 with a FATAL log line naming it, no traceback.
-  * The mode file's `/**:` section reaches the node (F15).
+  * Its section of a mode file reaches it (`controller_node:`, F15).
 
 Needs ROS 2 Jazzy sourced. Without rclpy the tests are skipped, unless
 REQUIRE_ROS_TESTS=1 is set (CI sets it), then the import error fails the run.
@@ -123,13 +123,13 @@ class ProcessTests(unittest.TestCase):
         self.assertIn("hover_throttle", output)
         self.assertNotIn("Traceback", output)
 
-    def test_shared_section_reaches_the_node(self):
-        # F15: mask and hover_throttle once, in the mode file's /**: section.
+    def test_mode_file_section_reaches_the_node(self):
+        # F15: mask and hover_throttle in the node's own section.
         folder = tempfile.TemporaryDirectory(prefix="controller-test-")
         self.addCleanup(folder.cleanup)
         path = Path(folder.name) / "mode.yaml"
         path.write_text(
-            "/**:\n  ros__parameters:\n    mask: 11\n    hover_throttle: 0.6\n"
+            "controller_node:\n  ros__parameters:\n    mask: 11\n    hover_throttle: 0.6\n"
         )
         process = start("--params-file", str(path))
         try:

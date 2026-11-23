@@ -88,7 +88,7 @@ ROS     := /opt/ros/jazzy/setup.bash
 
 VENV    := gesture-venv
 WS      := ros2_ws
-PKGS    := gesture_node intent_node mission_node flight_interface ground_bringup
+PKGS    := gesture_node intent_node mission_node controller_node flight_interface ground_bringup
 # Each package's folder (src/<component>/<package>), found by tools/pkg_dirs.sh: one
 # folder per package or it fails (#186). Looked up in the rules that use it, so
 # a missing package never breaks make down or make clean.
@@ -174,8 +174,8 @@ $(VENV)/.installed: src/gesture/gesture_node/requirements.txt
 # Only links whose target is gone, only under the workspace's build/ and install/.
 PRUNE_LINKS = find $(WS)/build $(WS)/install -xtype l -delete 2>/dev/null || true
 
-ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node $(WS)/.flight_interface \
-	$(WS)/.ground_bringup
+ws: $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node $(WS)/.controller_node \
+	$(WS)/.flight_interface $(WS)/.ground_bringup
 
 # Symlinks, not copies, so --symlink-install picks up .py edits without a rebuild.
 # Redone when PKGS changes, so an existing workspace gets new packages too.
@@ -194,6 +194,12 @@ $(WS)/.mission_node: $(WS)/.src src/mission/mission_node/setup.py src/mission/mi
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select mission_node
 	touch $@
 
+$(WS)/.controller_node: $(WS)/.src src/controller/controller_node/setup.py \
+		src/controller/controller_node/package.xml
+	$(PRUNE_LINKS)
+	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select controller_node
+	touch $@
+
 # Built here for its tests (make test); it runs in its container only
 # (make real). Its ESP backend needs sd_protocol: the venv has it (test-deps).
 $(WS)/.flight_interface: $(WS)/.src src/flight_interface/flight_interface/setup.py \
@@ -208,7 +214,7 @@ $(WS)/.flight_interface: $(WS)/.src src/flight_interface/flight_interface/setup.
 # in the workspace built first.
 BRINGUP := src/bringup/ground_bringup
 $(WS)/.ground_bringup: $(WS)/.src $(WS)/.gesture_node $(WS)/.intent_node $(WS)/.mission_node \
-		$(WS)/.flight_interface $(BRINGUP)/setup.py $(BRINGUP)/package.xml \
+		$(WS)/.controller_node $(WS)/.flight_interface $(BRINGUP)/setup.py $(BRINGUP)/package.xml \
 		$(wildcard $(BRINGUP)/launch/*.launch.py $(BRINGUP)/config/*.yaml)
 	$(PRUNE_LINKS)
 	source $(ROS) && cd $(WS) && colcon build --symlink-install --packages-select ground_bringup
@@ -369,7 +375,7 @@ clean: no-flight-interface
 
 REAL_COMPOSE := $(COMPOSE) --env-file env/real.env
 # The real chain; echo is started apart, in the foreground (the live table)
-REAL_CHAIN   := gesture intent mission
+REAL_CHAIN   := gesture intent mission controller
 # flight_interface is started with `run` (so the dry run can change its
 # command), under this name, with --rm: docker stop also removes it
 FI_NAME      := ground-flight_interface

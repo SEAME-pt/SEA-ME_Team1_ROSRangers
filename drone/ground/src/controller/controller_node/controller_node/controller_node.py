@@ -13,8 +13,9 @@ alive:
 Freshness is measured on receive (monotonic clock), like mission_node and
 the flight_interface guard, not from the message stamps.
 
-Shared values (`mask`, `hover_throttle`) come from the mode file's `/**:`
-section (F15). hover_throttle 0.0 = not measured = always inactive (F16).
+`mask` and `hover_throttle` must equal flight_interface's (F15): the mode
+file repeats them in both sections and test_config.py checks they agree.
+hover_throttle 0.0 = not measured = always inactive (F16).
 
 Ctrl+C and SIGTERM (docker stop) are a normal stop: one last inactive
 setpoint, then exit code 0. A bad parameter: FATAL log and exit code 1.
@@ -46,7 +47,7 @@ HEALTH_REPORT_SEC = 5.0
 # accepted as well; anything else stops the node at start-up.
 NUMBER_PARAMS = {
     "rate_hz": 50.0,  # flight_interface's SETPOINT rate
-    "hover_throttle": HOVER_NOT_MEASURED,  # F16: set per mode in /**: (F15)
+    "hover_throttle": HOVER_NOT_MEASURED,  # F16; the same as flight_interface's (F15)
     "tilt_cap_deg": MAX_TILT_CAP_DEG,
     "throttle_band": MAX_THROTTLE_BAND,
     "target_timeout_sec": MAX_INPUT_TIMEOUT,

@@ -184,6 +184,30 @@ services:
       - --params-file
       - /config/${GROUND_MODE:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}.yaml
 
+  # The cascade controller (#199, ADR-025 C1): /mission/velocity_target and
+  # /estimate/velocity -> /control/attitude_setpoint. Inactive (neutral) while
+  # it has no measured velocity or no measured hover throttle (F6, F16), as
+  # in demo and real today. The mode file's /**: section gives the mask and
+  # the hover throttle (F15).
+  controller:
+    <<: *node
+    profiles: [demo, real]
+    build:
+      context: .
+      dockerfile: src/controller/Dockerfile
+      additional_contexts:
+        base: service:base
+    depends_on: *after-base
+    image: rosrangers/controller:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: controller
+    command:
+      - /ws/install/controller_node/lib/controller_node/controller_node
+      - --ros-args
+      - --params-file
+      - /config/${GROUND_MODE:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}.yaml
+
   # PRETEND /flight/state (override on, airborne) so mission can leave IDLE.
   # Never use it with a real drone. Its mask and airborne are in
   # config/demo.yaml (ground_bringup): mask 15 gives the ground throttle

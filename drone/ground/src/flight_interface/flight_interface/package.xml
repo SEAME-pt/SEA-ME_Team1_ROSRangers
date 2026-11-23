@@ -3,7 +3,7 @@
 <package format="3">
   <name>flight_interface</name>
   <version>0.1.0</version>
-  <description>Ground link to the flight controller. For now: polls the FC over MSP (USB, or UDP through the ESP bridge) and publishes /fc/attitude and /fc/battery. Lifecycle node flight_interface (#103): /mission/velocity_target to the drone, /flight/state back, with a watchdog and an E-stop.</description>
+  <description>Ground link to the flight controller. For now: polls the FC over MSP (USB, or UDP through the ESP bridge) and publishes /fc/attitude and /fc/battery. Lifecycle node flight_interface (#103): the controller's /control/attitude_setpoint to the drone (#199), /flight/state back, with a watchdog and an E-stop.</description>
   <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
   <license>MIT</license>
 

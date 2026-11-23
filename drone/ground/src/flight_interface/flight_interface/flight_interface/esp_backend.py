@@ -25,8 +25,9 @@ What it does:
     keys are wrong) or the gateway lost the session: it is dropped and a new
     handshake follows, never with ARM. Before E4 an inactive node kept such a
     session forever.
-  * Sends SETPOINT over UDP. Until decision C1 (who turns the velocity target
-    into attitude sticks) every setpoint goes out as mode 0 (neutral): it keeps
+  * Sends SETPOINT over UDP. Every setpoint goes out as mode 0 (neutral),
+    also an active attitude setpoint from the controller: nothing reaches the
+    real drone until the safety pilot decides otherwise (ADR-025 F6). It keeps
     the link alive (the setpoint stream is the heartbeat, spec §7.2) and never
     moves the drone.
   * Reads STATE and FC_HEALTH (UDP) and EVENT / ACK / BYE (TCP). Every frame
@@ -205,8 +206,8 @@ class EspBackend(Backend):
 
     # ---------- the node's interface ----------
     def send_setpoint(self, command, now):
-        """Until decision C1 every setpoint is sent as mode 0 (neutral).
-        Returns True if it went out."""
+        """Every setpoint is sent as mode 0 (neutral), active or not (ADR-025
+        F6). Returns True if it went out."""
         return self._send_neutral(now)
 
     def send_neutral(self, now):

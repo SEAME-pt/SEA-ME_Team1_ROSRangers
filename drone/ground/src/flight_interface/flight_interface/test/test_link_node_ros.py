@@ -11,12 +11,13 @@ import json
 import os
 import time
 import unittest
+from unittest import mock
 
 from flight_interface.backends import LoopbackBackend
+from flight_interface.guard import NEUTRAL, Setpoint
 
 try:
     import rclpy
-    from geometry_msgs.msg import TwistStamped
     from lifecycle_msgs.msg import State
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.lifecycle import TransitionCallbackReturn
@@ -32,6 +33,22 @@ except ImportError:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
 TEST_DOMAIN_ID = 92
 
+
+def setpoint_json(pitch=0.0, yaw_rate=0.0):
+    """What controller_node publishes on /control/attitude_setpoint: an active
+    setpoint (C1.1, F17), throttle inside 0-1."""
+    return json.dumps(
+        {
+            "roll": 0.0,
+            "pitch": pitch,
+            "yaw_rate": yaw_rate,
+            "throttle": 0.5,
+            "active": True,
+            "reason": "ok",
+        }
+    )
+
+
 STREAMING = {
     "esp_state": "STREAMING",
     "override_active": True,
@@ -39,6 +56,12 @@ STREAMING = {
     "airborne": True,
     "fc_link_ok": True,  # E6.1
 }
+
+
+def commanded(pitch):
+    """What the guard sends for setpoint_json(pitch) under mask 11 with no
+    hover throttle: throttle is not the ground's, so it is the hover value."""
+    return Setpoint(0.0, pitch, 0.0, 0.0, True)
 
 
 # What the node may use on a backend (REQ-SAF-023: nothing that could arm).
@@ -99,7 +122,7 @@ class FlightInterfaceRosTests(unittest.TestCase):
             10,
         )
         self.target_pub = self.probe.create_publisher(
-            TwistStamped, "/mission/velocity_target", 10
+            String, "/control/attitude_setpoint", 10
         )
         self.estop = self.probe.create_client(Trigger, "/flight_interface/estop")
         self.reset = self.probe.create_client(Trigger, "/flight_interface/reset_estop")
@@ -113,13 +136,14 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.probe.destroy_node()
 
     def spin(self, seconds, target=None):
-        """Spin; publish `target` (vx) at 20 Hz meanwhile, like mission_node."""
+        """Spin; publish an active setpoint with pitch `target` (deg) at 20 Hz
+        meanwhile."""
         end = time.monotonic() + seconds
         next_pub = 0.0
         while time.monotonic() < end:
             if target is not None and time.monotonic() >= next_pub:
-                msg = TwistStamped()
-                msg.twist.linear.x = target
+                msg = String()
+                msg.data = setpoint_json(pitch=target)
                 self.target_pub.publish(msg)
                 next_pub = time.monotonic() + 0.05
             self.executor.spin_once(timeout_sec=0.01)
@@ -158,7 +182,7 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.spin(0.5, target=0.3)
         sent = self.sent_since(0)
         self.assertGreater(len(sent), 10)  # ~50 Hz
-        self.assertIn((0.3, 0.0, 0.0, 0.0), sent)
+        self.assertIn(commanded(0.3), sent)
         self.assertTrue(self.states[-1]["link_ok"])
         self.assertEqual(self.states[-1]["esp_state"], "STREAMING")
 
@@ -167,7 +191,7 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.spin(0.3, target=0.3)
         self.node.trigger_deactivate()
         n = len(self.backend.sent)
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
         self.spin(0.3, target=0.3)
         self.assertEqual(len(self.backend.sent), n)
         self.assertFalse(self.states[-1]["link_ok"])
@@ -176,18 +200,18 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.configure_and_activate()
         self.spin(0.3, target=0.3)
         self.spin(0.4)  # mission_node silent
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
 
     def test_watchdog_link_lost_gives_zero_and_link_ok_false(self):
         self.configure_and_activate()
         self.spin(0.3, target=0.3)
         self.backend.connected = False  # the drone goes silent
         self.spin(0.8, target=0.3)
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
         self.assertFalse(self.states[-1]["link_ok"])
         self.backend.connected = True
         self.spin(0.4, target=0.3)
-        self.assertEqual(self.backend.sent[-1][1], (0.3, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], commanded(0.3))
         self.assertTrue(self.states[-1]["link_ok"])
 
     def test_estop_cuts_at_once_and_needs_a_reset_and_a_new_target(self):
@@ -204,7 +228,7 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.assertTrue(self.call(self.reset).success)
         self.assertFalse(self.call(self.reset).success)  # nothing left to reset
         self.spin(0.3, target=0.2)
-        self.assertEqual(self.backend.sent[-1][1], (0.2, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], commanded(0.2))
 
     def test_never_asks_for_anything_but_setpoints(self):
         # REQ-SAF-023: every transition, a link loss and recovery, an E-stop and
@@ -225,14 +249,14 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.assertLessEqual(self.backend.calls, ALLOWED)
         self.assertNotIn("arm_control_request", self.backend.calls)
         for _, cmd in self.backend.sent:
-            self.assertEqual(len(cmd), 4)
+            self.assertIsInstance(cmd, Setpoint)
 
     def test_cleanup_closes_the_backend_and_shutdown_from_active(self):
         self.configure_and_activate()
         self.spin(0.2, target=0.3)
         self.node.trigger_shutdown()
         self.assertTrue(self.backend.closed)
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
         self.assertEqual(
             self.node._state_machine.current_state[0], State.PRIMARY_STATE_FINALIZED
         )
@@ -247,7 +271,7 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.configure_and_activate()
         self.spin(0.3, target=0.3)
         self.call(self.estop)
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
         self.assertTrue(self.states[-1]["estop"])  # published at once
         n = len(self.backend.sent)
         self.node.trigger_deactivate()
@@ -259,6 +283,62 @@ class FlightInterfaceRosTests(unittest.TestCase):
         self.assertTrue(self.node.guard.estop)
         self.assertTrue(self.call(self.reset).success)
         self.assertFalse(self.node.guard.estop)
+
+    def publish_raw(self, text, seconds):
+        end = time.monotonic() + seconds
+        next_pub = 0.0
+        while time.monotonic() < end:
+            if time.monotonic() >= next_pub:
+                msg = String()
+                msg.data = text
+                self.target_pub.publish(msg)
+                next_pub = time.monotonic() + 0.05
+            self.executor.spin_once(timeout_sec=0.01)
+
+    def test_a_bad_setpoint_is_dropped_and_goes_neutral(self):
+        # F18: malformed input never flies; it goes stale -> neutral.
+        self.configure_and_activate()
+        self.spin(0.3, target=0.3)
+        self.assertEqual(self.backend.sent[-1][1], commanded(0.3))
+        bad = json.dumps(
+            {"roll": 0, "pitch": 3, "yaw_rate": 0, "throttle": 2.0, "active": True}
+        )
+        with mock.patch.object(self.node.get_logger(), "warning") as warning:
+            self.publish_raw(bad, 0.4)
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
+        self.assertTrue(
+            any("bad attitude setpoint" in c.args[0] for c in warning.call_args_list)
+        )
+
+    def test_a_setpoint_beyond_the_caps_is_clamped_with_a_warning(self):
+        self.configure_and_activate()
+        with mock.patch.object(self.node.get_logger(), "warning") as warning:
+            self.spin(0.3, target=40.0)
+        self.assertEqual(self.backend.sent[-1][1], commanded(15.0))
+        self.assertTrue(
+            any("clamped: pitch" in c.args[0] for c in warning.call_args_list)
+        )
+
+    def test_bad_hover_throttle_fails_configure_before_the_backend(self):
+        for value in (0.95, "high", True):
+            with self.subTest(value=value):
+                self.node.set_parameters(
+                    [rclpy.parameter.Parameter("hover_throttle", value=value)]
+                )
+                self.assertEqual(
+                    self.node.trigger_configure(), TransitionCallbackReturn.FAILURE
+                )
+                self.assertIsNone(self.node.guard)
+
+    def test_hover_throttle_reaches_the_guard(self):
+        self.node.set_parameters(
+            [rclpy.parameter.Parameter("hover_throttle", value=0.6)]
+        )
+        self.configure_and_activate()
+        self.assertEqual(self.node.guard.hover_throttle, 0.6)
+        self.spin(0.3, target=0.3)
+        # Mask 11: throttle is not the ground's, so the hover value goes out.
+        self.assertEqual(self.backend.sent[-1][1], Setpoint(0.0, 0.3, 0.0, 0.6, True))
 
     def test_bad_backend_parameter_fails_configure(self):
         self.node.destroy_node()  # the same node name, one at a time

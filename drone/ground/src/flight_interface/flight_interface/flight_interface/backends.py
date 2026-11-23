@@ -3,7 +3,9 @@ where the drone state comes from.
 
 A backend has these methods and no others the node may call:
 
-  send_setpoint(command, now)  one setpoint (vx, vy, vz, wz), body FLU;
+  send_setpoint(command, now)  one guard.Setpoint (roll, pitch, yaw_rate,
+                               throttle, active; body FLU, REP-103, ADR-025
+                               C1.1); active false = no command (F8).
                                True if it went out
   send_neutral(now)            one neutral setpoint (SETPOINT mode 0); True if
                                it went out
@@ -30,9 +32,11 @@ node's (REQ-SAF-023). Tests check both: the node
 calls nothing else on its own, and no other code builds the frame.
 
 Backends: `loopback` (tests and dry runs, no drone) and `esp` (sd_protocol over
-TCP/UDP to the gateway firmware, esp_backend.py). The PX4 SITL backend waits
-for decision C1.
+TCP/UDP to the gateway firmware, esp_backend.py). The PX4 SITL backend comes
+with #199 (ADR-025 F3).
 """
+
+from flight_interface.guard import NEUTRAL
 
 
 class Backend:
@@ -41,8 +45,9 @@ class Backend:
     name = "base"
 
     def send_setpoint(self, command, now):
-        """Send one velocity setpoint (vx, vy, vz, wz), body FLU. Returns True
-        if it went out (the node counts only those for the K6 window)."""
+        """Send one guard.Setpoint. active false is no command (F8): the ESP
+        sends mode 0. Returns True if it went out (the node counts only those
+        for the K6 window)."""
         raise NotImplementedError
 
     def send_neutral(self, now):
@@ -113,19 +118,19 @@ class LoopbackBackend(Backend):
             }
         )
         self.connected = connected
-        self.sent = []  # (now, command); a neutral is recorded as a zero command
+        self.sent = []  # (now, Setpoint); a neutral is recorded as NEUTRAL
         self.log = []  # (now, what): "setpoint", "neutral", "bye", "resume", "arm"
         self.armed_masks = []  # masks passed to arm_control()
         self.acks = []  # answers a test queues for take_acks()
         self.closed = False
 
     def send_setpoint(self, command, now):
-        self.sent.append((now, tuple(command)))
+        self.sent.append((now, command))
         self.log.append((now, "setpoint"))
         return True
 
     def send_neutral(self, now):
-        self.sent.append((now, (0.0, 0.0, 0.0, 0.0)))
+        self.sent.append((now, NEUTRAL))
         self.log.append((now, "neutral"))
         return True
 
@@ -171,6 +176,4 @@ def make_backend(name, esp_host="192.168.4.1", esp_port=5759, psk=None, warn=Non
         if psk is None:
             psk = load_psk(warn=warn)
         return EspBackend(esp_host, esp_port, psk)
-    raise ValueError(
-        f"backend must be one of {', '.join(BACKENDS)} (px4 waits for C1), got {name!r}"
-    )
+    raise ValueError(f"backend must be one of {', '.join(BACKENDS)}, got {name!r}")

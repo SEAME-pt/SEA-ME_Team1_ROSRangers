@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""flight_interface lifecycle node (#103): /mission/velocity_target -> drone,
+"""flight_interface lifecycle node (#103): /control/attitude_setpoint -> drone,
 drone -> /flight/state, with a watchdog and an E-stop.
+
+Input (ADR-025 C1.1, C1.5, #199): the controller's attitude setpoint, JSON on
+std_msgs/String: roll, pitch (deg), yaw_rate (deg/s), throttle (0-1), active
+(REP-103 signs). A malformed message is dropped with a warning and goes
+stale (F18). The guard limits the rest (guard.py). `hover_throttle` (0.0 =
+not measured, F16) and `mask` equal the controller's: the mode file repeats
+them in both sections (F15).
 
 Lifecycle (ros2 lifecycle set /flight_interface <transition>):
   * unconfigured: nothing runs, nothing is published. mission_node sees no
     /flight/state and stays IDLE.
   * configure: opens the backend, starts the watchdog and /flight/state
     (link_ok false until active).
-  * activate: setpoints go out at rate_hz, only from a target that arrives
+  * activate: setpoints go out at rate_hz, only from a setpoint that arrives
     after the activation.
-  * deactivate: one last zero setpoint, then nothing more.
+  * deactivate: one last neutral setpoint, then nothing more.
   * cleanup / shutdown: closes the backend.
 
 E-stop (decision A1): service ~/estop (std_srvs/Trigger) sends one neutral
@@ -17,7 +24,7 @@ setpoint (mode 0) and then BYE, so the ESP ends the session and starts its
 ADR-004 output at once. Nothing more is sent. It is latched on the node:
 deactivate, cleanup and configure keep it, only ~/reset_estop clears it, and
 afterwards control needs a new session (the ESP backend opens one by itself,
-decision A5), an operator ARM and a NEW target. A process restart starts
+decision A5), an operator ARM and a NEW setpoint. A process restart starts
 without the latch (decision A6): the launch file has no respawn, and after a
 restart nothing is sent before configure, activate and an operator ARM.
 An unexpected error in the node's tick (decision A7) latches the same E-stop:
@@ -71,7 +78,8 @@ import time
 import traceback
 
 import rclpy
-from geometry_msgs.msg import TwistStamped, Vector3Stamped
+from geometry_msgs.msg import Vector3Stamped
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.exceptions import ParameterException
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.lifecycle import Node, State, TransitionCallbackReturn
@@ -82,7 +90,14 @@ from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
 from flight_interface.backends import make_backend
-from flight_interface.guard import LINK_TIMEOUT, MAX_TARGET_TIMEOUT, ZERO, Guard
+from flight_interface.guard import (
+    HOVER_NOT_MEASURED,
+    LINK_TIMEOUT,
+    MAX_TARGET_TIMEOUT,
+    NEUTRAL,
+    Guard,
+    parse_setpoint,
+)
 from flight_interface.telemetry import (
     AttitudeConverter,
     battery_fields,
@@ -124,7 +139,14 @@ class FlightInterface(Node):
         self.declare_parameter("state_rate_hz", 10.0)  # /flight/state
         self.declare_parameter("target_timeout_sec", MAX_TARGET_TIMEOUT)
         self.declare_parameter("link_timeout_sec", LINK_TIMEOUT)
-        self.declare_parameter("velocity_topic", "/mission/velocity_target")
+        self.declare_parameter("setpoint_topic", "/control/attitude_setpoint")
+        # F14, F16: the same value as the controller's (F15).
+        # Dynamic typing lets an integer (0) through; configure checks it.
+        self.declare_parameter(
+            "hover_throttle",
+            HOVER_NOT_MEASURED,
+            ParameterDescriptor(dynamic_typing=True),
+        )
         self.declare_parameter("state_topic", "/flight/state")
         # backend:=esp only. The PSK is never a parameter: SEAME_PSK or
         # ~/.config/seame-drone/secrets.json (esp_backend.load_psk).
@@ -163,6 +185,17 @@ class FlightInterface(Node):
             cell_count = self.get_parameter("cell_count").value
             if cell_count < 1:
                 raise ValueError(f"cell_count must be 1 or more, got {cell_count}")
+            hover = self.get_parameter("hover_throttle").value
+            if isinstance(hover, bool) or not isinstance(hover, (int, float)):
+                raise ValueError(f"hover_throttle must be a number, got {hover!r}")
+            rate = min(MAX_RATE_HZ, max(MIN_RATE_HZ, rate))
+            # Before the backend: a bad hover_throttle opens no connection.
+            guard = Guard(
+                target_timeout,
+                link_timeout,
+                tick_period=1.0 / rate,
+                hover_throttle=float(hover),
+            )
             backend = self._injected_backend or make_backend(
                 str(self.get_parameter("backend").value),
                 esp_host=str(self.get_parameter("esp_host").value),
@@ -173,13 +206,12 @@ class FlightInterface(Node):
             # ImportError: backend:=esp without sd_protocol installed.
             self.get_logger().error(f"configure failed: {error}")
             return TransitionCallbackReturn.FAILURE
-        rate = min(MAX_RATE_HZ, max(MIN_RATE_HZ, rate))
         state_rate = min(rate, max(MIN_STATE_RATE_HZ, state_rate))
         self.backend = backend
         self._mask = mask
         self._frame_id = str(self.get_parameter("frame_id").value)
         self._cell_count = cell_count
-        self.guard = Guard(target_timeout, link_timeout, tick_period=1.0 / rate)
+        self.guard = guard
         if self._estop_reason:
             self.guard.trigger_estop(self._estop_reason)  # still latched
         self._link_was_fresh = False
@@ -201,9 +233,9 @@ class FlightInterface(Node):
         keep(
             self.destroy_subscription,
             self.create_subscription(
-                TwistStamped,
-                str(self.get_parameter("velocity_topic").value),
-                self._on_target,
+                String,
+                str(self.get_parameter("setpoint_topic").value),
+                self._on_setpoint,
                 10,
             ),
         )
@@ -238,7 +270,8 @@ class FlightInterface(Node):
             self.create_service(Trigger, "~/arm_control", self._on_arm_control),
         )
         self.get_logger().info(
-            f"configured: backend {backend.name}, {rate:.0f} Hz, zero after "
+            f"configured: backend {backend.name}, {rate:.0f} Hz, hover throttle "
+            f"{self.guard.hover_throttle}, neutral after "
             f"{self.guard.target_timeout:.2f} s, link lost after {self.guard.link_timeout:.2f} s"
         )
         return TransitionCallbackReturn.SUCCESS
@@ -247,14 +280,14 @@ class FlightInterface(Node):
         self.guard.activate()
         if self._attitude is not None:
             self._attitude.reset_yaw()  # D2: yaw 0 at the first sample from now
-        self.get_logger().info("active: setpoints go out from the next fresh target")
+        self.get_logger().info("active: setpoints go out from the next fresh setpoint")
         return super().on_activate(state)
 
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
         was_sending = self.guard.active and not self.guard.estop
         self.guard.deactivate()
         if was_sending:
-            self.backend.send_setpoint(ZERO, time.monotonic())  # one last zero
+            self.backend.send_setpoint(NEUTRAL, time.monotonic())  # one last neutral
         self._publish_state()
         self.get_logger().info("inactive: no more setpoints")
         return super().on_deactivate(state)
@@ -299,11 +332,16 @@ class FlightInterface(Node):
         self._attitude = None
 
     # ---------- callbacks ----------
-    def _on_target(self, msg):
-        t = msg.twist
-        self.guard.on_target(
-            t.linear.x, t.linear.y, t.linear.z, t.angular.z, time.monotonic()
-        )
+    def _on_setpoint(self, msg):
+        setpoint = parse_setpoint(msg.data)
+        if setpoint is None:
+            # F18: dropped, so it goes stale and gives neutral.
+            self.get_logger().warning(
+                f"Ignored a bad attitude setpoint: {msg.data!r}",
+                throttle_duration_sec=2.0,
+            )
+            return
+        self.guard.on_setpoint(setpoint, time.monotonic())
 
     def _tick(self):
         """A7: an unexpected error latches the E-stop (BYE at once) instead
@@ -343,6 +381,12 @@ class FlightInterface(Node):
                 )
             self._link_was_fresh = fresh
         command = self.guard.command(now)
+        if self.guard.clamped:
+            # F18: the controller asked for more than the guard allows.
+            self.get_logger().warning(
+                f"attitude setpoint clamped: {', '.join(self.guard.clamped)}",
+                throttle_duration_sec=2.0,
+            )
         # K6: only a setpoint that went out counts for the neutral window.
         if command is not None and self.backend.send_setpoint(command, now):
             self.guard.note_sent(command, now)
@@ -492,7 +536,7 @@ class FlightInterface(Node):
         response.success = self.guard.reset_estop()
         self._estop_reason = ""
         response.message = (
-            "estop cleared: waiting for a new target"
+            "estop cleared: waiting for a new setpoint"
             if response.success
             else "no estop"
         )

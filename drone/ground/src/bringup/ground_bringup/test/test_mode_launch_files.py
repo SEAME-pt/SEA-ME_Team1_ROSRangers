@@ -41,6 +41,7 @@ GROUND_CHAIN = {
     ("intent_node", "intent_node"),
     ("mission_node", "mission_node"),
 }
+CONTROLLER = ("controller_node", "controller_node")  # demo, real (#199)
 FLIGHT_STATE_PUBLISHERS = {
     ("mission_node", "fake_flight_state"),
     ("flight_interface", "flight_interface"),
@@ -83,8 +84,9 @@ def text(value):
 class ModeLaunchTests(unittest.TestCase):
     def test_each_mode_starts_its_nodes(self):
         expected = {
-            "demo": GROUND_CHAIN | {("mission_node", "fake_flight_state")},
-            "real": GROUND_CHAIN | {("flight_interface", "flight_interface")},
+            "demo": GROUND_CHAIN | {CONTROLLER, ("mission_node", "fake_flight_state")},
+            "real": GROUND_CHAIN
+            | {CONTROLLER, ("flight_interface", "flight_interface")},
             "sim": GROUND_CHAIN,
         }
         for mode in MODES:

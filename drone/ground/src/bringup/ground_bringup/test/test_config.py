@@ -5,9 +5,15 @@ typo in a key would silently do nothing. For each file, every node section is
 a node that mode starts, and the real node, created with the file (the way
 `--params-file` passes it), declares every key and gets every value.
 
-The `/**:` section holds the values several nodes share (ADR-025 F15): each
-of its keys is declared by at least one node the mode starts, and every
-started node that declares it gets that value.
+Values several nodes share (SHARED_KEYS: mask, hover_throttle; ADR-025 F15)
+are repeated in each node's section, and every started node that declares
+one must end up with the same value. That is checked on the real nodes, so a
+forgotten copy, which would fall back to the node's default, fails too.
+
+No `/**:` (wildcard) section: with one in the file, a `-p` on the command line
+no longer overrides a key in a node's own section, so `make real-dry`'s
+`-p backend:=loopback` would lose to real.yaml's `backend: esp` (found on
+2026-11-23, #199). test_real_dry_override_wins guards that.
 
 Needs ROS 2 Jazzy sourced and the node packages installed. Without them the
 tests are skipped, unless REQUIRE_ROS_TESTS=1 is set (CI sets it).
@@ -40,18 +46,32 @@ NODES = {
     "gesture_node": ("gesture_node.gesture_node", "GestureNode"),
     "intent_node": ("intent_node.intent_node", "IntentNode"),
     "mission_node": ("mission_node.mission_node", "MissionNode"),
+    "controller_node": ("controller_node.controller_node", "ControllerNode"),
     "fake_flight_state": ("mission_node.fake_flight_state", "FakeFlightState"),
     "flight_interface": ("flight_interface.link_node", "FlightInterface"),
 }
 # The nodes each mode's launch file starts (test_mode_launch_files.py checks those)
 MODE_NODES = {
-    "demo": {"gesture_node", "intent_node", "mission_node", "fake_flight_state"},
-    "real": {"gesture_node", "intent_node", "mission_node", "flight_interface"},
+    "demo": {
+        "gesture_node",
+        "intent_node",
+        "mission_node",
+        "controller_node",
+        "fake_flight_state",
+    },
+    "real": {
+        "gesture_node",
+        "intent_node",
+        "mission_node",
+        "controller_node",
+        "flight_interface",
+    },
     "sim": {"gesture_node", "intent_node", "mission_node"},
 }
 
 
-SHARED = "/**"  # the ROS wildcard section: every node reads it
+# Values several nodes of a mode share; they must agree (F15).
+SHARED_KEYS = ("mask", "hover_throttle")
 
 
 def config(mode):
@@ -75,7 +95,7 @@ class ConfigFileTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 data = config(mode)
                 self.assertIsInstance(data, dict)
-                self.assertLessEqual(set(data) - {SHARED}, started)
+                self.assertLessEqual(set(data), started)
                 for name, section in data.items():
                     self.assertEqual(set(section), {"ros__parameters"}, name)
                     self.assertIsInstance(section["ros__parameters"], dict, name)
@@ -86,17 +106,12 @@ class ConfigFileTests(unittest.TestCase):
                 params = config(mode)["intent_node"]["ros__parameters"]
                 self.assertEqual(params["input_source"], "topic")
 
-    def test_shared_values_not_repeated_in_a_node_section(self):
-        # F15: a shared key lives only in /**, so two copies cannot disagree.
+    def test_no_wildcard_section(self):
+        # A /** section breaks `-p` overrides of node keys (module docstring).
         for mode in MODE_NODES:
             with self.subTest(mode=mode):
-                data = config(mode)
-                shared = set(data.get(SHARED, {}).get("ros__parameters", {}))
-                for name, section in data.items():
-                    if name == SHARED:
-                        continue
-                    repeated = shared & set(section["ros__parameters"])
-                    self.assertEqual(repeated, set(), name)
+                wildcard = [name for name in config(mode) if name.startswith("/")]
+                self.assertEqual(wildcard, [])
 
     def test_real_never_uses_the_loopback(self):
         params = config("real")["flight_interface"]["ros__parameters"]
@@ -112,12 +127,8 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
         )
         try:
             data = config(mode)
-            shared = data.get(SHARED, {}).get("ros__parameters", {})
-            if shared:
-                self.check_shared(mode, shared)
+            self.check_shared(mode)
             for name, section in data.items():
-                if name == SHARED:
-                    continue
                 cls = node_class(name)
                 if cls is None:
                     self.skipTest(f"{name} not installed")
@@ -135,26 +146,45 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
         finally:
             rclpy.shutdown()
 
-    def check_shared(self, mode, shared):
-        """Each /** key is declared by at least one node the mode starts, and
-        each started node that declares it got the file's value."""
-        declared_by = {key: [] for key in shared}
+    def check_shared(self, mode):
+        """F15: every node the mode starts that declares a SHARED_KEYS key
+        has the same value for it (from the file, or its default if the
+        file forgot it there)."""
+        values = {key: {} for key in SHARED_KEYS}
         for name in sorted(MODE_NODES[mode]):
             cls = node_class(name)
             if cls is None:
                 self.skipTest(f"{name} not installed")
             node = cls()
             try:
-                for key, value in shared.items():
+                for key in SHARED_KEYS:
                     if node.has_parameter(key):
-                        declared_by[key].append(name)
-                        with self.subTest(mode=mode, node=name, key=key):
-                            self.assertEqual(node.get_parameter(key).value, value)
+                        values[key][name] = node.get_parameter(key).value
             finally:
                 node.destroy_node()
-        for key, names in declared_by.items():
+        for key, by_node in values.items():
             with self.subTest(mode=mode, key=key):
-                self.assertTrue(names, f"no node of {mode} declares {key}")
+                self.assertLessEqual(len(set(by_node.values())), 1, by_node)
+
+    def test_real_dry_override_wins(self):
+        # make real-dry: real.yaml, then -p backend:=loopback. The override
+        # must win, or the dry run would reach for the drone.
+        cls = node_class("flight_interface")
+        if cls is None:
+            self.skipTest("flight_interface not installed")
+        path = PACKAGE / "config" / "real.yaml"
+        rclpy.init(
+            args=["--ros-args", "--params-file", str(path), "-p", "backend:=loopback"],
+            domain_id=TEST_DOMAIN_ID,
+        )
+        try:
+            node = cls()
+            try:
+                self.assertEqual(node.get_parameter("backend").value, "loopback")
+            finally:
+                node.destroy_node()
+        finally:
+            rclpy.shutdown()
 
     def test_demo(self):
         self.check("demo")

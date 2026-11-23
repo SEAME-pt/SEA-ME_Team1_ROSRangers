@@ -9,19 +9,22 @@
 # Only the values this mode sets; every other parameter keeps the default its
 # node declares. Each key must be a parameter its node declares
 # (test/test_config.py checks it).
-# Values several nodes share (ADR-025 F15): set once here, read by every node
-# that declares them (test/test_config.py checks each is declared by one).
+# The mask is set in every node that declares it, with the same value
+# (ADR-025 F15, test/test_config.py checks it). No `/**:` section: it would
+# stop `-p backend:=loopback` (make real-dry) from overriding backend: esp.
 # No hover_throttle: not measured on the drone (F16), so the controller stays
-# inactive.
-/**:
-  ros__parameters:
-    mask: 8                 # yaw only: the only mask the gateway accepts today (ADR-010)
+# inactive and the guard refuses throttle.
 
 intent_node:
   ros__parameters:
     input_source: topic   # gesture_node's /gesture/raw, not UDP
 
+controller_node:
+  ros__parameters:
+    mask: 8                 # the same as flight_interface's (F15)
+
 flight_interface:
   ros__parameters:
     backend: esp            # the ESP gateway (#102), not the loopback
     esp_host: 192.168.4.1   # the drone's SoftAP
+    mask: 8                 # yaw only: the only mask the gateway accepts today (ADR-010)

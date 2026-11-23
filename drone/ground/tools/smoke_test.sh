@@ -30,7 +30,7 @@
 #      reaches mission, which stays IDLE (not_streaming) for 5 s: the
 #      loopback drone has no override, so nothing can engage. /flight/state
 #      has exactly one publisher (ros2 topic info). Never
-#      backend:=esp, never ARM. docker stop: it deactivates (last zero
+#      backend:=esp, never ARM. docker stop: it deactivates (last neutral
 #      setpoint, "inactive: no more setpoints" in its log) and exits 0 at once.
 #
 # Own compose project, ROS domain and log folder (logs/smoke), so a running
@@ -239,17 +239,20 @@ stop_and_check() {
     echo "    $1 stopped cleanly (exit code $code)"
 }
 
-step 1 "build gesture, intent, mission, echo, flight_interface"
+step 1 "build gesture, intent, mission, controller, echo, flight_interface"
 $COMPOSE build
 
 step 2 "package tests inside their images"
 run_tests rosrangers/gesture:jazzy gesture_node
 run_tests rosrangers/intent:jazzy intent_node
 run_tests rosrangers/mission:jazzy mission_node
-# Deselected: the cross-package check needs mission_node, which this image
-# does not have. CI's ground-ros2 runs it with both packages installed.
+# Deselected: the cross-package checks need mission_node (and the
+# controller), which these images do not have. CI's ground-ros2 runs them with
+# every package installed.
 run_pytest rosrangers/flight_interface:jazzy flight_interface \
-    --deselect test/test_guard.py::test_masks_and_ceilings_match_mission_node
+    --deselect test/test_guard.py::test_masks_and_limits_match_mission_node_and_the_controller
+run_pytest rosrangers/controller:jazzy controller_node \
+    --deselect test/test_ceilings_match.py::test_ceilings_and_masks_match_mission_node
 
 step 3 "gesture container -> intent container -> mission container"
 $COMPOSE up -d intent mission fake_flight_state
@@ -419,8 +422,8 @@ echo "    /flight/state has exactly one publisher (ros2 topic info)"
 stop_and_check "$FLIGHT_INTERFACE"
 stop_and_check "$MISSION"
 docker kill "$FI_MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instrument
-check_log flight_interface "active: setpoints go out from the next fresh target"
-# docker stop deactivated it first: one last zero setpoint, then this line
+check_log flight_interface "active: setpoints go out from the next fresh setpoint"
+# docker stop deactivated it first: one last neutral setpoint, then this line
 check_log flight_interface "inactive: no more setpoints"
 
 echo "PASS: images, in-image tests, gesture -> intent -> mission across containers," \

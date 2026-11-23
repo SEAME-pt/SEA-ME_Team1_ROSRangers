@@ -13,17 +13,23 @@ Rules:
   * Watchdog: the drone link is lost when no valid state from the drone arrived
     within link_timeout. Then the setpoint is zero and link_ok is false, so
     mission_node goes IDLE (REQ-SAF-012).
-  * A target older than target_timeout by the next tick gives zero
-    (the rule of mission_node's REQ-SAF-017, applied again here), as in the
-    PX4 bridge.
-  * A non-zero setpoint needs the drone itself to say control is possible:
+  * The input is the controller's attitude setpoint (/control/attitude_setpoint,
+    ADR-025 C1.1, C1.5): roll, pitch (deg), yaw_rate (deg/s), throttle (0-1),
+    active; REP-103 signs. "No command" is `active` false (F8): NEUTRAL.
+    parse_setpoint() drops a malformed message (F18), which then goes stale.
+  * A setpoint older than target_timeout by the next tick gives NEUTRAL
+    (the rule of mission_node's REQ-SAF-017, applied again here, F11).
+  * A commanding setpoint needs the drone itself to say control is possible:
     esp_state STREAMING, override_active true and a known mask, the same gate
     as mission_node, and the FC link reported alive (fc_link_ok true, #179).
-    Axes outside the mask are zero (mission_node's REQ-SAF-018, applied again
-    here), as in the PX4 bridge.
-  * Same hard ceilings as mission_node, applied again here: the horizontal
-    speed as a whole (so a diagonal is not faster), the vertical speed and the
-    yaw rate. Non-finite values become 0.
+    Axes outside the mask are level (roll, pitch, yaw rate 0) and the hover
+    throttle (REQ-SAF-018, applied again here).
+  * Limits in attitude units (C1.4, F4, F14, F18): roll and pitch within
+    TILT_CAP_DEG, yaw rate within YAW_RATE_CAP_DPS, throttle within
+    hover_throttle +- THROTTLE_BAND. Beyond them the value is clamped and
+    named in `clamped` for the node's warning. Under mask 15 with no measured
+    hover throttle (0.0, F16) the setpoint is NEUTRAL. The velocity ceilings
+    are the controller's (F9).
   * The guard never asks for ARM (REQ-SAF-023). request_arm() only holds
     the operator's ~/arm_control (decision A4) until it may go out.
   * ARM and RESUME are operator actions (decisions A3, A4). request_arm() and
@@ -46,12 +52,32 @@ The clock is passed in as MONOTONIC seconds (time.monotonic() in the node), so
 tests need no sleeping and a wall-clock step cannot make old data look fresh.
 """
 
+import json
 import math
+from dataclasses import dataclass
 
-ZERO = (0.0, 0.0, 0.0, 0.0)
 
-CEILING_LINEAR_MPS = 0.5
-CEILING_YAW_RPS = math.radians(45.0)
+@dataclass(frozen=True)
+class Setpoint:
+    """One attitude setpoint, body FLU, REP-103 signs (ADR-025 C1.1): roll +
+    right side down, pitch + nose down (deg), yaw_rate + turn left (deg/s),
+    throttle 0-1. active false = no command (F8): the numbers do not count."""
+
+    roll: float = 0.0
+    pitch: float = 0.0
+    yaw_rate: float = 0.0
+    throttle: float = 0.0
+    active: bool = False
+
+
+NEUTRAL = Setpoint()  # no command (F8): ESP mode 0, px4 level + hover throttle
+
+# Attitude limits (C1.4): the ground caps, the same in the controller.
+TILT_CAP_DEG = 15.0  # F4
+YAW_RATE_CAP_DPS = 45.0
+THROTTLE_BAND = 0.15  # F14: around the hover throttle
+HOVER_NOT_MEASURED = 0.0  # F16
+SETPOINT_FIELDS = ("roll", "pitch", "yaw_rate", "throttle")
 
 # The zero must be out no later than this after the last target (the rule of
 # mission_node's REQ-SAF-017).
@@ -96,31 +122,75 @@ def _is_mask(mask):
     return isinstance(mask, int) and not isinstance(mask, bool) and mask in MASK_AXES
 
 
-def apply_mask(vx, vy, vz, wz, mask):
-    """Zero every axis the ground does not own. An unknown mask owns nothing."""
+def parse_setpoint(text):
+    """/control/attitude_setpoint JSON -> Setpoint, or None if malformed (F18):
+    not an object, a missing or non-finite number (a bool is not a number),
+    `active` not a real bool, or throttle outside 0-1. Other keys (`reason`,
+    F17) are ignored."""
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    values = {}
+    for name in SETPOINT_FIELDS:
+        value = data.get(name)
+        if not _finite(value):
+            return None
+        values[name] = float(value)
+    if not 0.0 <= values["throttle"] <= 1.0:
+        return None
+    active = data.get("active")
+    if not isinstance(active, bool):
+        return None
+    return Setpoint(active=active, **values)
+
+
+def _limit(value, cap, name, clamped):
+    """Clamp to +-cap; note the field's name in `clamped` when it was beyond."""
+    if value > cap:
+        clamped.append(name)
+        return cap
+    if value < -cap:
+        clamped.append(name)
+        return -cap
+    return value
+
+
+def limit_setpoint(setpoint, mask, hover_throttle):
+    """The setpoint as it may go out: (Setpoint, clamped field names).
+
+    Not active -> NEUTRAL. Axes outside the mask: level, and the hover
+    throttle. Owned axes within the caps; beyond them clamped (F18). Under a
+    mask that owns throttle with no measured hover throttle (F16): NEUTRAL.
+
+    Example, mask 11, hover 0.7: (roll 20, pitch -3, yaw_rate 10, throttle
+    0.9, active) -> (15, -3, 10, 0.7, active), clamped ["roll"]: the throttle
+    is not the ground's under mask 11, so it is the hover value, not clamped."""
+    clamped = []
+    if not setpoint.active:
+        return NEUTRAL, clamped
     owned = MASK_AXES.get(mask, ())
-    return (
-        vx if "x" in owned else 0.0,
-        vy if "y" in owned else 0.0,
-        vz if "z" in owned else 0.0,
-        wz if "yaw" in owned else 0.0,
-    )
-
-
-def clamp_target(vx, vy, vz, wz):
-    """Non-finite -> 0, then the hard ceilings: the horizontal speed (x, y) is
-    scaled down to CEILING_LINEAR_MPS keeping its direction; z and the yaw rate
-    are clamped on their own."""
-
-    def lim(v, top):
-        return max(-top, min(top, v)) if _finite(v) else 0.0
-
-    vx, vy = (float(v) if _finite(v) else 0.0 for v in (vx, vy))
-    speed = math.hypot(vx, vy)
-    if speed > CEILING_LINEAR_MPS:
-        scale = CEILING_LINEAR_MPS / speed
-        vx, vy = vx * scale, vy * scale
-    return (vx, vy, float(lim(vz, CEILING_LINEAR_MPS)), float(lim(wz, CEILING_YAW_RPS)))
+    if "z" in owned and hover_throttle == HOVER_NOT_MEASURED:
+        return NEUTRAL, clamped
+    roll = 0.0
+    pitch = 0.0
+    if "x" in owned:
+        pitch = _limit(setpoint.pitch, TILT_CAP_DEG, "pitch", clamped)
+    if "y" in owned:
+        roll = _limit(setpoint.roll, TILT_CAP_DEG, "roll", clamped)
+    yaw_rate = 0.0
+    if "yaw" in owned:
+        yaw_rate = _limit(setpoint.yaw_rate, YAW_RATE_CAP_DPS, "yaw_rate", clamped)
+    throttle = hover_throttle
+    if "z" in owned:
+        offset = _limit(
+            setpoint.throttle - hover_throttle, THROTTLE_BAND, "throttle", clamped
+        )
+        throttle = hover_throttle + offset
+    limited = Setpoint(roll, pitch, yaw_rate, throttle, True)
+    return limited, clamped
 
 
 class Guard:
@@ -131,6 +201,7 @@ class Guard:
         target_timeout=MAX_TARGET_TIMEOUT,
         link_timeout=LINK_TIMEOUT,
         tick_period=0.02,
+        hover_throttle=HOVER_NOT_MEASURED,
     ):
         # Never longer than the 0.25 s rule allows; NaN or <= 0 also gives the maximum.
         if not _finite(target_timeout) or not 0 < target_timeout <= MAX_TARGET_TIMEOUT:
@@ -141,6 +212,18 @@ class Guard:
             link_timeout = LINK_TIMEOUT
         if not _finite(tick_period) or tick_period <= 0:
             raise ValueError(f"tick_period must be > 0, got {tick_period!r}")
+        # F16: 0.0 = not measured; otherwise the band must fit inside 0-1.
+        hover_ok = hover_throttle == HOVER_NOT_MEASURED or (
+            _finite(hover_throttle)
+            and THROTTLE_BAND <= hover_throttle <= 1.0 - THROTTLE_BAND
+        )
+        if not hover_ok:
+            raise ValueError(
+                f"hover_throttle must be 0 (not measured) or in "
+                f"[{THROTTLE_BAND}, {1.0 - THROTTLE_BAND}], got {hover_throttle!r}"
+            )
+        self.hover_throttle = float(hover_throttle)
+        self.clamped = []  # fields command() clamped last (F18), for the warning
         self.target_timeout = target_timeout
         self.link_timeout = link_timeout
         self.tick_period = tick_period
@@ -148,7 +231,7 @@ class Guard:
         self.active = False
         self.estop = False
         self.estop_reason = ""
-        self._target = ZERO
+        self._target = NEUTRAL
         self._target_t = None
         self._drone = None  # last valid state from the drone (dict)
         self._drone_t = None
@@ -190,16 +273,17 @@ class Guard:
         return True
 
     def _drop_target(self):
-        self._target = ZERO
+        self._target = NEUTRAL
         self._target_t = None
 
     # ---------- inputs ----------
-    def on_target(self, vx, vy, vz, wz, now):
-        """A velocity target from mission_node (body FLU). Ignored while inactive
-        or in E-stop, so nothing queued then can come out later."""
+    def on_setpoint(self, setpoint, now):
+        """A Setpoint from the controller (parse_setpoint() made it). Ignored
+        while inactive or in E-stop, so nothing queued then can come out
+        later."""
         if not self.active or self.estop:
             return
-        self._target = (vx, vy, vz, wz)
+        self._target = setpoint
         self._target_t = now
 
     def on_drone_state(self, state, now):
@@ -296,9 +380,10 @@ class Guard:
     def note_sent(self, command, now):
         """The node tells the guard what the backend really sent (it is not
         called when nothing went out, e.g. between sessions), so the neutral
-        window counts only setpoints that left this PC. A non-neutral
-        command or a gap of NEUTRAL_MAX_GAP or more restarts the window."""
-        neutral = command is not None and tuple(command) == ZERO
+        window counts only setpoints that left this PC. A commanding
+        setpoint (active, F8) or a gap of NEUTRAL_MAX_GAP or more restarts the
+        window."""
+        neutral = command is not None and not command.active
         gap_ok = (
             self._last_sent_t is not None
             and 0 <= now - self._last_sent_t < NEUTRAL_MAX_GAP
@@ -362,19 +447,22 @@ class Guard:
 
     # ---------- outputs ----------
     def command(self, now):
-        """What to send now: None (send nothing) or (vx, vy, vz, wz) body FLU.
+        """What to send now: None (send nothing) or a Setpoint.
 
-        None while inactive or in E-stop. Zero when the target is missing or
-        stale, the drone link is lost, or the drone does not say control is
+        None while inactive or in E-stop. NEUTRAL when the setpoint is missing
+        or stale, the drone link is lost, or the drone does not say control is
         possible (STREAMING, override on, a known mask, FC link alive).
-        Otherwise the target, masked to the owned axes and then clamped.
+        Otherwise limit_setpoint() of the latest one; `clamped` names what it
+        clamped (empty otherwise).
         """
+        self.clamped = []
         if not self.active or self.estop:
             return None
         if not self.target_fresh(now) or not self.control_possible(now):
-            return ZERO
+            return NEUTRAL
         mask = self._drone["mask"]
-        return clamp_target(*apply_mask(*self._target, mask))
+        limited, self.clamped = limit_setpoint(self._target, mask, self.hover_throttle)
+        return limited
 
     def control_possible(self, now):
         """The drone link is fresh and the drone reports STREAMING, override on

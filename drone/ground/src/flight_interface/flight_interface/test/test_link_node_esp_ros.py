@@ -36,7 +36,7 @@ from unittest import mock
 
 try:
     import rclpy
-    from geometry_msgs.msg import TwistStamped, Vector3Stamped
+    from geometry_msgs.msg import Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.lifecycle import TransitionCallbackReturn
     from rclpy.parameter import Parameter
@@ -63,6 +63,21 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
 TEST_DOMAIN_ID = 95
+
+
+def setpoint_json(pitch=0.0, yaw_rate=0.0):
+    """What controller_node publishes on /control/attitude_setpoint: an active
+    setpoint (C1.1, F17), throttle inside 0-1."""
+    return json.dumps(
+        {
+            "roll": 0.0,
+            "pitch": pitch,
+            "yaw_rate": yaw_rate,
+            "throttle": 0.5,
+            "active": True,
+            "reason": "ok",
+        }
+    )
 
 
 class LogRecorder:
@@ -103,7 +118,7 @@ class EspNodeTests(unittest.TestCase):
             10,
         )
         self.target_pub = self.probe.create_publisher(
-            TwistStamped, "/mission/velocity_target", 10
+            String, "/control/attitude_setpoint", 10
         )
         self.clients = {
             name: self.probe.create_client(Trigger, f"/flight_interface/{name}")
@@ -142,8 +157,8 @@ class EspNodeTests(unittest.TestCase):
         while time.monotonic() < end:
             self.fake.step(time.monotonic())
             if yaw is not None and time.monotonic() >= next_pub:
-                msg = TwistStamped()
-                msg.twist.angular.z = yaw
+                msg = String()
+                msg.data = setpoint_json(yaw_rate=yaw)
                 self.target_pub.publish(msg)
                 next_pub = time.monotonic() + 0.05
             self.executor.spin_once(timeout_sec=0.005)

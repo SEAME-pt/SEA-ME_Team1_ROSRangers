@@ -8,16 +8,20 @@
 #
 # The containers read this file from the source folder (mounted read-only at
 # /config): edit it, then restart the container (docker compose restart flight).
-# Values several nodes share (ADR-025 F15): set once here, read by every node
-# that declares them (test/test_config.py checks each is declared by one).
-/**:
-  ros__parameters:
-    mask: 11          # axes the ground owns: 8 yaw, 11 x y yaw, 15 all (throttle too)
+# The mask is set in every node that declares it, with the same value
+# (ADR-025 F15, test/test_config.py checks it). No `/**:` section: it would
+# stop a `-p` on the command line from overriding a node's own value.
 
 intent_node:
   ros__parameters:
     input_source: topic   # gesture_node's /gesture/raw, not UDP
 
+controller_node:
+  ros__parameters:
+    mask: 11          # the same as fake_flight_state's (F15)
+    # No hover_throttle: not measured (F16), the controller stays inactive.
+
 fake_flight_state:
   ros__parameters:
+    mask: 11          # axes the ground owns: 8 yaw, 11 x y yaw, 15 all (throttle too)
     airborne: true    # false: the pretend drone is on the ground, land requests are ignored

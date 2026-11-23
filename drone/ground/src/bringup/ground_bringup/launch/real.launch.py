@@ -1,4 +1,4 @@
-"""Real mode: gesture -> intent -> mission -> flight_interface -> the drone
+"""Real mode: gesture -> intent -> mission -> controller -> flight_interface -> the drone
 (ADR-025). Follow the Safety Rules: props off on the bench, the safety pilot
 holds the radio.
 
@@ -68,6 +68,13 @@ def generate_launch_description():
             Node(
                 package="mission_node",
                 executable="mission_node",
+                parameters=[params],
+                output="screen",
+            ),
+            # The controller (#199): inactive here, no measured velocity (F6, F12)
+            Node(
+                package="controller_node",
+                executable="controller_node",
                 parameters=[params],
                 output="screen",
             ),
