@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-19
+updated: 2026-11-23
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -112,11 +112,15 @@ tags:
 - 2026-11-18, decision **changed**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.3: each compose mode (demo, sim, real) has its own ROS domain and discovery range, set in its git-ignored env file `drone/ground/env/<mode>.env` with the values the safety pilot gives. Replaces E1's domain 42 for the containers (#186 PR B).
 - 2026-11-19, decision **clarified**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.4: E1's domain 42 stays only as the default of the native launch files run on the host without Docker (#186 PR B).
 
-## 11. Still open
+## 11. What changed on 2026-11-23
+
+- 2026-11-23, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F1–F7 for #199 (controller + PX4 backend): measured velocity on `/estimate/velocity` (F1), masks 8 / 11 / 15 in the simulation with the pilot's axes filled by the `px4` backend (F2), a `px4` backend in a simulation-only `flight_interface` image (F3), a 15° roll / pitch ground cap (F4), `px4_offboard_bridge` deleted once the hold test passes (F5), nothing changes on the real drone (F6), a velocity loop only (F7). Dated notes on C1.2 (PX4's estimate counts in SITL only), C1.4 (the cap value), C1.5 and E1.2 (the simulation will run `flight_interface`).
+
+## 12. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 12. Glossary
+## 13. Glossary
 
 | Term | Meaning |
 | --- | --- |

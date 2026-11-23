@@ -3,7 +3,7 @@ title: ADR-025 — flight_interface Ground Node
 type: adr
 status: accepted
 date: 2026-11-16
-updated: 2026-11-19
+updated: 2026-11-23
 project: SEA autonomous drone
 tags:
   - adr
@@ -15,7 +15,7 @@ tags:
 # ADR-025 — flight_interface Ground Node
 
 > [!success] Status: ACCEPTED (#103, PR #187)
-> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). E3.1 was added on 2026-11-16 (#186). E3.2 was added on 2026-11-18 (#186, PR B, from ThiagoTEP's review of PR #211). E1.3 was added on 2026-11-18 (#186, PR B). E1.4 was added on 2026-11-19 (#186, PR B) and extended the same day from Dot99's review of PR #222. A7 was decided by the safety pilot on the PR #187 review (2026-11-16).
+> A1–A6, K1–K6 and B1–B3 were decided by the safety pilot (BrunoBMFT) on 2026-11-09 and 2026-11-10. C1–C3, D1–D4 and E1–E6 were put to the team on draft PR #187 and decided there on 2026-11-12. The rule for that round (BrunoBMFT): a colleague's answer on PR #187 is used, and where nobody answered, the proposal is used. K6 was changed by the safety pilot on PR #191 (2026-11-13). E6.2 and E1.2 were added on 2026-11-16 (PR #187). E3.1 was added on 2026-11-16 (#186). E3.2 was added on 2026-11-18 (#186, PR B, from ThiagoTEP's review of PR #211). E1.3 was added on 2026-11-18 (#186, PR B). E1.4 was added on 2026-11-19 (#186, PR B) and extended the same day from Dot99's review of PR #222. A7 was decided by the safety pilot on the PR #187 review (2026-11-16). F1–F7 (§2.4) were decided for #199 on 2026-11-23, with dated notes on C1.2, C1.4, C1.5 and E1.2.
 > 2026-11-18 (#214, PR #215), docs only, no decision changed: §1 Context gets the corrected code path and the `guard.py` constants as a code excerpt; §3 Consequences counts the "about 0.4 s" from the first `FC_HEALTH` and gives the worst case.
 > This ADR replaces the `DECISIONS.md` file that PR #187 carried at the repository root.
 
@@ -89,10 +89,10 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 | ID | Decision | Decided by |
 |---|---|---|
 | C1.1 | The controller's output: JSON on `std_msgs/String`, topic `/control/attitude_setpoint`, fields `roll`, `pitch` (deg), `yaw_rate` (°/s), `throttle` (0–1), `active`; body frame FLU. | ThiagoTEP, BrunoBMFT |
-| C1.2 | Track E builds the controller, yaw only (mask 8) first, tested in SITL. Roll / pitch only after a velocity estimate (flow + height, [[ADR-016 Flow Sensor Path\|ADR-016]]). | ThiagoTEP, BrunoBMFT |
+| C1.2 | Track E builds the controller, yaw only (mask 8) first, tested in SITL. Roll / pitch only after a velocity estimate (flow + height, [[ADR-016 Flow Sensor Path\|ADR-016]]). 2026-11-23 (#199): in SITL, PX4's own velocity estimate counts as that estimate, so the simulation may run roll / pitch and mask 15 (F2). The real drone keeps this rule until #200. | ThiagoTEP, BrunoBMFT |
 | C1.3 | Yaw-only pass-through for mask 8 until the full controller exists. The yaw rate → stick mapping uses the FC's rate curve from the Betaflight baseline (`drone/config/betaflight`), with a unit test that 45 °/s stays inside the stick limit. First used on the props-off bench (#104). | ThiagoTEP, BrunoBMFT |
-| C1.4 | The guard checks limits in attitude units: yaw rate ≤ 45 °/s; roll / pitch from Betaflight `angle_limit` plus a ground cap (value chosen when roll / pitch starts); throttle only under mask 15. `mission_node` keeps its velocity ceilings as a second, independent limit. | ThiagoTEP, BrunoBMFT |
-| C1.5 | The velocity input moves from `flight_interface` to the controller. `px4_offboard_bridge` stays velocity-based and simulation-only until the PX4 backend replaces it. | ThiagoTEP, BrunoBMFT |
+| C1.4 | The guard checks limits in attitude units: yaw rate ≤ 45 °/s; roll / pitch from Betaflight `angle_limit` plus a ground cap (value chosen when roll / pitch starts); throttle only under mask 15. `mission_node` keeps its velocity ceilings as a second, independent limit. 2026-11-23 (#199): the ground cap is 15° on roll and on pitch, for both backends (F4). | ThiagoTEP, BrunoBMFT |
+| C1.5 | The velocity input moves from `flight_interface` to the controller. `px4_offboard_bridge` stays velocity-based and simulation-only until the PX4 backend replaces it. 2026-11-23 (#199): the bridge is deleted in #199's PR once the hold test passes (F5). | ThiagoTEP, BrunoBMFT |
 | C1.6 | The controller comes after #109, which needs only neutral sticks. | ThiagoTEP, BrunoBMFT |
 | C2 | `SETPOINT` mode 0 (neutral) when there is no command; mode 1 when the controller commands, including an active zero. Until there is a velocity estimate, "no command" on x / y is neutral. Until the controller exists every setpoint is mode 0. | ThiagoTEP, BrunoBMFT |
 | C3 | The E-stop time (#109) is measured ground side and end to end; end to end is the pass / fail number: from the injected fault to the first neutral `MSP_SET_RAW_RC` on the FC UART, both stamped on the HIL Pi's clock. | ptorrao-git, Dot99, ThiagoTEP, BrunoBMFT |
@@ -102,7 +102,7 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 | D3 | #103's Simulation box moves to the PX4 backend issue. | Dot99, BrunoBMFT |
 | D4 | Track B moves `drone/tools/bench/ground_link.py` onto `sd_protocol.ground` once PR #187 merges (it brings that module). The bench-only keys stay in the tool. Done 2026-11-20 (#229): `GroundLink` is a `GroundSession`. | ptorrao-git, Dot99 |
 | E1 | ROS stays on this PC: `ROS_DOMAIN_ID = 42` (outside the test range 81–98) and `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` as defaults in the launch file and `docker-compose.yml`, kept when the caller sets them. SROS2 only if the ground ever spans more than one PC. | Dot99, BrunoBMFT |
-| E1.2 | `make sim` and `make sim-smoke` use `SUBNET` discovery: with `LOCALHOST` the PX4 image (uid 1000, UDP only) and the other containers never see each other. The simulation runs no `flight_interface` and no drone. Added 2026-11-16. | Claude under BrunoBMFT's go, 2026-11-16 |
+| E1.2 | `make sim` and `make sim-smoke` use `SUBNET` discovery: with `LOCALHOST` the PX4 image (uid 1000, UDP only) and the other containers never see each other. The simulation runs no `flight_interface` and no drone. Added 2026-11-16. 2026-11-23 (#199): the simulation will run `flight_interface` with the `px4` backend (F3), still with no drone; `SUBNET` discovery stays. Until #199 merges, the sentence above still describes the code. | Claude under BrunoBMFT's go, 2026-11-16 |
 | E1.3 | Each compose mode (demo, sim, real) has its own ROS domain, so two modes never hear each other. A mode's profile, parameter file, domain and discovery range are set together in its env file, `drone/ground/env/<mode>.env`. The values are never in git: `env/` and `.env` are ignored, their templates (`env.example/<mode>.env.example`, `.env.example`) leave the domain and discovery range empty, and the safety pilot gives the values. Until they are set, compose refuses to start (`${VAR:?}`), so a fresh clone runs nothing, and `make` checks the file first (`tools/env_check.sh`: a whole number 0–101, not the tests' 81–98, not 0 or 42 (E1.4), a different domain per mode). The containers take the values from `GROUND_DOMAIN_ID` / `GROUND_DISCOVERY_RANGE`, not from `ROS_DOMAIN_ID`, so a terminal's `export ROS_DOMAIN_ID=...` cannot move a mode. E1.2's `SUBNET` is now a value of the sim's env file. Added 2026-11-18. | BrunoBMFT, on #186 PR B |
 | E1.4 | E1's domain 42 stays only as the default of the native launch files, run on the host without Docker (`ros2 launch flight_interface flight_interface.launch.py`, `ros2 launch ground_bringup real.launch.py`), kept when the caller sets `ROS_DOMAIN_ID`. The compose modes never use it: their domain comes from `env/<mode>.env` (E1.3). Added 2026-11-19. 2026-11-19, from Dot99's review of PR #222: `tools/env_check.sh` refuses 0 (a terminal with no `ROS_DOMAIN_ID`) and 42 (these launch files' default) for a compose mode, because a native `flight_interface` started on the same PC would join that mode's domain, and the one-`flight_interface` check only sees containers. | BrunoBMFT, on #186 PR B |
 | E2 | Every `ARM_CONTROL_ACK` / `RESUME_ACK` is logged, a refusal as a warning with its reason; `last_ack` on `/flight/state` comes with the docs of #98. | ThiagoTEP, BrunoBMFT |
@@ -118,6 +118,20 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 
 **Why E6.2:** `fc_alive` follows the ESP's raw 250 ms rule without the hysteresis that #188 gave `FC_LINK_RESTORED`, so taking it directly would flip more often than the events. Lost from either source wins at once; alive again needs the same 250 ms on the ground. A lost event (TCP down) is still covered by `FC_HEALTH` over UDP.
 
+### 2.4 Decided for #199 (2026-11-23)
+
+The controller and the PX4 backend (B3, D3). C1.1 and C1.5 already fix that the controller is its own node publishing `/control/attitude_setpoint`.
+
+| ID | Decision | Why | Decided by |
+|---|---|---|---|
+| F1 | The controller reads the measured velocity from a neutral topic, `/estimate/velocity` (`geometry_msgs/TwistStamped`, body frame FLU). In the simulation the `px4` backend publishes it from PX4's `vehicle_local_position`; on the real drone the estimator of #200 publishes the same topic. The controller never imports `px4_msgs`. | The same controller code in the simulation and on the drone; #200 knows the contract it must meet. | BrunoBMFT |
+| F2 | The simulation may run masks 8, 11 and 15 (C1.2's note). For 8 and 11 the `px4` backend fills the axes the ground does not own with level attitude and hover throttle, since PX4 in attitude Offboard holds neither altitude nor position by itself. The hold test (REQ-NAV-001) runs mask 15. | #202 and the cage use 8 and 11, so the simulation tests them too. | BrunoBMFT |
+| F3 | `flight_interface` gets a `px4` backend, imported lazily in `make_backend` (like `esp`). Only a simulation variant of the `flight_interface` image has `px4_msgs` (copied from the PX4 image); the normal images and CI stay without it. `make sim` runs this container instead of `px4_offboard_bridge`. The backend never arms, disarms or changes PX4's mode (REQ-SAF-023); `~/arm_control` on `px4` is logged and changes nothing, since the simulation script arms and switches to Offboard. | The simulation runs the real `flight_interface` container; no PX4 code outside the simulation. | Claude under BrunoBMFT's go |
+| F4 | C1.4's ground cap on roll and pitch is 15°, the same for both backends. | Enough tilt for 0.5 m/s in the cage, with room to tune. | BrunoBMFT (safety pilot) |
+| F5 | `px4_offboard_bridge` is deleted in #199's PR, with its CI job `sim-bridge-python`, once the hold test passes. `make sim-smoke`'s scenario and checks move out of the package first. | No code that nothing starts; two `/flight/state` publishers become impossible. | BrunoBMFT |
+| F6 | Nothing that reaches the real drone changes with #199: with no measured velocity (until #200) the controller sends `active` false, and the ESP backend sends neutral (mode 0, C2). | #199 is about the simulation; a change on the real drone needs the safety pilot and the bench. | BrunoBMFT (safety pilot) |
+| F7 | The controller is a velocity loop only (zero target = zero velocity). A position-hold loop on top comes only if the hold test fails on drift rather than on gains. | The simplest loop, as in the docs; a position loop needs a position estimate on the real drone too (#200). | Claude under BrunoBMFT's go |
+
 ### 2.3 What `/flight/state` carries
 
 `mission_node`'s fields (`link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) plus `active`, `estop`, `estop_reason`, `resume_pending`, `arm_pending`, `failsafe_output`, `fc_link_ok`, `armed` and `esp_rx_rejected` (the ESP's `STATE.rx_rejected` with its wraps counted, reset every session, #149). Unknown values are `null`; `mission_node` ignores fields it does not know. The JSON stays until an interface package exists (Module 2).
@@ -126,7 +140,7 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 
 - **Positive:** every way to ARM or RESUME goes through one operator service, one held request and one backend call, checked by a static test; a reconnect or a session switch can never carry a request over. The FC state is known about 0.4 s after the first `FC_HEALTH` (at most about 0.6 s after the node starts streaming), also when no event came (`FC_RESTORE_AFTER` 0.25 s of `fc_alive`, checked on each 5 Hz `FC_HEALTH`, so on the third one).
 - **Negative:** ARM and RESUME answer 1.5 s later than before. Until `override_active` (#176) and the controller (C1) exist, the node only ever sends neutral sticks.
-- **Open:** the C1.4 roll / pitch cap value, E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
+- **Open:** E1's SROS2, E2's `last_ack`, and the bench checks (#104, #109, blocked by #184).
 
 ## 4. Related pages
 
@@ -157,3 +171,6 @@ Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/gu
 | **SETPOINT / STATE** | Protocol messages: ground → ESP sticks (0x60, 50 Hz) and ESP → ground telemetry (0x80, 25 Hz) ([[Protocol Spec v0]] §3). |
 | **PX4 / SITL** | The simulated flight stack used in simulation only (`px4_offboard_bridge`); SITL = Software In The Loop. |
 | **HIL** | Hardware In The Loop: bench tests with the real ESP and FC, props off, no LiPo. |
+| **Attitude Offboard** | PX4's Offboard mode fed with attitude and thrust setpoints (`VehicleAttitudeSetpoint`): PX4 runs only its attitude loop, the ground does velocity (F3). |
+| **Hover throttle** | The throttle that holds the drone level at constant height; what the `px4` backend sends for "neutral" and for axes the ground does not own (F2). |
+| **Hold test** | REQ-NAV-001: zero velocity at 1.0 m, within 0.25 m horizontal and ±0.15 m vertical for 60 s. |

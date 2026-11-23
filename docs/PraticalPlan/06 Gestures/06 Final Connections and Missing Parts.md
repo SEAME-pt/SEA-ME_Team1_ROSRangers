@@ -3,7 +3,7 @@ title: Final Connections and Missing Parts
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-19
+updated: 2026-11-23
 project: SEA autonomous drone
 tags:
   - gestures
@@ -49,9 +49,13 @@ flowchart LR
 
 Turns `/mission/velocity_target` and the estimated velocity (flow, IMU, baro) into attitude and throttle on `/control/attitude_setpoint`, which `flight_interface` sends. Yaw only (mask 8) first; roll and pitch once there is a velocity estimate. Until it exists, `flight_interface` sends neutral sticks. Its contract: [[ADR-025 flight_interface Ground Node|ADR-025]] C1.
 
+In progress (#199). Decided 2026-11-23 ([[ADR-025 flight_interface Ground Node|ADR-025]] §2.4): its own node, measured velocity from `/estimate/velocity` (F1; the PX4 backend in the simulation, #200 on the drone), a velocity loop only (F7), roll / pitch capped at 15° (F4). On the real drone it sends `active` false until #200 (F6).
+
 ### 2.2 PX4 backend for `flight_interface`
 
 A `px4` backend that sends the attitude setpoints to PX4 SITL and publishes `/flight/state` from PX4. It replaces `px4_offboard_bridge` in `make sim`; the two never run together, since both publish `/flight/state` ([[PX4 SITL Setup]], [[ADR-019 Sim Backends|ADR-019]]).
+
+In progress (#199). Decided 2026-11-23 ([[ADR-025 flight_interface Ground Node|ADR-025]] §2.4): attitude Offboard, `px4_msgs` only in a simulation variant of the `flight_interface` image (F3), masks 8 / 11 / 15 with the pilot's axes filled by level attitude and hover throttle (F2), the bridge deleted once the hold test passes (F5).
 
 ### 2.3 Gestures driving `flight_interface` in the simulator
 
