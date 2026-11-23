@@ -73,7 +73,7 @@ cmake --build build && ctest --test-dir build --output-on-failure
 
 pytest drone/ground/src/sd_protocol_py   # Python protocol twin (80 % gate)
 pytest drone/tests/tools -q              # bench tool unit tests
-python3 drone/tests/vectors/generate.py --check   # local only: golden vectors up to date
+python3 drone/tests/vectors/generate.py --check   # golden vectors up to date (pre-commit hook)
 
 # Ground nodes: the Makefile is in drone/ground/, not the repo root
 cd drone/ground
@@ -143,7 +143,7 @@ Golden vectors: once committed, `drone/tests/vectors/*.json` are the source of t
 - Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
-- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
+- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck, golden vectors). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
 
 ## Code style
 

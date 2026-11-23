@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-23
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -60,7 +60,7 @@ Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job
 ## 2. Start now (no open decisions)
 
 1. Software repo with `main` + `dev` and protection ([[Branch_Protection]]). The tree is in [[Repository Layout]]; the workflow files are summarised in [[GitHub Actions Starter]].
-2. pre-commit: end-of-file, trailing whitespace, check-yaml, ruff + ruff-format, clang-format, shellcheck (§3).
+2. pre-commit: end-of-file, trailing whitespace, check-yaml, ruff + ruff-format, clang-format, shellcheck, golden vectors (§3).
 3. Empty C++ lib + 1 GoogleTest, coverage gate at **80%** from the start (as in `ci.yaml`). The target is 100%.
 4. pytest skeleton for the ground packages.
 5. PlatformIO build of a "hello" firmware for `esp`.
@@ -89,6 +89,7 @@ pre-commit run --all-files
 | `ruff-format` | Python formatting (auto-fixes). |
 | `clang-format` | C/C++ formatting for the protocol library and firmware (auto-fixes). |
 | `shellcheck` | Lints every shell script (today `scripts/sync-labels.sh` and the `drone/ground/docker/` and `drone/ground/tools/` scripts), warnings and errors only. |
+| `golden-vectors` | Runs `drone/tests/vectors/generate.py --check`: the committed vectors must match their independent generator. Fails when a vector was edited by hand or the generator changed without a regenerate (`python3 drone/tests/vectors/generate.py`). Local hook, needs only `python3` ([[ADR-022 CI Gates and Lint Rules\|ADR-022]], update 2026-11-23). |
 
 **Requirements.**
 

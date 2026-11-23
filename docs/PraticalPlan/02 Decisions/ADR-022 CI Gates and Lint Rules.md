@@ -3,7 +3,7 @@ title: ADR-022 — CI Gates and Lint Rules
 type: adr
 status: accepted
 date: 2026-10-21
-updated: 2026-10-23
+updated: 2026-11-23
 project: SEA autonomous drone
 aliases:
   - D22
@@ -60,6 +60,8 @@ tags:
   Each needs its own entry here when it is decided.
 
 > Update 2026-10-23: accepted. PR #74 was merged into `dev` on 2026-10-21, and the gates above are in `.github/workflows/ci.yaml`.
+
+> Update 2026-11-23 (#232, PR #233): a local pre-commit hook `golden-vectors` runs `python3 drone/tests/vectors/generate.py --check` when a file in `drone/tests/vectors/` changes, and always in the `lint` job (`--all-files`). Until now nothing in CI checked that the committed vectors still match their independent generator, so a hand-edited vector (a protocol change, vectors `README.md` §4) or a generator change without a regenerate went unnoticed. Standard library only, under a second.
 
 ## 5. Related pages
 

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-19
+updated: 2026-11-23
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -44,7 +44,7 @@ tags:
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner. HIL target = spare ESP, FC in SITL; Wi-Fi tests by time-slicing, no dongle (2026-10-26) | ✅ Accepted (updated 2026-10-26, #61, #48) | n/a |
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
-| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
+| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged; golden-vectors hook 2026-11-23, PR #233) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
 | [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16) | n/a |
@@ -112,11 +112,15 @@ tags:
 - 2026-11-18, decision **changed**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.3: each compose mode (demo, sim, real) has its own ROS domain and discovery range, set in its git-ignored env file `drone/ground/env/<mode>.env` with the values the safety pilot gives. Replaces E1's domain 42 for the containers (#186 PR B).
 - 2026-11-19, decision **clarified**: [[ADR-025 flight_interface Ground Node|ADR-025]] E1.4: E1's domain 42 stays only as the default of the native launch files run on the host without Docker (#186 PR B).
 
-## 11. Still open
+## 11. What changed on 2026-11-23
+
+- Decision **extended**: [[ADR-022 CI Gates and Lint Rules|ADR-022]]: a local pre-commit hook `golden-vectors` runs `drone/tests/vectors/generate.py --check`, so the `lint` job now fails when the committed vectors and their independent generator disagree (#232, PR #233).
+
+## 12. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 12. Glossary
+## 13. Glossary
 
 | Term | Meaning |
 | --- | --- |
