@@ -73,13 +73,13 @@ cmake --build build && ctest --test-dir build --output-on-failure
 
 pytest drone/ground/src/sd_protocol_py   # Python protocol twin (80 % gate)
 pytest drone/tests/tools -q              # bench tool unit tests
-python3 drone/tests/vectors/generate.py --check   # golden vectors up to date
+python3 drone/tests/vectors/generate.py --check   # local only: golden vectors up to date
 
 # Ground nodes: the Makefile is in drone/ground/, not the repo root
 cd drone/ground
 make unit       # suites that need no ROS
 make test       # everything (venv + colcon workspace), one summary row per suite
-make pkg-test   # colcon test only (90 % gate for the ROS packages)
+make pkg-test   # colcon test only (no coverage gate; make test runs the 90 % gate)
 make e2e-test   # drone/tests/ros
 make smoke      # Docker smoke test (CI ground-docker)
 make test-sitl  # Betaflight SITL; the first run clones and builds Betaflight
