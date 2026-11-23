@@ -340,6 +340,28 @@ class FlightInterfaceRosTests(unittest.TestCase):
         # Mask 11: throttle is not the ground's, so the hover value goes out.
         self.assertEqual(self.backend.sent[-1][1], Setpoint(0.0, 0.3, 0.0, 0.6, True))
 
+    def test_px4_backend_outside_the_sim_image_fails_configure(self):
+        # No px4_msgs here (only the simulation image has it): ImportError ->
+        # FAILURE, nothing left half-created. Without a hover throttle the
+        # px4 backend refuses first (ValueError), also FAILURE.
+        self.node.destroy_node()  # the same node name, one at a time
+        for params in ({"hover_throttle": 0.7}, {"hover_throttle": 0.0}):
+            node = FlightInterface()
+            try:
+                node.set_parameters(
+                    [rclpy.parameter.Parameter("backend", value="px4")]
+                    + [rclpy.parameter.Parameter(k, value=v) for k, v in params.items()]
+                )
+                with self.subTest(params=params):
+                    self.assertEqual(
+                        node.trigger_configure(), TransitionCallbackReturn.FAILURE
+                    )
+                    self.assertIsNone(node.guard)
+                    self.assertIsNone(node.backend)
+            finally:
+                node.destroy_node()
+        self.node = FlightInterface(backend=self.backend)  # for tearDown
+
     def test_bad_backend_parameter_fails_configure(self):
         self.node.destroy_node()  # the same node name, one at a time
         node = FlightInterface()

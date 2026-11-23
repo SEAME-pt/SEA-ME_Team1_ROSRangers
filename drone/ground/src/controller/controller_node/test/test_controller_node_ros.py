@@ -19,11 +19,12 @@ import unittest
 
 try:
     import rclpy
-    from controller_node.controller_node import ControllerNode
     from geometry_msgs.msg import TwistStamped
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.parameter import Parameter
     from std_msgs.msg import String
+
+    from controller_node.controller_node import ControllerNode
 except ImportError:
     if os.environ.get("REQUIRE_ROS_TESTS"):
         raise

@@ -326,8 +326,6 @@ def test_loopback_is_conservative_by_default_and_records_what_is_sent():
 
 def test_unknown_backend_refused():
     with pytest.raises(ValueError):
-        make_backend("px4")  # waits for decision C1
-    with pytest.raises(ValueError):
         make_backend("nope")
 
 

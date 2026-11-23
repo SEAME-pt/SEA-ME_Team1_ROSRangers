@@ -201,9 +201,13 @@ class FlightInterface(Node):
                 esp_host=str(self.get_parameter("esp_host").value),
                 esp_port=int(self.get_parameter("esp_port").value),
                 warn=self.get_logger().warning,  # E3: a secrets file others can read
+                node=self,  # px4 (simulation only): its topics
+                mask=mask,
+                hover_throttle=float(hover),
             )
         except (TypeError, ValueError, ImportError) as error:
-            # ImportError: backend:=esp without sd_protocol installed.
+            # ImportError: backend:=esp without sd_protocol installed, or
+            # backend:=px4 outside the simulation image (no px4_msgs).
             self.get_logger().error(f"configure failed: {error}")
             return TransitionCallbackReturn.FAILURE
         state_rate = min(rate, max(MIN_STATE_RATE_HZ, state_rate))
