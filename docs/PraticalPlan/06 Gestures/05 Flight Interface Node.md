@@ -113,7 +113,7 @@ make real-dry
 
 It starts gesture, intent, mission and `flight_interface` (unconfigured), prints the operator steps and shows the live table. Run the steps in another terminal: after `configure` and `activate`, `/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`, and `mission_node` stays `IDLE`. Stop with `make real-down`.
 
-In the live table ([[01 ROS2 Nodes Installation|01]] §4.6) the title says `REAL-DRY: NO DRONE (loopback)`. FLIGHT is `waiting` until `configure`, then shows the yellow `NOT ACTIVE` alert until `activate`. ATTITUDE and BATTERY say `no data: loopback has no FC`. Only the table `make real-dry` opens knows it is a dry run: to open it again after Ctrl+C, use `docker compose --env-file env/real.env run --rm -e GROUND_DRY=1 echo`, not `$R`, or the title says `REAL: DRONE` (`make real-steps` prints this too).
+In the live table ([[01 ROS2 Nodes Installation|01]] §4.6) the title says `REAL-DRY: NO DRONE (loopback)`. FLIGHT is `waiting` until `configure`, then shows the yellow `NOT ACTIVE` alert until `activate`. ATTITUDE and BATTERY say `no data: loopback has no FC`. To open the table again after Ctrl+C, use the `$R` that `make real-steps` prints: in a dry run (the running `flight_interface` has `backend:=loopback`) its `R` adds `-e GROUND_DRY=1`, so the title stays `REAL-DRY`. A plain `R` from §7.2 would show `REAL: DRONE`.
 
 ### 7.2 With the drone: `make real`
 

@@ -187,7 +187,7 @@ VELOCITY  mission_node  /mission/velocity_target     live
 | `FC LINK LOST` | the ESP gets no answer from the FC | the safety pilot flies; check the FC wiring and power |
 | `NO LINK` | no recent state from the ESP (Wi-Fi lost, ESP off), or the ground can't command the drone and nothing above says why | check the ESP and the Wi-Fi |
 | `NO /flight/state (N s)` / `BAD /flight/state` | its publisher stopped / sent something unreadable | check that publisher's log |
-| `LOW BATTERY: <V>/cell` | the pack has been at or below 3.5 V per cell for 2 s | land ([[Safety Rules]] #8) |
+| `LOW BATTERY: <V>/cell` | the pack has been at or below 3.5 V per cell for 2 s. Needs `/fc/battery` at 2 Hz or faster (the drone and `fc_telemetry`'s default send 5 Hz); below that (`fc_telemetry` `battery_hz` < 2) it never shows | land ([[Safety Rules]] #8) |
 | `FC LINK UNKNOWN` (yellow) | the ESP answers, but no FC health report yet (a new session) | wait a second; if it stays, as `FC LINK LOST` |
 | `NOT ACTIVE` (yellow) | `flight_interface` is configured, not activated | `activate` ([[05 Flight Interface Node]] §7) |
 

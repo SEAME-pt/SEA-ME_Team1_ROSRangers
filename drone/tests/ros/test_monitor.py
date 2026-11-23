@@ -18,6 +18,7 @@ are skipped, unless REQUIRE_ROS_TESTS=1 is set (CI sets it), then it fails.
 Run with:  python3 -m pytest drone/tests/ros -v        (from the repo root, ROS sourced)
 """
 
+import io
 import json
 import math
 import os
@@ -1139,10 +1140,90 @@ class CallbackErrorTests(MonitorTestCase):
         self.assertEqual(len(self.node.logged), 1)
         self.assertIn("Traceback", self.node.logged[0])
 
-    def test_logged_once_while_the_text_stays_the_same(self):
-        self.spin_raising(ValueError("boom"), ValueError("boom"), KeyError("x"))
+    def test_logged_once_per_type_and_line(self):
+        """The same bug with the bad value in its text logs one traceback; the
+        alert shows the latest text. Another type logs again."""
+        self.spin_raising(ValueError("bad 1"), ValueError("bad 2"), KeyError("x"))
         self.assertEqual(len(self.node.logged), 2)
         self.assertEqual(self.monitor.last_error(), "KeyError: 'x'")
+
+    def test_alert_shows_the_latest_text(self):
+        self.spin_raising(ValueError("bad 1"), ValueError("bad 2"))
+        self.assertEqual(len(self.node.logged), 1)
+        self.assertEqual(self.monitor.last_error(), "ValueError: bad 2")
+
+    def test_same_type_from_another_line_logs_again(self):
+        def first():
+            raise ValueError("a")
+
+        def second():
+            raise ValueError("a")
+
+        for raiser in (first, first, second):
+            try:
+                raiser()
+            except ValueError as exc:
+                self.monitor.callback_failed(exc)
+        self.assertEqual(len(self.node.logged), 2)
+
+    def test_waits_after_an_error(self):
+        """spin_once itself raising (context gone) must not loop at 100 % CPU."""
+
+        class Stop:
+            def __init__(self):
+                self.waits = []
+                self.calls = 0
+
+            def is_set(self):
+                self.calls += 1
+                return self.calls > 3
+
+            def wait(self, seconds):
+                self.waits.append(seconds)
+
+        stop = Stop()
+        with mock.patch.object(
+            monitor.rclpy, "spin_once", side_effect=RuntimeError("context invalid")
+        ):
+            monitor._spin(self.monitor, stop)
+        self.assertEqual(stop.waits, [0.1, 0.1, 0.1])
+        self.assertEqual(len(self.node.logged), 1)
+
+    def test_main_ends_when_drawing_fails(self):
+        """A table() that raises must end main() with the traceback, not leave
+        it waiting on the spin thread with the old frame on screen."""
+
+        class Terminal(io.StringIO):
+            def isatty(self):
+                return True
+
+        result = {}
+
+        def run():
+            try:
+                monitor.main()
+            except RuntimeError as exc:
+                result["raised"] = exc
+
+        def spin_once(node, timeout_sec):
+            time.sleep(0.01)
+
+        with (
+            mock.patch.object(monitor.signal, "signal"),
+            mock.patch.object(monitor.rclpy, "init"),
+            mock.patch.object(
+                monitor.rclpy, "create_node", return_value=mock.MagicMock()
+            ),
+            mock.patch.object(monitor.rclpy, "spin_once", side_effect=spin_once),
+            mock.patch.object(monitor.rclpy, "try_shutdown"),
+            mock.patch.object(monitor.sys, "stdout", Terminal()),
+            mock.patch.object(monitor, "table", side_effect=RuntimeError("draw")),
+        ):
+            runner = threading.Thread(target=run, daemon=True)
+            runner.start()
+            runner.join(5.0)
+        self.assertFalse(runner.is_alive(), "main() hung after table() raised")
+        self.assertEqual(str(result.get("raised")), "draw")
 
     def test_first_alert_in_the_table_and_the_one_line_output(self):
         self.spin_raising(ValueError("boom"))

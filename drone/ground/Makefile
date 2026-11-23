@@ -422,12 +422,16 @@ $(REAL_COMPOSE) run -d --rm --build --name $(FI_NAME) flight_interface $(FI_ARGS
 else echo "The real stack is stopped."; fi
 endef
 
-# The operator steps, printed again any time (nothing else happens)
+# The operator steps, printed again any time (nothing else happens). In a dry
+# run (the running flight_interface has backend:=loopback, as real-dry starts
+# it) R passes GROUND_DRY=1, so `$R` opens the table with the REAL-DRY title,
+# not REAL: DRONE. Reads the container only; no container gives the plain R.
+real-steps: DRY_ENV = $(shell docker inspect --format '{{join .Args " "}}' $(FI_NAME) 2>/dev/null | grep -q 'backend:=loopback' && echo '-e GROUND_DRY=1 ')
 real-steps:
 	@echo
 	@echo "===== flight_interface is UNCONFIGURED. Operator steps (another terminal, in drone/ground/):"
 	@echo "  Safety Rules first: props off on the bench, the safety pilot holds the radio."
-	@echo "  R='docker compose --env-file env/real.env run --rm echo'"
+	@echo "  R='docker compose --env-file env/real.env run --rm $(DRY_ENV)echo'"
 	@echo "  L='ros2 lifecycle set --no-daemon --spin-time 5'   # waits for discovery (fresh container)"
 	@echo '  $$R $$L /flight_interface configure'
 	@echo '  $$R $$L /flight_interface activate'
@@ -435,8 +439,6 @@ real-steps:
 	@echo '  $$R ros2 service call /flight_interface/estop std_srvs/srv/Trigger         # E-stop'
 	@echo '  $$R ros2 topic echo /flight/state                                            # its state'
 	@echo '  $$R                                                                          # the live table again'
-	@echo "  After make real-dry, the table again with GROUND_DRY=1, or its title says REAL: DRONE:"
-	@echo "    docker compose --env-file env/real.env run --rm -e GROUND_DRY=1 echo"
 	@echo "  Logs: logs/flight_interface/latest.log. Stop everything: make real-down"
 	@echo "  These steps again: make real-steps"
 	@echo

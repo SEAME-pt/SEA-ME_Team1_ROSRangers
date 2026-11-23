@@ -49,7 +49,11 @@ from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 REFRESH_SEC = 0.1
-STALE_SEC = 1.0  # every topic here arrives at 2 Hz or faster
+# Every topic here must arrive at 2 Hz or faster, or its row turns STALE
+# between messages. /fc/battery too: below 2 Hz (fc_telemetry battery_hz < 2)
+# LOW BATTERY never shows, since a STALE row never alerts and a gap restarts
+# its hold. The drone and fc_telemetry's default send it at 5 Hz.
+STALE_SEC = 1.0
 
 # Battery: land at 3.5 V per cell (Safety Rules #8, Battery Log §1). The alert
 # needs LOW_BATTERY_HOLD_SEC below it without a break, so the short sag under
@@ -181,6 +185,7 @@ class Monitor:
         self.lock = threading.Lock()
         self.low_since = None  # when the battery went to or below the land level
         self.error = None  # the last exception from a callback, as text
+        self.error_where = None  # (type, file, line) of the last one logged
         # Topics with more than one publisher: topic -> (since, [node names]).
         self.extra = {}
         # Reads the ROS graph only (who publishes): no client, no publisher.
@@ -313,12 +318,20 @@ class Monitor:
 
     def callback_failed(self, exc):
         """Runs in the spin thread when a callback raised. Kept until the table
-        restarts: after one, a row may be missing data. Logged (with the
-        traceback) only when the text changes, so a callback that raises on
-        every message does not flood the terminal."""
+        restarts: after one, a row may be missing data. The alert shows the
+        latest message; the traceback is logged only when the exception's type
+        or the line that raised it changes, so one bug that raises on every
+        message (even with the bad value in its text) logs once, and a second,
+        different one is still logged."""
         text = f"{type(exc).__name__}: {exc}"[:80]
+        frames = traceback.extract_tb(exc.__traceback__)
+        if frames:
+            where = (type(exc).__name__, frames[-1].filename, frames[-1].lineno)
+        else:
+            where = (type(exc).__name__, None, None)
         with self.lock:
-            changed = text != self.error
+            changed = where != self.error_where
+            self.error_where = where
             self.error = text
         if changed:
             self.node.get_logger().error(
@@ -715,6 +728,9 @@ def main():
                     print(line, flush=True)
                     last = line
     finally:
+        # First: if drawing raised, the spin thread must stop too, or join()
+        # waits forever and the old frame stays on screen with no traceback.
+        stop.set()
         if live:
             sys.stdout.write(LEAVE)
             sys.stdout.flush()
@@ -732,6 +748,9 @@ def _spin(monitor, stop):
             rclpy.spin_once(monitor.node, timeout_sec=0.1)
         except Exception as exc:
             monitor.callback_failed(exc)
+            # If spin_once itself keeps raising (context or wait set gone), at
+            # most one try per 0.1 s instead of a loop at 100 % CPU.
+            stop.wait(0.1)
 
 
 if __name__ == "__main__":
