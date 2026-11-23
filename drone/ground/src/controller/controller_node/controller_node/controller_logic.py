@@ -9,6 +9,7 @@ Inputs (body frame FLU, REP-103: x forward, y left, z up):
   * the measured velocity: vx, vy, vz (m/s), from /estimate/velocity
 Output, the /control/attitude_setpoint fields (ADR-025 C1.1):
   * roll, pitch (deg), yaw_rate (deg/s), throttle (0-1), active
+  * reason (F17): why active is false (REASONS), "ok" while active
   * signs as /fc/attitude (C1.1 note): roll + = right side down, pitch + =
     nose down, yaw_rate + = turn left
 
@@ -17,6 +18,7 @@ Rules (ADR-025 §2.4):
     (direction kept), vertical <= 0.5 m/s, yaw rate <= 45 deg/s; a non-finite
     value counts as 0.
   * A target older than target_timeout (0.25 s) becomes zero: hover (F11).
+  * hover_throttle 0.0 means "not measured" (F16): always inactive.
   * Active only while the measured velocity is fresh (F10, F11): with none,
     or one older than velocity_timeout, the output is `active` false
     (neutral, F8) and the integrators are cleared. A zero target with a
@@ -53,6 +55,17 @@ MAX_INPUT_TIMEOUT = 0.25
 MAX_TILT_CAP_DEG = 15.0
 # F14: throttle band around the hover throttle; the controller may use less.
 MAX_THROTTLE_BAND = 0.15
+# hover_throttle 0.0: nobody has measured it for this drone (F16).
+HOVER_NOT_MEASURED = 0.0
+
+# The `reason` field (F17).
+OK = "ok"
+NO_VELOCITY = "no_velocity"
+STALE_VELOCITY = "stale_velocity"
+NO_HOVER_THROTTLE = "no_hover_throttle"
+STOPPED = "stopped"  # the node's last setpoint on the way out
+REASONS = (OK, NO_VELOCITY, STALE_VELOCITY, NO_HOVER_THROTTLE, STOPPED)
+
 # A longer step means a missed tick or a paused clock: no integration then.
 MAX_DT = 0.1
 
@@ -136,14 +149,17 @@ class Params:
         if not is_int or mask not in MASK_AXES:
             raise ValueError(f"mask must be 8, 11 or 15, got {mask!r}")
         hover = self.hover_throttle
-        if not _finite(hover) or not 0.0 < hover < 1.0:
-            raise ValueError(f"hover_throttle must be in (0, 1), got {hover!r}")
+        if not _finite(hover) or not 0.0 <= hover < 1.0:
+            raise ValueError(
+                f"hover_throttle must be 0 (not measured) or in (0, 1), got {hover!r}"
+            )
         band = self.throttle_band
         if not _finite(band) or not 0.0 < band <= MAX_THROTTLE_BAND:
             raise ValueError(
                 f"throttle_band must be in (0, {MAX_THROTTLE_BAND}], got {band!r}"
             )
-        if hover - band < 0.0 or hover + band > 1.0:
+        measured = hover != HOVER_NOT_MEASURED
+        if measured and (hover - band < 0.0 or hover + band > 1.0):
             raise ValueError(
                 f"hover_throttle +- throttle_band must stay in 0-1, got {hover} +- {band}"
             )
@@ -231,16 +247,28 @@ class Controller:
         return self._fresh(self._velocity_t, now, self.params.velocity_timeout)
 
     # ---------- output ----------
-    def neutral(self):
-        """F8: no command. The numbers are level and hover throttle so that
-        nothing reading them by mistake would tilt or drop the drone."""
+    def neutral(self, reason):
+        """F8: no command, with the reason (F17). The numbers are level and
+        the hover throttle, so that nothing reading them by mistake would tilt
+        the drone; only `active` false counts."""
         return {
             "roll": 0.0,
             "pitch": 0.0,
             "yaw_rate": 0.0,
             "throttle": self.params.hover_throttle,
             "active": False,
+            "reason": reason,
         }
+
+    def inactive_reason(self, now):
+        """Why the output is inactive now, or None if it can be active."""
+        if self.params.hover_throttle == HOVER_NOT_MEASURED:
+            return NO_HOVER_THROTTLE
+        if self._velocity_t is None:
+            return NO_VELOCITY
+        if not self.velocity_fresh(now):
+            return STALE_VELOCITY
+        return None
 
     def _reset(self):
         self._x.reset()
@@ -255,9 +283,10 @@ class Controller:
             dt = now - self._last_step_t
         self._last_step_t = now
 
-        if not self.velocity_fresh(now):
+        reason = self.inactive_reason(now)
+        if reason is not None:
             self._reset()
-            return self.neutral()
+            return self.neutral(reason)
 
         if self.target_fresh(now):
             target_x, target_y, target_z, target_wz = self._target
@@ -320,4 +349,5 @@ class Controller:
             "yaw_rate": yaw_rate,
             "throttle": throttle,
             "active": True,
+            "reason": OK,
         }

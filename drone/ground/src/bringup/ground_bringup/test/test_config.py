@@ -5,6 +5,10 @@ typo in a key would silently do nothing. For each file, every node section is
 a node that mode starts, and the real node, created with the file (the way
 `--params-file` passes it), declares every key and gets every value.
 
+The `/**:` section holds the values several nodes share (ADR-025 F15): each
+of its keys is declared by at least one node the mode starts, and every
+started node that declares it gets that value.
+
 Needs ROS 2 Jazzy sourced and the node packages installed. Without them the
 tests are skipped, unless REQUIRE_ROS_TESTS=1 is set (CI sets it).
 
@@ -47,6 +51,9 @@ MODE_NODES = {
 }
 
 
+SHARED = "/**"  # the ROS wildcard section: every node reads it
+
+
 def config(mode):
     return yaml.safe_load((PACKAGE / "config" / f"{mode}.yaml").read_text())
 
@@ -68,7 +75,7 @@ class ConfigFileTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 data = config(mode)
                 self.assertIsInstance(data, dict)
-                self.assertLessEqual(set(data), started)
+                self.assertLessEqual(set(data) - {SHARED}, started)
                 for name, section in data.items():
                     self.assertEqual(set(section), {"ros__parameters"}, name)
                     self.assertIsInstance(section["ros__parameters"], dict, name)
@@ -78,6 +85,18 @@ class ConfigFileTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 params = config(mode)["intent_node"]["ros__parameters"]
                 self.assertEqual(params["input_source"], "topic")
+
+    def test_shared_values_not_repeated_in_a_node_section(self):
+        # F15: a shared key lives only in /**, so two copies cannot disagree.
+        for mode in MODE_NODES:
+            with self.subTest(mode=mode):
+                data = config(mode)
+                shared = set(data.get(SHARED, {}).get("ros__parameters", {}))
+                for name, section in data.items():
+                    if name == SHARED:
+                        continue
+                    repeated = shared & set(section["ros__parameters"])
+                    self.assertEqual(repeated, set(), name)
 
     def test_real_never_uses_the_loopback(self):
         params = config("real")["flight_interface"]["ros__parameters"]
@@ -92,7 +111,13 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
             args=["--ros-args", "--params-file", str(path)], domain_id=TEST_DOMAIN_ID
         )
         try:
-            for name, section in config(mode).items():
+            data = config(mode)
+            shared = data.get(SHARED, {}).get("ros__parameters", {})
+            if shared:
+                self.check_shared(mode, shared)
+            for name, section in data.items():
+                if name == SHARED:
+                    continue
                 cls = node_class(name)
                 if cls is None:
                     self.skipTest(f"{name} not installed")
@@ -109,6 +134,27 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
                         node.destroy_node()
         finally:
             rclpy.shutdown()
+
+    def check_shared(self, mode, shared):
+        """Each /** key is declared by at least one node the mode starts, and
+        each started node that declares it got the file's value."""
+        declared_by = {key: [] for key in shared}
+        for name in sorted(MODE_NODES[mode]):
+            cls = node_class(name)
+            if cls is None:
+                self.skipTest(f"{name} not installed")
+            node = cls()
+            try:
+                for key, value in shared.items():
+                    if node.has_parameter(key):
+                        declared_by[key].append(name)
+                        with self.subTest(mode=mode, node=name, key=key):
+                            self.assertEqual(node.get_parameter(key).value, value)
+            finally:
+                node.destroy_node()
+        for key, names in declared_by.items():
+            with self.subTest(mode=mode, key=key):
+                self.assertTrue(names, f"no node of {mode} declares {key}")
 
     def test_demo(self):
         self.check("demo")

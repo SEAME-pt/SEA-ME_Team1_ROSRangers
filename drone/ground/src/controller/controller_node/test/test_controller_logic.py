@@ -12,6 +12,10 @@ from controller_node.controller_logic import (
     GRAVITY,
     MAX_DT,
     MAX_INPUT_TIMEOUT,
+    NO_HOVER_THROTTLE,
+    NO_VELOCITY,
+    OK,
+    STALE_VELOCITY,
     Controller,
     Gains,
     Params,
@@ -195,15 +199,19 @@ class TestFreshness(unittest.TestCase):
         controller.on_target(0.5, 0.0, 0.0, 0.0, 0.0)
         out = controller.step(0.0)
         self.assertFalse(out["active"])
-        self.assertEqual(out, controller.neutral())
+        self.assertEqual(out, controller.neutral(NO_VELOCITY))
         self.assertEqual(out["throttle"], HOVER)
 
     def test_stale_measured_velocity_is_inactive(self):
         controller = make()
         controller.on_target(0.5, 0.0, 0.0, 0.0, 0.0)
         controller.on_velocity(0.0, 0.0, 0.0, 0.0)
-        self.assertTrue(controller.step(MAX_INPUT_TIMEOUT)["active"])
-        self.assertFalse(controller.step(MAX_INPUT_TIMEOUT + 0.01)["active"])
+        fresh = controller.step(MAX_INPUT_TIMEOUT)
+        self.assertTrue(fresh["active"])
+        self.assertEqual(fresh["reason"], OK)
+        stale = controller.step(MAX_INPUT_TIMEOUT + 0.01)
+        self.assertFalse(stale["active"])
+        self.assertEqual(stale["reason"], STALE_VELOCITY)
 
     def test_non_finite_measured_velocity_is_dropped(self):
         controller = make()
@@ -238,6 +246,21 @@ class TestFreshness(unittest.TestCase):
         out = one_step((0.0, 0.0, 0.0, 0.0), (0.0, 0.3, 0.0))
         self.assertTrue(out["active"])
         self.assertGreater(out["roll"], 0.0)
+
+
+class TestHoverNotMeasured(unittest.TestCase):
+    """F16: hover_throttle 0.0 = not measured = always inactive."""
+
+    def test_inactive_even_with_fresh_inputs(self):
+        controller = Controller(Params(hover_throttle=0.0, mask=15))
+        out, _ = run(controller, (0.5, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 0.5)
+        self.assertFalse(out["active"])
+        self.assertEqual(out["reason"], NO_HOVER_THROTTLE)
+        self.assertEqual(controller._x.integral, 0.0)
+
+    def test_checked_before_the_velocity(self):
+        controller = Controller(Params(hover_throttle=0.0, mask=8))
+        self.assertEqual(controller.step(0.0)["reason"], NO_HOVER_THROTTLE)
 
 
 class TestMask(unittest.TestCase):
@@ -276,7 +299,7 @@ class TestParams(unittest.TestCase):
             self.check_bad(mask=mask)
 
     def test_bad_hover(self):
-        for hover in (0.0, 1.0, -0.1, math.nan, None):
+        for hover in (1.0, -0.1, math.nan, None):
             self.check_bad(hover_throttle=hover)
 
     def test_band_must_fit_and_stay_small(self):
