@@ -3,7 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
-updated: 2026-11-16
+updated: 2026-11-20
 project: SEA autonomous drone
 tags:
   - simulation
@@ -144,7 +144,7 @@ make sim MASK=11      # ground owns x, y and yaw; PX4 holds the altitude (defaul
 make sim-down         # stop it (from another terminal; Ctrl+C also stops it)
 ```
 
-1. **Wait for PX4.** The terminal shows the live table. The start-up is in `logs/px4/latest.log`: `[sim] 1/5` … `[sim] 5/5 Ready: armed, hovering in Offboard`. That takes about 30 s headless, more with the window or on the first run; the Gazebo window opens on the way. Until then `mission_node` stays `IDLE`: there is no `/flight/state` yet, or it says the override is off. Once PX4 is armed and in Offboard (the sim's override), the mode turns `WAITING`.
+1. **Wait for PX4.** The terminal shows the live table. The start-up is in `logs/px4/latest.log`: `[sim] 1/5` … `[sim] 5/5 Ready: armed, hovering in Offboard`. That takes about 30 s headless, more with the window or on the first run; the Gazebo window opens on the way. Until then `mission_node` stays `IDLE`: there is no `/flight/state` yet, or it says the override is off. The live table shows a red `FAILSAFE` until PX4's data arrives: the sim has no ESP, and the bridge's `esp_state` only mirrors the link. Once PX4 is armed and in Offboard (the sim's override), the mode turns `WAITING`.
 2. **Engage.** From `WAITING`: both arms down, then both open hands. The mission mode in the live table turns `ENGAGED`.
 3. **Fly** with the gestures of [[00 Gesture Pipeline]] §3. Hands down: the drone hovers. Commands are in the **drone's** frame: `MOVE_RIGHT` moves to the drone's right, whatever the Gazebo camera shows. The x500 starts facing east.
 4. **Stop** with Ctrl+C or `make sim-down`. Closing the Gazebo window leaves the sim running.

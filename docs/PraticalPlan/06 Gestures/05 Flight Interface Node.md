@@ -3,7 +3,7 @@ title: Flight Interface Node (velocity target → drone, drone state → /flight
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-19
+updated: 2026-11-20
 project: SEA autonomous drone
 tags:
   - gestures
@@ -113,6 +113,8 @@ make real-dry
 
 It starts gesture, intent, mission and `flight_interface` (unconfigured), prints the operator steps and shows the live table. Run the steps in another terminal: after `configure` and `activate`, `/flight/state` shows `link_ok` true and `esp_state` `SESSION_IDLE`, and `mission_node` stays `IDLE`. Stop with `make real-down`.
 
+In the live table ([[01 ROS2 Nodes Installation|01]] §4.6) the title says `REAL-DRY: NO DRONE (loopback)`. FLIGHT is `waiting` until `configure`, then shows the yellow `NOT ACTIVE` alert until `activate`. ATTITUDE and BATTERY say `no data: loopback has no FC`. To open the table again after Ctrl+C, use the `$R` that `make real-steps` prints: in a dry run (the running `flight_interface` has `backend:=loopback`) its `R` adds `-e GROUND_DRY=1`, so the title stays `REAL-DRY`. A plain `R` from §7.2 would show `REAL: DRONE`.
+
 ### 7.2 With the drone: `make real`
 
 Follow [[Safety Rules]]: props off on the bench, the safety pilot holds the radio.
@@ -124,6 +126,8 @@ make real
 1. **Checks, and refuses on any failure:** `env/real.env` is filled in, the PSK file (§ below) exists with mode 600 and holds a valid key, and the ESP (`esp_host` in `ground_bringup`'s `config/real.yaml`) answers ping. It never opens a TCP connection to the gateway.
 2. **Starts** the chain and `flight_interface` with `real.yaml` (backend `esp`), **unconfigured**. It never configures, activates or ARMs it (REQ-SAF-023).
 3. **Prints the operator steps** (again any time: `make real-steps`) and shows the live table. Ctrl+C closes only the table: the stack keeps running.
+
+In the live table ([[01 ROS2 Nodes Installation|01]] §4.6) the title says `REAL: DRONE`. After `configure`, FLIGHT shows `fc_link_ok` true and `esp_state` `SESSION_IDLE` (`link_ok` stays false until `activate`), `STREAMING` once armed; ATTITUDE and BATTERY fill in while the FC data is fresh. Any red alert means stop and check it before the next step; `LOW BATTERY` means land.
 
 The operator steps, in another terminal in `drone/ground/`:
 

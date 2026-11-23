@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-11-19
+updated: 2026-11-20
 project: SEA autonomous drone
 tags:
   - gestures
@@ -70,7 +70,7 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
 | `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
-| `echo` | the live table of the chain, and the `ros2` CLI (§5) |
+| `echo` | the live table (the drone and the chain, §4.6), and the `ros2` CLI (§5) |
 | `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
 | `px4`, `sim_smoke` | the simulation and its test, sim modes only ([[PX4 SITL Setup]] §7) |
 
@@ -81,6 +81,7 @@ Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.e
 | `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
 | `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
 | `real` (`make real`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+| `real-dry` (`make real-dry`) | the same as `real`, with `env/real.env` | `flight_interface`, loopback backend: no drone ([[05 Flight Interface Node]] §7.1) |
 
 **Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
 
@@ -93,7 +94,7 @@ cp .env.example .env                           # only for a plain `docker compos
 
 Until they are filled in, `make` and `docker compose` refuse to start, and say which value is missing.
 
-The **live table** shows the latest gesture, intent, mission mode and velocity target, and marks a topic `STALE` when it stops. Each node writes its output to `logs/<service>/latest.log` (`tail -f logs/intent/latest.log`).
+The **live table** shows the mode, the drone's state and the gesture chain, and raises alerts (§4.6). Each node writes its output to `logs/<service>/latest.log` (`tail -f logs/intent/latest.log`).
 
 ### 4.3 The `make` targets
 
@@ -121,6 +122,76 @@ The code is copied into the images, so run `make` again after an edit: it rebuil
 ### 4.5 `ROS_DOMAIN_ID`
 
 Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). `make` refuses a domain another mode uses, the tests' 81–98, and 0 or 42: the domains a plain terminal and the native launch files use, so a native `flight_interface` can't join a mode (E1.4). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
+
+### 4.6 The live table
+
+The `echo` service (`drone/ground/src/echo/monitor.py`) redraws it in place. It only reads topics: it never commands the drone. `make real` after `activate`:
+
+```
+REAL: DRONE   14:02:11   (Ctrl+C to quit)
+
+FLIGHT    flight_interface  /flight/state            live
+    active      True
+    link_ok     True
+    esp_state   STREAMING
+    fc_link_ok  True
+    armed       True
+    override_active True
+    mask        8
+    failsafe_output False
+    estop       False
+
+ATTITUDE  /fc/attitude                               live
+    roll: +1 deg    pitch: -2 deg    yaw: 0 deg (from start)
+
+BATTERY   /fc/battery                                live
+    15.60 V    3.90 V/cell (4 cells)
+
+GESTURE   gesture_node  /gesture/raw                 live
+    gesture     L:NONE+R:THUMB_INDEX_LEFT
+
+INTENT    intent_node   /gesture/intent              live
+    intent      YAW_LEFT
+    reason      ok
+    gesture     L:NONE+R:THUMB_INDEX_LEFT
+
+MISSION   mission_node  /mission/state               live
+    mode        ENGAGED
+    airborne    True
+
+VELOCITY  mission_node  /mission/velocity_target     live
+    fwd/back    0
+    left/right  0
+    up/down     0
+    yaw         left 20.00 deg/s
+    ground owns: yaw only (mask 8)
+```
+
+- **Title:** the mode: `DEMO: PRETEND /flight/state`, `REAL: DRONE`, `REAL-DRY: NO DRONE (loopback)` or `SIM: PX4 SITL`. `MODE ?` means it was started outside a mode (§8).
+- **Status:** `live` while the topic arrives, `STALE N s` when it stops (the last values stay), `waiting` before the first message, with the reason on the line below (e.g. no `/fc/*` in demo or sim).
+- **FLIGHT:** the drone's link and safety state from `/flight/state`; its publisher depends on the mode (§4.2). A value the drone doesn't know shows `unknown`.
+- **ATTITUDE:** whole degrees (`?` for a broken sample, NaN or infinite), signs as on `/fc/attitude` (REP-103): roll + right side down, pitch + nose down, yaw + left. Yaw is relative, not a compass: zero at the first sample after `configure`, back to zero at each `activate` ([[Architecture Document]] §2). Only from `flight_interface`'s ESP backend (`make real`), or `fc_telemetry` on the bench.
+- **BATTERY:** pack voltage and the average per cell. It can't see single cells: the per-cell check before a session stays ([[Battery Log]]). Same sources as ATTITUDE.
+- **MISSION:** `why` appears only in `IDLE`: why the gestures do nothing.
+- **VELOCITY:** the target in words; its last line says which axes the ground owns (the mask), so "the gesture does nothing" reads as "yaw only".
+
+**Alerts** go on a line under the title, each marked `!!`: red is a fault, yellow is "not OK yet". Colour only on a terminal. The radio and the safety pilot always win over what the table says ([[Safety Rules]]).
+
+| Alert | Means | Do |
+| :--- | :--- | :--- |
+| `MONITOR ERROR: <exception>` | the table itself failed on a message: rows may be missing data | don't trust the table; restart it (`docker compose run --rm echo`) and file a bug with the traceback from its output |
+| `<N> <topic> PUBLISHERS: <nodes>` | more than one node publishes `/flight/state`, `/mission/velocity_target` or `/fc/*`, which must have one | stop the extra node it names |
+| `<N> <topic> PUBLISHERS: <node> x<N> (restarted? or started twice)` | the same name more than once: a node killed (`docker kill`, OOM) and restarted stays listed until its DDS lease runs out (seconds), or the node was really started twice | wait a few seconds; if it stays, a node runs twice: stop the extra one |
+| `E-STOP: <reason>` | `flight_interface` is in E-stop: nothing goes to the drone | find the cause in `logs/flight_interface/latest.log`; `~/reset_estop` ([[05 Flight Interface Node]] §5) |
+| `FAILSAFE` | the ESP sends its own failsafe output (sim: no PX4 data yet, or it stopped) | the safety pilot flies; check the Wi-Fi and the ground (sim: wait for PX4, [[PX4 SITL Setup]] §7) |
+| `FC LINK LOST` | the ESP gets no answer from the FC | the safety pilot flies; check the FC wiring and power |
+| `NO LINK` | no recent state from the ESP (Wi-Fi lost, ESP off), or the ground can't command the drone and nothing above says why | check the ESP and the Wi-Fi |
+| `NO /flight/state (N s)` / `BAD /flight/state` | its publisher stopped / sent something unreadable | check that publisher's log |
+| `LOW BATTERY: <V>/cell` | the pack has been at or below 3.5 V per cell for 2 s. Needs `/fc/battery` at 2 Hz or faster (the drone and `fc_telemetry`'s default send 5 Hz); below that (`fc_telemetry` `battery_hz` < 2) it never shows | land ([[Safety Rules]] #8) |
+| `FC LINK UNKNOWN` (yellow) | the ESP answers, but no FC health report yet (a new session) | wait a second; if it stays, as `FC LINK LOST` |
+| `NOT ACTIVE` (yellow) | `flight_interface` is configured, not activated | `activate` ([[05 Flight Interface Node]] §7) |
+
+Without a terminal (piped, `docker compose run --rm -T echo`) it prints `mode: …` once, then one line per change, alerts first. Attitude and battery are left out there: they change on almost every message. `NO /flight/state` has no seconds there, so it stays one line while the topic stays stopped.
 
 ---
 
@@ -228,6 +299,8 @@ Tests that need ROS 2 are skipped where ROS 2 is missing (`make unit`). With `RE
 | `/dev/video0: no such file or directory` | plug in a webcam, or start the other services only |
 | `gesture` log: `Cannot open camera 0` | close other camera apps |
 | nothing in the live table or `ros2 topic echo` | same `ROS_DOMAIN_ID` everywhere (§4.5) |
+| live table title says `MODE ?` | start it through `make`, or with `docker compose --env-file env/<mode>.env` |
+| ATTITUDE and BATTERY stay `waiting` in `make real` | `flight_interface` configured and the FC alive: FLIGHT shows `fc_link_ok` true (the values need fresh FC data) |
 | `Could not determine the type` | give the type to `ros2 topic echo` (§5) |
 | intent stays `no_packets_yet` | `gesture` not running (Level 1) |
 | intent stays `unconfirmed` | hold the gesture still, both hands in view for two-hand gestures |
@@ -240,16 +313,25 @@ Recognition problems: [[02 Gesture Node]] §13. Modes and velocities: [[04 Missi
 
 | Term | Meaning |
 | --- | --- |
+| **Alert line** | The live table's line under the title: each alert marked `!!`, red for a fault, yellow for "not OK yet". |
+| **ARM** | The operator's request that lets the ground command the drone; never sent by the gestures or the table. |
 | **CI** | Continuous Integration: GitHub Actions runs the tests on every PR. |
 | **CLI** | Command-line interface: here the `ros2` command. |
 | **Docker / image / container** | An image packages Ubuntu + ROS 2 + one node; a container is a running copy. |
+| **E-stop** | Emergency stop of `flight_interface`: neutral, then `BYE`, then nothing until reset. |
+| **ESP** | The ESP8266 Wi-Fi gateway on the drone, between the ground and the FC. |
+| **FC** | Flight controller: the Betaflight board that flies the drone. |
 | **Jazzy** | ROS 2 Jazzy Jalisco, the ROS 2 release we use. |
-| **Live table** | What the `echo` service shows: the latest gesture, intent, mode and velocity. |
+| **Live table** | What the `echo` service shows: the mode, the drone's state (link and safety from `flight_interface`'s `/flight/state`, attitude, battery), the gesture chain and the alerts. |
 | **Makefile** | The `make` targets in `drone/ground/` that build, start and test the nodes. |
+| **Mask** | Which stick axes the ground commands: 8 yaw, 11 adds roll and pitch, 15 all four. |
+| **Mode banner** | The live table's title: which mode runs (demo, real, real-dry, sim), so a demo is never taken for the drone. |
 | **Node** | A ROS 2 program with one job, talking to others through topics. |
 | **Package** | A folder of ROS 2 code that builds into nodes. |
 | **Pretend input** | A node that publishes made-up values for testing (`fake_flight_state`). Never with a real drone. |
+| **REP-103** | The ROS convention for units (SI) and axes: x forward, y left, z up. |
 | **ROS 2** | The robotics framework used for the ground nodes. |
 | **ROS_DOMAIN_ID** | A number that separates ROS 2 networks. |
 | **Smoke test** | A short end-to-end check of the built images (`make smoke`). |
+| **STALE** | A live-table row whose topic has stopped for more than 1 s; the last values stay. |
 | **Topic** | A named channel nodes publish and subscribe to. |
