@@ -109,6 +109,10 @@ class FakeNode:
         self.callbacks = {}
         self.timers = []
         self.publishers = {}
+        self.logged = []  # error() lines of get_logger()
+
+    def get_logger(self):
+        return SimpleNamespace(error=self.logged.append)
 
     def create_subscription(self, msg_type, topic, callback, depth):
         self.callbacks[topic] = callback
@@ -473,6 +477,31 @@ class AlertTests(MonitorTestCase):
         )
         self.assertEqual(self.alerts(), [(monitor.RED, "FAILSAFE")])
 
+    def test_esp_state_normalised_like_mission_logic(self):
+        """mission_logic takes " link_failsafe" as LINK_FAILSAFE (strip, upper):
+        the table must show the FAILSAFE that mission_node acts on."""
+        for value in ("link_failsafe", " LINK_FAILSAFE ", "Link_Failsafe"):
+            with self.subTest(esp_state=value):
+                self.feed(
+                    "/flight/state",
+                    string(dict(FLIGHT_STANDIN, link_ok=False, esp_state=value)),
+                )
+                self.assertEqual(self.alerts(), [(monitor.RED, "FAILSAFE")])
+                self.assertEqual(self.rows()["flight"]["esp_state"], "LINK_FAILSAFE")
+
+    def test_one_line_has_no_age_while_stale(self):
+        """Piped: the same line while /flight/state stays stopped, not a new
+        one every second (the table on a terminal keeps the age)."""
+        self.flight()
+        self.age_flight(3)
+        line_3s = monitor.one_line(self.monitor.snapshot())
+        self.age_flight(1)
+        line_4s = monitor.one_line(self.monitor.snapshot())
+        self.assertEqual(line_3s, line_4s)
+        self.assertTrue(line_3s.startswith("!! NO /flight/state | "), line_3s)
+        lines = monitor.table(self.monitor.snapshot())
+        self.assertIn("!! NO /flight/state (4 s)", lines[1])
+
     def test_fc_link_lost_red_unknown_yellow(self):
         self.flight(fc_link_ok=False, link_ok=False)
         self.assertEqual(self.alerts(), [(monitor.RED, "FC LINK LOST")])
@@ -636,6 +665,19 @@ class AttitudeTests(MonitorTestCase):
         self.assertEqual(monitor._degrees(math.radians(-2.5)), "-3 deg")
         self.assertEqual(monitor._degrees(math.radians(2.49)), "+2 deg")
 
+    def test_nan_or_infinite_is_a_question_mark(self):
+        """math.floor raises on these; a callback that raises would stop the
+        table (see CallbackErrorTests)."""
+        msg = attitude()
+        msg.vector.x = float("nan")
+        msg.vector.y = float("inf")
+        msg.vector.z = float("-inf")
+        self.feed("/fc/attitude", msg)
+        self.assertEqual(
+            self.angles(),
+            "roll: ? deg    pitch: ? deg    yaw: ? deg (from start)",
+        )
+
     def test_zero_has_no_sign(self):
         for deg in (0.0, 0.4, -0.4):
             with self.subTest(deg=deg):
@@ -734,6 +776,23 @@ class BatteryTests(MonitorTestCase):
         self.feed("/fc/battery", battery(13.8))
         self.hold_low(1.5)
         self.assertEqual(self.alerts(), [])
+
+    def test_a_gap_restarts_the_hold(self):
+        """Low, then no /fc/battery for 10 s (STALE), then low again: the hold
+        starts again at the new message, it does not count the gap as low."""
+        self.feed("/fc/battery", battery(13.8))  # 3.45 V/cell
+        when, fields = self.monitor.rows["battery"]
+        self.monitor.rows["battery"] = (when - 10.0, fields)
+        self.monitor.low_since -= 10.0
+        self.feed("/fc/battery", battery(13.8))
+        self.assertEqual(self.alerts(), [])
+        self.assertLess(time.monotonic() - self.monitor.low_since, 1.0)
+
+    def test_no_gap_keeps_the_hold(self):
+        self.feed("/fc/battery", battery(13.8))
+        first = self.monitor.low_since
+        self.feed("/fc/battery", battery(13.8))
+        self.assertEqual(self.monitor.low_since, first)
 
     def test_severity_order_and_no_link_still_shown(self):
         self.feed(
@@ -1015,6 +1074,22 @@ class PublisherTests(MonitorTestCase):
             ],
         )
 
+    def test_same_name_twice_is_reworded_not_hidden(self):
+        """A killed node stays in the graph until its DDS lease runs out, so a
+        restart shows the name twice; a node started twice looks the same."""
+        self.check({"/flight/state": ["fake_flight_state", "fake_flight_state"]})
+        self.hold("/flight/state", monitor.PUBLISHERS_HOLD_SEC)
+        self.assertEqual(
+            self.alerts(),
+            [
+                (
+                    monitor.RED,
+                    "2 /flight/state PUBLISHERS: fake_flight_state x2"
+                    " (restarted? or started twice)",
+                )
+            ],
+        )
+
     def test_namespace_is_part_of_the_name(self):
         self.node.publishers = {"/flight/state": ["a", "b"]}
         infos = [
@@ -1038,6 +1113,49 @@ class PublisherTests(MonitorTestCase):
         self.assertEqual(lines[1], text)
         line = monitor.one_line(self.monitor.snapshot(), self.monitor.doubled())
         self.assertTrue(line.startswith(text + " | "), line)
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class CallbackErrorTests(MonitorTestCase):
+    """Dot99's review of PR #231: a callback that raises must not end the spin
+    thread silently (every row STALE with nothing saying why)."""
+
+    def spin_raising(self, *errors):
+        """_spin() with spin_once raising each error once, then stopping."""
+        stop = threading.Event()
+        remaining = list(errors)
+
+        def spin_once(node, timeout_sec):
+            if remaining:
+                raise remaining.pop(0)
+            stop.set()
+
+        with mock.patch.object(monitor.rclpy, "spin_once", side_effect=spin_once):
+            monitor._spin(self.monitor, stop)
+
+    def test_spin_keeps_going_and_records_the_error(self):
+        self.spin_raising(ValueError("boom"))
+        self.assertEqual(self.monitor.last_error(), "ValueError: boom")
+        self.assertEqual(len(self.node.logged), 1)
+        self.assertIn("Traceback", self.node.logged[0])
+
+    def test_logged_once_while_the_text_stays_the_same(self):
+        self.spin_raising(ValueError("boom"), ValueError("boom"), KeyError("x"))
+        self.assertEqual(len(self.node.logged), 2)
+        self.assertEqual(self.monitor.last_error(), "KeyError: 'x'")
+
+    def test_first_alert_in_the_table_and_the_one_line_output(self):
+        self.spin_raising(ValueError("boom"))
+        error = self.monitor.last_error()
+        text = "!! MONITOR ERROR: ValueError: boom"
+        lines = monitor.table(self.monitor.snapshot(), error=error)
+        self.assertEqual(lines[1], text)
+        line = monitor.one_line(self.monitor.snapshot(), error=error)
+        self.assertTrue(line.startswith(text + " | "), line)
+
+    def test_none_without_an_error(self):
+        self.assertIsNone(self.monitor.last_error())
+        self.assertEqual(monitor.alerts(self.monitor.snapshot(), error=None), [])
 
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")

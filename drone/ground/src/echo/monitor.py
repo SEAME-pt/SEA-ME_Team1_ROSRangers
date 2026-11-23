@@ -19,7 +19,9 @@ stopping), /fc/battery (LOW BATTERY: at or below 3.5 V/cell for 2 s) and two
 publishers on a one-publisher topic (/flight/state, /mission/velocity_target,
 /fc/attitude, /fc/battery; for 1 s) go on a line under the title, marked
 "!!": red for a fault, yellow for "not OK yet" (FC link unknown, node not
-activated). Colour only on a terminal; the "!!" text is always there.
+activated). Colour only on a terminal; the "!!" text is always there. A
+callback that raises shows MONITOR ERROR there (and in the log) instead of
+stopping the table without a word.
 
 The title line is the mode's banner (GROUND_MODE from env/<mode>.env, plus
 GROUND_DRY=1 from make real-dry): DEMO, REAL, REAL-DRY or SIM, so a demo is
@@ -38,6 +40,7 @@ import signal
 import sys
 import threading
 import time
+import traceback
 
 import rclpy
 from geometry_msgs.msg import TwistStamped, Vector3Stamped
@@ -108,6 +111,9 @@ def _flight_fields(d):
         if key not in d:
             continue
         value = d[key]
+        if key == "esp_state" and isinstance(value, str):
+            # As mission_logic does: " link_failsafe" counts as LINK_FAILSAFE.
+            value = value.strip().upper()
         if value is None:
             fields[key] = "unknown"
         else:
@@ -136,7 +142,10 @@ def _degrees(rad):
 
     Halves round away from zero, e.g. 2.5 -> +3 and -2.5 -> -3 (Python's
     round() would give 2 and -2). Worked example: 0.1 rad = 5.73 deg -> "+6 deg".
+    NaN or infinite (a broken sample): "? deg", since math.floor would raise.
     """
+    if not math.isfinite(rad):
+        return "? deg"
     deg = math.degrees(rad)
     if deg >= 0:
         whole = math.floor(deg + 0.5)
@@ -171,6 +180,7 @@ class Monitor:
         self.rows = {}  # name -> (time received, {field: text})
         self.lock = threading.Lock()
         self.low_since = None  # when the battery went to or below the land level
+        self.error = None  # the last exception from a callback, as text
         # Topics with more than one publisher: topic -> (since, [node names]).
         self.extra = {}
         # Reads the ROS graph only (who publishes): no client, no publisher.
@@ -193,8 +203,9 @@ class Monitor:
         self._set("flight", _flight_fields(_json(msg)))
 
     def _attitude(self, msg):
-        # One line: x roll, y pitch, z yaw (rad). Yaw is relative: zero at
-        # flight_interface's activate (or fc_telemetry's start), no compass.
+        # One line: x roll, y pitch, z yaw (rad). Yaw is relative, no compass:
+        # zero at the first sample after flight_interface's configure (or
+        # fc_telemetry's start), and back to zero at each activate.
         v = msg.vector
         angles = (
             f"roll: {_degrees(v.x)}    "
@@ -220,9 +231,14 @@ class Monitor:
         now = time.monotonic()
         with self.lock:
             low = per_cell is not None and per_cell <= LAND_PER_CELL_V
-            if not low:
+            previous = self.rows.get("battery")
+            # A gap (the row went STALE) restarts the hold, like a reading that
+            # is not low: a short sag, 10 s of silence, then another short sag
+            # must not count as 10 s low.
+            gap = previous is not None and now - previous[0] > STALE_SEC
+            if not low or gap:
                 self.low_since = None
-            elif self.low_since is None:
+            if low and self.low_since is None:
                 self.low_since = now
             self.rows["battery"] = (now, {"line": line, "per_cell": per_cell})
 
@@ -294,6 +310,25 @@ class Monitor:
                     self.extra[topic] = (since, sorted(names))
                 else:
                     self.extra[topic] = (now, sorted(names))
+
+    def callback_failed(self, exc):
+        """Runs in the spin thread when a callback raised. Kept until the table
+        restarts: after one, a row may be missing data. Logged (with the
+        traceback) only when the text changes, so a callback that raises on
+        every message does not flood the terminal."""
+        text = f"{type(exc).__name__}: {exc}"[:80]
+        with self.lock:
+            changed = text != self.error
+            self.error = text
+        if changed:
+            self.node.get_logger().error(
+                "callback failed, the table may be missing data:\n"
+                + "".join(traceback.format_exception(exc))
+            )
+
+    def last_error(self):
+        with self.lock:
+            return self.error
 
     def doubled(self):
         """[(topic, [node names])] for each topic that has had more than one
@@ -403,20 +438,36 @@ def ground_mode(environ):
     return mode
 
 
-def alerts(rows, doubled=()):
-    """[(colour, text, flagged "row.field" names)], most severe first: two
-    publishers on one topic (Monitor.doubled()), the FLIGHT row's red alerts,
-    LOW BATTERY, then FLIGHT's yellow ones. RED is a fault; YELLOW is not OK
-    yet, but expected (unknown FC link at the start of a session, node not
-    activated yet)."""
+def alerts(rows, doubled=(), error=None, with_age=True):
+    """[(colour, text, flagged "row.field" names)], most severe first: a
+    callback that failed (Monitor.last_error()), two publishers on one topic
+    (Monitor.doubled()), the FLIGHT row's red alerts, LOW BATTERY, then
+    FLIGHT's yellow ones. RED is a fault; YELLOW is not OK yet, but expected
+    (unknown FC link at the start of a session, node not activated yet).
+    with_age=False leaves the seconds out of NO /flight/state (one_line():
+    otherwise its text, and so a new line, every second)."""
     by_name = {name: (age, fields) for name, age, fields in rows}
     red = []
+    if error:
+        red.append((RED, f"MONITOR ERROR: {error}", ()))
     for topic, names in doubled:
-        text = f"{len(names)} {topic} PUBLISHERS: {', '.join(names)}"
-        red.append((RED, text, ()))
-    flight_red, yellow = _flight_alerts(*by_name["flight"])
+        red.append((RED, _doubled_text(topic, names), ()))
+    flight_red, yellow = _flight_alerts(*by_name["flight"], with_age=with_age)
     red = red + flight_red + _battery_alerts(*by_name["battery"])
     return red + yellow
+
+
+def _doubled_text(topic, names):
+    """The alert for more than one publisher. All with the same name is often
+    one node that was killed (SIGKILL, OOM, docker kill) and restarted: DDS
+    lists the dead one until its lease runs out. It can also be the node
+    started twice, a real fault, so it is reworded, never hidden."""
+    if len(set(names)) == 1:
+        return (
+            f"{len(names)} {topic} PUBLISHERS: {names[0]} x{len(names)}"
+            " (restarted? or started twice)"
+        )
+    return f"{len(names)} {topic} PUBLISHERS: {', '.join(names)}"
 
 
 def _battery_alerts(age, fields):
@@ -432,17 +483,21 @@ def _battery_alerts(age, fields):
     return [(RED, text, ("battery.line",))]
 
 
-def _flight_alerts(age, fields):
+def _flight_alerts(age, fields, with_age=True):
     """(red, yellow) from the FLIGHT row.
 
     Nothing before the first /flight/state ("waiting" is the normal start of
     make real). Once it stops (STALE), only that alert: the old values on the
-    row are no longer the drone's state.
+    row are no longer the drone's state. with_age: see alerts().
     """
     if age is None:
         return [], []
     if age > STALE_SEC:
-        return [(RED, f"NO /flight/state ({age:.0f} s)", ())], []
+        if with_age:
+            text = f"NO /flight/state ({age:.0f} s)"
+        else:
+            text = "NO /flight/state"
+        return [(RED, text, ())], []
     if "bad" in fields:
         return [(RED, "BAD /flight/state", ("flight.bad",))], []
 
@@ -534,11 +589,12 @@ def mask_note(rows):
     return f"ground owns: {text} (mask {mask})"
 
 
-def table(rows, colour=False, mode=None, doubled=()):
+def table(rows, colour=False, mode=None, doubled=(), error=None):
     """The frame's lines. colour=True only on a terminal (main()). mode is
     ground_mode()'s value: it picks the banner, the FLIGHT row's publisher and
-    the reasons for rows that never got a message. doubled: Monitor.doubled()."""
-    found = alerts(rows, doubled)
+    the reasons for rows that never got a message. doubled: Monitor.doubled().
+    error: Monitor.last_error()."""
+    found = alerts(rows, doubled, error)
     banner = BANNERS[mode]
     lines = [
         f"{banner}   {time.strftime('%H:%M:%S')}   (Ctrl+C to quit)",
@@ -584,9 +640,9 @@ def table(rows, colour=False, mode=None, doubled=()):
     return lines
 
 
-def one_line(rows, doubled=()):
+def one_line(rows, doubled=(), error=None):
     parts = []
-    found = alerts(rows, doubled)
+    found = alerts(rows, doubled, error, with_age=False)
     if found:
         parts.append(" ".join(f"!! {text}" for _, text, _ in found))
     for name, age, fields in rows:
@@ -616,7 +672,7 @@ def main():
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     node = rclpy.create_node("ground_monitor")
     monitor = Monitor(node)
-    spinner = threading.Thread(target=lambda: _spin(node, stop), daemon=True)
+    spinner = threading.Thread(target=lambda: _spin(monitor, stop), daemon=True)
     spinner.start()
 
     mode = ground_mode(os.environ)  # read once: the container's mode is fixed
@@ -630,8 +686,11 @@ def main():
         while not stop.wait(REFRESH_SEC):
             rows = monitor.snapshot()
             doubled = monitor.doubled()
+            error = monitor.last_error()
             if live:
-                lines = table(rows, colour=True, mode=mode, doubled=doubled)
+                lines = table(
+                    rows, colour=True, mode=mode, doubled=doubled, error=error
+                )
                 if lines == last:
                     continue
                 last = lines
@@ -651,7 +710,7 @@ def main():
                 )
                 sys.stdout.flush()
             else:
-                line = one_line(rows, doubled)
+                line = one_line(rows, doubled, error)
                 if line != last:
                     print(line, flush=True)
                     last = line
@@ -664,9 +723,15 @@ def main():
         rclpy.try_shutdown()
 
 
-def _spin(node, stop):
+def _spin(monitor, stop):
+    # An exception from a callback leaves spin_once. Without the try it would
+    # end this thread, and the table would go on drawing every row STALE with
+    # nothing saying why. Exception only: never swallow SystemExit and the like.
     while not stop.is_set():
-        rclpy.spin_once(node, timeout_sec=0.1)
+        try:
+            rclpy.spin_once(monitor.node, timeout_sec=0.1)
+        except Exception as exc:
+            monitor.callback_failed(exc)
 
 
 if __name__ == "__main__":

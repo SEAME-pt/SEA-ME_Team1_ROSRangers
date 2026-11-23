@@ -434,6 +434,9 @@ real-steps:
 	@echo '  $$R ros2 service call /flight_interface/arm_control std_srvs/srv/Trigger   # ARM: by hand only'
 	@echo '  $$R ros2 service call /flight_interface/estop std_srvs/srv/Trigger         # E-stop'
 	@echo '  $$R ros2 topic echo /flight/state                                            # its state'
+	@echo '  $$R                                                                          # the live table again'
+	@echo "  After make real-dry, the table again with GROUND_DRY=1, or its title says REAL: DRONE:"
+	@echo "    docker compose --env-file env/real.env run --rm -e GROUND_DRY=1 echo"
 	@echo "  Logs: logs/flight_interface/latest.log. Stop everything: make real-down"
 	@echo "  These steps again: make real-steps"
 	@echo

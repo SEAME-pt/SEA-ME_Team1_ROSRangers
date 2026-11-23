@@ -170,7 +170,7 @@ VELOCITY  mission_node  /mission/velocity_target     live
 - **Title:** the mode: `DEMO: PRETEND /flight/state`, `REAL: DRONE`, `REAL-DRY: NO DRONE (loopback)` or `SIM: PX4 SITL`. `MODE ?` means it was started outside a mode (§8).
 - **Status:** `live` while the topic arrives, `STALE N s` when it stops (the last values stay), `waiting` before the first message, with the reason on the line below (e.g. no `/fc/*` in demo or sim).
 - **FLIGHT:** the drone's link and safety state from `/flight/state`; its publisher depends on the mode (§4.2). A value the drone doesn't know shows `unknown`.
-- **ATTITUDE:** whole degrees, signs as on `/fc/attitude` (REP-103): roll + right side down, pitch + nose down, yaw + left. Yaw counts from `activate` (zero at the first sample after it), not a compass ([[Architecture Document]] §2). Only from `flight_interface`'s ESP backend (`make real`), or `fc_telemetry` on the bench.
+- **ATTITUDE:** whole degrees (`?` for a broken sample, NaN or infinite), signs as on `/fc/attitude` (REP-103): roll + right side down, pitch + nose down, yaw + left. Yaw is relative, not a compass: zero at the first sample after `configure`, back to zero at each `activate` ([[Architecture Document]] §2). Only from `flight_interface`'s ESP backend (`make real`), or `fc_telemetry` on the bench.
 - **BATTERY:** pack voltage and the average per cell. It can't see single cells: the per-cell check before a session stays ([[Battery Log]]). Same sources as ATTITUDE.
 - **MISSION:** `why` appears only in `IDLE`: why the gestures do nothing.
 - **VELOCITY:** the target in words; its last line says which axes the ground owns (the mask), so "the gesture does nothing" reads as "yaw only".
@@ -179,7 +179,9 @@ VELOCITY  mission_node  /mission/velocity_target     live
 
 | Alert | Means | Do |
 | :--- | :--- | :--- |
+| `MONITOR ERROR: <exception>` | the table itself failed on a message: rows may be missing data | don't trust the table; restart it (`docker compose run --rm echo`) and file a bug with the traceback from its output |
 | `<N> <topic> PUBLISHERS: <nodes>` | more than one node publishes `/flight/state`, `/mission/velocity_target` or `/fc/*`, which must have one | stop the extra node it names |
+| `<N> <topic> PUBLISHERS: <node> x<N> (restarted? or started twice)` | the same name more than once: a node killed (`docker kill`, OOM) and restarted stays listed until its DDS lease runs out (seconds), or the node was really started twice | wait a few seconds; if it stays, a node runs twice: stop the extra one |
 | `E-STOP: <reason>` | `flight_interface` is in E-stop: nothing goes to the drone | find the cause in `logs/flight_interface/latest.log`; `~/reset_estop` ([[05 Flight Interface Node]] §5) |
 | `FAILSAFE` | the ESP sends its own failsafe output (sim: no PX4 data yet, or it stopped) | the safety pilot flies; check the Wi-Fi and the ground (sim: wait for PX4, [[PX4 SITL Setup]] §7) |
 | `FC LINK LOST` | the ESP gets no answer from the FC | the safety pilot flies; check the FC wiring and power |
@@ -189,7 +191,7 @@ VELOCITY  mission_node  /mission/velocity_target     live
 | `FC LINK UNKNOWN` (yellow) | the ESP answers, but no FC health report yet (a new session) | wait a second; if it stays, as `FC LINK LOST` |
 | `NOT ACTIVE` (yellow) | `flight_interface` is configured, not activated | `activate` ([[05 Flight Interface Node]] §7) |
 
-Without a terminal (piped, `docker compose run --rm -T echo`) it prints `mode: …` once, then one line per change, alerts first. Attitude and battery are left out there: they change on almost every message.
+Without a terminal (piped, `docker compose run --rm -T echo`) it prints `mode: …` once, then one line per change, alerts first. Attitude and battery are left out there: they change on almost every message. `NO /flight/state` has no seconds there, so it stays one line while the topic stays stopped.
 
 ---
 

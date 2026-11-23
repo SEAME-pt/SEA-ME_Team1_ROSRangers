@@ -106,7 +106,7 @@ What the two FC telemetry topics carry. Proposed by BrunoBMFT for #96 and merged
 | Type | `geometry_msgs/Vector3Stamped`: x roll, y pitch, z yaw, in rad | `sensor_msgs/BatteryState` |
 | Source | `MSP_ATTITUDE` | `MSP_ANALOG` (0.01 V field, else the legacy 0.1 V byte) |
 | Signs | REP-103: roll + right side down, pitch + nose down, yaw + counter-clockwise seen from above. Measured on the bench (props off, Betaflight 2026.6.2): Betaflight's raw roll and pitch already match REP-103 (2026-11-06), its raw yaw grows clockwise, so the node flips it (2026-11-02) | – |
-| Yaw | relative: zero at the first sample after `fc_telemetry` starts, or after each `activate` of `flight_interface`, wrapped to (−π, π]. The drone has no magnetometer, so Betaflight's yaw is only the integrated gyro and drifts | – |
+| Yaw | relative: zero at the first sample after `fc_telemetry` starts or `flight_interface` is configured (its ESP backend publishes `/fc/attitude` from `configure` on), and back to zero after each `activate`, wrapped to (−π, π]. The drone has no magnetometer, so Betaflight's yaw is only the integrated gyro and drifts | – |
 | Fields | – | only `voltage` is measured. Every other number is NaN, `cell_voltage` holds 4 NaN (4S pack), technology LIPO. With no battery (FC on USB power, below 1.0 V): `present: false` and voltage NaN |
 | `frame_id` | `base_link` | `base_link` |
 | `header.stamp` | halfway between MSP request and reply, ROS clock | same |
@@ -253,4 +253,4 @@ Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Comma
 | **`T_fresh`** | Maximum age of the last accepted setpoint (150 ms). Older → neutral sticks until the next valid setpoint; no failsafe. |
 | **`T_loss`** | Time without an accepted control packet after which the ESP enters link failsafe (250 ms). |
 | **Transparent bridge** | The first custom ESP firmware (`esp_bridge`): forwards raw MSP between UDP 5760 and the FC unchanged. Replaced by the gateway on the drone (#106); kept as a bench tool. |
-| **Yaw zero** | The FC yaw reading taken as 0 at the first attitude sample after `fc_telemetry` starts or `flight_interface` is activated. Needed because the drone has no magnetometer, so Betaflight's yaw only counts from FC power-up and drifts. |
+| **Yaw zero** | The FC yaw reading taken as 0 at the first attitude sample after `fc_telemetry` starts or `flight_interface` is configured, and again after each `activate`. Needed because the drone has no magnetometer, so Betaflight's yaw only counts from FC power-up and drifts. |
