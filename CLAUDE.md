@@ -35,9 +35,13 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 | Long-term plan (Modules 2–3) | `PraticalPlan/01 Plan/Roadmap to April 2027.md` |
 | Who owns what (tracks A–E) | `PraticalPlan/01 Plan/Team Tracks.md` |
 | Rituals (stand-up, demos, weekly checklist) | `PraticalPlan/01 Plan/Weekly Rituals.md`, `Dailys.md` |
-| Decisions | `PraticalPlan/02 Decisions/Decision Register.md`. `ADR-0NN *.md` are the accepted decisions. |
+| Requirements (REQ IDs) | `PraticalPlan/01 Plan/Requirements.md` |
+| Decisions | `PraticalPlan/02 Decisions/Decision Register.md`. `ADR-0NN *.md` are the accepted decisions (index below). |
 | Architecture, protocol, wiring | `PraticalPlan/03 Architecture/` |
-| CI/CD, repo layout, HIL | `PraticalPlan/04 CI-CD/` |
+| Wire format, message fields | `PraticalPlan/03 Architecture/Protocol Spec v0.md`, `Protocol Library Messages.md` |
+| CI/CD, repo layout, HIL | `PraticalPlan/04 CI-CD/` (`Testing Strategy.md`, `Repository Layout.md`) |
+| Gesture → intent → mission → flight_interface | `PraticalPlan/06 Gestures/00 Gesture Pipeline.md`, then one note per node |
+| Checked facts and their sources (hardware, Betaflight) | `PraticalPlan/07 Reference/Verified Facts and Sources.md` |
 | Safety rules (read before any hardware task) | `PraticalPlan/05 Hardware/Safety Rules.md` |
 | Bench tests (ESP-S1-xx, Stage 2) | `PraticalPlan/05 Hardware/ESP Bench Test Plan.md` |
 | Open questions for instructors / physical checks | `PraticalPlan/07 Reference/Open Questions.md` |
@@ -46,6 +50,43 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 | Old material (don't use as a source) | `Outdated/` |
 
 `To Do.md` is legacy. **Tasks live in GitHub Issues and the project board**, not in the docs.
+
+### ADR index (which ADR governs what)
+
+| Area | ADRs |
+|---|---|
+| Message format, integrity, sequence numbers | 001 categories, 002 truncated HMAC-SHA256, 003 32-bit seq + session ID, 007 portable C++ lib + Python twin |
+| Link, session, failsafe | 004 250 ms ESP failsafe, 005 TCP session, 006 SoftAP / WPA2 / static IPs, 008 state over UDP, events over TCP |
+| ESP ↔ FC | 009 UART + MSP allow-list, 010 MSP Override with staged masks, 011 ESP on FC UART4, 012 ESP UART0 pins, 013 wiring and power, 021 ESP soldered (no connector), 024 OTA rules |
+| FC and radio | 014 Betaflight 2026.6.2, 023 ELRS 4.1.0 |
+| Ground and sim | 015 webcam gestures, 016 flow sensor and height, 018 Ubuntu 24.04 + Jazzy, 019 PX4 + Betaflight SITL, 025 `flight_interface` safety rules |
+| Process and CI | 017 branching, 020 HIL runner on a Pi, 022 CI gates and lint rules |
+
+## Build and test
+
+The commands CI runs, from the repo root unless noted:
+
+```bash
+# C++ protocol library (CI gate: 80 % line coverage)
+cmake -S drone/lib/protocol -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
+cmake --build build && ctest --test-dir build --output-on-failure
+
+pytest drone/ground/src/sd_protocol_py   # Python protocol twin (80 % gate)
+pytest drone/tests/tools -q              # bench tool unit tests
+python3 drone/tests/vectors/generate.py --check   # golden vectors up to date (pre-commit hook)
+
+# Ground nodes: the Makefile is in drone/ground/, not the repo root
+cd drone/ground
+make unit       # suites that need no ROS
+make test       # everything (venv + colcon workspace), one summary row per suite
+make pkg-test   # colcon test only (no coverage gate; make test runs the 90 % gate)
+make e2e-test   # drone/tests/ros
+make smoke      # Docker smoke test (CI ground-docker)
+make test-sitl  # Betaflight SITL; the first run clones and builds Betaflight
+make / make down / make sim / make real-dry   # run a mode (needs env/<mode>.env)
+```
+
+Golden vectors: once committed, `drone/tests/vectors/*.json` are the source of truth for both the C++ and Python code. `generate.py` is written from the spec alone. Changing an existing vector changes the protocol (`vectors/README.md` §4); adding one is free.
 
 ## Docs conventions
 
@@ -102,7 +143,7 @@ Paths are relative to `docs/`. Start at `PraticalPlan/00 Start/Home.md` (map of 
 - Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
-- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
+- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck, golden vectors). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
 
 ## Code style
 
