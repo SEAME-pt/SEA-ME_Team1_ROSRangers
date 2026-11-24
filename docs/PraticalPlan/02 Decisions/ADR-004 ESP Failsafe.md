@@ -104,7 +104,7 @@ constexpr std::uint32_t kTFreshMs = 150; // older setpoint -> neutral sticks
 constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
                                                    // while the ground is quiet
 ```
-Source: [`drone/lib/protocol/include/sd/link.hpp` L27–28 and L32–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `52de267`
+Source: [`drone/lib/protocol/include/sd/link.hpp` L27–28 and L32–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `ce9e919`
 
 After that second the ESP stops sending while the ground is quiet and sends neutral again while a live ground streams (§2.6, #188).
 

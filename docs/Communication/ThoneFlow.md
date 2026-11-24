@@ -1,7 +1,7 @@
 ---
 title: ThoneFlow-3901U Optical-Flow Sensor Integration
 type: sensor-integration
-status: draft
+status: superseded
 date: 2026-10-12
 updated: 2026-11-18
 project: SEA autonomous drone
@@ -20,6 +20,8 @@ tags:
 ---
 
 # ThoneFlow-3901U Optical-Flow Sensor Integration
+
+> [!warning] Superseded 2026-11-24: the team no longer uses the ThoneFlow-3901U. The MicoAir MTF-02P replaces it ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24, [[Height Sensor Study]]). This note is kept as history.
 
 > [!tip] Current state (2026-10-23): the accepted decisions are in [[Decision Register]]. Where this draft and an ADR disagree, the ADR wins. The rest is kept as history.
 
@@ -246,7 +248,7 @@ QUALITY_MIN_FLOOR = 25
 def checksum(frame: bytes) -> int:
     return (frame[2] + frame[3] + frame[4] + frame[5]) & 0xFF
 ```
-Source: [`thoneflow.py` L45–53](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L53) and [L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L95-L96) (`drone/ground/src/sd_protocol_py/sd_protocol/`) @ `b31960e`
+Source: [`thoneflow.py` L45–53](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L45-L53) and [L95–96](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/ground/src/sd_protocol_py/sd_protocol/thoneflow.py#L95-L96) (`drone/ground/src/sd_protocol_py/sd_protocol/`) @ `ce9e919`
 
 ---
 

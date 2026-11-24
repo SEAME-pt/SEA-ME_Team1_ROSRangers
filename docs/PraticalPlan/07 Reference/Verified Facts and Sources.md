@@ -3,7 +3,7 @@ title: Verified Facts and Sources
 type: reference
 status: active
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - reference
@@ -45,6 +45,7 @@ tags:
 |---|---|
 | ThoneFlow datasheet: 19200 baud, 66 Hz, 3.3–3.6 V, 9-byte frame, checksum at byte 6 | **team**, [[ThoneFlow]] §2 |
 | ArduPilot lists the ThoneFlow under CX-OF (25 Hz, different layout); a rangefinder is needed for height | ArduPilot wiki `common-cheerson-cxof.rst`, `AP_OpticalFlow_CXOF.cpp` |
+| MicoAir MTF-02P: flow + ToF height, 2 cm to 6 m, 2 cm accuracy below 2 m, 50 Hz, UART 115200 with MSP / MAVLink / Micolink (jumper), 5 V. Betaflight 2026.6.2 reads it as `rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT` | MicoAir product page, Betaflight 2026.6.2 source ([[Height Sensor Study]] §6, sources 4 and 8) |
 | ESP8266: `Serial.swap()` → GPIO15/13; `Serial1` TX-only; boot-strap pins; `WIFI_NONE_SLEEP`; signed OTA (RSA-2048 + SHA256); core 3.1.2 | `esp8266/Arduino` docs and tags |
 | micro-ROS supports ESP32, not ESP8266 | micro_ros_arduino / micro_ros_platformio READMEs |
 | MediaPipe 1.1.0: aarch64 wheels, Python 3.9–3.14, no `mp.solutions` | PyPI + wheel contents |

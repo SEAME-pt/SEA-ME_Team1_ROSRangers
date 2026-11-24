@@ -11,7 +11,7 @@ tags:
 
 # Roadmap to April 2027
 
-Dates from the SEA:ME 3.0 program README, corrected with the real start date (**7 Oct 2026**). Teams stay on their platform through Module 2 and work **across platforms in Module 3**. That is where "another piece of hardware" naturally happens.
+Dates from the SEA:ME 3.0 program README, corrected with the real start date (**2026-10-07**). Teams stay on their platform through Module 2 and work **across platforms in Module 3**. That is where "another piece of hardware" naturally happens.
 
 ---
 
@@ -41,9 +41,9 @@ Versions follow [[Dev_Strategy]] §20 (tags on `main`):
 
 | Version | When | Content |
 |---|---|---|
-| `v0.1.0` | 11 Dec 2026 | Module 1: link, failsafe, position hold, CI+HIL |
-| `v0.2.0` | 26 Feb 2027 | Module 2: gesture model, detector, estimation |
-| `v0.3.0` | 30 Apr 2027 | Module 3: multi-agent scenario, signed OTA |
+| `v0.1.0` | 2026-12-11 | Module 1: link, failsafe, position hold, CI+HIL |
+| `v0.2.0` | 2027-02-26 | Module 2: gesture model, detector, estimation |
+| `v0.3.0` | 2027-04-30 | Module 3: multi-agent scenario, signed OTA |
 
 ## 3. Module 1 (19 Oct – 11 Dec)
 

@@ -59,9 +59,12 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 | FC **R4** | ESP **TX (GPIO1)** | MSP, ESP → FC |
 | FC **5V** | ESP **5V** | the ESP regulator makes 3.3 V. **Never 5 V on a GPIO.** |
 | FC **GND** | ESP **G** | common ground |
-| ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment |
-| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA |
-| ThoneFlow **GND** | ESP **G** | |
+| MTF-02P **TX** | FC **R1** | planned 2026-11-24, not soldered yet ([[ADR-011 FC UART Allocation\|ADR-011]] update) |
+| MTF-02P **RX** | FC **T1** | planned |
+| MTF-02P **5V** / **GND** | FC **5V** / **GND** | planned; datasheet 5 V. Shares the FC 5V rail with the ESP: measure its current on the bench, props off (200 mW or 0.5 W, [[Open Questions]]) |
+| ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment. **Dropped 2026-11-24**, not wired (the MTF-02P goes on an FC UART instead) |
+| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA. **Dropped 2026-11-24**, not wired |
+| ThoneFlow **GND** | ESP **G** | **Dropped 2026-11-24**, not wired |
 
 ```text
    FC (ODDITYRCF7AIO)                ESP8266          ThoneFlow-3901U (experiment)
@@ -92,7 +95,7 @@ The ESP is soldered straight to T4, R4, 5V and GND, wires end to end, **no conne
 | D8 (GPIO15) | boot strapping (must be low at boot) |
 | TX / RX | shared with USB: never connect USB and the FC together ([[ADR-012 ESP UART Pins\|ADR-012]]) |
 
-Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flow-bridge MCU were rejected on 2026-10-14, [[ADR-016 Flow Sensor Path|ADR-016]].)
+Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flow-bridge MCU were rejected on 2026-10-14, [[ADR-016 Flow Sensor Path|ADR-016]]. 2026-11-24: the MTF-02P, a ToF rangefinder with flow, was then accepted; it connects to the FC, not the ESP.)
 
 ## 4. Glossary
 
