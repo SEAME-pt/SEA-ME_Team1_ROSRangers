@@ -321,5 +321,48 @@ class TestParams(unittest.TestCase):
         self.check_bad(gains=Gains(ki_z=math.nan))
 
 
+class RetuneTests(unittest.TestCase):
+    """Live tuning (Controller.retune): checked like at start-up, all or
+    nothing, never the mask or the hover throttle."""
+
+    def test_new_gain_changes_the_output(self):
+        controller = make(gains=P_ONLY)
+        controller.on_target(0.5, 0.0, 0.0, 0.0, 0.0)
+        controller.on_velocity(0.0, 0.0, 0.0, 0.0)
+        before = controller.step(0.0)["pitch"]
+        doubled = Gains(kp_xy=2.0, ki_xy=0.0, kp_z=0.3, ki_z=0.0)
+        controller.retune(Params(hover_throttle=HOVER, mask=15, gains=doubled))
+        after = controller.step(DT)["pitch"]
+        self.assertGreater(after, before * 1.9)
+
+    def test_integrators_are_kept(self):
+        controller = make()
+        run(controller, (0.0, 0.0, 0.2, 0.0), (0.0, 0.0, 0.0), 1.0)
+        integral = controller._z.integral
+        self.assertGreater(integral, 0.0)
+        controller.retune(Params(hover_throttle=HOVER, mask=15, gains=Gains(kp_z=0.4)))
+        self.assertEqual(controller._z.integral, integral)
+
+    def test_bad_value_changes_nothing(self):
+        controller = make()
+        old = controller.params
+        for bad in (
+            Params(hover_throttle=HOVER, mask=15, tilt_cap_deg=20.0),
+            Params(hover_throttle=HOVER, mask=15, gains=Gains(kp_xy=-1.0)),
+            Params(hover_throttle=HOVER, mask=15, velocity_timeout=0.5),
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    controller.retune(bad)
+                self.assertIs(controller.params, old)
+
+    def test_mask_and_hover_throttle_need_a_restart(self):
+        controller = make()
+        with self.assertRaisesRegex(ValueError, "mask"):
+            controller.retune(Params(hover_throttle=HOVER, mask=11))
+        with self.assertRaisesRegex(ValueError, "hover_throttle"):
+            controller.retune(Params(hover_throttle=0.6, mask=15))
+
+
 if __name__ == "__main__":
     unittest.main()

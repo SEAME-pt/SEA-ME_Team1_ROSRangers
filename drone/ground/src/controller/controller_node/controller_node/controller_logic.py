@@ -220,6 +220,22 @@ class Controller:
         self._y = _PiAxis()
         self._z = _PiAxis()
 
+    def retune(self, params):
+        """New tuning values while running (gains, caps, band, timeouts).
+        ValueError, and nothing changes, if a value is bad (the same checks
+        as at start-up) or if the mask or the hover throttle would change:
+        those must equal flight_interface's (F15), so they change only with
+        a restart of both. The integrators are kept, so a gain change does
+        not jump the output back to zero."""
+        params.validate()
+        if params.mask != self.params.mask:
+            raise ValueError("mask cannot change while running (restart the node)")
+        if params.hover_throttle != self.params.hover_throttle:
+            raise ValueError(
+                "hover_throttle cannot change while running (restart the node)"
+            )
+        self.params = params
+
     # ---------- inputs ----------
     def on_target(self, vx, vy, vz, wz, now):
         """A velocity target from mission_node, body FLU, wz in rad/s."""

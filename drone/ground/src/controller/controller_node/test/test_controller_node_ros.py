@@ -166,6 +166,37 @@ class ControllerNodeTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     ControllerNode(parameter_overrides=overrides(params))
 
+    # ---------- live tuning ----------
+    def test_live_gain_change(self):
+        node = self.start(mask=15, hover_throttle=HOVER)
+        result = node.set_parameters([Parameter("kp_xy", value=1.5)])[0]
+        self.assertTrue(result.successful, result.reason)
+        self.assertEqual(node._logic.params.gains.kp_xy, 1.5)
+        result = node.set_parameters([Parameter("throttle_band", value=0.1)])[0]
+        self.assertTrue(result.successful, result.reason)
+        self.assertEqual(node._logic.params.throttle_band, 0.1)
+
+    def test_live_change_refused_keeps_the_old_value(self):
+        node = self.start(mask=15, hover_throttle=HOVER)
+        refused = (
+            ("tilt_cap_deg", 20.0, "tilt_cap_deg"),
+            ("kp_xy", -1.0, "kp_xy"),
+            ("kp_xy", "fast", "number"),
+            ("mask", 11, "restart"),
+            ("hover_throttle", 0.6, "restart"),
+            ("rate_hz", 20.0, "restart"),
+        )
+        for name, value, why in refused:
+            with self.subTest(name=name, value=value):
+                result = node.set_parameters([Parameter(name, value=value)])[0]
+                self.assertFalse(result.successful)
+                self.assertIn(why, result.reason)
+        params = node._logic.params
+        self.assertEqual(params.tilt_cap_deg, 15.0)
+        self.assertEqual(params.gains.kp_xy, 1.0)
+        self.assertEqual(params.mask, 15)
+        self.assertEqual(node.get_parameter("kp_xy").value, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

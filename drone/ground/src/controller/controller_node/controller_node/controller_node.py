@@ -17,15 +17,21 @@ the flight_interface guard, not from the message stamps.
 file repeats them in both sections and test_config.py checks they agree.
 hover_throttle 0.0 = not measured = always inactive (F16).
 
+Live tuning (#199): the gains, tilt_cap_deg, throttle_band and the two
+timeouts can change while it runs (`ros2 param set /controller_node kp_xy
+1.2`), checked like at start-up; a bad value is refused and the old one kept.
+mask, hover_throttle, rate_hz and the topics need a restart.
+
 Ctrl+C and SIGTERM (docker stop) are a normal stop: one last inactive
 setpoint, then exit code 0. A bad parameter: FATAL log and exit code 1.
 """
 
+import dataclasses
 import json
 import time
 
 from geometry_msgs.msg import TwistStamped
-from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -42,6 +48,17 @@ from controller_node.controller_logic import (
 from controller_node.spin import run
 
 HEALTH_REPORT_SEC = 5.0
+
+# Parameters that may change while running -> the field they set: on Gains
+# for the four gains, on Params for the rest. Every other parameter needs a
+# restart (mask and hover_throttle must stay equal to flight_interface's, F15).
+LIVE_GAINS = {"kp_xy": "kp_xy", "ki_xy": "ki_xy", "kp_z": "kp_z", "ki_z": "ki_z"}
+LIVE_PARAMS = {
+    "tilt_cap_deg": "tilt_cap_deg",
+    "throttle_band": "throttle_band",
+    "target_timeout_sec": "target_timeout",
+    "velocity_timeout_sec": "velocity_timeout",
+}
 
 # Number parameters and their defaults. An integer (`-p kp_xy:=1`) is
 # accepted as well; anything else stops the node at start-up.
@@ -101,6 +118,8 @@ class ControllerNode(Node):
         )
         # Params.validate() raises ValueError: FATAL and exit 1 (spin.run).
         self._logic = Controller(params)
+        # Registered after every declare_parameter: it sees only later changes.
+        self.add_on_set_parameters_callback(self._on_set_parameters)
 
         target_topic = str(param("target_topic"))
         velocity_topic = str(param("velocity_topic"))
@@ -120,6 +139,41 @@ class ControllerNode(Node):
             f"{setpoint_topic} at {rate:.0f} Hz; mask {params.mask}, hover "
             f"throttle {params.hover_throttle}"
         )
+
+    # ---------- Live tuning ----------
+    def _on_set_parameters(self, parameters):
+        """`ros2 param set`: build the new values, let the logic check them
+        (Controller.retune), and apply them all or none."""
+        params = self._logic.params
+        gains = params.gains
+        changed = []
+        for parameter in parameters:
+            name = parameter.name
+            value = parameter.value
+            live = name in LIVE_GAINS or name in LIVE_PARAMS
+            if not live:
+                return SetParametersResult(
+                    successful=False,
+                    reason=f"{name} cannot change while running (restart the node)",
+                )
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return SetParametersResult(
+                    successful=False, reason=f"{name} must be a number, got {value!r}"
+                )
+            if name in LIVE_GAINS:
+                gains = dataclasses.replace(gains, **{LIVE_GAINS[name]: float(value)})
+            else:
+                params = dataclasses.replace(
+                    params, **{LIVE_PARAMS[name]: float(value)}
+                )
+            changed.append(f"{name}={float(value)}")
+        params = dataclasses.replace(params, gains=gains)
+        try:
+            self._logic.retune(params)
+        except ValueError as error:
+            return SetParametersResult(successful=False, reason=str(error))
+        self.get_logger().info(f"retuned: {', '.join(changed)}")
+        return SetParametersResult(successful=True)
 
     # ---------- Subscriptions: store only ----------
     def _on_target(self, msg):
