@@ -46,8 +46,11 @@ DESCEND = "L:NONE+R:INDEX_DOWN"
 MODEL = "x500_0"  # PX4's gz_x500 model; its pose/info entry is the world pose
 TRUTH_TOPIC = "/world/default/pose/info"
 # The descent (0.2 m/s, mission_node's vertical limit) stops this much above
-# 1.0 m: the zero takes a few ticks to reach the drone.
-DESCENT_LEAD_M = 0.05
+# 1.0 m: the zero takes a few ticks to reach the drone, and the controller
+# settles it lower still. Measured 2026-11-24 with a 0.05 m lead: the gesture
+# stopped at 1.04-1.05 m and the hold started at 0.88-0.98 m (0.06-0.16 m
+# lower). With 0.12 m: about 1.12 m -> 0.96-1.06 m, inside 1.0 +- 0.1 m.
+DESCENT_LEAD_M = 0.12
 DESCENT_TIMEOUT_SEC = 30.0
 SETTLE_SEC = 5.0  # after the descent, before the hold's start point
 BAG_TOPICS = [
