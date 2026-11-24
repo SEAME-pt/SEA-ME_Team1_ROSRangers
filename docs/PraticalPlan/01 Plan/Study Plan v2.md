@@ -138,10 +138,19 @@ tags: [plan]
 - **A + B (cage):** first override **flight**, only after GitHub #123 and #104 pass, with the failsafe re-tested and a new `diff all` committed ([[Safety Rules]] #14, [[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30; the 2026.6.2 upgrade is done since 2026-10-28): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11). *Status 2026-11-24: the ANGLE hover on 2026.6.2 (GitHub #134) is not done yet, so this flight has not happened.*
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.
 
+> [!info] Status 2026-11-24 (from the GitHub issues)
+> - **Open:** cascade controller in PX4 SITL (GitHub #199); real-time profile, due 2026-11-20 (#146); first override flight (#201), which waits for the ANGLE hover on 2026.6.2 (#134), the MSP budget spike (#123), the props-off override bench test (#104) and the FC USB connector repair (#189).
+> - **Replaced:** the flow velocity estimate on the bench (#200) was written for the ThoneFlow. With the MTF-02P, Betaflight estimates height and velocity itself ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24).
+> - **Done in the same weeks:** architecture document (#98), `flight_interface` lifecycle node (#103), MSP Override in the Betaflight SITL tests (#105), HIL flash and failsafe-timing job (#106), Sprint 2 demo (#109), late-frame rejection (#204), ground restructure (#186).
+
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
 - **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead. Position hold in the cage is Betaflight Position Hold with the MTF-02P on UART1 (team, 2026-11-24), not ground velocity setpoints.*
 - **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
+
+> [!info] Status 2026-11-24 (from the GitHub issues)
+> - **Open:** gestures drive `flight_interface` in PX4 SITL (#202); the Sprint 3 demo, position hold in SITL and the cage plus the first sim-to-real measurement (#203). The cage part is blocked until the MTF-02P is fitted (the drone has not arrived) and waits for #201.
+> - The gaps found by the 2026-11-24 docs review (a sensor REQ, Module 2 owners and REQs, Module 1 close-out issues, the second track label, the motor pole and 5V checks) go to **Sprint 4 planning** (Sprint 4 starts 2026-11-30, the last sprint before the Christmas break and the end of Module 1).
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
 
