@@ -174,6 +174,14 @@ Paulo - Drone
 Tiago - Drone
 Guilherme - Esperar por runs no Hil e pelo o Bruno terminar o seu issue.
 
+24/Nov - 11:33/11:35
+Guilherme - Melhorar os docs, fazer o registo do novo sensor que chegou ontem que via trocar o ThoneFlow
+Paulo - Estudar e treinar para o piloto
+Tiago - Teste do sensor novo, buscar o drone
+Bruno - Issue #129 e treinar pilotagem
+**Blockers**
+Paulo e Guilherme - Drone
+
 ---
 
 ## Glossary
