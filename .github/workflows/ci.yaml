@@ -195,9 +195,10 @@ jobs:
       - run: pip install -r drone/tools/bench/requirements.txt
       - run: pytest drone/tests/tools -q
 
-  # The pass/fail rules of make sim-smoke (#86, #199): smoke_checks.py, no
-  # ROS and no px4_msgs. The scenario itself needs px4_msgs and runs only in
-  # the PX4 SITL image (make sim-smoke); the simulation is not run in CI
+  # The pass/fail rules of make sim-smoke and make sim-hold (#86, #199):
+  # smoke_checks.py and hold_checks.py, no ROS and no px4_msgs. The scenarios
+  # need px4_msgs (and gz-transport) and run only in the PX4 SITL image; the
+  # simulation is not run in CI
   sim-smoke-python:
     needs: [lint, check-components]
     if: ${{ needs.check-components.outputs.sim_smoke == 'true' }}
@@ -212,7 +213,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install pytest pytest-cov
-      - run: python3 -m pytest test -q --cov=sim_smoke.smoke_checks --cov-fail-under=90
+      - run: python3 -m pytest test -q --cov=sim_smoke.smoke_checks --cov=sim_smoke.hold_checks --cov-fail-under=90
 
   # The HIL tests that need no bench, on every PR: the Wi-Fi window script
   # against a fake nmcli, and the smoke test's parsers. The hardware tests

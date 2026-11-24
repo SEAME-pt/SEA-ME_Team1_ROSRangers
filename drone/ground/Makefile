@@ -70,6 +70,11 @@
 #   make sim-smoke  headless test, no camera: scripted gestures (ENGAGE, right,
 #                   climb, intent_node killed) and the checks of #86 / #199,
 #                   then stops. Rosbag + summary.md in logs/sim-smoke/<start time>/
+#   make sim-hold   the SITL hold test (REQ-NAV-001, ADR-025 F26): headless,
+#                   descend to 1.0 m by gesture, hold 60 s, judged on Gazebo's
+#                   ground truth. RUNS=3 (default) runs it 3 times and passes
+#                   only if every run passes; RUNS=1 for one. Rosbag,
+#                   truth.csv and summary.md in logs/sim-hold/<start time>/
 #   make sim-down   stop the simulation
 #   make px4-image  rebuild the PX4 image (after a change to its Dockerfile)
 #   The mask (axes the ground owns) is config/sim.yaml's (15; ADR-025 F24):
@@ -119,13 +124,15 @@ PX4_IMAGE    := seame-px4-sim:jazzy-1.17
 # never touch flight_interface (no-flight-interface also refuses while it runs).
 # Stopping needs no env file: stand-in values, which only satisfy compose's
 # check (a stop starts nothing, so no domain is used).
-STOP_PROFILES := --profile demo --profile sim --profile sim-smoke
+STOP_PROFILES := --profile demo --profile sim --profile sim-smoke --profile sim-hold
 STOP_COMPOSE  := GROUND_MODE=demo GROUND_DOMAIN_ID=0 GROUND_DISCOVERY_RANGE=LOCALHOST \
 	$(COMPOSE) $(STOP_PROFILES)
 DEMO_COMPOSE  := $(COMPOSE) --env-file env/demo.env
 SIM_COMPOSE   := $(COMPOSE) --env-file env/sim.env
 SIM          := px4 flight_interface_sim controller gesture intent mission echo
 SIM_SMOKE    := px4 flight_interface_sim controller mission sim_smoke
+SIM_HOLD     := px4 flight_interface_sim controller mission sim_hold
+RUNS         ?= 3
 GUI          ?= 1
 # Host group of the GPU render node, so the px4 and gesture containers (not
 # root) can use it. No render node: video, a harmless group both images have.
@@ -513,6 +520,29 @@ sim-smoke: no-flight-interface env-sim px4-image-present
 		"flight_interface: logs/flight_interface_sim/latest.log"; \
 	exit $$code
 
+# The hold test (F26): RUNS runs, each from scratch, one after the other. It
+# passes only if every run passes ("3 runs in a row"). Each run's output in
+# $(TESTLOG)/sim-hold-<n>.log (its checks are printed here), its bag,
+# truth.csv and summary.md in logs/sim-hold/<start time>/.
+sim-hold: no-flight-interface env-sim px4-image-present
+	@mkdir -p logs $(TESTLOG)
+	@$(call stop_ros_daemon,sim)
+	@failed=0; \
+	for run in $$(seq 1 $(RUNS)); do \
+		$(STOP_COMPOSE) down >/dev/null 2>&1; \
+		echo "===== make sim-hold: run $$run of $(RUNS)"; \
+		$(SMOKE_ENV) $(SIM_COMPOSE) --profile sim-hold up --build --force-recreate \
+			--exit-code-from sim_hold $(SIM_HOLD) >$(TESTLOG)/sim-hold-$$run.log 2>&1; \
+		code=$$?; \
+		grep -E '\| (PASS|FAIL) \||checks passed|\| [0-9-]+ [0-9:.]+ - ' $(TESTLOG)/sim-hold-$$run.log \
+			| sed -E 's/^[^|]*\| [0-9-]+ [0-9:.]+ //'; \
+		if [[ $$code != 0 ]]; then failed=$$((failed + 1)); fi; \
+	done; \
+	$(STOP_COMPOSE) down >/dev/null 2>&1; \
+	echo "make sim-hold: $$(($(RUNS) - failed)) of $(RUNS) runs passed" \
+		"(output: $(TESTLOG)/sim-hold-<n>.log, results: logs/sim-hold/)"; \
+	[[ $$failed == 0 ]]
+
 # logs/: everything but its .gitignore, which keeps the folder out of git.
 # Docker: only this project's objects, never a host-wide prune. Containers
 # with their anonymous volumes (the smoke test's `docker run` ones are named
@@ -536,6 +566,6 @@ re: fclean all
 
 .PHONY: all venv ws no-ros test test-deps test-sitl pkg-test e2e-test unit smoke up down \
 	clean fclean re \
-	px4-image px4-image-present sim sim-down sim-smoke \
+	px4-image px4-image-present sim sim-down sim-smoke sim-hold \
 	no-flight-interface psk-file env-demo env-sim env-real \
 	real real-dry real-check real-steps real-down

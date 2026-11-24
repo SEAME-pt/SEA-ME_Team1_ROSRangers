@@ -3,7 +3,7 @@
 <package format="3">
   <name>sim_smoke</name>
   <version>0.1.0</version>
-  <description>SIMULATION ONLY (#86, #199): make sim-smoke's scripted scenario against PX4 SITL and its checks (smoke_checks.py, no ROS). Never use with the real drone.</description>
+  <description>SIMULATION ONLY (#86, #199): make sim-smoke's and make sim-hold's scripted scenarios against PX4 SITL and their checks (smoke_checks.py, hold_checks.py, no ROS). The hold scenario reads Gazebo's ground truth with gz-transport (python3-gz-transport13, in the PX4 image). Never use with the real drone.</description>
   <maintainer email="bmmc136@gmail.com">Bruno</maintainer>
   <license>MIT</license>
 

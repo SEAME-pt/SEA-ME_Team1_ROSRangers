@@ -14,6 +14,7 @@
 #         (backend px4) + px4 (PX4 SITL + Gazebo; SIMULATION ONLY)
 #   sim-smoke  the headless simulation test (px4, mission, controller,
 #         flight_interface_sim, sim_smoke), not a mode
+#   sim-hold   the SITL hold test, REQ-NAV-001 (the same + sim_hold), not a mode
 # `base` has no profile: compose refuses a build context from a service it
 # does not see. It only runs `true`.
 #
@@ -169,7 +170,7 @@ services:
 
   mission:
     <<: *node
-    profiles: [demo, real, sim, sim-smoke]
+    profiles: [demo, real, sim, sim-smoke, sim-hold]
     build:
       context: .
       dockerfile: src/mission/Dockerfile
@@ -195,7 +196,7 @@ services:
   # mask and the hover throttle (F15).
   controller:
     <<: *node
-    profiles: [demo, real, sim, sim-smoke]
+    profiles: [demo, real, sim, sim-smoke, sim-hold]
     build:
       context: .
       dockerfile: src/controller/Dockerfile
@@ -317,7 +318,7 @@ services:
   # Offboard, which needs this node's stream. No restart (A6).
   flight_interface_sim:
     <<: *node
-    profiles: [sim, sim-smoke]
+    profiles: [sim, sim-smoke, sim-hold]
     restart: "no"
     build:
       context: .
@@ -349,7 +350,7 @@ services:
   # `docker compose --profile sim up` is headless.
   px4:
     <<: *node
-    profiles: [sim, sim-smoke]
+    profiles: [sim, sim-smoke, sim-hold]
     build: &px4-build
       context: .
       dockerfile: src/simulation/Dockerfile
@@ -406,3 +407,27 @@ services:
       LOG_NAME: sim-smoke
       FASTDDS_BUILTIN_TRANSPORTS: UDPv4
     command: ["/ws/install/sim_smoke/lib/sim_smoke/sim_smoke_scenario"]
+
+  # The SITL hold test (#199 Phase 8, REQ-NAV-001, ADR-025 F26): descend to
+  # 1.0 m by gesture, hold 60 s, judged on Gazebo's ground truth (gz-transport;
+  # PX4 starts Gazebo with GZ_IP=127.0.0.1, so the reader needs the same). A
+  # rosbag, truth.csv and summary.md in logs/sim-hold/<start time>/.
+  sim_hold:
+    <<: *node
+    profiles: [sim-hold]
+    attach: true
+    build: *px4-build
+    image: rosrangers/px4-sim:jazzy
+    depends_on:
+      px4:
+        condition: service_healthy
+      mission:
+        condition: service_started
+      controller:
+        condition: service_started
+    environment:
+      <<: *node-env
+      LOG_NAME: sim-hold
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      GZ_IP: 127.0.0.1
+    command: ["/ws/install/sim_smoke/lib/sim_smoke/sim_hold_scenario"]

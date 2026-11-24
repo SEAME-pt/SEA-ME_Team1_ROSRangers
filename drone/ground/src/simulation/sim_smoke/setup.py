@@ -14,12 +14,13 @@ setup(
     zip_safe=True,
     maintainer="Bruno",
     maintainer_email="bmmc136@gmail.com",
-    description="SIMULATION ONLY: make sim-smoke's scenario and checks (#86, #199)",
+    description="SIMULATION ONLY: make sim-smoke's and make sim-hold's scenarios and checks",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
             "sim_smoke_scenario = sim_smoke.smoke_scenario:main",
+            "sim_hold_scenario = sim_smoke.hold_scenario:main",
         ],
     },
 )

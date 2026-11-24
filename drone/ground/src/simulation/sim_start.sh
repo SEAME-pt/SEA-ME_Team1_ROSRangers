@@ -169,6 +169,10 @@ up_high() {
 }
 loitering() { armed && [ "$(nav_state)" = 4 ] && up_high; }
 wait_until 60 loitering || fail "take-off did not reach $MIN_ALT m"
+# PX4's estimated height (m, up), for the log: the 0.25-0.4 m lost between
+# take-off and the scenarios' start (#199 Phase 8)
+height() { px4_field vehicle_local_position z | awk '{printf "%.2f", -$1}'; }
+say "take-off done: height $(height) m (PX4)"
 # Without it flight_interface publishes no /estimate/velocity and the
 # controller stays inactive (F23).
 heading_good() { [ "$(px4_field vehicle_local_position heading_good_for_control)" = True ]; }
@@ -178,9 +182,19 @@ offboard() {
     armed && [ "$(nav_state)" = 14 ]
 }
 wait_until 20 offboard || fail "Offboard refused"
+say "in Offboard: height $(height) m (PX4)"
 
 touch "$READY"
 say "6/6 Ready: armed, in Offboard. The controller holds zero velocity; gestures drive it"
+# The first seconds after the switch to the controller, for the log only
+(
+    previous=0
+    for t in 1 2 3 5 8 12; do
+        sleep $((t - previous))
+        previous=$t
+        say "Offboard + ${t} s: height $(height) m (PX4)"
+    done
+) &
 
 # Either of them dying ends the container (and make sim-smoke).
 set +e

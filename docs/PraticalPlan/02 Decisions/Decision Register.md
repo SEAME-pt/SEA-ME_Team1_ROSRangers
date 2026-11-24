@@ -119,6 +119,7 @@ tags:
 ## 12. What changed on 2026-11-24
 
 - 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F20–F25 for #199 Phase 7 (`make sim` through the controller and `flight_interface`): the simulation's hover throttle is 0.60, PX4's own value for the x500 (F20; changed the same day to 0.73, measured in attitude Offboard: with 0.60 the drone sank); the simulation's `flight_interface` image builds `px4_msgs` from source in a `sim` stage (F21); `sim_start.sh` configures and activates `flight_interface`, then waits for the Offboard stream before it asks for Offboard (F22); take-off to 1.0 m (F23; changed the same day to 2.0 m: PX4 calls the heading good for control only above 1.5 m, so the hold test descends to 1.0 m through the controller); the simulation's mask only in `config/sim.yaml`, no `MASK` in `make sim` (F24); `make sim-smoke` checks REQ-SAF-017 at `mission_node`'s output and REQ-SAF-018 on `/control/attitude_setpoint` (F25). Dated note on F1 the same day: in the simulation the vertical measured velocity is PX4's `z_deriv`, not its biased `vz`.
+- 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] F26–F27 for #199 Phase 8: the SITL hold test is `make sim-hold`, descending to about 1.0 m by gesture, judged on Gazebo ground truth from the hold's start point, 3 runs in a row (F26); sim-tuned gains only in `config/sim.yaml` (F27).
 
 ## 13. Still open
 

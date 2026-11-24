@@ -270,11 +270,12 @@ suite_cpp() {
     row protocol-cpp "$status" "$passed" $((passed + failed)) "${note:+$note, }no coverage gate (CI: 80%)"
 }
 
-# make sim-smoke's checks (no ROS, no PX4), as CI's sim-smoke-python
+# make sim-smoke's and make sim-hold's checks (no ROS, no PX4), as CI's sim-smoke-python
 suite_sim_smoke() {
     local log=$LOG code
     (cd src/simulation/sim_smoke && "$PY" "${PYTEST[@]}" test \
-        --cov=sim_smoke.smoke_checks --cov-report=term --cov-fail-under=90) 2>&1 | tee -a "$log"
+        --cov=sim_smoke.smoke_checks --cov=sim_smoke.hold_checks \
+        --cov-report=term --cov-fail-under=90) 2>&1 | tee -a "$log"
     code=${PIPESTATUS[0]}
     pytest_row sim_smoke "$code" "$log" "coverage $(cov_total "$log") (>=90%)"
 }
