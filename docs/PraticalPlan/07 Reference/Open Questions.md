@@ -90,8 +90,8 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 - [x] ~~ThoneFlow frame rate (66 vs 25 Hz), byte order and checksum (week 3, [[ThoneFlow]] §9.2).~~ Dropped 2026-11-24: the ThoneFlow is no longer used ([[ADR-016 Flow Sensor Path|ADR-016]]).
 
 ### MTF-02P (2026-11-24)
-- [ ] **Which FC UART** for the MTF-02P? UART1 is the only free one and is the ESP's spare / fallback ([[ADR-011 FC UART Allocation|ADR-011]]). Decide before soldering; it needs a dated ADR-011 entry.
-- [ ] **Who holds position in the cage:** Betaflight Position Hold with the flow (`poshold_position_source = OPTICALFLOW_ONLY`), or the ground controller from the flow data ([[Requirements|REQ-NAV-002]])?
+- [x] **Which FC UART** for the MTF-02P? → **UART1** (team, 2026-11-24, [[ADR-011 FC UART Allocation|ADR-011]] update). UART1 is the only free one and is the ESP's spare / fallback ([[ADR-011 FC UART Allocation|ADR-011]]). Decide before soldering; it needs a dated ADR-011 entry.
+- [x] **Who holds position in the cage:** → **Betaflight** Position Hold (team, 2026-11-24, [[ADR-016 Flow Sensor Path|ADR-016]] update). Betaflight Position Hold with the flow (`poshold_position_source = OPTICALFLOW_ONLY`), or the ground controller from the flow data ([[Requirements|REQ-NAV-002]])?
 - [ ] Check on the bench, props off: weight (1.5 or 1.8 g) and current at 5 V (200 mW or 0.5 W) ([[Height Sensor Study]] §3.4).
 
 ## 3. Glossary
@@ -112,5 +112,5 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 | **Betaflight** | The open-source FC firmware on the drone: 2026.6.2 installed since 2026-10-28, 4.5.1 before (ADR-014). |
 | **Props off** | Propellers physically removed. Required for every bench test ([[Safety Rules]] #1). |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held (team, 2026-11-24, ADR-010); its AUX channel is not mapped yet. |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |

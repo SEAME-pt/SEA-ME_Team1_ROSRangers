@@ -3,7 +3,7 @@ title: ADR-010 — MSP Override for Setpoints
 type: adr
 status: accepted-with-conditions
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - D10
@@ -56,6 +56,16 @@ The radio has two separate safety switches. The conditions above are unchanged.
 - **Kill switch:** SA, which is also the ARM switch. Releasing SA disarms and stops the motors. Tested on the bench on 2026-10-22 ([[Radio Link Tests]] RL-12, GitHub #22).
 - **Takeover switch:** the MSP Override switch (the "override switch" in condition 3). Turning it off ends ground control: from that moment until it is turned on again, the drone takes commands only from the radio. Its AUX channel is not mapped yet ([[Betaflight Setup]] §1). It stays out of the mask (condition 1).
 
+### Update 2026-11-24: the takeover switch is SD (team decision)
+
+- The takeover switch is **SD** on the RadioMaster Pocket, used as a button that is held.
+- How the team describes it: while SD is **held**, the pilot can move the throttle stick and the drone's throttle does not change. When SD is **released**, the stick's position at that moment becomes the drone's reference, and from there the pilot raises or lowers the throttle. The pilot lines the stick up before the handover, so the throttle does not jump.
+- **To define and test props-off before any override flight** (REQ-SAF-002, REQ-SAF-004, REQ-SAF-005, [[Safety Rules]] #14):
+  - the AUX channel SD sends and the Betaflight mode range it drives (saved in `diff all`);
+  - that SD **released** always means MSP Override off (radio only), as the 2026-10-23 definition requires, and held means ground control may run;
+  - where the hold-then-release throttle behaviour comes from (radio mixer, Betaflight setting or ground code), and that takeover still works when the ESP misbehaves.
+- SD stays out of the override mask (condition 1).
+
 ### Update 2026-11-06: throttle-only stage proposed, on hold
 
 On 2026-10-30 the team proposed a first stage before 8 → 11 → 15: **mask 4 (throttle only) with ALTHOLD on**. With ALTHOLD, the throttle channel becomes a vertical-speed command (centre holds the height), so the ground could do "take off, hold a height, land" while the pilot keeps roll, pitch and yaw.
@@ -95,5 +105,5 @@ Conditions 1–6 above are unchanged, and [[Safety Rules]] #14 stays bench-only.
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held (team, 2026-11-24, ADR-010); its AUX channel is not mapped yet. |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |

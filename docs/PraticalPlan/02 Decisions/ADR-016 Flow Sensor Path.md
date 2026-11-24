@@ -67,10 +67,9 @@ The facilitators approved and supplied a **MicoAir MTF-02P** (SKU `MA_OF_MTF02P`
 - **Path:** the MTF-02P goes on a free FC UART with the MSP protocol, and Betaflight 2026.6.2 reads it by name (`rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT`). No ESP reader and no extra MCU.
 - **Height (§2.4):** the rangefinder replaces the barometer as the height source once the sensor is fitted and checked on the bench, props off ([[Safety Rules]] #1). Until then §2.4 stands.
 - **Not fitted yet (2026-11-24):** the sensor is not soldered because the drone has not arrived. After that, the steps in [[Height Sensor Study]] §5 apply: bench check in the Configurator Sensors tab, then ALTHOLD with `altitude_source = RANGEFINDER_PREFER`, then Position Hold.
-- **Still open** ([[Open Questions]]):
-  - Which FC UART. UART1 is the only free one and is the ESP's spare / fallback in [[ADR-011 FC UART Allocation|ADR-011]]; using it needs a dated ADR-011 entry when it is wired.
-  - Whether position hold in the cage ([[Requirements|REQ-NAV-002]]) runs in Betaflight (`poshold_position_source = OPTICALFLOW_ONLY`) or in the ground controller from the flow data.
-- **Code still written for the ThoneFlow:** the Python parser `sd_protocol/thoneflow.py` and the `flow_status` field of the STATE message (ThoneFlow §8.1 values). Removing or reusing them is a follow-up, not part of this entry.
+- **UART (team, 2026-11-24): UART1** (T1/R1), the only free FC UART. The ESP loses its spare / fallback port ([[ADR-011 FC UART Allocation|ADR-011]] update 2026-11-24).
+- **Position hold (team, 2026-11-24): Betaflight** Position Hold with the flow (`poshold_position_source = OPTICALFLOW_ONLY`), not the ground controller. The ground sends no position loop for [[Requirements|REQ-NAV-002]]; Betaflight's own estimator combines the accelerometer, baro, rangefinder and flow ([[Height Sensor Study]] §3.4).
+- **Code still written for the ThoneFlow:** the Python parser `sd_protocol/thoneflow.py` and the `flow_status` field of the STATE message (ThoneFlow §8.1 values). Removing or reusing them is a follow-up, not part of this entry; ThiagoTEP updates the ThoneFlow code and issues.
 
 ## 3. Consequences
 
@@ -92,5 +91,5 @@ The facilitators approved and supplied a **MicoAir MTF-02P** (SKU `MA_OF_MTF02P`
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **ToF** | Time-of-Flight: a rangefinder that measures height with light. The MTF-02P has one (update 2026-11-24). |
-| **MTF-02P** | MicoAir optical-flow + ToF rangefinder module (UART, MSP), supplied by the facilitators on 2026-11-24. Read by Betaflight on an FC UART. |
+| **MTF-02P** | MicoAir optical-flow + ToF rangefinder module (UART, MSP), supplied by the facilitators on 2026-11-24. Read by Betaflight on FC UART1. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

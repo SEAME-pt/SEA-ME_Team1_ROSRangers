@@ -155,7 +155,7 @@ What Betaflight 2026.6.2 does with it [SRC 8]:
 
 ## 5. How it would be used (if accepted)
 
-1. **Bench, props off ([[Safety Rules]] #1):** connect to a free FC UART (UART1 is free, but it is the ESP's only spare / fallback port in [[ADR-011 FC UART Allocation|ADR-011]]; using it for the sensor removes that fallback), set MSP, check height and flow in the Configurator Sensors tab. Dated entries in ADR-011 and ADR-016.
+1. **Bench, props off ([[Safety Rules]] #1):** connect to a free FC UART (*2026-11-24: UART1 chosen, [[ADR-011 FC UART Allocation|ADR-011]] update*) (UART1 is free, but it is the ESP's only spare / fallback port in [[ADR-011 FC UART Allocation|ADR-011]]; using it for the sensor removes that fallback), set MSP, check height and flow in the Configurator Sensors tab. Dated entries in ADR-011 and ADR-016.
 2. **Flight area, pilot plus one more person ([[Safety Rules]] #4, #15, #18):** ALTHOLD with `altitude_source = RANGEFINDER_PREFER`; compare the blackbox with the barometer-only flights (GitHub #134).
 3. **Then Position Hold** with the flow: measure drift over a fixed time and tune.
 4. Then the throttle-only MSP Override stage can be proposed again ([[ADR-010 MSP Override|ADR-010]] update 2026-11-06).

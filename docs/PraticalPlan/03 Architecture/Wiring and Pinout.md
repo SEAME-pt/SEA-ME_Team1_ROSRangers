@@ -59,6 +59,9 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 | FC **R4** | ESP **TX (GPIO1)** | MSP, ESP → FC |
 | FC **5V** | ESP **5V** | the ESP regulator makes 3.3 V. **Never 5 V on a GPIO.** |
 | FC **GND** | ESP **G** | common ground |
+| MTF-02P **TX** | FC **R1** | planned 2026-11-24, not soldered yet ([[ADR-011 FC UART Allocation\|ADR-011]] update) |
+| MTF-02P **RX** | FC **T1** | planned |
+| MTF-02P **5V** / **GND** | FC **5V** / **GND** | planned; datasheet 5 V |
 | ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment. **Dropped 2026-11-24**, not wired (the MTF-02P goes on an FC UART instead) |
 | ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA |
 | ThoneFlow **GND** | ESP **G** | |

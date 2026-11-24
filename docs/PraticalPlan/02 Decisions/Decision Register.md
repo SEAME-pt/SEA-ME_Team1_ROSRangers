@@ -33,12 +33,12 @@ tags:
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
 | [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions (kill and takeover switches, 2026-10-23) | FC-09, P2 (FC page) |
-| [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2 | ✅ Accepted | FC-02, FC-01 (partly), P3 (FC page) |
+| [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2; **UART1 → MTF-02P** (2026-11-24, the ESP loses its fallback port) | ✅ Accepted (updated 2026-11-24) | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | **MicoAir MTF-02P** (flow + ToF height) on an FC UART, read by Betaflight; the ThoneFlow is dropped. Height from the DPS310 baro until the sensor is fitted | ✅ Accepted (revised 2026-10-14; **2026-11-24: MTF-02P replaces the ThoneFlow**, not fitted yet) | TF-01, TF-02, TF-11, TF-12 |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | **MicoAir MTF-02P** (flow + ToF height) on FC UART1, read by Betaflight, which also does Position Hold; the ThoneFlow is dropped. Height from the DPS310 baro until the sensor is fitted | ✅ Accepted (revised 2026-10-14; **2026-11-24: MTF-02P replaces the ThoneFlow**, not fitted yet) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
@@ -156,4 +156,4 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **MSP_SET_ARMING_DISABLED** | MSP 99: value 1 stops the FC from arming, value 0 allows it again (ADR-024). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held (team, 2026-11-24, ADR-010); its AUX channel is not mapped yet. |

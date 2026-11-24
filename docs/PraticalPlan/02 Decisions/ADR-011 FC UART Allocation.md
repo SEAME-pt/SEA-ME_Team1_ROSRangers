@@ -3,6 +3,7 @@ title: ADR-011 — FC UART Allocation
 type: adr
 status: accepted
 date: 2026-10-12
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - D11
@@ -53,11 +54,21 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 | **ESP (MSP)** | **UART4 (T4/R4)** | 3 |
 | Spare / fallback for the ESP | UART1 (T1/R1) | 0 |
 
+### Update 2026-11-24: UART1 goes to the MTF-02P (team decision)
+
+| Device | UART | Serial ID (CLI) |
+|---|---|---|
+| **MicoAir MTF-02P** (flow + ToF height, MSP, 115200) | **UART1 (T1/R1)** | 0 |
+
+- UART1 was the only free UART ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24). **The ESP now has no spare FC UART**: if UART4 fails, the fallback has to be found again (UART6 is only on the digital-VTX connector).
+- Wiring is crossed like the ESP's (sensor TX → R1, sensor RX → T1, 5V, GND; [[Wiring and Pinout]]). Not soldered yet: the drone has not arrived.
+- Before soldering: continuity-check T1/R1 to the MCU side and check for shorts, as for T4/R4 (§3). After: set the port in Betaflight, save a new `diff all`, and check height and flow in the Sensors tab, props off ([[Safety Rules]] #1).
+
 ## 3. Consequences
 
 - No change to the existing ELRS or VTX wiring (REQ-SAF-008). Exception: the ELRS power wire moves from 5V to DV5V (2026-10-16 update, GitHub #41).
 - Before soldering: continuity-check T4/R4 to the MCU side and check for shorts to neighbouring pads ([[ESP_to_FC]] §10.1). **Done 2026-10-16, passed** (GitHub #16).
-- The ThoneFlow does not go on an FC UART: Betaflight 4.5.1 has no optical-flow driver ([[ADR-016 Flow Sensor Path|ADR-016]]).
+- The ThoneFlow does not go on an FC UART: Betaflight 4.5.1 has no optical-flow driver ([[ADR-016 Flow Sensor Path|ADR-016]]). *2026-11-24: the ThoneFlow is dropped; the MTF-02P goes on UART1 (update above).*
 
 ## 4. Related pages
 

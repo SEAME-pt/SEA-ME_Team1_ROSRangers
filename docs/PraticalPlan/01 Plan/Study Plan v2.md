@@ -135,12 +135,12 @@ tags: [plan]
 
 - **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.*
 - **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights. *Changed 2026-11-24: waits for the MTF-02P to be fitted (the drone has not arrived); with it, Betaflight gives the height and flow ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
-- **A + B (cage):** first override **flight**, only after GitHub #123 and #104 pass, with the failsafe re-tested and a new `diff all` committed ([[Safety Rules]] #14, [[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30; the 2026.6.2 upgrade is done since 2026-10-28): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
+- **A + B (cage):** first override **flight**, only after GitHub #123 and #104 pass, with the failsafe re-tested and a new `diff all` committed ([[Safety Rules]] #14, [[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30; the 2026.6.2 upgrade is done since 2026-10-28): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11). *Status 2026-11-24: the ANGLE hover on 2026.6.2 (GitHub #134) is not done yet, so this flight has not happened.*
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.
 
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
-- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead.*
+- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead. Position hold in the cage is Betaflight Position Hold with the MTF-02P on UART1 (team, 2026-11-24), not ground velocity setpoints.*
 - **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
@@ -228,4 +228,4 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **Track (A–E)** | The five ownership areas: A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures ([[Team Tracks]]). |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held (team, 2026-11-24, ADR-010); its AUX channel is not mapped yet. |
