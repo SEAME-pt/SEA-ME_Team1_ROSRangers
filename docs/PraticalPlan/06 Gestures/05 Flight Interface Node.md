@@ -54,7 +54,7 @@ The gesture nodes know nothing about the radio link. `flight_interface` is the o
 | `guard.py` | every rule of §5, no ROS imports |
 | `link_node.py` | the lifecycle node: timers, topics, services |
 | `backends.py`, `esp_backend.py` | `loopback` and `esp` (sessions over `sd_protocol.ground`) |
-| `px4_backend.py`, `px4_logic.py` | `px4`, simulation only: the frames, PX4's state, the measured velocity (`px4_logic.py` has no ROS imports) |
+| `px4_backend.py`, `px4_logic.py` | `px4`, simulation only: the frames, PX4's state, the measured velocity, and the simulated pilot that flies the axes the ground does not own (`px4_logic.py` has no ROS imports) |
 | `telemetry.py` | MSP and `STATE` values → `/fc/attitude`, `/fc/battery` (shared with `fc_telemetry`) |
 | `fc_telemetry.py`, `msp.py` | §9 and §10 |
 | `launch/flight_interface.launch.py` | the node outside Docker, no respawn on purpose |

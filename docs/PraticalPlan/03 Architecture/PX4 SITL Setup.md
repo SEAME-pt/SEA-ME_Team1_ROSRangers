@@ -138,6 +138,7 @@ The sim is its own mode: profile `sim` and `drone/ground/env/sim.env` (its own R
 - While the controller commands, it sends PX4 an attitude setpoint (quaternion and thrust, body FLU turned into PX4's FRD / NED); while nothing commands (`active` false), it streams a zero velocity, so PX4 holds position itself.
 - It turns PX4's status into the drone state the guard reads: `override_active` is "armed and in Offboard", the sim's takeover switch.
 - It publishes the measured velocity on `/estimate/velocity` for the controller: horizontal from PX4's velocity, vertical from the rate of PX4's height (`z_deriv`; PX4's own `vz` carries a bias in SITL).
+- Under masks 8 and 11 a **simulated pilot** flies the axes the ground does not own (height, and roll / pitch under 8), holding zero velocity on each, as the safety pilot's sticks do on the drone ([[ADR-025 flight_interface Ground Node|ADR-025]] F2). Without it, a fixed hover throttle there let the drone climb away.
 - It never arms, disarms or changes PX4's mode.
 
 **Images.** `px4`, `sim_smoke` and `sim_hold` use `rosrangers/px4-sim:jazzy`: the PX4 image of §2 (`seame-px4-sim:jazzy-1.17`) plus `intent_node` and the `sim_smoke` package (the final stage of `drone/ground/src/simulation/Dockerfile`). The Makefile builds the PX4 image the first time; that takes a long time and several GB. `make clean` / `fclean` keep it; `make px4-image` rebuilds it after a change to the `px4` stage. The first `make sim` also builds `flight_interface`'s `sim` stage (`px4_msgs` from source, a few minutes, then cached).

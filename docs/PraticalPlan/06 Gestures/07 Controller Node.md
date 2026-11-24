@@ -58,6 +58,13 @@ The gesture chain thinks in velocities; the flight controller holds an attitude.
 - `/mission/velocity_target` (`TwistStamped`, body FLU, yaw rate in rad/s) from `mission_node`.
 - `/estimate/velocity` (`TwistStamped`, body FLU): the measured velocity. In the simulation `flight_interface`'s `px4` backend publishes it from PX4; on the drone, the estimator of #200.
 - Parameters (`controller_node.py`): `mask`, `hover_throttle`, `rate_hz`, the gains `kp_xy`, `ki_xy`, `kp_z`, `ki_z`, `tilt_cap_deg`, `throttle_band`, `target_timeout_sec`, `velocity_timeout_sec`, the topic names. A bad value stops the node at start-up. `mask` and `hover_throttle` must equal `flight_interface`'s: each mode file repeats them in both sections and `test_config.py` checks they agree.
+- **Live tuning** (ADR-025 F28): the gains, `tilt_cap_deg`, `throttle_band` and the two timeouts can change while it runs, checked like at start-up; a bad value is refused and the old one kept, and the log says `retuned: …`. `mask`, `hover_throttle`, `rate_hz` and the topics need a restart. From `drone/ground/`, in the mode's domain ([[01 ROS2 Nodes Installation|01]] §5):
+
+  ```bash
+  docker compose --env-file env/sim.env run --rm echo ros2 param set /controller_node kp_xy 1.2
+  ```
+
+  A live change is lost on restart: write the value into `config/<mode>.yaml` to keep it.
 
 ---
 
@@ -106,11 +113,10 @@ Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]] C1,
 
 ## ▶️ 7. Run (Docker)
 
-The `controller` compose service runs in every mode, with the mode's file `config/<mode>.yaml`:
+The `controller` compose service runs in the real and sim modes, with the mode's file `config/<mode>.yaml`. The demo runs none (ADR-025 F12): with no measured velocity and no `flight_interface` it could only publish inactive setpoints.
 
 | Mode | Measured velocity | Hover throttle | What it does |
 | :--- | :--- | :--- | :--- |
-| demo (`make`) | none | not set | inactive (`no_velocity`) |
 | real (`make real`) | none until #200 | not set | inactive: `flight_interface` sends neutral |
 | sim (`make sim`, `sim-smoke`, `sim-hold`) | from PX4 | 0.73 | flies ([[PX4 SITL Setup]] §7) |
 
@@ -127,6 +133,7 @@ The `controller` compose service runs in every mode, with the mode's file `confi
 | Decision | Why |
 | :--- | :--- |
 | Its own node, not inside `flight_interface` | Control law and the link / safety node stay apart (C1.1, C1.5) |
+| Gains changeable live, mask and hover throttle not | Tuning in the cage without restarts; the mask and hover throttle must equal `flight_interface`'s (F15, F28) |
 | The measured velocity from a neutral topic | The controller never imports PX4 messages: the same code flies the simulation and the drone (F1) |
 | A velocity loop only, no position loop | Simplest; SITL showed it holds within REQ-NAV-001. A position loop comes only if a hold fails on drift (F7) |
 | Gains tuned in the simulation stay in `config/sim.yaml` | The real drone starts from the code defaults and is tuned on its own (F27) |

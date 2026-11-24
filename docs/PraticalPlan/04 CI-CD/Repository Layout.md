@@ -40,8 +40,9 @@ SEA-ME_Team1_ROSRangers/
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make real / real-dry;
 │   │   │                      #   make test (every suite) / unit / test-sitl / smoke;
 │   │   │                      #   make sim / sim-smoke / sim-hold / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
-│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, controller, echo, fake_flight_state),
-│   │   │                      #   real (... + flight_interface), sim (... + flight_interface_sim, px4; SIM ONLY), sim-smoke and sim-hold (the sim tests)
+│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
+│   │   │                      #   real (... + controller, flight_interface), sim (... + controller, flight_interface_sim, px4; SIM ONLY),
+│   │   │                      #   sim-smoke and sim-hold (the sim tests)
 │   │   ├── env.example/       # demo|real|sim.env.example: each mode's env file, values empty (copy to env/, ignored by Git,
 │   │   │                      #   and fill in the safety pilot's values); .env.example likewise for .env
 │   │   ├── docker/            # what goes into the images: base/Dockerfile (the base every ground image builds FROM:

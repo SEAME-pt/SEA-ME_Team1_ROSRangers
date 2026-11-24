@@ -69,7 +69,7 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 | `gesture` | `gesture_node`: webcam, "Gestures" window, `/gesture/raw` |
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
-| `controller` | `controller_node`: velocity target → attitude setpoint ([[07 Controller Node]]); inactive until it has a measured velocity |
+| `controller` | `controller_node`: velocity target → attitude setpoint ([[07 Controller Node]]), real and sim modes; inactive until it has a measured velocity |
 | `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
 | `echo` | the live table (the drone and the chain, §4.6), and the `ros2` CLI (§5) |
 | `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
@@ -79,7 +79,7 @@ Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.e
 
 | Mode | Services | `/flight/state` from |
 | :--- | :--- | :--- |
-| `demo` (`make`) | gesture, intent, mission, controller, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
+| `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
 | `sim` (`make sim`) | gesture, intent, mission, controller, echo, `flight_interface_sim`, `px4` | `flight_interface_sim` (backend `px4`) |
 | `real` (`make real`) | gesture, intent, mission, controller, echo, `flight_interface` | `flight_interface` |
 | `real-dry` (`make real-dry`) | the same as `real`, with `env/real.env` | `flight_interface`, loopback backend: no drone ([[05 Flight Interface Node]] §7.1) |
@@ -180,7 +180,7 @@ CONTROL   controller_node  /control/attitude_setpoint live
 - **BATTERY:** pack voltage and the average per cell. It can't see single cells: the per-cell check before a session stays ([[Battery Log]]). Same sources as ATTITUDE.
 - **MISSION:** `why` appears only in `IDLE`: why the gestures do nothing.
 - **VELOCITY:** the target in words; its last line says which axes the ground owns (the mask), so "the gesture does nothing" reads as "yaw only".
-- **CONTROL:** the controller's attitude setpoint: `active` and its `reason` (`no_velocity` on the real drone until #200), and while active the roll, pitch, yaw rate and throttle ([[07 Controller Node]] §6).
+- **CONTROL:** the controller's attitude setpoint: `active` and its `reason` (`no_velocity` on the real drone until #200), and while active the roll, pitch, yaw rate and throttle ([[07 Controller Node]] §6). The demo runs no controller: the row says so.
 
 **Alerts** go on a line under the title, each marked `!!`: red is a fault, yellow is "not OK yet". Colour only on a terminal. The radio and the safety pilot always win over what the table says ([[Safety Rules]]).
 
