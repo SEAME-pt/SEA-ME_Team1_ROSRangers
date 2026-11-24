@@ -1,7 +1,7 @@
-"""Demo mode: gesture -> intent -> mission -> controller, with the PRETEND
-/flight/state (fake_flight_state). Never with a real drone. The controller has
-no measured velocity here, so it publishes inactive setpoints (ADR-025 F12)
-and no flight_interface reads them.
+"""Demo mode: gesture -> intent -> mission, with the PRETEND /flight/state
+(fake_flight_state). Never with a real drone. No controller: with no measured
+velocity and no flight_interface here it could only publish inactive
+setpoints nobody reads (ADR-025 F12, changed 2026-11-24).
 
     ros2 launch ground_bringup demo.launch.py
     ros2 launch ground_bringup demo.launch.py camera:=false
@@ -49,13 +49,6 @@ def generate_launch_description():
             Node(
                 package="mission_node",
                 executable="mission_node",
-                parameters=[params],
-                output="screen",
-            ),
-            # The controller (#199): inactive here, no measured velocity (F6, F12)
-            Node(
-                package="controller_node",
-                executable="controller_node",
                 parameters=[params],
                 output="screen",
             ),

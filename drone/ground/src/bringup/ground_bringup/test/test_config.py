@@ -55,13 +55,7 @@ NODES = {
 # (its simulation image has px4_msgs, #199). A mode file's sections must be
 # among them, and the shared keys must agree across them (F15).
 MODE_NODES = {
-    "demo": {
-        "gesture_node",
-        "intent_node",
-        "mission_node",
-        "controller_node",
-        "fake_flight_state",
-    },
+    "demo": {"gesture_node", "intent_node", "mission_node", "fake_flight_state"},
     "real": {
         "gesture_node",
         "intent_node",

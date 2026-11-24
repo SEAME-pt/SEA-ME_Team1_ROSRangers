@@ -1310,6 +1310,19 @@ class ControlTests(MonitorTestCase):
         self.assertTrue(line.endswith("| control: active=True reason=ok"), line)
         self.assertNotIn("roll", line)
 
+    def test_demo_says_why_control_is_empty(self):
+        # ADR-025 F12: the demo runs no controller
+        lines = monitor.table(self.monitor.snapshot(), mode="demo")
+        heading = next(i for i, line in enumerate(lines) if line.startswith("CONTROL"))
+        self.assertEqual(lines[heading + 1], "    no data: demo has no controller")
+        for mode in ("real", "sim"):
+            with self.subTest(mode=mode):
+                lines = monitor.table(self.monitor.snapshot(), mode=mode)
+                heading = next(
+                    i for i, line in enumerate(lines) if line.startswith("CONTROL")
+                )
+                self.assertEqual(lines[heading + 1], "")
+
     def test_two_controllers_alert(self):
         self.node.publishers["/control/attitude_setpoint"] = [
             "controller_node",

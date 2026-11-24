@@ -473,6 +473,8 @@ NO_FC = {
     "real": "waiting: configure flight_interface; needs fresh FC data",
 }
 NO_FLIGHT_STATE = "waiting: configure flight_interface (make real-steps)"
+# The demo runs no controller (ADR-025 F12): its CONTROL row never fills.
+NO_CONTROLLER = "no data: demo has no controller"
 
 
 def waiting_reason(mode, name):
@@ -481,6 +483,8 @@ def waiting_reason(mode, name):
         return NO_FC.get(mode)
     if name == "flight" and mode in ("real", "real-dry"):
         return NO_FLIGHT_STATE  # flight_interface publishes from configure on
+    if name == "control" and mode == "demo":
+        return NO_CONTROLLER
     return None
 
 

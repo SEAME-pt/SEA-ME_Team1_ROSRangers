@@ -9,7 +9,7 @@
 # mode's services, parameters and ROS domain always go together. /flight/state
 # has exactly one publisher in each.
 #   demo  gesture, intent, mission, echo + fake_flight_state (PRETEND /flight/state)
-#   real  gesture, intent, mission, echo + flight_interface (the drone, ADR-025)
+#   real  gesture, intent, mission, controller, echo + flight_interface (the drone, ADR-025)
 #   sim   gesture, intent, mission, controller, echo + flight_interface_sim
 #         (backend px4) + px4 (PX4 SITL + Gazebo; SIMULATION ONLY)
 #   sim-smoke  the headless simulation test (px4, mission, controller,
@@ -190,13 +190,13 @@ services:
   # The cascade controller (#199, ADR-025 C1): /mission/velocity_target and
   # /estimate/velocity -> /control/attitude_setpoint. Inactive (neutral) while
   # it has no measured velocity or no measured hover throttle (F6, F16), as
-  # in demo and real today. In the simulation flight_interface_sim's px4
-  # backend publishes /estimate/velocity and sim.yaml sets the hover
-  # throttle, so it flies. The mode file's controller_node section gives the
-  # mask and the hover throttle (F15).
+  # in real today. In the simulation flight_interface_sim's px4 backend
+  # publishes /estimate/velocity and sim.yaml sets the hover throttle, so it
+  # flies. Not in the demo (F12, changed 2026-11-24). The mode file's
+  # controller_node section gives the mask and the hover throttle (F15).
   controller:
     <<: *node
-    profiles: [demo, real, sim, sim-smoke, sim-hold]
+    profiles: [real, sim, sim-smoke, sim-hold]
     build:
       context: .
       dockerfile: src/controller/Dockerfile

@@ -16,11 +16,6 @@ intent_node:
   ros__parameters:
     input_source: topic   # gesture_node's /gesture/raw, not UDP
 
-controller_node:
-  ros__parameters:
-    mask: 11          # the same as fake_flight_state's (F15)
-    # No hover_throttle: not measured (F16), the controller stays inactive.
-
 fake_flight_state:
   ros__parameters:
     mask: 11          # axes the ground owns: 8 yaw, 11 x y yaw, 15 all (throttle too)
