@@ -62,7 +62,7 @@ The board target `ODDITYRCF7AIO` defines UART4 as PA0 (TX) / PA1 (RX). There is 
 
 - UART1 was the only free UART ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24). **The ESP now has no spare FC UART**: if UART4 fails, the fallback has to be found again (UART6 is only on the digital-VTX connector).
 - Wiring is crossed like the ESP's (sensor TX → R1, sensor RX → T1, 5V, GND; [[Wiring and Pinout]]). Not soldered yet: the drone has not arrived.
-- Before soldering: continuity-check T1/R1 to the MCU side and check for shorts, as for T4/R4 (§3). After: set the port in Betaflight, save a new `diff all`, and check height and flow in the Sensors tab, props off ([[Safety Rules]] #1).
+- Before soldering: continuity-check T1/R1 to the MCU side and check for shorts, as for T4/R4 (§3). After: set the port in Betaflight, save a new `diff all`, check height and flow in the Sensors tab, and measure the sensor's current on the FC 5V rail it shares with the ESP, props off ([[Safety Rules]] #1).
 
 ## 3. Consequences
 

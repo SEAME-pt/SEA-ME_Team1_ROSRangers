@@ -32,7 +32,7 @@ tags:
 | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] | Custom firmware + portable C++ lib + Python twin | ✅ Accepted | OD-01, OD-19, FC-07, P7 |
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
-| [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions (kill and takeover switches, 2026-10-23) | FC-09, P2 (FC page) |
+| [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions (kill and takeover switches, 2026-10-23; **2026-11-24: takeover = SD held, released = radio only; throttle hand-over proposed, #236**) | FC-09, P2 (FC page) |
 | [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2; **UART1 → MTF-02P** (2026-11-24, the ESP loses its fallback port) | ✅ Accepted (updated 2026-11-24) | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |

@@ -14,7 +14,7 @@ tags:
 
 # Height Sensor Study
 
-> [!info] Status: proposed (2026-11-06)
+> [!success] Status: accepted (2026-11-24; proposed 2026-11-06)
 > Background for the [[ADR-016 Flow Sensor Path|ADR-016]] update of 2026-11-06. It compares four sensors for holding height (and position) on the 2.5" drone. Nothing here is decided or available in the lab yet.
 >
 > **2026-11-24: decided.** The facilitators supplied a MicoAir MTF-02P (SKU `MA_OF_MTF02P`, §3.4) and the ThoneFlow is dropped ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24). It is not soldered yet: the drone has not arrived.
@@ -153,9 +153,9 @@ What Betaflight 2026.6.2 does with it [SRC 8]:
 | Weight | Not stated | Not stated | 4.5 g | **1.5 g** |
 | Power | 75 mW | ~60 mW | 500 mW | 200 mW |
 
-## 5. How it would be used (if accepted)
+## 5. How it is used (accepted 2026-11-24)
 
-1. **Bench, props off ([[Safety Rules]] #1):** connect to a free FC UART (*2026-11-24: UART1 chosen, [[ADR-011 FC UART Allocation|ADR-011]] update*) (UART1 is free, but it is the ESP's only spare / fallback port in [[ADR-011 FC UART Allocation|ADR-011]]; using it for the sensor removes that fallback), set MSP, check height and flow in the Configurator Sensors tab. Dated entries in ADR-011 and ADR-016.
+1. **Bench, props off ([[Safety Rules]] #1):** connect to **UART1**, the only free FC UART (chosen 2026-11-24; it was the ESP's spare / fallback port, [[ADR-011 FC UART Allocation|ADR-011]] update), set MSP, check height and flow in the Configurator Sensors tab, and measure the sensor's current on the FC 5V rail, which it shares with the ESP. Dated entries in ADR-011 and ADR-016.
 2. **Flight area, pilot plus one more person ([[Safety Rules]] #4, #15, #18):** ALTHOLD with `altitude_source = RANGEFINDER_PREFER`; compare the blackbox with the barometer-only flights (GitHub #134).
 3. **Then Position Hold** with the flow: measure drift over a fixed time and tune.
 4. Then the throttle-only MSP Override stage can be proposed again ([[ADR-010 MSP Override|ADR-010]] update 2026-11-06).

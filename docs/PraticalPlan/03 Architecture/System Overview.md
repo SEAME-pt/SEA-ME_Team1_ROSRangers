@@ -39,7 +39,7 @@ flowchart LR
   end
   FI <-->|"UDP control/telemetry<br/>TCP session/events<br/>WPA2 SoftAP + HMAC"| ESP
   ESP <-->|"MSP · UART4 · 115200"| FC
-  FLOW -.->|"MSP · free FC UART<br/>see ADR-016"| FC
+  FLOW -.->|"MSP · UART1<br/>see ADR-016, ADR-011"| FC
   PILOT["Safety pilot<br/>RadioMaster Pocket"] -->|"ELRS 2.4 GHz<br/>ARM, modes, override switch"| ELRS
   ELRS -->|"CRSF · UART2"| FC
   FC -->|"Tramp · UART3"| VTX

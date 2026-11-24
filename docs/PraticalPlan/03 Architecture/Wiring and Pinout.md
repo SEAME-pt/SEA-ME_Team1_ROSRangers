@@ -61,10 +61,10 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 | FC **GND** | ESP **G** | common ground |
 | MTF-02P **TX** | FC **R1** | planned 2026-11-24, not soldered yet ([[ADR-011 FC UART Allocation\|ADR-011]] update) |
 | MTF-02P **RX** | FC **T1** | planned |
-| MTF-02P **5V** / **GND** | FC **5V** / **GND** | planned; datasheet 5 V |
+| MTF-02P **5V** / **GND** | FC **5V** / **GND** | planned; datasheet 5 V. Shares the FC 5V rail with the ESP: measure its current on the bench, props off (200 mW or 0.5 W, [[Open Questions]]) |
 | ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment. **Dropped 2026-11-24**, not wired (the MTF-02P goes on an FC UART instead) |
-| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA |
-| ThoneFlow **GND** | ESP **G** | |
+| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA. **Dropped 2026-11-24**, not wired |
+| ThoneFlow **GND** | ESP **G** | **Dropped 2026-11-24**, not wired |
 
 ```text
    FC (ODDITYRCF7AIO)                ESP8266          ThoneFlow-3901U (experiment)
