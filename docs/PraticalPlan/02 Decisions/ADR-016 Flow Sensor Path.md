@@ -3,21 +3,25 @@ title: ADR-016 — ThoneFlow-3901U Integration Path
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-06
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - D16
   - D16 Flow Sensor Path
+  - ADR-016 MTF-02P Flow and Height Sensor
 tags:
   - adr
   - optical-flow
   - thoneflow-3901u
+  - mtf-02p
 ---
 
 # ADR-016 — ThoneFlow-3901U Integration Path
 
 > [!success] Status: ACCEPTED (2026-10-12, revised 2026-10-14)
 > Resolves **TF-01**, **TF-02**, **TF-11** and **TF-12** in [[ThoneFlow]]. 2026-10-14: option C dropped and the height source chosen (§2.3, §2.4). It replaces the earlier "SoftwareSerial on the ESP" decision, following the risk analysis in [[ThoneFlow]] §6.
+>
+> **2026-11-24: the ThoneFlow is dropped and the MicoAir MTF-02P (flow + ToF height on an FC UART) replaces it** (update below). The title keeps the old name so links still work.
 
 ## 1. Context
 
@@ -55,16 +59,29 @@ Module 1 needs "holds position" in SITL and in the cage. The numbers below are p
 - **Not available in the lab.** Until the team decides and the hardware is there, §2.4 stands. A cheap check meanwhile: cover the baro with foam and compare the blackbox height against the uncovered flights.
 - If accepted, it needs dated entries in [[ADR-011 FC UART Allocation|ADR-011]] (UART) and in §2.4 here. The free UART is UART1, which is the ESP's only spare / fallback port in ADR-011: using it for the sensor removes that fallback.
 
+### Update 2026-11-24 (accepted): the MTF-02P replaces the ThoneFlow
+
+The facilitators approved and supplied a **MicoAir MTF-02P** (SKU `MA_OF_MTF02P`): optical flow and a ToF rangefinder in one module, the best match in [[Height Sensor Study]] §3.4. This accepts the 2026-11-06 proposal above and makes the 2026-10-20 SoftwareSerial decide-by question moot.
+
+- **The ThoneFlow-3901U is dropped.** Option B (SoftwareSerial on the ESP, §2.2), the §2.3 fallbacks and the open TF-xx items in [[ThoneFlow]] are no longer pursued. That note stays as history.
+- **Path:** the MTF-02P goes on a free FC UART with the MSP protocol, and Betaflight 2026.6.2 reads it by name (`rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT`). No ESP reader and no extra MCU.
+- **Height (§2.4):** the rangefinder replaces the barometer as the height source once the sensor is fitted and checked on the bench, props off ([[Safety Rules]] #1). Until then §2.4 stands.
+- **Not fitted yet (2026-11-24):** the sensor is not soldered because the drone has not arrived. After that, the steps in [[Height Sensor Study]] §5 apply: bench check in the Configurator Sensors tab, then ALTHOLD with `altitude_source = RANGEFINDER_PREFER`, then Position Hold.
+- **Still open** ([[Open Questions]]):
+  - Which FC UART. UART1 is the only free one and is the ESP's spare / fallback in [[ADR-011 FC UART Allocation|ADR-011]]; using it needs a dated ADR-011 entry when it is wired.
+  - Whether position hold in the cage ([[Requirements|REQ-NAV-002]]) runs in Betaflight (`poshold_position_source = OPTICALFLOW_ONLY`) or in the ground controller from the flow data.
+- **Code still written for the ThoneFlow:** the Python parser `sd_protocol/thoneflow.py` and the `flow_status` field of the STATE message (ThoneFlow §8.1 values). Removing or reusing them is a follow-up, not part of this entry.
+
 ## 3. Consequences
 
 - The parser stays a portable library ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]), whichever reader wins.
 - The flow data reaches the ground in the STATE message ([[Protocol Spec v0]]).
 - Velocity from flow scales with the baro height error. For **position hold** (drive flow to zero) that only changes the effective gain; for commanded speeds and distances the baro accuracy matters more.
-- A ToF rangefinder stays a future option if the baro proves too noisy (needs hardware the lab doesn't have).
+- A ToF rangefinder stays a future option if the baro proves too noisy (needs hardware the lab doesn't have). *2026-11-24: now chosen, the MTF-02P (update above).*
 
 ## 4. Related pages
 
-- [[ThoneFlow]] · [[Wiring and Pinout]] · [[Decision Register]]
+- [[Height Sensor Study]] · [[ThoneFlow]] · [[Wiring and Pinout]] · [[Decision Register]]
 
 ## 5. Glossary
 
@@ -74,5 +91,6 @@ Module 1 needs "holds position" in SITL and in the cage. The numbers below are p
 | **ESP8266** | The Wi-Fi microcontroller of the drone's ESP module (an ESP-12F). It bridges the ground PC to the FC over UART4. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
-| **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
+| **ToF** | Time-of-Flight: a rangefinder that measures height with light. The MTF-02P has one (update 2026-11-24). |
+| **MTF-02P** | MicoAir optical-flow + ToF rangefinder module (UART, MSP), supplied by the facilitators on 2026-11-24. Read by Betaflight on an FC UART. |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |

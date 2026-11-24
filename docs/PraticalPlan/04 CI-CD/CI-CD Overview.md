@@ -141,7 +141,7 @@ Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (accepted; issue #73, PR
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **colcon** | The build tool for ROS 2 workspaces; `colcon test` runs each package's tests. |
 | **Coverage gate** | A CI step that fails when tests run less than a set share of the code (80 % C++/Python, 90 % ROS 2 nodes). |
 | **Dependabot** | GitHub bot that opens PRs to update pinned versions (actions, images, packages). |

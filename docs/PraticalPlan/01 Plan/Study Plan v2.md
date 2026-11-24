@@ -19,7 +19,7 @@ tags: [plan]
 > - **Gestures are part of the plan.** The webcam prototype already exists, now the ROS 2 node `gesture_node` ([[02 Gesture Node|Gesture Node]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
 > - **Betaflight upgrade to 2026.6.2** in week 2 (may slip to week 3), before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]], update 2026-10-23).
 > - ESP on **UART4**. ELRS stays on **UART2** ([[ADR-011 FC UART Allocation|ADR-011]]). **Custom ESP firmware** replaces AT 1.7.4.0 ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]).
-> - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]).
+> - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]). *Changed 2026-11-24: the ThoneFlow is dropped; the MicoAir MTF-02P (flow + ToF height, read by Betaflight) replaces it ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
 > - Git and CI follow [[Dev_Strategy]] (`main` + `dev`).
 > - Cut order if late: stretch goals and gesture polish first. **Never cut safety, failsafe or CI.**
 
@@ -32,7 +32,7 @@ tags: [plan]
 | Rhythm | 5 days/week, about 8 h/day per person |
 | Daily split | 1 h review + goal, 2 h study, 4 h practice, 1 h documentation |
 | Records | English (code, notes, this vault) |
-| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, ThoneFlow-3901U (not installed), MS210x USB video grabber |
+| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, MicoAir MTF-02P flow + height sensor (supplied 2026-11-24, not soldered yet; replaces the ThoneFlow-3901U), MS210x USB video grabber |
 | Flight | Flight area ("cage") only, no net or roof, safety pilot on the radio ([[Safety Rules]]) |
 
 ### Sprints
@@ -134,13 +134,13 @@ tags: [plan]
 ## 7. Week 5 · 16–20 Nov · Control in simulation and first override flight
 
 - **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.*
-- **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights.
-- **A + B (cage):** first override **flight**, only if FC-15 passed and the upgrade to 2026.6.2 is done, with the failsafe re-tested and a new `diff all` committed ([[ADR-014 Betaflight Version|ADR-014]], [[Safety Rules]] #14): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
+- **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights. *Changed 2026-11-24: waits for the MTF-02P to be fitted (the drone has not arrived); with it, Betaflight gives the height and flow ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
+- **A + B (cage):** first override **flight**, only after GitHub #123 and #104 pass, with the failsafe re-tested and a new `diff all` committed ([[Safety Rules]] #14, [[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30; the 2026.6.2 upgrade is done since 2026-10-28): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.
 
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
-- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**.
+- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead.*
 - **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
@@ -208,7 +208,7 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
 | **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |

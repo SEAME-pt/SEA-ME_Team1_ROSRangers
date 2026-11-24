@@ -3,7 +3,7 @@ title: ADR-022 — CI Gates and Lint Rules
 type: adr
 status: accepted
 date: 2026-10-21
-updated: 2026-11-23
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - D22
@@ -44,6 +44,10 @@ tags:
    - `gesture_node`, `intent_node` and `sd_protocol` sort as first-party imports.
    - Shell scripts are checked by `shellcheck` (`--severity=warning`).
    - Both run in pre-commit, so in the `lint` job.
+
+### Update 2026-11-24: the 90 % gate covers every package in `ROS_PKGS`
+
+The gate in §3.2 grew with the packages. `ci.yaml` (`ground-ros2`, `ROS_PKGS`) now gates `gesture_node`, `intent_node`, `mission_node`, `flight_interface` and `ground_bringup` at 90 %. A new ROS package joins the gate by being added to `ROS_PKGS` with its tests. Recorded from the code, no new decision.
 
 ## 4. Consequences
 

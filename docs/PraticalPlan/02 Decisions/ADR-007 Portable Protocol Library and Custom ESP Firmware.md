@@ -57,7 +57,7 @@ Since 2026-10-20 the docs and the code are in one repository ([[Repository Layou
 | **Failsafe** | An automatic safe response when control, communication, or a sensor fails. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **AT** | The Hayes-style AT command set of the stock ESP8266 firmware (1.7.4.0), replaced by custom firmware (ADR-007). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |

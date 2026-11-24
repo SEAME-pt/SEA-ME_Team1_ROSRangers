@@ -79,7 +79,7 @@ constexpr std::uint16_t kRcMin = 1000;
 constexpr std::uint16_t kRcMid = 1500;
 constexpr std::uint16_t kRcMax = 2000;
 ```
-Source: [`drone/lib/protocol/include/sd/setpoint.hpp` L18–22](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/lib/protocol/include/sd/setpoint.hpp#L18-L22) @ `b31960e`
+Source: [`drone/lib/protocol/include/sd/setpoint.hpp` L18–22](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/setpoint.hpp#L18-L22) @ `ce9e919`
 
 ## 4. STATE layout (28 bytes)
 
@@ -101,6 +101,27 @@ Fields and units are defined in [[Protocol Spec v0]] §3 (STATE). This table onl
 | 23 | 1 | `flow_status` | u8 | [[ThoneFlow]] §8.1 codes, numbered 0–4 in [[Protocol Spec v0]] §3 (to be confirmed there) |
 | 24 | 2 | `rx_rejected` | u16 | count |
 | 26 | 2 | `msp_errors` | u16 | count |
+
+The offsets are the `put_*` calls of `encode_state`:
+
+```cpp
+// excerpt: encode_state() offsets
+  out[0] = m.esp_state;
+  out[1] = m.override_active;
+  put_u32(out + 2, m.last_ctrl_seq);
+  put_u32(out + 6, m.last_ctrl_t_send_us);
+  put_i16(out + 10, m.roll);
+  put_i16(out + 12, m.pitch);
+  put_u16(out + 14, m.heading);
+  put_u16(out + 16, m.vbat);
+  put_i16(out + 18, m.flow_x);
+  put_i16(out + 20, m.flow_y);
+  out[22] = m.flow_quality;
+  out[23] = m.flow_status;
+  put_u16(out + 24, m.rx_rejected);
+  put_u16(out + 26, m.msp_errors);
+```
+Source: [`drone/lib/protocol/src/messages.cpp` L138–151](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/src/messages.cpp#L138-L151) @ `ce9e919`
 
 ## 5. Code values
 

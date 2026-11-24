@@ -32,7 +32,7 @@ tags:
 | 11 | Reflash Betaflight and the ESP? | **Yes** (2026-10-14) → 2026.6.2 upgrade ([[ADR-014 Betaflight Version\|ADR-014]]) and custom ESP firmware ([[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]]) can go ahead |
 | 12 | Lab self-hosted runners? | **None** (2026-10-14). We build our own → [[ADR-020 HIL Runner\|ADR-020]], [[HIL Runner]] |
 | 13 | Mandated ROS 2 distro? | **No** (2026-10-14) → Jazzy stays ([[ADR-018 Ground OS and ROS 2\|ADR-018]]) |
-| 14 | ToF rangefinder or extra MCU? | **Neither** (team, 2026-10-14). No rangefinder in the lab → height from the DPS310 baro. No MCU (no companion computer on the drone) → [[ADR-016 Flow Sensor Path\|ADR-016]] |
+| 14 | ToF rangefinder or extra MCU? | **Neither** (team, 2026-10-14). No rangefinder in the lab → height from the DPS310 baro. No MCU (no companion computer on the drone) → [[ADR-016 Flow Sensor Path\|ADR-016]]. **2026-11-24:** the facilitators supplied a MicoAir MTF-02P (flow + ToF height), so height comes from its rangefinder once fitted ([[ADR-016 Flow Sensor Path\|ADR-016]] update) |
 
 ### 1.1 Answered (2026-10-16, GitHub #16)
 
@@ -50,7 +50,7 @@ tags:
 - [x] Spare ESP for the HIL bench? → Yes: the team has one spare ESP and may use it for HIL (2026-10-22, [[ADR-020 HIL Runner|ADR-020]]). It is on the HIL Pi (GitHub #48).
 - [x] Spare FC for the HIL bench? → No (2026-10-20, GitHub #34). FC-side HIL uses Betaflight SITL or the flight unit on the bench (GitHub #61).
 - [x] Does the class mandate a ROS 2 distro? → No (#13 above)
-- [x] Can we add a ToF rangefinder (height) or a small MCU for the flow sensor? → Neither: baro for height, no MCU (#14 above)
+- [x] Can we add a ToF rangefinder (height) or a small MCU for the flow sensor? → Neither: baro for height, no MCU (#14 above). 2026-11-24: MTF-02P supplied, see #14
 
 ### Physical checks
 - [x] **Baro:** DPS310 detected in `status`, and the Sensors tab altitude follows the board when raised/lowered (2026-10-14, GitHub #15).
@@ -63,7 +63,7 @@ tags:
 
 ### Safety
 - [ ] **Network isolation for the transparent bridge:** is an isolated network needed, or is the shared SEAME Wi-Fi acceptable? Under evaluation (team, 2026-10-20). Not a rule yet ([[Safety Rules]] §2).
-- [ ] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Team to decide (2026-10-20).
+- [x] **Bridge battery vs HIL "no LiPo":** [[Safety Rules]] #13 allows a battery for bridge tests, #10 forbids one on the HIL bench. Conflict when the flight unit is the HIL target (GitHub #61). Resolved 2026-10-26: the HIL bench is the Pi with the spare ESP and the flight unit is never connected to it ([[Safety Rules]] #17, [[ADR-020 HIL Runner|ADR-020]]).
 - [x] ~~Name the second trained safety pilot.~~ Resolved 2026-10-23: one trained safety pilot (BrunoBMFT) is enough; the second person at a session rotates ([[Team Tracks]] §2).
 
 ### Protocol (after the 2026-11-03 review)
@@ -87,7 +87,12 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 
 ### Tests
 - [x] Does a 2026.6.2 cloud build with ALTHOLD fit the 512 KB F722? → Yes: 408 935 bytes ([[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30)
-- [ ] ThoneFlow frame rate (66 vs 25 Hz), byte order and checksum (week 3, [[ThoneFlow]] §9.2).
+- [x] ~~ThoneFlow frame rate (66 vs 25 Hz), byte order and checksum (week 3, [[ThoneFlow]] §9.2).~~ Dropped 2026-11-24: the ThoneFlow is no longer used ([[ADR-016 Flow Sensor Path|ADR-016]]).
+
+### MTF-02P (2026-11-24)
+- [ ] **Which FC UART** for the MTF-02P? UART1 is the only free one and is the ESP's spare / fallback ([[ADR-011 FC UART Allocation|ADR-011]]). Decide before soldering; it needs a dated ADR-011 entry.
+- [ ] **Who holds position in the cage:** Betaflight Position Hold with the flow (`poshold_position_source = OPTICALFLOW_ONLY`), or the ground controller from the flow data ([[Requirements|REQ-NAV-002]])?
+- [ ] Check on the bench, props off: weight (1.5 or 1.8 g) and current at 5 V (200 mW or 0.5 W) ([[Height Sensor Study]] §3.4).
 
 ## 3. Glossary
 
@@ -101,7 +106,7 @@ Not discussed at the Protocol Spec v0 review for lack of time (#97). Decided in 
 | **UART** | Universal Asynchronous Receiver/Transmitter: an asynchronous serial interface. |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
 | **MCU** | Microcontroller unit: the processor chip (STM32F722 on the FC, ESP8266 on the ESP module). |
-| **ToF** | Time-of-Flight: a rangefinder that measures height with light. Not available in the lab (ADR-016). |
+| **ToF** | Time-of-Flight: a rangefinder that measures height with light. The MTF-02P has one (ADR-016, 2026-11-24). |
 | **OD-xx / FC-xx / TF-xx** | Open-decision IDs in PC_to_ESP, ESP_to_FC and ThoneFlow. The Decision Register shows which ADR resolves each one. |
 | **RPM** | Motor revolutions per minute, reported by each ESC over bidirectional DShot. |
 | **Betaflight** | The open-source FC firmware on the drone: 2026.6.2 installed since 2026-10-28, 4.5.1 before (ADR-014). |

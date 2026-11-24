@@ -53,7 +53,7 @@ tags:
 | Hardware identification | [[2.5Drone]] |
 | Ground ↔ ESP link | [[PC_to_ESP]] · [[ESP8266_AT_Commands_and_UDP]] (stock AT firmware, replaced by [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]]) |
 | ESP ↔ FC link | [[ESP_to_FC]] |
-| Optical flow | [[ThoneFlow]] |
+| Optical flow and height | [[Height Sensor Study]] (MTF-02P, chosen 2026-11-24) · [[ThoneFlow]] (dropped, history) |
 | Gesture recogniser | [[02 Gesture Node\|Gesture Node]] |
 
 ## 3. The five things to remember

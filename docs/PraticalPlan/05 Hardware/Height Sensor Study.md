@@ -1,8 +1,9 @@
 ---
 title: Height Sensor Study
 type: hardware
-status: proposed
+status: accepted
 date: 2026-11-06
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - hardware
@@ -15,6 +16,8 @@ tags:
 
 > [!info] Status: proposed (2026-11-06)
 > Background for the [[ADR-016 Flow Sensor Path|ADR-016]] update of 2026-11-06. It compares four sensors for holding height (and position) on the 2.5" drone. Nothing here is decided or available in the lab yet.
+>
+> **2026-11-24: decided.** The facilitators supplied a MicoAir MTF-02P (SKU `MA_OF_MTF02P`, §3.4) and the ThoneFlow is dropped ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24). It is not soldered yet: the drone has not arrived.
 
 ## 1. The problem
 
@@ -118,7 +121,7 @@ The same two-in-one design, smaller and lighter [DS 4].
 | Optical flow | 42° FOV, up to 7 m/s at 1 m; needs > 60 lux, works from 8 cm | [DS 4] |
 | Update rate | 50 Hz | [DS 4] |
 | Interface | UART 115200; MSP, MAVLink or Micolink (jumper) | [DS 4] |
-| Power, size, weight | 5 V 200 mW; 21.6 × 16 × 6.5 mm; **1.5 g** | [DS 4] |
+| Power, size, weight | 5 V 200 mW; 21.6 × 16 × 6.5 mm; **1.5 g** (some shops list 0.5 W and 1.8 g; weigh it and measure the current on the bench) | [DS 4] |
 | Betaflight 2026.6.2 | **Supported:** `rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT` | [SRC 8] |
 
 What Betaflight 2026.6.2 does with it [SRC 8]:

@@ -57,7 +57,7 @@ NEUTRAL_MAX_GAP = 0.1
 # A pending request that never became due is dropped: the operator asks again.
 REQUEST_TIMEOUT = 3.0
 ```
-Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py` L53–75](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/b31960e9fbf2e0fd8cead18b74f0ae7885b9ecdf/drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py#L53-L75) @ `b31960e`
+Source: [`drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py` L53–75](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/ground/src/flight_interface/flight_interface/flight_interface/guard.py#L53-L75) @ `ce9e919`
 
 `LINK_TIMEOUT` (0.5 s) and K5's 3 s are two different timers: the first zeroes the setpoints and sets `link_ok` false; the second (`RECONNECT_AFTER` in `esp_backend.py`) decides the session is gone and opens a new one.
 

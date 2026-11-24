@@ -31,14 +31,15 @@ SEA-ME_Team1_ROSRangers/
 │   │       └── backup/        # factory AT firmware backup notes (flash images are kept out of the repo)
 │   ├── lib/
 │   │   └── protocol/          # portable C++17 library (ADR-007): framing, HMAC, seq window, receive rules,
-│   │       ├── include/sd/    #   message codecs, MSP v1 codec + FC link scheduler (done); failsafe timers, ThoneFlow parser (planned)
+│   │       ├── include/sd/    #   message codecs, MSP v1 codec + FC link scheduler, link state + failsafe (link.hpp), OTA lock (done);
+│   │       │                  #   ThoneFlow parser dropped 2026-11-24 (ADR-016: the MTF-02P is read by Betaflight)
 │   │       ├── src/
 │   │       ├── tests/         # GoogleTest unit tests (run by the protocol-cpp CI job)
 │   │       ├── library.json   # lets PlatformIO use it
 │   │       └── CMakeLists.txt
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make real / real-dry;
-│   │   │                      #   make test (every suite) / unit / test-sitl / smoke;
+│   │   │                      #   make test (every suite) / unit / pkg-test / e2e-test / test-sitl / smoke; make psk-file; make real-down;
 │   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
 │   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
 │   │   │                      #   real (... + flight_interface), sim (... + px4; SIM ONLY), sim-smoke (the sim test)
@@ -55,8 +56,8 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
 │   │       ├── intent/           # intent_node: /gesture/raw -> safety filter -> /gesture/intent
 │   │       ├── mission/          # mission_node: /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
-│   │       ├── flight_interface/ # flight_interface: the lifecycle node ground <-> drone (ADR-025), fc_telemetry,
-│   │       │                     #   msp.py (MSP client, shared with the bench tools)
+│   │       ├── flight_interface/ # flight_interface: link_node (the lifecycle node ground <-> drone, ADR-025), guard,
+│   │       │                     #   backends + esp_backend, telemetry, fc_telemetry, msp.py (MSP client, shared with the bench tools)
 │   │       ├── echo/             # monitor.py: the live table of docker compose up (not a ROS package)
 │   │       ├── bringup/          # ground_bringup: the modes, no code. launch/demo|real|sim.launch.py (the mode
 │   │       │                     #   without Docker), config/demo|real|sim.yaml (its parameters; the containers
@@ -86,7 +87,7 @@ SEA-ME_Team1_ROSRangers/
 │   ├── labels.yml             # label set, synced with scripts/sync-labels.sh
 │   └── pull_request_template.md
 ├── .claude/
-│   └── agents/                # Claude Code subagents (docs-reviewer)
+│   └── agents/                # Claude Code subagents (docs-reviewer, docs-code-snippets)
 ├── .pre-commit-config.yaml    # lint hooks, run by the CI lint job
 ├── ruff.toml                  # repo-wide ruff rules (E, W, F, B, I)
 └── README.md
@@ -121,7 +122,7 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | **HIL** | Hardware-in-the-Loop: testing that connects real or emulated hardware to a simulator. |
 | **MediaPipe** | A framework used here for detecting and interpreting hand landmarks and gestures. |
 | **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

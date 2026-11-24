@@ -49,7 +49,7 @@ constexpr std::size_t kTagSize = 8;
 constexpr std::size_t kMaxPayload = 256;
 constexpr std::size_t kMaxFrame = kHeaderSize + kMaxPayload + kTagSize;
 ```
-Source: [`drone/lib/protocol/include/sd/frame.hpp` L11–17](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L11-L17) @ `52de267`
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L11–17](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/frame.hpp#L11-L17) @ `ce9e919`
 
 Session key ([[ADR-002 Message Integrity|ADR-002]]): `session key = HMAC-SHA256(PSK, "sess" || ground_nonce || esp_nonce)`. `HELLO` and `HELLO_ACK` are tagged with the PSK (the session key needs `esp_nonce`, which is inside `HELLO_ACK`). Before a session, the ESP accepts only `HELLO` and the ground only `HELLO_ACK`: any other type checked with the PSK is dropped (`reject:wrong_direction`), so a reflected `HELLO` or `HELLO_ACK` does nothing. A `HELLO` must have `session_id` 0; a `HELLO_ACK` must carry the same non-zero `session_id` in its header and payload (`reject:wrong_session` otherwise). Both use seq 1 (`reject:bad_seq` otherwise). Payload sizes are checked as in §3. Checked in this order: tag (with the PSK), type, payload size, `session_id`, seq. `HELLO` and `HELLO_ACK` are TCP types (§2): only frames from the TCP connection go to this check.
 
@@ -112,7 +112,7 @@ enum class MsgType : std::uint8_t {
   kFcHealth = 0x81, // spec v1.4 (#179): ESP -> ground, 5 Hz
 };
 ```
-Source: [`drone/lib/protocol/include/sd/frame.hpp` L20–35](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/frame.hpp#L20-L35) @ `52de267`
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L20–35](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/frame.hpp#L20-L35) @ `ce9e919`
 
 `flow_status` uses the codes from [[ThoneFlow]] §8.1 (`OK`, `LOW_QUALITY`, `INVALID_FRAME`, `STALE`, `NO_DATA`). "No data" is never sent as zero motion (VAL-01). **2026-11-09 (#102 PR 2, to confirm with the ThoneFlow work):** ThoneFlow §8.1 names the codes but gives no numbers; the gateway numbers them in that order, **0** `OK`, **1** `LOW_QUALITY`, **2** `INVALID_FRAME`, **3** `STALE`, **4** `NO_DATA`, and sends 4 while no flow sensor is fitted (never 0, which would read as valid zero motion).
 
@@ -199,6 +199,22 @@ Order of the checks: rule 1, rule 2, message type, transport (§2), direction (�
 4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs as `1500 + v/2` (integer division, rounding toward 1500), and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. The `mode` check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
 5. Malformed TCP input (REQ-COM-019): a bad tag is dropped and counted, and the connection stays open. A bad magic, version or length closes the TCP connection, because the framing can no longer be trusted. On TCP a frame shorter than its `payload_len` says is not yet complete: the receiver waits for more bytes, it is not "truncated". An unknown type or a wrong payload size (§3) is dropped and counted, and the connection stays open: the framing is intact. None of these triggers the failsafe on its own: only `T_loss` does (§7.2).
 
+The reject reasons of rule 1 are the `RxError` values the library returns; every one is dropped and counted:
+
+```cpp
+// excerpt: RxError (rule 1)
+// Why a frame was rejected. Every reject is dropped and counted (REQ-COM-004).
+enum class RxError : std::uint8_t {
+  kOk = 0,
+  kTruncated,  // shorter than header + tag, or than payload_len says
+  kBadMagic,   // not "SD"
+  kBadVersion, // version byte is not kWireVersion
+  kBadLength,  // payload_len > kMaxPayload, or bytes after the frame
+  kBadTag,     // HMAC tag does not match
+};
+```
+Source: [`drone/lib/protocol/include/sd/frame.hpp` L46–54](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/frame.hpp#L46-L54) @ `ce9e919`
+
 ## 5. Command → RC channel mapping (resolves FC-08 in [[ESP_to_FC]])
 
 `MSP_SET_RAW_RC` always carries **8 channels in AETR order**: `[roll, pitch, throttle, yaw, aux1..aux4]`.
@@ -241,7 +257,7 @@ For example, group 3 `wrong_magic` is the reference `SETPOINT` with `SE` instead
   "expect": "reject:bad_magic"
 }
 ```
-Source: [`drone/tests/vectors/3_header.json` L2–8](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/tests/vectors/3_header.json#L2-L8) @ `52de267`
+Source: [`drone/tests/vectors/3_header.json` L2–8](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/tests/vectors/3_header.json#L2-L8) @ `ce9e919`
 
 - A vector is one fixed example: `name`, `key`, `fields`, `bytes` (hex) and `expect` (`accept` or `reject:<reason>`). Groups 5, 6 and 8 list several steps; group 6 also lists the expected channels; group 9 says which side (`handshake`) checks the frame.
 - The test key is 32 bytes `00 01 … 1F`. It is committed and used only for tests, never the real PSK.

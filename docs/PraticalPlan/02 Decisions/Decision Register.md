@@ -38,13 +38,13 @@ tags:
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro (2026-11-06: ToF height sensor proposed) | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | **MicoAir MTF-02P** (flow + ToF height) on an FC UART, read by Betaflight; the ThoneFlow is dropped. Height from the DPS310 baro until the sensor is fitted | ✅ Accepted (revised 2026-10-14; **2026-11-24: MTF-02P replaces the ThoneFlow**, not fitted yet) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner. HIL target = spare ESP, FC in SITL; Wi-Fi tests by time-slicing, no dongle (2026-10-26) | ✅ Accepted (updated 2026-10-26, #61, #48) | n/a |
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
-| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged; golden-vectors hook 2026-11-23, PR #233) | n/a |
+| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged; golden-vectors hook 2026-11-23, PR #233; 2026-11-24: the 90 % gate covers every package in `ROS_PKGS`) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
 | [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16) | n/a |
@@ -57,7 +57,7 @@ tags:
   - OD-14: TCP loss invalidates control → **UDP decides liveness**.
   - OD-17: ground-side access point → **ESP SoftAP**.
   - P8: telemetry fallback → **split by meaning**.
-- ADR-016 was **revised** after reading [[ThoneFlow]]. SoftwareSerial is now an experiment, not the plan.
+- ADR-016 was **revised** after reading [[ThoneFlow]]. SoftwareSerial is now an experiment, not the plan. *2026-11-24: the ThoneFlow is dropped for the MTF-02P ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
 - ADR-017 now follows the team's own [[Dev_Strategy]] instead of GitHub Flow.
 
 ## 3. What changed on 2026-10-21

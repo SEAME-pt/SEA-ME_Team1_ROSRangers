@@ -52,7 +52,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 2. GitHub → the repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
 3. udev rules for the two USB-serial devices.
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK. As built, the Pi has no Ethernet, so it time-slices its Wi-Fi instead (§3.1).
-5. Store the PSK as the repo secret `SD_PSK_HIL`: 64 hex characters (32 bytes). `hil.yaml` passes it as `SEAME_PSK`, which the gateway build and the session tests read; the bridge ignores it (§3.1).
+5. Store the PSK as the repo secret `SD_PSK_HIL`: 64 hex characters (32 bytes). `hil.yaml` passes it as `SEAME_PSK`, which the gateway build and the session tests read; the bridge ignores it (§3.1). `hil.yaml` also reads `SEAME_AP_SSID_HIL`, `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (passed as `SEAME_AP_SSID`, `SEAME_AP_PASS`, `SEAME_OTA_PASS`) and pins the SoftAP channel `SEAME_AP_CHANNEL: "6"` (#207). A manual run (`workflow_dispatch`) picks the firmware env: `esp` or `esp_loop_timing` (REQ-SW-005 profile, #146).
 
 ### 3.1 As built (2026-10-22, GitHub #48)
 

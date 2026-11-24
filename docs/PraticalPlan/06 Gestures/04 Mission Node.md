@@ -157,6 +157,28 @@ Body frame (REP-103): x forward, y **left**, z up, yaw positive = left.
 
 Left/right is the **operator's** (§12). Zero means "hold position", not "let go of the sticks".
 
+The table is `INTENT_DIRECTION` in `mission_logic.py`, in units of the limit (0.3 m/s, 0.2 m/s, 20 °/s):
+
+```python
+# excerpt: INTENT_DIRECTION
+# Direction of each intent per axis (vx, vy, vz, wz), in units of the limit.
+# Body frame FLU (REP-103): x forward, y LEFT, z up, yaw + = counter-clockwise.
+INTENT_DIRECTION = {
+    ENGAGE: (0, 0, 0, 0),
+    LOCK_TOGGLE: (0, 0, 0, 0),
+    MOVE_FORWARD: (+1, 0, 0, 0),
+    MOVE_BACKWARD: (-1, 0, 0, 0),
+    MOVE_LEFT: (0, +1, 0, 0),
+    MOVE_RIGHT: (0, -1, 0, 0),
+    CLIMB_UP: (0, 0, +1, 0),
+    DESCEND: (0, 0, -1, 0),
+    YAW_LEFT: (0, 0, 0, +1),
+    YAW_RIGHT: (0, 0, 0, -1),
+    NEUTRAL: (0, 0, 0, 0),
+}
+```
+Source: [`drone/ground/src/mission/mission_node/mission_node/mission_logic.py` L50–64](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/ground/src/mission/mission_node/mission_node/mission_logic.py#L50-L64) @ `ce9e919`
+
 ### 5.3 Axis masking
 
 The ground only commands the axes in the override mask ([[ADR-010 MSP Override|ADR-010]] condition 4); the rest are zeroed and reported as `axis_not_owned:<axis>`:
