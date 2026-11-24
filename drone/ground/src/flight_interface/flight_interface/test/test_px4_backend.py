@@ -106,13 +106,17 @@ class Clock:
         return self.now
 
 
-@pytest.fixture
-def rig():
+def make_rig(mask=15):
     node = FakeNode()
     clock = Clock()
     msgs = fake_msgs()
-    backend = Px4Backend(node, 15, HOVER, msgs=msgs, clock=clock)
+    backend = Px4Backend(node, mask, HOVER, msgs=msgs, clock=clock)
     return types.SimpleNamespace(node=node, clock=clock, msgs=msgs, backend=backend)
+
+
+@pytest.fixture
+def rig():
+    return make_rig()
 
 
 def feed_px4(
@@ -225,6 +229,33 @@ def test_no_measured_velocity_when_px4_calls_it_invalid(rig):
     feed_px4(rig, v=(math.nan, 0.0, 0.0))
     feed_px4(rig, z_deriv=math.nan)
     assert sent(rig, VELOCITY_TOPIC) == []
+
+
+# ---------- the simulated pilot (masks 8, 11) ----------
+def test_mask_11_pilot_holds_the_height():
+    # Climbing at 0.2 m/s with the ground not owning throttle: less thrust
+    rig11 = make_rig(mask=11)
+    feed_px4(rig11, v=(0.0, 0.0, -0.2))  # NED: down -0.2 = climbing
+    level = Setpoint(0.0, 0.0, 0.0, HOVER, True)
+    assert rig11.backend.send_setpoint(level, 0.0) is True
+    (sp,) = sent(rig11, ATTITUDE_SETPOINT_TOPIC)
+    assert -sp.thrust_body[2] < HOVER
+
+
+def test_mask_11_without_a_measured_velocity_is_the_hold():
+    rig11 = make_rig(mask=11)
+    feed_px4(rig11, valid=False)  # heading and link, no usable velocity
+    assert rig11.backend.send_setpoint(Setpoint(0.0, 0.0, 0.0, HOVER, True), 0.0)
+    assert sent(rig11, ATTITUDE_SETPOINT_TOPIC) == []
+    (hold,) = sent(rig11, TRAJECTORY_SETPOINT_TOPIC)
+    assert hold.velocity == [0.0, 0.0, 0.0]
+
+
+def test_mask_15_thrust_is_the_grounds(rig):
+    feed_px4(rig, v=(0.0, 0.0, -0.2))
+    rig.backend.send_setpoint(Setpoint(0.0, 0.0, 0.0, 0.72, True), 0.0)
+    (sp,) = sent(rig, ATTITUDE_SETPOINT_TOPIC)
+    assert sp.thrust_body == pytest.approx([0.0, 0.0, -0.72])
 
 
 # ---------- never arms, never changes PX4's mode (REQ-SAF-023) ----------

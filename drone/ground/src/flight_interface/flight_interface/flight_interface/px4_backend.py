@@ -17,6 +17,11 @@ the rate of PX4's height estimate, not vz: in SITL vz carries a bias of about
 0.1 m/s against that height, and the controller, holding vz at zero, let the
 drone climb about 6 m a minute (ADR-025 F1 note, 2026-11-24).
 
+On the axes the ground does not own (masks 8, 11), a simulated pilot holds
+zero velocity, as the safety pilot's sticks do on the drone (px4_logic
+SimPilot, ADR-025 F2 as changed 2026-11-24); without a fresh measured
+velocity it cannot, and the backend sends neutral.
+
 Never arms, disarms or changes PX4's mode (REQ-SAF-023): arm_control() and
 request_resume() send nothing. end_session() (the E-stop) only stops: the node
 sends nothing more and PX4's own Offboard-loss failsafe takes over.
@@ -29,7 +34,7 @@ from geometry_msgs.msg import TwistStamped
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from flight_interface.backends import Backend
-from flight_interface.px4_logic import Px4Logic, ned_to_flu
+from flight_interface.px4_logic import Px4Logic, SimPilot, ned_to_flu
 
 NAN = math.nan
 # PX4 v1.17's uXRCE-DDS topics; versioned messages get a _v<N> suffix.
@@ -76,6 +81,7 @@ class Px4Backend(Backend):
         self._msgs = msgs if msgs is not None else load_px4_msgs()
         self._clock = clock
         self.logic = Px4Logic(mask)
+        self.pilot = SimPilot(mask, hover_throttle)
         qos = px4_qos()
         m = self._msgs
         self._mode_pub = node.create_publisher(
@@ -119,6 +125,7 @@ class Px4Backend(Backend):
         if not all(math.isfinite(v) for v in values):
             return
         forward, left, up = ned_to_flu(msg.vx, msg.vy, msg.z_deriv, msg.heading)
+        self.pilot.on_velocity(forward, left, up, self._clock())
         out = TwistStamped()
         out.header.stamp = self._node.get_clock().now().to_msg()
         out.header.frame_id = "base_link"
@@ -150,6 +157,10 @@ class Px4Backend(Backend):
     def send_setpoint(self, command, now):
         if not command.active:
             return self.send_neutral(now)
+        # The simulated pilot flies the axes the ground does not own
+        command = self.pilot.fly(command, now)
+        if command is None:  # no fresh measured velocity for the pilot
+            return self.send_neutral(now)
         attitude = self.logic.attitude(command, now)
         if attitude is None:  # no fresh heading
             return self.send_neutral(now)
@@ -167,6 +178,7 @@ class Px4Backend(Backend):
     def send_neutral(self, now):
         """F19: zero velocity, PX4 holds position itself."""
         self.logic.reset_yaw()
+        self.pilot.reset()
         self._mode(attitude=False)
         sp = self._msgs.TrajectorySetpoint()
         sp.timestamp = self._timestamp_us()
@@ -184,6 +196,7 @@ class Px4Backend(Backend):
         """E-stop: nothing to close. The node sends nothing more, and PX4's
         Offboard-loss failsafe takes over (it never changes PX4's mode here)."""
         self.logic.reset_yaw()
+        self.pilot.reset()
         return True
 
     def request_resume(self, now, session):

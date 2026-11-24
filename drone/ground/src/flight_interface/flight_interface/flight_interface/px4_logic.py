@@ -36,10 +36,20 @@ Drone state for the guard (F13):
 Measured velocity (F1): PX4's NED velocity turned by the heading into level
 body FLU (forward, left, up), for /estimate/velocity.
 
+Simulated pilot (SimPilot, ADR-025 F2 as changed 2026-11-24): on the axes the
+ground does not own (masks 8 and 11), the safety pilot's sticks fly the real
+drone. The simulation has no pilot, and a fixed hover throttle there is open
+loop: the drone climbed 72 m in 60 s under mask 11. SimPilot stands in for
+the pilot: it holds zero velocity on those axes, using the same measured
+velocity. The ground's setpoint on its own axes is never changed.
+
 The clock is passed in as MONOTONIC seconds, as everywhere in flight_interface.
 """
 
+import dataclasses
 import math
+
+from flight_interface.guard import MASK_AXES, THROTTLE_BAND, TILT_CAP_DEG
 
 # PX4 publishes vehicle_status at 2 Hz (sooner on a change), the local position
 # much faster, the land detector at least once a second.
@@ -222,3 +232,131 @@ class Px4Logic:
         q_d = quaternion_from_euler(roll, pitch, self._yaw_sp)
         thrust_body = (0.0, 0.0, -float(setpoint.throttle))
         return q_d, thrust_body, yaw_rate
+
+
+# ---------- the simulated pilot (SIMULATION ONLY) ----------
+GRAVITY = 9.81  # m/s^2
+# The pilot's PI gains: the controller's starting gains (controller_logic.py,
+# Gains), which hold the x500 within REQ-NAV-001 in SITL. Its own copy: the
+# pilot stands in for a person, not for the ground's controller.
+PILOT_KP_XY = 1.0
+PILOT_KI_XY = 0.2
+PILOT_KP_Z = 0.3
+PILOT_KI_Z = 0.05
+# A measured velocity older than this: the pilot cannot fly, the backend
+# sends neutral (PX4's own hold) instead.
+PILOT_VELOCITY_TIMEOUT = 0.25
+
+
+def _clamp(value, low, high):
+    if value < low:
+        return low
+    if value > high:
+        return high
+    return value
+
+
+class _PilotAxis:
+    """PI on one axis with an output limit and anti-windup (as the
+    controller's): no integration while the output is at its limit and the
+    error pushes it further, or when the time step is not in (0, MAX_DT]."""
+
+    def __init__(self, kp, ki):
+        self.kp = kp
+        self.ki = ki
+        self.integral = 0.0
+
+    def reset(self):
+        self.integral = 0.0
+
+    def step(self, error, limit, dt):
+        output = self.kp * error + self.ki * self.integral
+        dt_ok = dt is not None and 0.0 < dt <= MAX_DT
+        pushing_up = output >= limit and error > 0.0
+        pushing_down = output <= -limit and error < 0.0
+        if dt_ok and not pushing_up and not pushing_down:
+            self.integral = self.integral + error * dt
+            output = self.kp * error + self.ki * self.integral
+        return _clamp(output, -limit, limit)
+
+
+class SimPilot:
+    """Flies the axes the ground does not own, holding zero velocity on each.
+
+    Mask 15: nothing to fly, the setpoint goes out unchanged. Mask 11: the
+    throttle. Mask 8: the throttle and roll / pitch. Yaw is always the
+    ground's."""
+
+    def __init__(self, mask, hover_throttle):
+        self.owned = MASK_AXES[mask]
+        self.hover = hover_throttle
+        self._x = _PilotAxis(PILOT_KP_XY, PILOT_KI_XY)
+        self._y = _PilotAxis(PILOT_KP_XY, PILOT_KI_XY)
+        self._z = _PilotAxis(PILOT_KP_Z, PILOT_KI_Z)
+        self._velocity = None  # (forward, left, up) m/s, level body FLU
+        self._velocity_t = None
+        self._last_t = None
+
+    def needed(self):
+        """False under mask 15: the ground owns every axis."""
+        return len(self.owned) < len(MASK_AXES[15])
+
+    def on_velocity(self, forward, left, up, now):
+        self._velocity = (forward, left, up)
+        self._velocity_t = now
+
+    def reset(self):
+        """Neutral: the next commanding setpoint starts from clean integrators."""
+        self._x.reset()
+        self._y.reset()
+        self._z.reset()
+        self._last_t = None
+
+    def fly(self, setpoint, now):
+        """The setpoint with the pilot's values on the axes the ground does
+        not own, or None without a fresh measured velocity (then the backend
+        sends neutral). Under mask 15 the setpoint unchanged."""
+        if not self.needed():
+            return setpoint
+        fresh = (
+            self._velocity_t is not None
+            and 0.0 <= now - self._velocity_t <= PILOT_VELOCITY_TIMEOUT
+        )
+        if not fresh:
+            self.reset()
+            return None
+        if self._last_t is None:
+            dt = None
+        else:
+            dt = now - self._last_t
+        self._last_t = now
+        forward, left, up = self._velocity
+
+        roll = setpoint.roll
+        pitch = setpoint.pitch
+        # Horizontal (mask 8): wanted acceleration -> tilt, as the controller.
+        # Example: drifting forward at 0.1 m/s -> accel -0.1 m/s^2 ->
+        # pitch = atan(-0.1 / 9.81) = -0.58 deg (nose up, REP-103).
+        accel_limit = GRAVITY * math.tan(math.radians(TILT_CAP_DEG))
+        if "x" not in self.owned:
+            accel_x = self._x.step(0.0 - forward, accel_limit, dt)
+            pitch = math.degrees(math.atan(accel_x / GRAVITY))
+        if "y" not in self.owned:
+            accel_y = self._y.step(0.0 - left, accel_limit, dt)
+            roll = -math.degrees(math.atan(accel_y / GRAVITY))
+
+        throttle = setpoint.throttle
+        if "z" not in self.owned:
+            # Hover plus a correction within the band, divided by the share
+            # of thrust that lifts while tilted. Example: climbing at 0.2 m/s
+            # -> correction 0.3 * -0.2 = -0.06 -> 0.73 - 0.06 = 0.67 level,
+            # 0.67 / cos(5 deg) = 0.673 at 5 deg of roll.
+            correction = self._z.step(0.0 - up, THROTTLE_BAND, dt)
+            level_throttle = self.hover + correction
+            lift_share = math.cos(math.radians(roll)) * math.cos(math.radians(pitch))
+            throttle = _clamp(
+                level_throttle / lift_share,
+                self.hover - THROTTLE_BAND,
+                self.hover + THROTTLE_BAND,
+            )
+        return dataclasses.replace(setpoint, roll=roll, pitch=pitch, throttle=throttle)

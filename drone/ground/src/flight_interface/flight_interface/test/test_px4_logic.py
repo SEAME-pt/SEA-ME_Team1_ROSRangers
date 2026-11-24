@@ -1,5 +1,6 @@
 """Unit tests of px4_logic.py (#199): frames, quaternion, yaw setpoint, the
-drone state for the guard and the measured velocity. No ROS, no px4_msgs."""
+drone state for the guard, the measured velocity and the simulated pilot. No
+ROS, no px4_msgs."""
 
 import math
 
@@ -8,10 +9,12 @@ import pytest
 from flight_interface.guard import Setpoint
 from flight_interface.px4_logic import (
     LAND_TIMEOUT,
+    PILOT_VELOCITY_TIMEOUT,
     POSITION_TIMEOUT,
     STATUS_TIMEOUT,
     YAW_LEAD_CAP,
     Px4Logic,
+    SimPilot,
     flu_to_frd,
     ned_to_flu,
     quaternion_from_euler,
@@ -223,3 +226,83 @@ def test_airborne_needs_a_fresh_not_landed():
     logic.on_status(True, True, LAND_TIMEOUT + 0.1)
     logic.on_position(NORTH, True, LAND_TIMEOUT + 0.1)
     assert logic.drone_state(LAND_TIMEOUT + 0.1)["airborne"] is False  # silent detector
+
+
+# ---------- the simulated pilot (masks 8, 11; F2 as changed 2026-11-24) ----------
+GROUND = Setpoint(roll=-3.0, pitch=2.0, yaw_rate=10.0, throttle=HOVER, active=True)
+
+
+def pilot(mask, velocity=(0.0, 0.0, 0.0), now=0.0):
+    p = SimPilot(mask, HOVER)
+    p.on_velocity(*velocity, now)
+    return p
+
+
+def test_mask_15_changes_nothing_and_needs_no_velocity():
+    p = SimPilot(15, HOVER)
+    assert not p.needed()
+    assert p.fly(GROUND, 0.0) is GROUND
+
+
+def test_mask_11_holds_height_keeps_the_grounds_axes():
+    climbing = pilot(11, velocity=(0.0, 0.0, 0.2)).fly(GROUND, 0.0)
+    sinking = pilot(11, velocity=(0.0, 0.0, -0.2)).fly(GROUND, 0.0)
+    assert climbing.throttle < HOVER < sinking.throttle
+    for out in (climbing, sinking):
+        assert (out.roll, out.pitch, out.yaw_rate) == (-3.0, 2.0, 10.0)
+        assert out.active
+
+
+def test_mask_11_still_is_hover_divided_by_the_tilt():
+    # 0.7 / (cos 3 deg * cos 2 deg): the share of thrust that lifts
+    out = pilot(11).fly(GROUND, 0.0)
+    expected = HOVER / (math.cos(math.radians(3.0)) * math.cos(math.radians(2.0)))
+    assert out.throttle == pytest.approx(expected)
+
+
+def test_mask_8_also_holds_the_horizontal():
+    # Drifting forward and left: nose up (pitch -) and right side down (roll +)
+    out = pilot(8, velocity=(0.2, 0.2, 0.0)).fly(GROUND, 0.0)
+    assert out.pitch < 0.0 and out.roll > 0.0
+    assert out.yaw_rate == 10.0  # yaw stays the ground's
+    still = pilot(8).fly(GROUND, 0.0)
+    assert (still.roll, still.pitch) == (0.0, 0.0)
+
+
+def test_limits():
+    # Far beyond the limits: tilt within 15 deg, throttle within hover +- 0.15
+    out = pilot(8, velocity=(50.0, -50.0, 50.0)).fly(GROUND, 0.0)
+    assert abs(out.pitch) <= 15.0 + 1e-9 and abs(out.roll) <= 15.0 + 1e-9
+    # Correction at its limit (-0.15), then divided by the tilt, within the band:
+    # 0.55 / (cos 15 deg)^2 = 0.589
+    tilt = math.cos(math.radians(15.0)) ** 2
+    assert out.throttle == pytest.approx((HOVER - 0.15) / tilt)
+    assert HOVER - 0.15 <= out.throttle <= HOVER + 0.15
+
+
+def test_integrates_while_the_error_stays():
+    p = pilot(11, velocity=(0.0, 0.0, -0.1))
+    first = p.fly(GROUND, 0.0).throttle
+    for i in range(1, 50):
+        p.on_velocity(0.0, 0.0, -0.1, i * 0.02)
+        later = p.fly(GROUND, i * 0.02).throttle
+    assert later > first  # still sinking: the integrator adds throttle
+
+
+def test_no_fresh_velocity_is_none():
+    assert SimPilot(11, HOVER).fly(GROUND, 0.0) is None  # never one
+    stale = pilot(11, now=0.0)
+    assert stale.fly(GROUND, PILOT_VELOCITY_TIMEOUT + 0.01) is None
+
+
+def test_reset_clears_the_integrators():
+    p = pilot(11, velocity=(0.0, 0.0, -0.1))
+    for i in range(50):
+        p.on_velocity(0.0, 0.0, -0.1, i * 0.02)
+        p.fly(GROUND, i * 0.02)
+    p.reset()
+    p.on_velocity(0.0, 0.0, 0.0, 1.0)
+    out = p.fly(GROUND, 1.0)
+    assert out.throttle == pytest.approx(
+        HOVER / (math.cos(math.radians(3.0)) * math.cos(math.radians(2.0)))
+    )
