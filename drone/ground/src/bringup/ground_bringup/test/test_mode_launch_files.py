@@ -4,7 +4,8 @@ Loads each file in launch/ and checks the nodes it describes, without
 starting them:
   * each mode starts the nodes it should, and exactly one /flight/state
     publisher: fake_flight_state (demo), flight_interface (real), none in sim
-    (px4_offboard_bridge runs in the px4 container);
+    (flight_interface with the px4 backend runs only in its simulation image,
+    #199);
   * every node gets the mode's parameter file, and the default file exists;
   * camera:=false leaves gesture_node out; nothing respawns (ADR-025 A6);
   * real keeps ADR-025 E1's ROS_DOMAIN_ID / LOCALHOST defaults.
@@ -41,7 +42,7 @@ GROUND_CHAIN = {
     ("intent_node", "intent_node"),
     ("mission_node", "mission_node"),
 }
-CONTROLLER = ("controller_node", "controller_node")  # demo, real (#199)
+CONTROLLER = ("controller_node", "controller_node")  # every mode (#199)
 FLIGHT_STATE_PUBLISHERS = {
     ("mission_node", "fake_flight_state"),
     ("flight_interface", "flight_interface"),
@@ -87,7 +88,7 @@ class ModeLaunchTests(unittest.TestCase):
             "demo": GROUND_CHAIN | {CONTROLLER, ("mission_node", "fake_flight_state")},
             "real": GROUND_CHAIN
             | {CONTROLLER, ("flight_interface", "flight_interface")},
-            "sim": GROUND_CHAIN,
+            "sim": GROUND_CHAIN | {CONTROLLER},
         }
         for mode in MODES:
             with self.subTest(mode=mode):

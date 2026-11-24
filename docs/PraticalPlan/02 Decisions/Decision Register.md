@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-23
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -116,11 +116,15 @@ tags:
 
 - 2026-11-23, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F1–F19 for #199 (controller + PX4 backend): measured velocity on `/estimate/velocity` (F1), masks 8 / 11 / 15 in the simulation with the pilot's axes filled by the `px4` backend (F2), a `px4` backend in a simulation-only `flight_interface` image (F3), a 15° roll / pitch ground cap (F4), `px4_offboard_bridge` deleted once the hold test passes (F5), nothing changes on the real drone (F6), a velocity loop only (F7); neutral = `active` false, also for the K6 window (F8), the velocity ceilings in the controller (F9), the controller active whenever its inputs are fresh (F10), staleness checked in the controller and the guard (F11), the controller in the demo too (F12), the `px4` backend filling the ESP's `/flight/state` fields so the guard has one code path (F13), throttle within hover ± 0.15 under mask 15 (F14), shared values repeated in each node's section and checked to agree (F15; first a `/**:` section, changed the same day because it stopped `-p backend:=loopback` from overriding `backend: esp` in `make real-dry`), `hover_throttle` 0.0 = not measured = inactive (F16), a `reason` field on `/control/attitude_setpoint` (F17), the guard clamps an out-of-limit setpoint with a warning and drops a malformed one (F18), neutral in the simulation = PX4's own zero-velocity hold (F19). Dated notes on §1's guard limits (F9), C1.1 (the attitude signs are REP-103, as `/fc/attitude`; the `reason` field), C1.2 (PX4's estimate counts in SITL only), C1.4 (the cap value), C1.5, C2 (F8) and E1.2 (the simulation will run `flight_interface`).
 
-## 12. Still open
+## 12. What changed on 2026-11-24
+
+- 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F20–F25 for #199 Phase 7 (`make sim` through the controller and `flight_interface`): the simulation's hover throttle is 0.60, PX4's own value for the x500 (F20; changed the same day to 0.73, measured in attitude Offboard: with 0.60 the drone sank); the simulation's `flight_interface` image builds `px4_msgs` from source in a `sim` stage (F21); `sim_start.sh` configures and activates `flight_interface`, then waits for the Offboard stream before it asks for Offboard (F22); take-off to 1.0 m (F23; changed the same day to 2.0 m: PX4 calls the heading good for control only above 1.5 m, so the hold test descends to 1.0 m through the controller); the simulation's mask only in `config/sim.yaml`, no `MASK` in `make sim` (F24); `make sim-smoke` checks REQ-SAF-017 at `mission_node`'s output and REQ-SAF-018 on `/control/attitude_setpoint` (F25). Dated note on F1 the same day: in the simulation the vertical measured velocity is PX4's `z_deriv`, not its biased `vz`.
+
+## 13. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 13. Glossary
+## 14. Glossary
 
 | Term | Meaning |
 | --- | --- |

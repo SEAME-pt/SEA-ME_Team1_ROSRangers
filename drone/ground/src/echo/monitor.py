@@ -9,15 +9,18 @@ degrees, the topic's REP-103 signs; only from flight_interface's ESP backend
 in make real, or fc_telemetry on the bench), its battery (/fc/battery: pack
 voltage and the average per cell; same sources), the
 gesture gesture_node sees (/gesture/raw), the intent intent_node
-sends (/gesture/intent), mission_node's mode (/mission/state) and its velocity
-target (/mission/velocity_target, body frame FLU). A row is "live" while its
+sends (/gesture/intent), mission_node's mode (/mission/state), its velocity
+target (/mission/velocity_target, body frame FLU) and the controller's attitude
+setpoint (/control/attitude_setpoint, #199: active and why not; the numbers
+only while active). A row is "live" while its
 topic keeps arriving and turns "STALE" when it stops. The screen is only
 redrawn when the text changes, so it does not flicker.
 
 Alerts from /flight/state (E-stop, failsafe, lost link, FC link, the topic
 stopping), /fc/battery (LOW BATTERY: at or below 3.5 V/cell for 2 s) and two
 publishers on a one-publisher topic (/flight/state, /mission/velocity_target,
-/fc/attitude, /fc/battery; for 1 s) go on a line under the title, marked
+/control/attitude_setpoint, /fc/attitude, /fc/battery; for 1 s) go on a line
+under the title, marked
 "!!": red for a fault, yellow for "not OK yet" (FC link unknown, node not
 activated). Colour only on a terminal; the "!!" text is always there. A
 callback that raises shows MONITOR ERROR there (and in the log) instead of
@@ -88,8 +91,8 @@ def _json(msg):
 
 
 # /flight/state: shown whenever the publisher sends them. flight_interface
-# sends all of them; the demo's fake_flight_state and the sim's bridge only
-# link_ok, esp_state, override_active and mask. A null shows "unknown", never
+# (real, and the sim's px4 backend) sends all of them; the demo's
+# fake_flight_state only link_ok, esp_state, override_active and mask. A null shows "unknown", never
 # disappears: unknown counts as not OK (ADR-025 E6.1).
 FLIGHT_SAFETY = (
     "active",
@@ -133,6 +136,37 @@ def _flight_fields(d):
     return fields
 
 
+def _number(value, text):
+    """A /control/attitude_setpoint number as text, "?" when it is not a
+    finite number (the controller never sends one; flight_interface drops it)."""
+    finite = (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+    if not finite:
+        return "?"
+    return text.format(value)
+
+
+def _control_fields(d):
+    """The CONTROL row: active and its reason (F17) always; the numbers only
+    while active, since an inactive setpoint commands nothing (ADR-025 F8).
+    Signs as /fc/attitude (REP-103): roll + right side down, pitch + nose
+    down, yaw rate + left. Example: {"roll": -3.04, "pitch": 1.5, "yaw_rate":
+    0, "throttle": 0.612, "active": true, "reason": "ok"} -> roll "-3.0 deg",
+    pitch "+1.5 deg", yaw rate "+0 deg/s", throttle "0.61"."""
+    if "bad" in d:
+        return {"bad": d["bad"]}
+    fields = {"active": d.get("active"), "reason": d.get("reason")}
+    if d.get("active") is True:
+        fields["roll"] = _number(d.get("roll"), "{:+.1f} deg")
+        fields["pitch"] = _number(d.get("pitch"), "{:+.1f} deg")
+        fields["yaw rate"] = _number(d.get("yaw_rate"), "{:+.0f} deg/s")
+        fields["throttle"] = _number(d.get("throttle"), "{:.2f}")
+    return fields
+
+
 def _speed(value, plus, minus, unit):
     if abs(value) < 0.005:
         return "0"
@@ -167,10 +201,12 @@ def _degrees(rad):
 # (ADR-025 E3.2) stops the usual way in; this shows one that got around it, e.g.
 # a host `ros2 launch` on the same domain. Not the gesture topics: a second
 # publisher there is a documented test (ros2 topic pub /gesture/raw,
-# fake_intent, make sim-smoke). Add /control/attitude_setpoint with #199.
+# fake_intent, make sim-smoke). /control/attitude_setpoint: two controllers
+# would fight over the drone (#199).
 SINGLE_PUBLISHER_TOPICS = (
     "/flight/state",
     "/mission/velocity_target",
+    "/control/attitude_setpoint",
     "/fc/attitude",
     "/fc/battery",
 )
@@ -198,6 +234,9 @@ class Monitor:
         node.create_subscription(String, "/mission/state", self._state, 10)
         node.create_subscription(
             TwistStamped, "/mission/velocity_target", self._velocity, 10
+        )
+        node.create_subscription(
+            String, "/control/attitude_setpoint", self._control, 10
         )
 
     def _set(self, name, fields):
@@ -296,6 +335,9 @@ class Monitor:
             },
         )
 
+    def _control(self, msg):
+        self._set("control", _control_fields(_json(msg)))
+
     def _check_publishers(self):
         """Runs in the spin thread, every PUBLISHERS_CHECK_SEC."""
         now = time.monotonic()
@@ -388,6 +430,7 @@ ROW_ORDER = (
     "intent",
     "mission",
     "velocity",
+    "control",
 )
 # The drone's rows that print one line of text, not "key  value" lines.
 ONE_TEXT_LINE = {"attitude": "angles", "battery": "line"}
@@ -400,6 +443,7 @@ SOURCES = {
     "intent": "intent_node   /gesture/intent",
     "mission": "mission_node  /mission/state",
     "velocity": "mission_node  /mission/velocity_target",
+    "control": "controller_node  /control/attitude_setpoint",
 }
 
 # ---------- The ground mode (env/<mode>.env, ADR-025 E1.3) ----------
@@ -413,13 +457,13 @@ BANNERS = {
     "sim": "SIM: PX4 SITL",
     None: "MODE ?",  # GROUND_MODE empty or unknown, e.g. monitor.py on the host
 }
-# Who publishes /flight/state in each mode. sim changes with #199 (flight_interface
-# with the PX4 backend replaces the bridge).
+# Who publishes /flight/state in each mode. In sim: flight_interface with the
+# px4 backend (#199).
 FLIGHT_SOURCES = {
     "demo": "fake_flight_state  /flight/state",
     "real": "flight_interface  /flight/state",
     "real-dry": "flight_interface  /flight/state",
-    "sim": "px4_offboard_bridge  /flight/state",
+    "sim": "flight_interface  /flight/state",
 }
 # Why ATTITUDE and BATTERY have had no message yet, per mode.
 NO_FC = {
@@ -669,6 +713,11 @@ def one_line(rows, doubled=(), error=None):
         elif name == "flight" and "bad" not in fields:
             pairs = [f"{k}={fields[k]}" for k in FLIGHT_ONE_LINE if k in fields]
             parts.append(f"{name}: " + " ".join(pairs))
+        elif name == "control" and "bad" not in fields:
+            # Not the numbers: they change 50 times a second while active.
+            parts.append(
+                f"{name}: active={fields.get('active')} reason={fields.get('reason')}"
+            )
         elif name == "velocity":
             parts.append(
                 f"{name}: " + (" ".join(v for v in fields.values() if v != "0") or "0")

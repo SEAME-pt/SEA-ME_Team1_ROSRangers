@@ -1,9 +1,10 @@
-"""Simulation mode: the ground nodes (gesture -> intent -> mission) against
-PX4 SITL + Gazebo. SIMULATION ONLY.
+"""Simulation mode: the ground nodes (gesture -> intent -> mission ->
+controller) against PX4 SITL + Gazebo. SIMULATION ONLY.
 
-Starts no /flight/state publisher: in the simulation it is px4_offboard_bridge,
-which runs in the px4 container with PX4 and the XRCE agent (make sim). It
-needs px4_msgs, so this package does not depend on it.
+Starts no /flight/state publisher: in the simulation it is flight_interface
+with the px4 backend (#199), which needs px4_msgs, so only its simulation
+image runs it (make sim: the flight_interface_sim service), never this file.
+This package does not depend on px4_msgs.
 
     ros2 launch ground_bringup sim.launch.py
     ros2 launch ground_bringup sim.launch.py camera:=false
@@ -48,6 +49,14 @@ def generate_launch_description():
             Node(
                 package="mission_node",
                 executable="mission_node",
+                parameters=[params],
+                output="screen",
+            ),
+            # The controller (#199): flies once flight_interface's px4 backend
+            # publishes /estimate/velocity (sim.yaml sets the hover throttle)
+            Node(
+                package="controller_node",
+                executable="controller_node",
                 parameters=[params],
                 output="screen",
             ),

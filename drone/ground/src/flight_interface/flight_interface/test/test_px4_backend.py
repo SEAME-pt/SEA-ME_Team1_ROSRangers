@@ -116,8 +116,15 @@ def rig():
 
 
 def feed_px4(
-    rig, armed=True, offboard=True, heading=0.0, v=(0.0, 0.0, 0.0), valid=True
+    rig,
+    armed=True,
+    offboard=True,
+    heading=0.0,
+    v=(0.0, 0.0, 0.0),
+    valid=True,
+    z_deriv=None,
 ):
+    """z_deriv: the rate of PX4's height estimate; by default the same as vz."""
     status = rig.msgs.VehicleStatus()
     status.arming_state = 2 if armed else 1
     status.nav_state = 14 if offboard else 4
@@ -126,8 +133,12 @@ def feed_px4(
     pos.heading = heading
     pos.heading_good_for_control = True
     pos.vx, pos.vy, pos.vz = v
+    if z_deriv is None:
+        z_deriv = v[2]
+    pos.z_deriv = z_deriv
     pos.v_xy_valid = valid
     pos.v_z_valid = valid
+    pos.z_valid = valid
     rig.node.subs[POSITION_TOPIC](pos)
 
 
@@ -202,9 +213,17 @@ def test_measured_velocity_published_in_body_flu(rig):
     assert out.header.frame_id == "base_link"
 
 
+def test_vertical_velocity_is_the_rate_of_px4s_height(rig):
+    # SITL: vz said 0 while z rose 0.1 m/s; the controller must see the rise
+    feed_px4(rig, v=(0.0, 0.0, 0.0), z_deriv=-0.1)
+    (out,) = sent(rig, VELOCITY_TOPIC)
+    assert out.twist.linear.z == pytest.approx(0.1)
+
+
 def test_no_measured_velocity_when_px4_calls_it_invalid(rig):
     feed_px4(rig, valid=False)
     feed_px4(rig, v=(math.nan, 0.0, 0.0))
+    feed_px4(rig, z_deriv=math.nan)
     assert sent(rig, VELOCITY_TOPIC) == []
 
 

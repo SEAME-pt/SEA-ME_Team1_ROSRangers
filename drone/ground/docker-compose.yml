@@ -10,8 +10,10 @@
 # has exactly one publisher in each.
 #   demo  gesture, intent, mission, echo + fake_flight_state (PRETEND /flight/state)
 #   real  gesture, intent, mission, echo + flight_interface (the drone, ADR-025)
-#   sim   gesture, intent, mission, echo + px4 (PX4 SITL + Gazebo + bridge; SIMULATION ONLY)
-#   sim-smoke  the headless simulation test (px4, mission, sim_smoke), not a mode
+#   sim   gesture, intent, mission, controller, echo + flight_interface_sim
+#         (backend px4) + px4 (PX4 SITL + Gazebo; SIMULATION ONLY)
+#   sim-smoke  the headless simulation test (px4, mission, controller,
+#         flight_interface_sim, sim_smoke), not a mode
 # `base` has no profile: compose refuses a build context from a service it
 # does not see. It only runs `true`.
 #
@@ -187,11 +189,13 @@ services:
   # The cascade controller (#199, ADR-025 C1): /mission/velocity_target and
   # /estimate/velocity -> /control/attitude_setpoint. Inactive (neutral) while
   # it has no measured velocity or no measured hover throttle (F6, F16), as
-  # in demo and real today. The mode file's /**: section gives the mask and
-  # the hover throttle (F15).
+  # in demo and real today. In the simulation flight_interface_sim's px4
+  # backend publishes /estimate/velocity and sim.yaml sets the hover
+  # throttle, so it flies. The mode file's controller_node section gives the
+  # mask and the hover throttle (F15).
   controller:
     <<: *node
-    profiles: [demo, real]
+    profiles: [demo, real, sim, sim-smoke]
     build:
       context: .
       dockerfile: src/controller/Dockerfile
@@ -298,16 +302,51 @@ services:
         bind:
           create_host_path: false
 
-  # ---------- SIMULATION ONLY (#86): make sim, make sim-smoke ----------
-  # Profiles sim and sim-smoke, so demo and real never start them. The bridge
-  # publishes /flight/state from PX4, so fake_flight_state (demo) and
-  # flight_interface (real) must not run with them. Never use with the real drone.
+  # ---------- SIMULATION ONLY (#86, #199): make sim, make sim-smoke ----------
+  # Profiles sim and sim-smoke, so demo and real never start them.
+  # flight_interface_sim publishes /flight/state from PX4, so fake_flight_state
+  # (demo) and flight_interface (real) must not run with them. Never use with
+  # the real drone.
 
-  # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent + px4_offboard_bridge.
-  # src/simulation/sim_start.sh arms, takes off and switches to Offboard, then the
-  # healthcheck turns healthy. MASK=8|11|15 (default 15; make sim-smoke takes
-  # 11|15 only). GUI=1 opens Gazebo: the default here is 0, make sim passes 1
-  # (its own default), so plain `docker compose --profile sim up` is headless.
+  # flight_interface with the px4 backend (#199, ADR-025 F3, F21): the sim
+  # stage of its Dockerfile (px4_msgs from the PX4 image, the build context
+  # `px4`). sim.yaml: backend px4, mask, hover throttle. No PSK (there is no
+  # ESP). Starts unconfigured, like the real one; sim_start.sh (the px4
+  # container) configures and activates it once PX4 is ready (F22), so it
+  # starts with px4, not after px4's healthcheck: px4 only turns healthy in
+  # Offboard, which needs this node's stream. No restart (A6).
+  flight_interface_sim:
+    <<: *node
+    profiles: [sim, sim-smoke]
+    restart: "no"
+    build:
+      context: .
+      dockerfile: src/flight_interface/Dockerfile
+      target: sim
+      additional_contexts:
+        base: service:base
+        px4: docker-image://${PX4_IMAGE:-seame-px4-sim:jazzy-1.17}
+    depends_on: *after-base
+    image: rosrangers/flight_interface-sim:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: flight_interface_sim
+      # The XRCE agent runs in the px4 container (uid 1000) and this one as
+      # the host's uid: UDP only, as the px4 services.
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+    command:
+      - /ws/install/flight_interface/lib/flight_interface/flight_interface
+      - --ros-args
+      - --params-file
+      - /config/sim.yaml   # whatever GROUND_MODE says: this service is the sim
+
+  # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent.
+  # src/simulation/sim_start.sh sets the take-off height (2.0 m, F23), configures
+  # and activates flight_interface_sim, waits for its Offboard stream, arms,
+  # takes off and switches to Offboard, then the healthcheck turns healthy.
+  # The mask is in config/sim.yaml (F24). GUI=1 opens Gazebo: the default
+  # here is 0, make sim passes 1 (its own default), so plain
+  # `docker compose --profile sim up` is headless.
   px4:
     <<: *node
     profiles: [sim, sim-smoke]
@@ -329,7 +368,6 @@ services:
     environment:
       <<: *node-env
       LOG_NAME: px4
-      MASK: ${MASK:-15}
       GUI: ${GUI:-0}
       DISPLAY: ${DISPLAY:-:0}
       # This image's user (dev, uid 1000) and the ground images' user (ros,
@@ -347,9 +385,9 @@ services:
       retries: 3
       start_period: 420s
 
-  # The scripted scenario and its checks (smoke_scenario.py in
-  # px4_offboard_bridge): its own intent_node, gestures on /gesture/raw, a
-  # rosbag and summary.md in logs/sim-smoke/<start time>/.
+  # The scripted scenario and its checks (src/simulation/sim_smoke/): its own
+  # intent_node, gestures on /gesture/raw, a rosbag and summary.md in
+  # logs/sim-smoke/<start time>/. Reads the hover throttle from /config/sim.yaml.
   sim_smoke:
     <<: *node
     profiles: [sim-smoke]
@@ -361,8 +399,10 @@ services:
         condition: service_healthy
       mission:
         condition: service_started
+      controller:
+        condition: service_started
     environment:
       <<: *node-env
       LOG_NAME: sim-smoke
       FASTDDS_BUILTIN_TRANSPORTS: UDPv4
-    command: ["/ws/install/px4_offboard_bridge/lib/px4_offboard_bridge/sim_smoke_scenario"]
+    command: ["/ws/install/sim_smoke/lib/sim_smoke/sim_smoke_scenario"]

@@ -15,7 +15,7 @@
 #   make test     every suite, each runs even if one fails (tools/run_tests.sh):
 #                 colcon test of every ground package, the coverage gate (package
 #                 tests + drone/tests/ros, 90 %), sd_protocol_py, the C++ protocol
-#                 library (ctest, no coverage gate), px4_offboard_bridge,
+#                 library (ctest, no coverage gate), sim_smoke's checks,
 #                 drone/tests/tools, the HIL host part, pre-commit --all-files (fixes
 #                 files in place). Without Jazzy the ROS suites show SKIP and the
 #                 package tests run without ROS. A missing tool shows SKIP
@@ -52,26 +52,31 @@
 #
 # make, make up, make sim and make sim-smoke refuse to start while a
 # flight_interface container is running: each starts its own /flight/state
-# publisher (fake_flight_state or px4_offboard_bridge), and /flight/state
+# publisher (fake_flight_state or flight_interface_sim), and /flight/state
 # must have one. make down, sim-down and clean refuse too: they would stop the
 # chain (gesture, intent, mission) that flight_interface flies with.
 #
-# SIMULATION ONLY (#86): PX4 SITL + Gazebo instead of the pretend /flight/state.
-# The first run builds the PX4 image (long, several GB); later runs reuse it.
-#   make sim        PX4 SITL + Gazebo (headless) + XRCE agent + px4_offboard_bridge,
-#                   gesture (camera), intent, mission, echo. PX4 arms, takes off
-#                   and switches to Offboard by itself; then ENGAGE (both open
-#                   hands) and fly. Never fake_flight_state (the bridge publishes /flight/state)
+# SIMULATION ONLY (#86, #199): PX4 SITL + Gazebo instead of the pretend
+# /flight/state. The first run builds the PX4 image (long, several GB) and
+# the sim stage of flight_interface's image (px4_msgs, a few minutes); later
+# runs reuse them.
+#   make sim        PX4 SITL + Gazebo (headless) + XRCE agent, flight_interface
+#                   (backend px4), the controller, gesture (camera), intent,
+#                   mission, echo. The px4 container configures and activates
+#                   flight_interface, arms PX4, takes off to 2.0 m and switches
+#                   to Offboard by itself; the controller then holds zero
+#                   velocity. ENGAGE (both open hands) and fly. Never
+#                   fake_flight_state (flight_interface publishes /flight/state)
 #   make sim-smoke  headless test, no camera: scripted gestures (ENGAGE, right,
-#                   climb, intent_node killed) and the checks of #86, then stops.
-#                   Rosbag + summary.md in logs/sim-smoke/<start time>/
+#                   climb, intent_node killed) and the checks of #86 / #199,
+#                   then stops. Rosbag + summary.md in logs/sim-smoke/<start time>/
 #   make sim-down   stop the simulation
 #   make px4-image  rebuild the PX4 image (after a change to its Dockerfile)
-#   Options: MASK (axes the ground owns, default 15): 8|11|15 for make sim,
-#   11|15 for make sim-smoke (it flies right and up only, so under mask 8
-#   nothing moves and the checks cannot pass). GUI=0 (no Gazebo window,
-#   make sim only; sim-smoke is always headless). Logs: logs/px4/ (sim start-up, bridge),
-#   logs/px4-sitl/ (PX4, agent), logs/<node>/ as above.
+#   The mask (axes the ground owns) is config/sim.yaml's (15; ADR-025 F24):
+#   edit it there. sim-smoke flies right and up only, so it needs 11 or 15.
+#   Options: GUI=0 (no Gazebo window, make sim only; sim-smoke is always
+#   headless). Logs: logs/px4/ (sim start-up), logs/px4-sitl/ (PX4, agent),
+#   logs/flight_interface_sim/, logs/<node>/ as above.
 #
 # Every test target ends with a summary (one row per suite, per package for
 # colcon: PASS, FAIL, SKIP or TIMEOUT) and keeps each suite's full output in
@@ -119,9 +124,8 @@ STOP_COMPOSE  := GROUND_MODE=demo GROUND_DOMAIN_ID=0 GROUND_DISCOVERY_RANGE=LOCA
 	$(COMPOSE) $(STOP_PROFILES)
 DEMO_COMPOSE  := $(COMPOSE) --env-file env/demo.env
 SIM_COMPOSE   := $(COMPOSE) --env-file env/sim.env
-SIM          := px4 gesture intent mission echo
-SIM_SMOKE    := px4 mission sim_smoke
-MASK         ?= 15
+SIM          := px4 flight_interface_sim controller gesture intent mission echo
+SIM_SMOKE    := px4 flight_interface_sim controller mission sim_smoke
 GUI          ?= 1
 # Host group of the GPU render node, so the px4 and gesture containers (not
 # root) can use it. No render node: video, a harmless group both images have.
@@ -135,8 +139,8 @@ GROUND_GID := $(shell g=$$(id -g); [ "$$g" = 0 ] && echo 1000 || echo "$$g")
 # compose reads them from the environment of every rule (gesture: RENDER_GID too)
 export GROUND_UID GROUND_GID RENDER_GID
 # The sim's domain and subnet discovery (ADR-025 E1.2) come from env/sim.env
-SIM_ENV      := MASK=$(MASK) GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
-SMOKE_ENV    := MASK=$(MASK) GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
+SIM_ENV      := GUI=$(GUI) RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
+SMOKE_ENV    := GUI=0 RENDER_GID=$(RENDER_GID) PX4_IMAGE=$(PX4_IMAGE)
 
 # Compose projects: ground (make, make up: named after this folder) and
 # ground-smoke (make smoke). Compose labels their containers, images and
@@ -282,8 +286,8 @@ smoke:
 
 # /flight/state must have exactly one publisher (ADR-025 §1). A running
 # flight_interface container, from any compose project and started with up
-# or run, blocks every rule that starts another one (fake_flight_state, the
-# px4 bridge), and every rule that would stop the chain it flies with.
+# or run, blocks every rule that starts another one (fake_flight_state,
+# flight_interface_sim), and every rule that would stop the chain it flies with.
 # Only running containers count; there is no override. A docker ps that fails
 # also refuses: no check, no start.
 no-flight-interface:
@@ -494,14 +498,10 @@ sim-down: no-flight-interface
 	$(STOP_COMPOSE) down
 
 # sim_smoke waits for px4 to be healthy (armed, in Offboard); its exit code is
-# the result. Everything is stopped afterwards, pass or fail.
-# Checked before the PX4 image is built: mask 8 owns only yaw, which the
-# scenario never flies, so its checks could never pass.
-sim-smoke-mask:
-	@[[ "$(MASK)" == 11 || "$(MASK)" == 15 ]] || \
-		{ echo "make sim-smoke: MASK must be 11 or 15, got '$(MASK)'"; exit 2; }
-
-sim-smoke: no-flight-interface env-sim sim-smoke-mask px4-image-present
+# the result. Everything is stopped afterwards, pass or fail. The scenario
+# checks the mask itself (from /flight/state): mask 8 owns only yaw, which it
+# never flies.
+sim-smoke: no-flight-interface env-sim px4-image-present
 	@mkdir -p logs $(TESTLOG)
 	@$(call stop_ros_daemon,sim)
 	$(STOP_COMPOSE) down
@@ -509,7 +509,8 @@ sim-smoke: no-flight-interface env-sim sim-smoke-mask px4-image-present
 		--exit-code-from sim_smoke $(SIM_SMOKE) 2>&1 | tee $(TESTLOG)/sim-smoke.log; \
 	code=$${PIPESTATUS[0]}; \
 	$(STOP_COMPOSE) down; \
-	echo "full output: $(TESTLOG)/sim-smoke.log, PX4: logs/px4-sitl/px4.log"; \
+	echo "full output: $(TESTLOG)/sim-smoke.log, PX4: logs/px4-sitl/px4.log," \
+		"flight_interface: logs/flight_interface_sim/latest.log"; \
 	exit $$code
 
 # logs/: everything but its .gitignore, which keeps the folder out of git.
@@ -535,6 +536,6 @@ re: fclean all
 
 .PHONY: all venv ws no-ros test test-deps test-sitl pkg-test e2e-test unit smoke up down \
 	clean fclean re \
-	px4-image px4-image-present sim sim-down sim-smoke sim-smoke-mask \
+	px4-image px4-image-present sim sim-down sim-smoke \
 	no-flight-interface psk-file env-demo env-sim env-real \
 	real real-dry real-check real-steps real-down

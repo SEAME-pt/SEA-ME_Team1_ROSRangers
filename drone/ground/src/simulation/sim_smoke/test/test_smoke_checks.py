@@ -3,7 +3,7 @@
 import math
 
 import pytest
-from px4_offboard_bridge.smoke_checks import (
+from sim_smoke.smoke_checks import (
     MASK_AXES,
     SMOKE_MASKS,
     Check,
@@ -12,8 +12,8 @@ from px4_offboard_bridge.smoke_checks import (
     hover_check,
     is_zero,
     limits_check,
-    loss_checks,
-    mask_setpoints_check,
+    loss_check,
+    mask_attitude_check,
     mask_targets_check,
     measured_speed_check,
     movement_check,
@@ -106,16 +106,43 @@ def test_mask_targets():
     assert not mask_targets_check([], 15).ok
 
 
-def test_mask_setpoints():
-    move = (0.3, 0.1, 0.0, 0.0)
-    climb = (0.0, 0.0, -0.2, 0.0)
-    yaw = (0.0, 0.0, 0.0, 0.3)
-    assert mask_setpoints_check([move, climb, yaw], 15).ok
-    assert mask_setpoints_check([move, yaw], 11).ok
-    assert not mask_setpoints_check([climb], 11).ok
-    assert mask_setpoints_check([yaw], 8).ok
-    assert not mask_setpoints_check([move], 8).ok
-    assert not mask_setpoints_check([], 11).ok
+HOVER = 0.6
+
+
+def attitude(roll=0.0, pitch=0.0, yaw_rate=0.0, throttle=HOVER, active=True):
+    return {
+        "roll": roll,
+        "pitch": pitch,
+        "yaw_rate": yaw_rate,
+        "throttle": throttle,
+        "active": active,
+        "reason": "ok" if active else "stale_velocity",
+    }
+
+
+def test_mask_attitude():
+    tilt = attitude(roll=-3.0, pitch=2.0)
+    climb = attitude(throttle=0.68)
+    yaw = attitude(yaw_rate=10.0)
+    assert mask_attitude_check([tilt, climb, yaw], 15, HOVER).ok
+    assert mask_attitude_check([tilt, yaw], 11, HOVER).ok
+    assert not mask_attitude_check([climb], 11, HOVER).ok  # throttle not owned
+    assert mask_attitude_check([yaw], 8, HOVER).ok
+    assert not mask_attitude_check([attitude(roll=1.0)], 8, HOVER).ok
+    assert not mask_attitude_check([attitude(pitch=1.0)], 8, HOVER).ok
+
+
+def test_mask_attitude_counts_only_active_setpoints():
+    # An inactive setpoint commands nothing (F8), whatever its numbers
+    ignored = attitude(roll=5.0, throttle=0.9, active=False)
+    check = mask_attitude_check([attitude(), ignored], 8, HOVER)
+    assert check.ok
+    assert "0 of 1 active" in check.detail and "1 inactive" in check.detail
+
+
+def test_mask_attitude_needs_an_active_setpoint():
+    assert not mask_attitude_check([], 11, HOVER).ok
+    assert not mask_attitude_check([attitude(active=False)], 11, HOVER).ok
 
 
 # ---------- direction ----------
@@ -172,26 +199,24 @@ def moving_then_zero(t_zero, end=12.0):
 
 
 def test_loss_within_limits_passes():
-    checks = loss_checks(10.0, moving_then_zero(10.2), moving_then_zero(10.25))
-    assert [c.ok for c in checks] == [True, True], checks
-    assert "200 ms" in checks[0].detail
+    check = loss_check(10.0, moving_then_zero(10.2))
+    assert check.ok, check
+    assert "200 ms" in check.detail
 
 
 def test_loss_too_slow_fails():
-    mission, px4 = loss_checks(10.0, moving_then_zero(10.4), moving_then_zero(10.35))
-    assert not mission.ok and not px4.ok
+    assert not loss_check(10.0, moving_then_zero(10.3)).ok
 
 
 def test_loss_never_zero_fails():
-    checks = loss_checks(10.0, moving_then_zero(99.0), moving_then_zero(10.1))
-    assert not checks[0].ok and checks[0].detail == "never zero"
-    assert checks[1].ok
+    check = loss_check(10.0, moving_then_zero(99.0))
+    assert not check.ok and check.detail == "never zero"
 
 
 def test_loss_without_intent_or_movement_fails():
-    assert not loss_checks(None, [], [])[0].ok
+    assert not loss_check(None, []).ok
     still = [(t, (0.0, 0.0, 0.0, 0.0)) for t in ticks(20, 12)]
-    assert not loss_checks(10.0, still, still)[0].ok
+    assert not loss_check(10.0, still).ok
 
 
 def test_hover_still_passes():

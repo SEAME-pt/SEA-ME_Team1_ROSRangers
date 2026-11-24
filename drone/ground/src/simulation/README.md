@@ -8,17 +8,21 @@ docker build --target px4 -t seame-px4-sim:jazzy-1.17 -f drone/ground/src/simula
 
 Run the sim with the Gazebo GUI (software rendering) and the ROS 2 offboard example: see the vault page. Start `offboard_control` only after PX4 prints `Ready for takeoff!`.
 
-## Ground chain with make (#86)
+## Ground chain with make (#86, #199)
 
 From `drone/ground/` (the Makefile builds this image the first time, then reuses it):
 
 ```sh
-make sim          # PX4 + Gazebo window, bridge, camera gestures, intent, mission, echo
-make sim GUI=0    # same, Gazebo headless; MASK=11 leaves z to PX4 (default 15)
-make sim-smoke    # headless test: scripted gestures + the #86 checks, rosbag and summary.md (MASK 11 or 15)
+make sim          # PX4 + Gazebo window, flight_interface (px4 backend), controller, camera gestures, intent, mission, echo
+make sim GUI=0    # same, Gazebo headless
+make sim-smoke    # headless test: scripted gestures + the checks, rosbag and summary.md
 make sim-down
 ```
 
-The `px4` service (`Dockerfile`, final stage, started by `sim_start.sh`) arms, takes off and switches to Offboard by itself, in the sim only. `make sim-smoke` runs `sim_smoke_scenario` (in `px4_offboard_bridge`): no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT with `intent_node` killed. It checks direction, REQ-CTL-001, REQ-SAF-017, REQ-SAF-018 and REQ-SW-001 and writes the bag and `summary.md` to `drone/ground/logs/sim-smoke/<start time>/`.
+The ground flies PX4 the way it flies the drone: `mission_node` → `controller_node` (velocity target → attitude setpoint) → `flight_interface` with the `px4` backend (ADR-025 §2.4). That `flight_interface` runs in its own image, the `sim` stage of `src/flight_interface/Dockerfile` (it adds `px4_msgs`), as the compose service `flight_interface_sim`. The mask (15) and the hover throttle (0.73, measured) are in `ground_bringup/config/sim.yaml`.
 
-`sim_start.sh` sets `NAV_DLL_ACT 0` in the sim only (there is no ground station, and PX4 never gets ready without it). The bridge never arms: `sim_start.sh` (the sim) arms, takes off and switches to Offboard. Details and the FLU → NED conversion: `px4_offboard_bridge/README.md`.
+The `px4` service (`Dockerfile`, final stage, started by `sim_start.sh`) does what the operator and the safety pilot do on the real drone, in the sim only: it sets `NAV_DLL_ACT 0` (no ground station, PX4 never gets ready without it) and `MIS_TAKEOFF_ALT 2.0` (PX4 calls the heading good for control only after climbing above 1.5 m, ADR-025 F23), configures and activates `flight_interface`, waits for its Offboard stream, arms, takes off to 2.0 m and switches to Offboard. The controller then holds zero velocity until a gesture moves it.
+
+`make sim-smoke` runs `sim_smoke_scenario` (package `sim_smoke/`): no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT with `intent_node` killed. It checks direction, REQ-CTL-001, REQ-SAF-017 (`mission_node`'s zero within 0.25 s, then the drone hovers), REQ-SAF-018 (velocity targets, attitude setpoints and the measured drift) and REQ-SW-001, and writes the bag and `summary.md` to `drone/ground/logs/sim-smoke/<start time>/`. The mask must be 11 or 15: the scenario flies right and up only.
+
+`px4_offboard_bridge/` is no longer started by anything; it is deleted in #199's PR (ADR-025 F5).

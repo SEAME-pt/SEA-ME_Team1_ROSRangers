@@ -1,4 +1,4 @@
-"""Checks of the PX4 SITL smoke test (make sim-smoke, #86), with NO ROS imports.
+"""Checks of the PX4 SITL smoke test (make sim-smoke, #86, #199), with NO ROS imports.
 
 smoke_scenario.py records what the chain did; these functions judge it, so the
 pass/fail rules are unit-tested on any machine. Every check returns a Check:
@@ -7,9 +7,18 @@ name, ok, and a one-line detail with the measured values.
     REQ-SW-001   /mission/velocity_target at 20 Hz
     REQ-CTL-001  commanded speeds within the mission limits; measured speed
                  within the hard ceiling
-    REQ-SAF-017  zero velocity within 0.25 s of losing /gesture/intent
-    REQ-SAF-018  no axis outside the override mask commanded or moving
+    REQ-SAF-017  mission_node's zero target within 0.25 s of losing
+                 /gesture/intent, then the drone hovers
+    REQ-SAF-018  no axis outside the override mask commanded (velocity target
+                 and attitude setpoint) or moving
     direction    the drone moves the way the gesture says, and only that way
+
+Since #199 the ground's controller flies PX4 with attitude setpoints
+(/control/attitude_setpoint -> flight_interface's px4 backend). A zero target
+is "hold zero velocity" (ADR-025 F10), so PX4 never gets a zero velocity
+setpoint: REQ-SAF-017 is judged at mission_node's output and by the measured
+hover, REQ-SAF-018 on /control/attitude_setpoint and by the measured drift
+(F25).
 """
 
 import math
@@ -17,8 +26,9 @@ from collections import namedtuple
 
 Check = namedtuple("Check", "name ok detail")
 
-# mission_node defaults (REQ-CTL-001) and the hard ceilings of mission_node and
-# the bridge. EPS absorbs float noise in the published values.
+# mission_node defaults (REQ-CTL-001) and the hard ceiling of mission_node and
+# the controller's input clamp (F9). EPS absorbs float noise in the published
+# values.
 LIMIT_LATERAL_MPS = 0.3
 LIMIT_VERTICAL_MPS = 0.2
 LIMIT_YAW_DPS = 20.0
@@ -30,7 +40,6 @@ RATE_TOLERANCE = 0.1  # 18-22 Hz
 MAX_GAP_SEC = 0.15  # three ticks: one late tick is fine, a stall is not
 
 LOSS_LIMIT_SEC = 0.25  # REQ-SAF-017, at the mission_node output
-BRIDGE_TICK_SEC = 0.05  # the bridge forwards the zero at its next 20 Hz tick
 
 # Body axes (FLU) per override mask, as in mission_node.
 AXES = ("forward", "left", "up", "yaw")
@@ -126,26 +135,34 @@ def mask_targets_check(targets, mask):
     )
 
 
-def mask_setpoints_check(setpoints, mask):
-    """setpoints: (v_north, v_east, v_down, yawspeed) sent to PX4.
+def mask_attitude_check(setpoints, mask, hover_throttle):
+    """setpoints: the /control/attitude_setpoint dicts (roll, pitch, yaw_rate,
+    throttle, active). Only the active ones command (ADR-025 F8).
 
-    Mask 11 must send v_down 0; mask 8 must send no velocity at all. With
-    mask 15 every axis is owned.
+    An axis outside the mask is level: pitch 0 without "forward", roll 0
+    without "left", yaw_rate 0 without "yaw", and the throttle exactly the
+    hover throttle without "up" (mask 8 and 11). The controller writes these
+    values as they are, so they are compared exactly. Example, mask 11, hover
+    0.6: (roll -3, pitch 0, yaw_rate 0, throttle 0.6) is fine; throttle 0.65
+    is not: the ground does not own throttle there.
     """
     owned = owned_axes(mask)
+    active = [sp for sp in setpoints if sp.get("active") is True]
 
     def outside(sp):
-        n, e, d, _ = sp
-        horizontal = "forward" not in owned and (n != 0.0 or e != 0.0)
-        vertical = "up" not in owned and d != 0.0
-        return horizontal or vertical
+        pitch = "forward" not in owned and sp.get("pitch") != 0.0
+        roll = "left" not in owned and sp.get("roll") != 0.0
+        yaw = "yaw" not in owned and sp.get("yaw_rate") != 0.0
+        throttle = "up" not in owned and sp.get("throttle") != hover_throttle
+        return pitch or roll or yaw or throttle
 
-    bad = sum(1 for sp in setpoints if outside(sp))
-    ok = bool(setpoints) and bad == 0
+    bad = sum(1 for sp in active if outside(sp))
+    ok = bool(active) and bad == 0
     return Check(
-        f"PX4 setpoints outside mask {mask} (REQ-SAF-018)",
+        f"attitude setpoints outside mask {mask} (REQ-SAF-018)",
         ok,
-        f"{bad} of {len(setpoints)} setpoints move an axis outside the mask",
+        f"{bad} of {len(active)} active setpoints command an axis outside the "
+        f"mask ({len(setpoints) - len(active)} inactive)",
     )
 
 
@@ -188,42 +205,29 @@ def first_zero_after(samples, t0):
     return None
 
 
-def loss_checks(last_intent, targets, setpoints):
-    """Zero velocity after /gesture/intent stops.
+def loss_check(last_intent, targets):
+    """Zero target after /gesture/intent stops (REQ-SAF-017, F25).
 
     last_intent: receive time of the last /gesture/intent before intent_node was
-    killed. targets / setpoints: (t, values) of /mission/velocity_target and
-    /fmu/in/trajectory_setpoint, t = the PUBLISH stamp (header.stamp, PX4
-    timestamp), all on the same wall clock. The delivery delay of the zero to
-    the test is not counted: it is not mission_node's. REQ-SAF-017 is about the mission_node output
-    (<= 0.25 s). The bridge forwards it at its next tick, so PX4 may get it
-    one tick (0.05 s) later.
+    killed. targets: (t, values) of /mission/velocity_target, t = the PUBLISH
+    stamp (header.stamp), on the same wall clock. The delivery delay of the
+    zero to the test is not counted: it is not mission_node's. The drone
+    itself is judged by hover_check: the controller then holds zero velocity.
     """
-    name = "zero after losing /gesture/intent (REQ-SAF-017)"
+    name = "zero after losing /gesture/intent (REQ-SAF-017): mission_node output"
     if last_intent is None:
-        return [Check(name, False, "no /gesture/intent received")]
+        return Check(name, False, "no /gesture/intent received")
     if not any(t <= last_intent and not is_zero(v) for t, v in targets):
-        return [
-            Check(name, False, "the drone was not commanded to move before the loss")
-        ]
-    checks = []
-    for label, samples, limit in (
-        ("mission_node output", targets, LOSS_LIMIT_SEC),
-        ("PX4 setpoint", setpoints, LOSS_LIMIT_SEC + BRIDGE_TICK_SEC),
-    ):
-        t_zero = first_zero_after(samples, last_intent)
-        if t_zero is None:
-            checks.append(Check(f"{name}: {label}", False, "never zero"))
-            continue
-        delay = t_zero - last_intent
-        checks.append(
-            Check(
-                f"{name}: {label}",
-                delay <= limit,
-                f"{delay * 1000:.0f} ms (<= {limit * 1000:.0f} ms)",
-            )
-        )
-    return checks
+        return Check(name, False, "the drone was not commanded to move before the loss")
+    t_zero = first_zero_after(targets, last_intent)
+    if t_zero is None:
+        return Check(name, False, "never zero")
+    delay = t_zero - last_intent
+    return Check(
+        name,
+        delay <= LOSS_LIMIT_SEC,
+        f"{delay * 1000:.0f} ms (<= {LOSS_LIMIT_SEC * 1000:.0f} ms)",
+    )
 
 
 def hover_check(velocities):

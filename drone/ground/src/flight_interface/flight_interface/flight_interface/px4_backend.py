@@ -12,7 +12,10 @@ Out, every tick (PX4 needs the stream before and during Offboard):
     zero velocity, so PX4 holds position itself (as px4_offboard_bridge did).
 In: vehicle_status, vehicle_local_position, vehicle_land_detected -> the
 drone state for the guard (poll()), and /estimate/velocity (F1) from each
-local position whose velocity PX4 calls valid.
+local position whose velocity PX4 calls valid. Its vertical part is z_deriv,
+the rate of PX4's height estimate, not vz: in SITL vz carries a bias of about
+0.1 m/s against that height, and the controller, holding vz at zero, let the
+drone climb about 6 m a minute (ADR-025 F1 note, 2026-11-24).
 
 Never arms, disarms or changes PX4's mode (REQ-SAF-023): arm_control() and
 request_resume() send nothing. end_session() (the E-stop) only stops: the node
@@ -108,13 +111,14 @@ class Px4Backend(Backend):
 
     def _on_position(self, msg):
         self.logic.on_position(msg.heading, msg.heading_good_for_control, self._clock())
-        velocity_valid = msg.v_xy_valid and msg.v_z_valid
+        # z_deriv (down, m/s) is the rate of z: valid with z and vz
+        velocity_valid = msg.v_xy_valid and msg.v_z_valid and msg.z_valid
         if not (velocity_valid and msg.heading_good_for_control):
             return
-        values = (msg.vx, msg.vy, msg.vz, msg.heading)
+        values = (msg.vx, msg.vy, msg.z_deriv, msg.heading)
         if not all(math.isfinite(v) for v in values):
             return
-        forward, left, up = ned_to_flu(msg.vx, msg.vy, msg.vz, msg.heading)
+        forward, left, up = ned_to_flu(msg.vx, msg.vy, msg.z_deriv, msg.heading)
         out = TwistStamped()
         out.header.stamp = self._node.get_clock().now().to_msg()
         out.header.frame_id = "base_link"

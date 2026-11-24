@@ -50,7 +50,10 @@ NODES = {
     "fake_flight_state": ("mission_node.fake_flight_state", "FakeFlightState"),
     "flight_interface": ("flight_interface.link_node", "FlightInterface"),
 }
-# The nodes each mode's launch file starts (test_mode_launch_files.py checks those)
+# The nodes each mode starts: its launch file's (test_mode_launch_files.py
+# checks those), plus, in sim, flight_interface, which only make sim starts
+# (its simulation image has px4_msgs, #199). A mode file's sections must be
+# among them, and the shared keys must agree across them (F15).
 MODE_NODES = {
     "demo": {
         "gesture_node",
@@ -66,7 +69,13 @@ MODE_NODES = {
         "controller_node",
         "flight_interface",
     },
-    "sim": {"gesture_node", "intent_node", "mission_node"},
+    "sim": {
+        "gesture_node",
+        "intent_node",
+        "mission_node",
+        "controller_node",
+        "flight_interface",
+    },
 }
 
 
@@ -116,6 +125,16 @@ class ConfigFileTests(unittest.TestCase):
     def test_real_never_uses_the_loopback(self):
         params = config("real")["flight_interface"]["ros__parameters"]
         self.assertEqual(params["backend"], "esp")
+
+    def test_sim_flies_px4_with_a_measured_hover_throttle(self):
+        # F3, F16, F20: the px4 backend refuses 0.0, and the controller stays
+        # inactive with it, so the simulation would never fly.
+        data = config("sim")
+        self.assertEqual(data["flight_interface"]["ros__parameters"]["backend"], "px4")
+        for name in ("controller_node", "flight_interface"):
+            with self.subTest(node=name):
+                hover = data[name]["ros__parameters"]["hover_throttle"]
+                self.assertGreater(hover, 0.0)
 
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
