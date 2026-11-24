@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-24
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -41,19 +41,19 @@ flowchart LR
 |---|---|
 | 1 Unit | GitHub-hosted: GoogleTest, pytest |
 | 2 Integration | GitHub-hosted: golden vectors C++ ⇄ Python, Betaflight SITL |
-| 3 Simulation | Team laptops: PX4 SITL + Gazebo (manual, later nightly): `make sim-smoke` ([[PX4 SITL Setup]] §7.3) |
+| 3 Simulation | Team laptops: PX4 SITL + Gazebo (manual, later nightly): `make sim-smoke`, `make sim-hold` ([[PX4 SITL Setup]] §7.4, §7.5) |
 | 4 Hardware / bench | **HIL runner** (automated) + manual props-off bench |
 | 5 Flight | Cage, with a flight-test report in Obsidian |
 
 Each job is gated by `check-components` and turns on when its component exists (details in [[GitHub Actions Starter]]). The workflow files are `ci.yaml`, `hil.yaml` and `close-linked-issues.yaml` in `.github/workflows/`.
 
 **Ground ROS 2 jobs.**
-- `ground-ros2` builds the packages in its `ROS_PKGS` (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`, `ground_bringup`). Its first step finds each package's folder with `drone/ground/tools/pkg_dirs.sh` (`src/<component>/<package>/package.xml`, exactly one, with a matching `<name>`), the same lookup as the Makefile: a missing, doubled or misnamed package fails the job, it is never skipped with a notice. A new package joins by adding it to `ROS_PKGS` together with its tests. It builds them in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
+- `ground-ros2` builds the packages in its `ROS_PKGS` (`gesture_node`, `intent_node`, `mission_node`, `controller_node`, `flight_interface`, `ground_bringup`). Its first step finds each package's folder with `drone/ground/tools/pkg_dirs.sh` (`src/<component>/<package>/package.xml`, exactly one, with a matching `<name>`), the same lookup as the Makefile: a missing, doubled or misnamed package fails the job, it is never skipped with a notice. A new package joins by adding it to `ROS_PKGS` together with its tests. It builds them in the `ros:jazzy-ros-base` container and runs `colcon test`. It installs `python3-serial` for `flight_interface`'s `msp.py`. A second step runs the package tests again, plus the pipeline tests in `drone/tests/ros`, under pytest with a **90 % coverage gate**. It uploads the JUnit report (artifact `ground-ros2-report`).
 - `ground-docker` runs `drone/ground/tools/smoke_test.sh`: every ground image, including `flight_interface`, its package tests inside it, and the containers talking to each other.
 - They turn on when `drone/ground/src` exists (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
 - On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why. The simulation lives in `drone/ground/src/simulation/`, so a PR that only changes the simulation runs them too: slower, but harmless.
 
-**Simulation bridge job.** `sim-bridge-python` runs the pytest tests of the sim-only `px4_offboard_bridge` that need no ROS and no `px4_msgs` (`bridge_logic.py`, and `smoke_checks.py`, the pass/fail rules of `make sim-smoke`), with a **90 % coverage gate**. It turns on when `drone/ground/src/simulation/px4_offboard_bridge/setup.py` exists. The simulation itself is not run in CI.
+**Simulation checks job.** `sim-smoke-python` runs the pytest tests of the sim-only `sim_smoke` package that need no ROS and no `px4_msgs`: `smoke_checks.py` and `hold_checks.py`, the pass/fail rules of `make sim-smoke` and `make sim-hold`, with a **90 % coverage gate**. It turns on when `drone/ground/src/simulation/sim_smoke/setup.py` exists. The simulation itself is not run in CI.
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
 

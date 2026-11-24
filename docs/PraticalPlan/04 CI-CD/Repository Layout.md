@@ -3,7 +3,7 @@ title: Software Repository Layout
 type: ci-cd
 status: active
 date: 2026-10-21
-updated: 2026-11-19
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - ci
@@ -39,9 +39,9 @@ SEA-ME_Team1_ROSRangers/
 │   ├── ground/                # ROS 2 Jazzy ground nodes (colcon packages)
 │   │   ├── Makefile           # make: Docker (+ native venv/workspace if Jazzy is installed); make real / real-dry;
 │   │   │                      #   make test (every suite) / unit / test-sitl / smoke;
-│   │   │                      #   make sim / sim-smoke / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
-│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, echo, fake_flight_state),
-│   │   │                      #   real (... + flight_interface), sim (... + px4; SIM ONLY), sim-smoke (the sim test)
+│   │   │                      #   make sim / sim-smoke / sim-hold / sim-down: the chain against PX4 SITL (PX4 SITL Setup §7)
+│   │   ├── docker-compose.yml # one profile per mode: demo (gesture, intent, mission, controller, echo, fake_flight_state),
+│   │   │                      #   real (... + flight_interface), sim (... + flight_interface_sim, px4; SIM ONLY), sim-smoke and sim-hold (the sim tests)
 │   │   ├── env.example/       # demo|real|sim.env.example: each mode's env file, values empty (copy to env/, ignored by Git,
 │   │   │                      #   and fill in the safety pilot's values); .env.example likewise for .env
 │   │   ├── docker/            # what goes into the images: base/Dockerfile (the base every ground image builds FROM:
@@ -55,20 +55,21 @@ SEA-ME_Team1_ROSRangers/
 │   │       ├── gesture/          # gesture_node: webcam + MediaPipe recogniser -> /gesture/raw (see 06 Gestures)
 │   │       ├── intent/           # intent_node: /gesture/raw -> safety filter -> /gesture/intent
 │   │       ├── mission/          # mission_node: /gesture/intent + /flight/state -> /mission/velocity_target (+ pretend inputs)
+│   │       ├── controller/       # controller_node: velocity target + /estimate/velocity -> /control/attitude_setpoint
 │   │       ├── flight_interface/ # flight_interface: the lifecycle node ground <-> drone (ADR-025), fc_telemetry,
-│   │       │                     #   msp.py (MSP client, shared with the bench tools)
+│   │       │                     #   msp.py (MSP client, shared with the bench tools); backends loopback, esp,
+│   │       │                     #   px4 (sim only: Dockerfile stage sim adds px4_msgs)
 │   │       ├── echo/             # monitor.py: the live table of docker compose up (not a ROS package)
 │   │       ├── bringup/          # ground_bringup: the modes, no code. launch/demo|real|sim.launch.py (the mode
 │   │       │                     #   without Docker), config/demo|real|sim.yaml (its parameters; the containers
 │   │       │                     #   mount config/ and pass --params-file /config/<mode>.yaml)
 │   │       ├── simulation/       # SIM ONLY: PX4 SITL + Gazebo Dockerfile (stage px4 + ground nodes), README,
-│   │       │   │                 #   sim_start.sh (make sim: arms and takes off)
-│   │       │   └── px4_offboard_bridge/  # stand-in for the PX4 backend of flight_interface (#86):
-│   │       │                             # /mission/velocity_target -> PX4 offboard. Not in ground-ros2
-│   │       │                             # (needs px4_msgs); its logic tests run in CI job sim-bridge-python.
-│   │       │                             # smoke_scenario.py + smoke_checks.py: the make sim-smoke test.
-│   │       │                             # A plain colcon build over drone/ground/src fails on it (no px4_msgs):
-│   │       │                             # select packages by name (--packages-select), as CI and make do
+│   │       │   │                 #   sim_start.sh (make sim: configures flight_interface, arms, takes off)
+│   │       │   └── sim_smoke/    # the scenarios of make sim-smoke and make sim-hold, and their checks
+│   │       │                     # (smoke_checks.py, hold_checks.py: no ROS, CI job sim-smoke-python).
+│   │       │                     # Not in ground-ros2 (needs px4_msgs): a plain colcon build over
+│   │       │                     # drone/ground/src fails on it; select packages by name
+│   │       │                     # (--packages-select), as CI and make do
 │   │       └── sd_protocol_py/   # Python twin of lib/protocol
 │   ├── tools/
 │   │   └── bench/             # bench tools (no ROS): seame, esp_at, msp_check, fc_cli, ground_link ...
@@ -125,3 +126,7 @@ Anything in `drone/firmware/esp8266/src` that contains an `if` probably belongs 
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **ruff** | Python linter and formatter (`ruff` and `ruff-format` hooks). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **colcon** | The build tool for ROS 2 workspaces; `colcon test` runs each package's tests. |
+| **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **px4_msgs** | The ROS 2 message package of PX4's topics; only the simulation image of `flight_interface` has it. |

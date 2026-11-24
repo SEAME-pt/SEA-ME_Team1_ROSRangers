@@ -3,7 +3,7 @@ title: Mission_Node (gesture intent → velocity target)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-19
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - gestures
@@ -23,8 +23,8 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Topic names, `/flight/state` fields and every number are **proposals** (§12). The design decisions to review are in §10.
-> - In `make`, `/flight/state` comes from the **pretend** `fake_flight_state` (§7), in the simulator from `px4_offboard_bridge` (§8.4). Never use either with a real drone: there it comes from `flight_interface` ([[05 Flight Interface Node]]).
-> - Not run yet with the real webcam, a controller or a drone.
+> - In `make`, `/flight/state` comes from the **pretend** `fake_flight_state` (§7), in the simulator from `flight_interface`'s `px4` backend (§8.4). Never use `fake_flight_state` with a real drone: there it comes from `flight_interface` with the `esp` backend ([[05 Flight Interface Node]]).
+> - Not run yet with the real webcam or a real drone. The controller runs in the simulation (`make sim`, [[07 Controller Node]]).
 
 ---
 
@@ -33,8 +33,8 @@ aliases:
 ```mermaid
 flowchart LR
   GN[intent_node] -->|"/gesture/intent<br/>JSON, 20 Hz"| M["<b>mission_node</b>"]
-  FFS["fake_flight_state (pretend)<br/>or px4_offboard_bridge (sim)"] -->|"/flight/state"| M
-  M -->|"/mission/velocity_target<br/>TwistStamped, 20 Hz"| C["velocity controller<br/>(planned)"]
+  FFS["fake_flight_state (pretend)<br/>or flight_interface (real, sim)"] -->|"/flight/state"| M
+  M -->|"/mission/velocity_target<br/>TwistStamped, 20 Hz"| C["controller_node<br/>(07 Controller Node)"]
   M -->|"/mission/state<br/>JSON"| LOG["live table, logs"]
 ```
 
@@ -201,9 +201,9 @@ Read `mode` and `mode_reason` first: not `ENGAGED` means zero whatever the gestu
 
 Mode and intent changes, bad input and a health report every 5 s, in `logs/mission/latest.log`. The live table shows the mode and the velocity in words ([[01 ROS2 Nodes Installation|01]] §4).
 
-### 6.5 Downstream (not this node's job)
+### 6.4 Downstream (not this node's job)
 
-The velocity controller turns the target into attitude setpoints, and `flight_interface` sends them to the drone ([[06 Final Connections and Missing Parts|06]] §2.1, [[05 Flight Interface Node]]).
+`controller_node` turns the target into attitude setpoints ([[07 Controller Node]]), and `flight_interface` sends them to the drone ([[05 Flight Interface Node]]).
 
 ---
 
@@ -259,7 +259,7 @@ Compare the output with the table in §7.2. Don't run it next to the `mission` a
 
 ### 8.4 In the simulator
 
-`make sim` runs `mission_node` against PX4 SITL + Gazebo: `px4_offboard_bridge` flies its velocity target and publishes `/flight/state` from PX4. `make sim-smoke` checks it headless. Both: [[PX4 SITL Setup]] §7.
+`make sim` runs `mission_node` against PX4 SITL + Gazebo: `controller_node` ([[07 Controller Node]]) flies its velocity target through `flight_interface`'s `px4` backend, which publishes `/flight/state` from PX4. `make sim-smoke` checks the chain headless, `make sim-hold` the position hold. All three: [[PX4 SITL Setup]] §7.
 
 ---
 
@@ -336,7 +336,7 @@ Registered in [[Requirements]] (status `draft`).
 - [ ] **Topic types**: a typed message package instead of JSON strings ([[06 Final Connections and Missing Parts|06]] §3.2).
 - [ ] **Who publishes `/flight/state`**, and how `airborne` is decided.
 - [ ] **Left/right convention** in the cage: operator frame vs drone frame.
-- [ ] **Mission and controller in one node?** [[System Overview]] draws them as one box.
+- [x] **Mission and controller in one node?** No: separate nodes ([[07 Controller Node]] §9, [[ADR-025 flight_interface Ground Node|ADR-025]] C1.1). [[System Overview]] still draws them as one box.
 
 ---
 
@@ -363,3 +363,8 @@ Registered in [[Requirements]] (status `draft`).
 | **REP-103** | The ROS convention for units (SI) and axis directions. |
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **TwistStamped** | Standard ROS 2 message holding a linear and angular velocity with a timestamp and frame. |
+| **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
+| **FLU** | Body frame with x forward, y left, z up (REP-103). |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

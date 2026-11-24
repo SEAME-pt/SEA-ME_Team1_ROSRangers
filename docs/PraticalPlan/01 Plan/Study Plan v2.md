@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-11-13
+updated: 2026-11-24
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -119,7 +119,7 @@ tags: [plan]
 - **C:** Python implementation of the same spec. Shared **golden test vectors** pass in both languages.
 - **D:** extend the Betaflight SITL tests (the job itself is done, week 2). Extend the registered Pi 4 HIL runner ([[HIL Runner]] §3.1, #48): a USB Wi-Fi dongle for the Wi-Fi tests, since the Pi has only its built-in Wi-Fi. *Changed 2026-10-26: no dongle. The Pi time-slices its Wi-Fi ([[ADR-020 HIL Runner|ADR-020]], #48).*
 - **E:** ThoneFlow **sensor-alone characterisation** ([[ThoneFlow]] §9.2): serial framing, frame rate (66 Hz datasheet vs 25 Hz ArduPilot), byte order, checksum. Write the parser.
-- **E:** *Added 2026-11-13: the PX4 SITL smoke test of the gesture chain (gesture → intent → mission → `px4_offboard_bridge` → PX4) moved forward from week 5 to catch topic, message, QoS, frame and rate mismatches early. Done: `make sim-smoke` ([[PX4 SITL Setup]] §7.3, #86).*
+- **E:** *Added 2026-11-13: the PX4 SITL smoke test of the gesture chain (gesture → intent → mission → `px4_offboard_bridge` → PX4; since 2026-11-24 (#199) mission → `controller_node` → `flight_interface`'s `px4` backend → PX4, see week 5) moved forward from week 5 to catch topic, message, QoS, frame and rate mismatches early. Done: `make sim-smoke` ([[PX4 SITL Setup]] §7.4, #86).*
 
 ## 6. Week 4 · 9–13 Nov · Failsafe and sessions · *Sprint 2 demo Fri*
 
@@ -133,7 +133,7 @@ tags: [plan]
 
 ## 7. Week 5 · 16–20 Nov · Control in simulation and first override flight
 
-- **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.*
+- **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.* *Done 2026-11-24 (#199): `controller_node` behind `flight_interface`'s `px4` backend, the bridge deleted; `make sim-hold` holds position 3 of 3 ([[07 Controller Node]], [[PX4 SITL Setup]] §7).*
 - **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights.
 - **A + B (cage):** first override **flight**, only if FC-15 passed and the upgrade to 2026.6.2 is done, with the failsafe re-tested and a new `diff all` committed ([[ADR-014 Betaflight Version|ADR-014]], [[Safety Rules]] #14): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.
@@ -157,7 +157,7 @@ tags: [plan]
 
 ## 11. Exit criteria for Module 1 (from the program README)
 
-- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-NAV-001: 0.25 m for 60 s in SITL; REQ-NAV-002: 0.5 m radius for 30 s in the cage; REQ-CTL-001 limits the gesture speeds).
+- [ ] Streams velocity/attitude setpoints through the flight interface and **holds position** in PX4 SITL and in the cage (REQ-NAV-001: 0.25 m for 60 s in SITL; REQ-NAV-002: 0.5 m radius for 30 s in the cage; REQ-CTL-001 limits the gesture speeds). *SITL part done 2026-11-24 (#199): `make sim-hold`, 3 of 3 ([[PX4 SITL Setup]] §7.5). The cage part (REQ-NAV-002) is open.*
 - [ ] Link loss → the drone levels with neutral sticks (it can drift; no position hold) and the pilot takes over with the radio ([[ADR-004 ESP Failsafe|ADR-004]], 2026-10-20 and 2026-10-23; REQ-SAF-009, REQ-SAF-013, REQ-SAF-014, REQ-SAF-017). Betaflight's own RX failsafe (DROP on radio loss) is a separate failsafe.
 - [ ] Green CI: build, unit tests, static analysis, coverage > 80 % (90 % on the ROS 2 nodes), HIL job (REQ-SW-003, REQ-SW-004).
 - [ ] Real-time profile plotted (REQ-SW-005). Sim-to-real report (REQ-SYS-002). E-stop under fault injection (REQ-SAF-002, REQ-SAF-005, REQ-SAF-021).
@@ -229,3 +229,5 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Cascade controller** | Two loops in a row: the ground's velocity loop sets the attitude, the flight controller's attitude loop sets the motors. |
+| **Ground truth** | Gazebo's own position of the model, not PX4's estimate of it; `make sim-hold` judges on it. |

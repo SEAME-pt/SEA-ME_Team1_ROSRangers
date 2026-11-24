@@ -3,7 +3,7 @@ title: Testing Strategy
 type: test-plan
 status: draft
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - Communication Test Plan
@@ -27,13 +27,13 @@ tags:
 |---|---|---|---|
 | 1 Unit (C++) | framing, MAC, sequence window, failsafe timers, AETR mapping, MSP encode/decode, ThoneFlow parser | GitHub runner, GoogleTest | stale seq rejected; 251 ms without control → failsafe; tag flip → reject; false `0xFE` header resync |
 | 1 Unit (Python) | same spec in `sd_protocol_py`, controller, gesture filter | GitHub runner, pytest | |
-| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`, `mission_node`, `flight_interface`: unit, node, process, launch, contract and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent → mission over real topics; zero velocity within 0.25 s of losing `/gesture/intent`; `fc_telemetry` replaying a real MSP capture (§5) |
+| 1 Unit + 2 Integration (ROS 2) | `gesture_node`, `intent_node`, `mission_node`, `controller_node`, `flight_interface`: unit, node, process, launch, contract and pipeline tests | GitHub runner in `ros:jazzy-ros-base` (job `ground-ros2`, `colcon test` + pytest, coverage gate 90 %) | gesture → intent → mission over real topics; zero velocity within 0.25 s of losing `/gesture/intent`; `fc_telemetry` replaying a real MSP capture (§5) |
 | 2 Docker images | the ground images build; package tests inside each image; gesture container → intent container → mission container; clean stops; node logs | GitHub runner (job `ground-docker`, `drone/ground/tools/smoke_test.sh`) | `L:INDEX_RIGHT+R:NONE` → `MOVE_RIGHT`, mission never engages without `ENGAGE` (stays `WAITING`); gesture container stopped → `NEUTRAL` (`no_packets`), mission stays `WAITING`, no land request (since #81, 2026-10-27); `flight_interface` (loopback) → `/flight/state` → mission stays `IDLE`, configured and activated, never armed |
 | 2 Cross-language | golden vectors (`drone/tests/vectors/*.json`) | both | C++ encoder and Python decoder agree byte for byte |
 | 2 MSP integration | our MSP code ↔ **the real Betaflight parser** | Betaflight 2026.6.2 SITL, TCP 5761 | API handshake, v2 CRC, malformed frames ignored |
 | 2 Impaired link | loss, delay, duplication, reordering, corruption between a simulated sender and receiver | GitHub runner | [[PC_to_ESP]] §9.1 |
-| 3 Simulation (ground chain) | gesture → intent → mission → `px4_offboard_bridge` (sim-only stand-in for `flight_interface`) → PX4, scripted gestures | team laptop, `make sim-smoke` ([[PX4 SITL Setup]] §7.3); not in CI | drone moves the commanded way; REQ-CTL-001 speeds; zero within 0.25 s of killing `intent_node` (REQ-SAF-017); no axis outside the mask (REQ-SAF-018); 20 Hz target (REQ-SW-001) |
-| 3 Simulation | controller + flight interface | PX4 SITL + Gazebo | square path, link-loss injection |
+| 3 Simulation (ground chain) | gesture → intent → mission → controller → `flight_interface` (backend `px4`) → PX4, scripted gestures | team laptop, `make sim-smoke` ([[PX4 SITL Setup]] §7.4); not in CI | drone moves the commanded way; REQ-CTL-001 speeds; zero within 0.25 s of killing `intent_node` (REQ-SAF-017); no axis outside the mask (REQ-SAF-018); 20 Hz target (REQ-SW-001) |
+| 3 Simulation | controller + flight interface: position hold (REQ-NAV-001) | team laptop, `make sim-hold` ([[PX4 SITL Setup]] §7.5), 3 runs, Gazebo ground truth; not in CI | within 0.25 m / ±0.15 m of the start point for 60 s. Later: square path, link-loss injection |
 | 4 HIL | real spare ESP, no FC (FC checks through Betaflight SITL or the flight unit, #61), no battery; Wi-Fi by time-slicing the Pi's radio (ADR-020, 2026-10-26) | Pi runner ([[HIL Runner]]) | passthrough, failsafe timing, latency |
 | 4 Bench (manual) | ESP alone, then with the FC on temporary wires | lab | [[ESP Bench Test Plan]] Stages 1–2 |
 | 4 Bench (manual) | props off, battery on | lab | [[ESP_to_FC]] §11 Phases 1–6 |
@@ -133,3 +133,5 @@ Run locally: `colcon test --packages-select flight_interface`. The bench tools' 
 | **CLI (Betaflight)** | Betaflight's text command line on a serial port, entered with `#`. |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Self-hosted runner** | A machine of ours (the Pi 4 `hil-drone`) that runs GitHub Actions jobs, used for the HIL job. |
+| **Ground truth** | Gazebo's own position of the model, not PX4's estimate of it; `make sim-hold` judges on it. |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |
