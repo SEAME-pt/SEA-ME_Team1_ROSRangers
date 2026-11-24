@@ -140,7 +140,7 @@ tags: [plan]
 
 > [!info] Status 2026-11-24 (from the GitHub issues)
 > - **Open:** cascade controller in PX4 SITL (GitHub #199); real-time profile, due 2026-11-20 (#146); first override flight (#201), which waits for the ANGLE hover on 2026.6.2 (#134), the MSP budget spike (#123), the props-off override bench test (#104) and the FC USB connector repair (#189).
-> - **Replaced:** the flow velocity estimate on the bench (#200) was written for the ThoneFlow. With the MTF-02P, Betaflight estimates height and velocity itself ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24).
+> - **To re-scope:** the flow velocity estimate on the bench (#200, still open, blocks #203) was written for the ThoneFlow. With the MTF-02P, Betaflight estimates height and velocity itself ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24). ThiagoTEP re-scopes or closes it.
 > - **Done in the same weeks:** architecture document (#98), `flight_interface` lifecycle node (#103), MSP Override in the Betaflight SITL tests (#105), HIL flash and failsafe-timing job (#106), Sprint 2 demo (#109), late-frame rejection (#204), ground restructure (#186).
 
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
