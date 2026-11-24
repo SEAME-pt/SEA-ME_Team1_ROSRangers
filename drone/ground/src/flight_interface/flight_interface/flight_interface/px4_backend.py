@@ -9,7 +9,7 @@ Out, every tick (PX4 needs the stream before and during Offboard):
   * a commanding setpoint: OffboardControlMode(attitude) +
     VehicleAttitudeSetpoint (q_d, thrust_body, yaw_sp_move_rate);
   * neutral (F19): OffboardControlMode(velocity) + TrajectorySetpoint with a
-    zero velocity, so PX4 holds position itself (as px4_offboard_bridge did).
+    zero velocity, so PX4 holds position itself.
 In: vehicle_status, vehicle_local_position, vehicle_land_detected -> the
 drone state for the guard (poll()), and /estimate/velocity (F1) from each
 local position whose velocity PX4 calls valid. Its vertical part is z_deriv,

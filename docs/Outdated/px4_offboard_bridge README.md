@@ -1,3 +1,13 @@
+---
+title: px4_offboard_bridge README (deleted)
+type: reference
+status: outdated
+date: 2026-11-24
+tags: [simulation, px4, outdated]
+---
+
+> **Outdated.** `px4_offboard_bridge` was deleted on 2026-11-24 (#199, [[ADR-025 flight_interface Ground Node|ADR-025]] F5). The simulation now flies through `controller_node` and `flight_interface`'s `px4` backend: see [[PX4 SITL Setup]] and [[07 Controller Node]]. This is its README as it was, kept as history. Don't use it as a source.
+
 # px4_offboard_bridge (SIMULATION ONLY, #86)
 
 Stand-in for the PX4 backend of `flight_interface` (ADR-019), so the ground chain can be tried against PX4 SITL + Gazebo. **Never use it with the real drone.** Week 5 replaces it with the controller behind `flight_interface`.
@@ -89,3 +99,11 @@ Masks 11 and 15 only (`make sim-smoke` refuses 8): the scenario flies right and 
 | **Offboard** | PX4 mode that follows setpoints from a companion computer; it needs a setpoint stream at ≥ 2 Hz. |
 | **SITL** | Software In The Loop: PX4 running as a program on the PC with Gazebo as the world. |
 | **Micro XRCE-DDS agent** | The bridge between PX4's uORB topics and ROS 2 (`/fmu/in`, `/fmu/out`). |
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| **FLU / NED** | Body frame forward-left-up (ROS, REP-103) / earth frame north-east-down (PX4). |
+| **Offboard** | PX4 flight mode in which an outside computer streams the setpoints. |
+| **SITL** | Software in the loop: PX4 running on a PC against the Gazebo simulator. |

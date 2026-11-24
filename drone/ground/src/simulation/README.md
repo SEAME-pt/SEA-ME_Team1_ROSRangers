@@ -25,4 +25,4 @@ The `px4` service (`Dockerfile`, final stage, started by `sim_start.sh`) does wh
 
 `make sim-smoke` runs `sim_smoke_scenario` (package `sim_smoke/`): no hands → ENGAGE → MOVE_RIGHT 4 s → CLIMB_UP 3 s → MOVE_RIGHT with `intent_node` killed. It checks direction, REQ-CTL-001, REQ-SAF-017 (`mission_node`'s zero within 0.25 s, then the drone hovers), REQ-SAF-018 (velocity targets, attitude setpoints and the measured drift) and REQ-SW-001, and writes the bag and `summary.md` to `drone/ground/logs/sim-smoke/<start time>/`. The mask must be 11 or 15: the scenario flies right and up only.
 
-`px4_offboard_bridge/` is no longer started by anything; it is deleted in #199's PR (ADR-025 F5).
+`make sim-hold` is the SITL hold test (REQ-NAV-001, ADR-025 F26): it descends to 1.0 m by gesture, holds 60 s and judges the run on Gazebo's ground truth, 3 runs in a row (`RUNS=1` for one). Results in `drone/ground/logs/sim-hold/<start time>/`.

@@ -23,7 +23,7 @@ resets it, so the next command starts from where the drone points.
 Neutral (F19): PX4 holds position itself (velocity Offboard, zero velocity),
 the backend's send_neutral(); nothing here.
 
-Drone state for the guard (F13), with px4_offboard_bridge's rules:
+Drone state for the guard (F13):
   * fresh while PX4's status (STATUS_TIMEOUT) and local position
     (POSITION_TIMEOUT) are fresh; otherwise there is no state at all, so the
     guard's watchdog sees the link lost;
@@ -42,7 +42,7 @@ The clock is passed in as MONOTONIC seconds, as everywhere in flight_interface.
 import math
 
 # PX4 publishes vehicle_status at 2 Hz (sooner on a change), the local position
-# much faster, the land detector at least once a second (as the bridge).
+# much faster, the land detector at least once a second.
 STATUS_TIMEOUT = 1.5
 POSITION_TIMEOUT = 0.5
 LAND_TIMEOUT = 3.0
