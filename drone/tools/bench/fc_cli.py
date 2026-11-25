@@ -104,7 +104,7 @@ class Cli:
         out = out[1:] if out and out[0].strip() == line.strip() else out
         while out and out[-1].strip() in ("", "#"):
             out.pop()
-        return "\n".join(out).strip("\n") + "\n"
+        return "\n".join(o.rstrip() for o in out).strip("\n") + "\n"
 
     def save(self):
         self.ser.write(b"save\r\n")  # the FC reboots and the port disappears

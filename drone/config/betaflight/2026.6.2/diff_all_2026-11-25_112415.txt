@@ -11,7 +11,7 @@ defaults nosave
 board_name ODDITYRCF7AIO
 manufacturer_id ODTY
 mcu_id 002f003e3135511038333636
-signature 
+signature
 
 # name: Pilotix-Brook
 
