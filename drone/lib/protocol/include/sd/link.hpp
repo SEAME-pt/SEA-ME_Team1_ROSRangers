@@ -49,8 +49,8 @@ constexpr ConnId kNoConn = 0xFF;
 // Fills `out` with `n` random bytes. On the ESP: the hardware RNG (spec §1).
 using RandomFill = void (*)(std::uint8_t *out, std::size_t n);
 
-// Late check bound (spec §4 rule 3a, #204): 200 ms, provisional until ESP-S1-09
-// is re-run with the real t_send_us (BrunoBMFT on #171).
+// Late check bound (spec §4 rule 3a, #204): 200 ms, confirmed on 2026-11-25 by
+// the ESP-S1-09 re-run with the real t_send_us (BrunoBMFT on #219).
 constexpr std::uint32_t kLateBoundMs = 200;
 // A larger late_bound_ms is clamped to this (10 s, #205 review).
 constexpr std::uint32_t kLateBoundMaxMs = 10000;

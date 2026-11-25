@@ -2,9 +2,9 @@
 title: Protocol Spec v0 (Ground ↔ ESP)
 type: interface-spec
 status: accepted
-version: 1.6.2
+version: 1.6.3
 date: 2026-10-12
-updated: 2026-11-20
+updated: 2026-11-25
 project: SEA autonomous drone
 aliases:
   - Communication Message Specification
@@ -16,7 +16,7 @@ tags:
 
 # Protocol Spec v0 (Ground ↔ ESP)
 
-> [!success] Status: ACCEPTED v1.6.2 (v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
+> [!success] Status: ACCEPTED v1.6.3 (v1.6.3: the late bound confirmed, #219; v1.6: `override_active` values, #176; v1.5: the late check, #204). v1.0 was frozen at the design review of 2026-11-03 (Guilherme, Bruno, Paulo; GitHub #97). Changes from now on go through a dated entry in §8 or an ADR. The items left open by the review were decided on 2026-11-05 (GitHub #142, §7.5); one key per direction was added the same day (#150, §1). The counter reporting left open in §7.5 was decided on 2026-11-16 (#149).
 > Implements [[ADR-001 Message Categories|ADR-001]], [[ADR-002 Message Integrity|ADR-002]], [[ADR-003 Sequence Acceptance|ADR-003]], [[ADR-005 TCP Session|ADR-005]] and [[ADR-008 Telemetry Transport|ADR-008]]. This is the "Communication Message Specification" suggested in [[PC_to_ESP]] (OD-02, OD-03, OD-08, OD-19). All integers are little-endian.
 
 ---
@@ -193,7 +193,7 @@ Order of the checks: rule 1, rule 2, message type, transport (§2), direction (�
      - `lag = rx_time_us − t_send_us`, both u32 µs; only differences of lags are used, read as int32, so the wrap of either clock does not matter. The ESP's receive clock is `millis() × 1000` (it wraps at 2^32 µs too).
      - `offset` = the lowest lag seen in the session. It is **seeded from the session's `HELLO`** (a live TCP exchange, bounded to 100 ms by the ground, REQ-SAF-024), so a ground delayed from the start is caught too. It may rise by at most **200 ppm** of the time since it was last lowered (clock drift); a frame with a lag below `offset` + that allowance sets a new `offset`, but only once it is accepted. That time is counted in 64 bits from every ESP loop (`Receiver::keep_time`), so the allowance keeps growing past the 71.6 min u32 wrap even when no control frame comes for an hour (TCP: ARM / RESUME only; #205 review). `late_bound_ms` is clamped to 10 s.
      - **Every ground client must enforce REQ-SAF-024** (refuse a `HELLO_ACK` more than 100 ms after its `HELLO`, then open a new handshake with a new nonce). The ESP cannot tell a slow `HELLO` from a fresh one and seeds the offset from it, so a client that accepts a delayed handshake gets a wrong offset for the whole session. Done in `sd_protocol.ground` (used by `flight_interface`) and `drone/tools/bench/ground_link.py`.
-     - Late: `lag − offset − allowance` > **200 ms** (`LinkConfig::late_bound_ms`), or `lag − offset` < −1 s: no real path is that much faster than the `HELLO`'s, so it is a frame held back 35.8–71.6 min whose u32 difference wrapped (#205 review). Known limit of u32 µs times: a frame held back almost exactly 2^32 µs (71.58 min, within about −1 s / +0.2 s) still looks on time; the seq window and the session's `T_loss` failsafe still apply. **Provisional**: confirmed or retuned by re-running ESP-S1-09 with the real `t_send_us` (#204).
+     - Late: `lag − offset − allowance` > **200 ms** (`LinkConfig::late_bound_ms`), or `lag − offset` < −1 s: no real path is that much faster than the `HELLO`'s, so it is a frame held back 35.8–71.6 min whose u32 difference wrapped (#205 review). Known limit of u32 µs times: a frame held back almost exactly 2^32 µs (71.58 min, within about −1 s / +0.2 s) still looks on time; the seq window and the session's `T_loss` failsafe still apply. Provisional until 2026-11-25; **confirmed** by the ESP-S1-09 re-run with the real `t_send_us` (#219, safety pilot BrunoBMFT, [[ESP Bench Test Plan]] §4). Criterion: No extra failsafe from refusing frames younger than the bound. A stall that only delivers frames older than the bound counts as a link loss, and the failsafe it causes is expected.
      - Not checked, on purpose: `CONFIG_GET` / `CONFIG_SET` (refused while STREAMING, so a late one can never steer the drone; a TCP retransmission may legitimately be 200 ms late), `BYE` (ending a session late is the safe direction) and `HELLO` (REQ-SAF-024). A refused late `ARM_CONTROL_REQUEST` or `RESUME_REQUEST` only means the operator tries again.
      - Why: someone who jams the ESP while recording the ground's frames, then releases them in order, would otherwise keep STREAMING alive on old sticks (known limit of PR #170). On the three ESP-S1-09 cage runs the 200 ms bound rejects every frame held back by 250 ms or more and adds no `T_loss` silence (#171; replay test `LateReplay.TheS109CageRunsGetNoExtraFailsafe`, run locally from the bench logs; the logs are not in the repo).
 4. Range check (REQ-COM-002): the clamps are the v0 range check. Values are clamped; the ESP maps −1000..1000 → 1000..2000 µs as `1500 + v/2` (integer division, rounding toward 1500), and throttle 0..1000 → 1000..2000 µs. A `SETPOINT` with `mode` other than 0 or 1 is rejected as `reject:bad_mode`, with its own counter, and counted in `rx_rejected`. The `mode` check runs **before rule 3**, so a rejected `SETPOINT` does not move `last_ctrl_seq` and changes no state (REQ-COM-004). The maximum tilt stays in Betaflight (`angle_limit`), not in the protocol.
@@ -394,6 +394,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | 2026-11-19 | 1.6 | `STATE.override_active` values (§3.1, #176): 0 off, 1 on, 2 unknown. The gateway sent 0 until now. Same size and layout; a ground that reads "not 0" as "on" must read "1" instead. `MSP_BOXIDS` on the allow-list ([[MSP Cheat Sheet]] §3), team decision on #176. |
 | 2026-11-19 | 1.6.1 | No wire change. §7.5 states when a `rx_rejected` wrap can be missed and why a replayed `STATE` can't fake one; the ground restarts the total after a `STATE` gap longer than 3 s, so a missed wrap needs 65,536 rejects within 3 s (#149, PR #223, BrunoBMFT's and ThiagoTEP's reviews). |
 | 2026-11-20 | 1.6.2 | No wire change. Glossary: `LINK_FAILSAFE` is left through `RESUME_REQUEST`, a confirmed new session or a `BYE`, as in [[ESP Link State Machine]] §1 and §1.1 (it said "only `RESUME_REQUEST`"). Code excerpts from `frame.hpp` and `3_header.json` added in §1, §3 and §6 (#214). |
+| 2026-11-25 | 1.6.3 | No wire change. The late bound of 200 ms (§4 rule 3a) is **confirmed**, no longer provisional (#219, safety pilot BrunoBMFT). ESP-S1-09 re-run with the real `t_send_us`, 3 cage runs: in normal traffic nothing was refused (worst lateness 78 ms); one ~400 ms Wi-Fi stall delivered only frames 197–439 ms late, which were refused and caused one link failsafe at every bound from 100 to 250 ms. The criterion is stated as: "No extra failsafe from refusing frames younger than the bound. A stall that only delivers frames older than the bound counts as a link loss, and the failsafe it causes is expected." `kLateBoundMs` unchanged. |
 
 ## 9. Glossary
 
@@ -420,7 +421,7 @@ Only `rx_rejected` wraps. The u16 counters of `FC_HEALTH` (§3) keep saturating 
 | **SITL** | Software In The Loop: the flight controller firmware running as a program on the PC (Betaflight SITL uses TCP 5761+). |
 | **SoftAP** | The Wi-Fi access point run by the ESP8266 itself ([[ADR-006 Network\|ADR-006]]). |
 | **Saturate / wrap** | What a counter does at its maximum: stay there, or restart from 0. `STATE.rx_rejected` wraps, and the ground counts the wraps (§7.5, #149). |
-| **Late check** | The ESP refuses a control frame that arrived too long (200 ms, provisional) after it was sent, measured against the session's offset between the ground's `t_send_us` and its own clock (§4 rule 3a, #204). |
+| **Late check** | The ESP refuses a control frame that arrived too long (200 ms, confirmed 2026-11-25, #219) after it was sent, measured against the session's offset between the ground's `t_send_us` and its own clock (§4 rule 3a, #204). |
 | **`CLOCK_MONOTONIC_RAW`** | A Linux clock that only counts up, at the hardware's rate; unlike `CLOCK_MONOTONIC`, NTP/chrony cannot speed it up or slow it down. The ground stamps `t_send_us` with it (§1). |
 | **Gateway** | The ESP firmware that replaces the transparent bridge (#101): it talks MSP to the FC itself, with an allow-list, and never forwards network bytes to the FC. |
 | **Transparent bridge** | The first custom ESP firmware: every UDP 5760 byte goes to the FC UART and back, unchanged. Kept as a bench tool. |
