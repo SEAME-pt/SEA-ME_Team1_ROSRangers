@@ -39,6 +39,45 @@ tags:
 | 4 Bench (manual) | props off, battery on | lab | [[ESP_to_FC]] §11 Phases 1–6 |
 | 5 Flight | cage, safety pilot | lab | staged masks ([[ADR-010 MSP Override\|ADR-010]]) |
 
+The ground suites run from `drone/ground/` through one runner script; each target is one row of the summary:
+
+```bash
+# excerpt: Makefile test targets
+test: $(NATIVE) test-deps
+	@$(RUN_TESTS) test
+
+# The suites that need no ROS (the package tests' ROS cases are skipped)
+unit: test-deps
+	@$(RUN_TESTS) unit
+
+# colcon test only, one row per package (as CI's first ground-ros2 step)
+pkg-test: ws test-deps
+	@$(RUN_TESTS) pkg
+
+# drone/tests/ros only: pipeline, contracts, monitor, entrypoint
+e2e-test: ws test-deps
+	@$(RUN_TESTS) e2e
+```
+Source: [`drone/ground/Makefile` L250–263](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/ground/Makefile#L250-L263) @ `ce9e919`
+
+CI decides per component whether a job runs. The two slow ground jobs run on a PR only when it touches the ground code, the ROS tests or the workflow:
+
+```yaml
+# excerpt: check-components, PR path filter
+          # The two slow ground jobs run on a PR only when it touches the ground
+          # code or this workflow. Pushes to dev/main always run them. Filtering
+          # here and not in `on: paths` keeps required checks working: a job
+          # skipped by `if:` counts as passed, a workflow never started does not.
+          ground_changed=true
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            changed=$(git diff --name-only HEAD^1 HEAD)
+            if ! grep -qE '^(drone/ground/|drone/tests/ros/|\.github/workflows/ci\.yaml$)' <<<"$changed"; then
+              ground_changed=false
+            fi
+          fi
+```
+Source: [`.github/workflows/ci.yaml` L102–112](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/.github/workflows/ci.yaml#L102-L112) @ `ce9e919`
+
 ## 2. Fault-injection list (Module 1 E-stop demo)
 
 Kill `flight_interface` · kill the ground app · Wi-Fi off · ESP reset · bad MAC · replayed packet · out-of-range values · UART unplugged · ELRS TX off. These map onto **F1–F9** in [[ESP_to_FC]] §9.

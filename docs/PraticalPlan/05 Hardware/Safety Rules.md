@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-11-06
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - safety
@@ -67,7 +67,7 @@ tags:
 | Term | What it does | Where |
 |---|---|---|
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch. Releasing it disarms and stops the motors. | Tested on the bench 2026-10-22 ([[Radio Link Tests]] RL-12), REQ-SAF-022 |
-| **Takeover switch** | The MSP Override switch. Turning it off ends ground control: from then until it is turned on again, the drone takes commands only from the radio. Its AUX channel is not mapped yet. | [[ADR-010 MSP Override\|ADR-010]] (update 2026-10-23), REQ-SAF-002 |
+| **Takeover switch** | The MSP Override switch. Turning it off ends ground control: from then until it is turned on again, the drone takes commands only from the radio. **SD on the RadioMaster, held** (team, confirmed by the safety pilot 2026-11-24): released = MSP Override off, radio only; held = ground control may run. The throttle hand-over (stick ignored while held, stick becomes the reference on release) is **proposed, pending ADR-010 (#236)**; until then the throttle stays with the pilot. Its AUX channel is not mapped yet; test props-off before any override flight (#236). | [[ADR-010 MSP Override\|ADR-010]] (updates 2026-10-23 and 2026-11-24), GitHub #236, REQ-SAF-002 |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. | REQ-SAF-021, Module 1 demo |
 
 ## 4. Related pages

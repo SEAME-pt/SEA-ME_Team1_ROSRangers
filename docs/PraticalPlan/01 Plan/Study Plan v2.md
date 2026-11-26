@@ -19,7 +19,7 @@ tags: [plan]
 > - **Gestures are part of the plan.** The webcam prototype already exists, now the ROS 2 node `gesture_node` ([[02 Gesture Node|Gesture Node]]). Drone-camera perception (UVC, ArUco) moves to Module 2.
 > - **Betaflight upgrade to 2026.6.2** in week 2 (may slip to week 3), before any MSP Override flight ([[ADR-014 Betaflight Version|ADR-014]], update 2026-10-23).
 > - ESP on **UART4**. ELRS stays on **UART2** ([[ADR-011 FC UART Allocation|ADR-011]]). **Custom ESP firmware** replaces AT 1.7.4.0 ([[ADR-007 Portable Protocol Library and Custom ESP Firmware|ADR-007]]).
-> - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]).
+> - ThoneFlow: **characterise first**, then a time-boxed SoftwareSerial experiment ([[ADR-016 Flow Sensor Path|ADR-016]]). *Changed 2026-11-24: the ThoneFlow is dropped; the MicoAir MTF-02P (flow + ToF height, read by Betaflight) replaces it ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
 > - Git and CI follow [[Dev_Strategy]] (`main` + `dev`).
 > - Cut order if late: stretch goals and gesture polish first. **Never cut safety, failsafe or CI.**
 
@@ -32,7 +32,7 @@ tags: [plan]
 | Rhythm | 5 days/week, about 8 h/day per person |
 | Daily split | 1 h review + goal, 2 h study, 4 h practice, 1 h documentation |
 | Records | English (code, notes, this vault) |
-| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, ThoneFlow-3901U (not installed), MS210x USB video grabber |
+| Hardware | 2 flying units shared by the class, ELRS (BETAFPV Nano) + RadioMaster Pocket, ESP, MicoAir MTF-02P flow + height sensor (supplied 2026-11-24, not soldered yet; replaces the ThoneFlow-3901U), MS210x USB video grabber |
 | Flight | Flight area ("cage") only, no net or roof, safety pilot on the radio ([[Safety Rules]]) |
 
 ### Sprints
@@ -103,7 +103,7 @@ tags: [plan]
 
 | Track | Practice |
 |---|---|
-| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). *Changed 2026-10-30: the upgrade was done on 2026-10-28 without the 4.5.1 hover (incident #126); the baseline hover (#23) is redone on 2026.6.2 ([[ADR-014 Betaflight Version|ADR-014]]).* |
+| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). *Changed 2026-10-30: the upgrade was done on 2026-10-28 without the 4.5.1 hover (incident #126); the baseline hover (#23) is redone on 2026.6.2 ([[ADR-014 Betaflight Version\|ADR-014]]).* |
 | B | *Changed 2026-10-20: the ESP is already soldered (incident #69), and the soldered link loses 0.7–3.7 % against 0 % before (#30). 2026-10-23: these figures came from runs with hardware problems and are being measured again (#30).* **Find the cause of the loss, cheapest check first** (10 min each, near): FC on USB with the radio off → radio on and bound → ESP antenna turned away from the frame. Finish S2-02, S2-06 and S1-08 (ESP current) on the soldered link. Post the [[ESP_to_FC]] §10 joint evidence (#69). Agree the pass threshold (OD-22, #63). Props off ([[Safety Rules]] #13). |
 | C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. Decide the telemetry set (FC-12, #63) by 2026-10-23. Develop against the FC USB link or a recorded log, so C does not wait for B's fix. *Done 2026-11-09 (#96, PR #169): `fc_telemetry` publishes both topics, measured on the bench 2026-11-06 ([[Architecture Document]] §2). FC-12 is still open.* |
 | D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `esp`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |
@@ -134,14 +134,24 @@ tags: [plan]
 ## 7. Week 5 · 16–20 Nov · Control in simulation and first override flight
 
 - **C + E:** cascade controller (velocity → attitude setpoints) in PX4 SITL behind the same flight interface ([[ADR-019 Sim Backends|ADR-019]]). *Changed 2026-11-13: the first ground chain ↔ PX4 SITL connection moved forward to weeks 3–4 as a smoke test (`make sim-smoke`, #86). Week 5 replaces its sim-only `px4_offboard_bridge` with the controller behind `flight_interface`.* *Done 2026-11-24 (#199): `controller_node` behind `flight_interface`'s `px4` backend, the bridge deleted; `make sim-hold` holds position 3 of 3 ([[07 Controller Node]], [[PX4 SITL Setup]] §7).*
-- **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights.
-- **A + B (cage):** first override **flight**, only if FC-15 passed and the upgrade to 2026.6.2 is done, with the failsafe re-tested and a new `diff all` committed ([[ADR-014 Betaflight Version|ADR-014]], [[Safety Rules]] #14): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11).
+- **E:** flow + IMU + baro height velocity estimate on the bench ([[ADR-016 Flow Sensor Path|ADR-016]]). Error measured against a tape on the floor; also record baro noise and drift at known heights. *Changed 2026-11-24: waits for the MTF-02P to be fitted (the drone has not arrived); with it, Betaflight gives the height and flow ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
+- **A + B (cage):** first override **flight**, only after GitHub #123 and #104 pass, with the failsafe re-tested and a new `diff all` committed ([[Safety Rules]] #14, [[ADR-014 Betaflight Version|ADR-014]] update 2026-10-30; the 2026.6.2 upgrade is done since 2026-10-28): yaw only, pilot on throttle and roll/pitch. Then roll/pitch/yaw (mask 11). *Status 2026-11-24: the ANGLE hover on 2026.6.2 (GitHub #134) is not done yet, so this flight has not happened.*
 - **D:** real-time profile: Betaflight `tasks` output plus ESP loop jitter, plotted automatically from logs.
+
+> [!info] Status 2026-11-24 (from the GitHub issues)
+> - **Open:** cascade controller in PX4 SITL (GitHub #199); real-time profile, due 2026-11-20 (#146); first override flight (#201), which waits for the ANGLE hover on 2026.6.2 (#134), the MSP budget spike (#123), the props-off override bench test (#104) and the FC USB connector repair (#189).
+> - **Re-scoped:** the flow velocity estimate on the bench (#200) was written for the ThoneFlow. With the MTF-02P, Betaflight estimates height and velocity itself ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24), so #200 becomes a **bench check of the MTF-02P**: flow and height read over MSP against a floor tape. Position Hold depends on it, so #200 still blocks #203.
+> - **Done in the same weeks:** architecture document (#98), `flight_interface` lifecycle node (#103), MSP Override in the Betaflight SITL tests (#105), HIL flash and failsafe-timing job (#106), Sprint 2 demo (#109), late-frame rejection (#204), ground restructure (#186).
 
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
-- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**.
-- **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
+- **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead. Position hold in the cage is Betaflight Position Hold with the MTF-02P on UART1 (team, 2026-11-24), not ground velocity setpoints. The **sim-to-real measurement** compares the REQ-NAV-002 numbers (0.5 m radius, ±0.3 m height, 30 s): the ground controller in PX4 SITL (#199) against Betaflight Position Hold in the cage (#203).*
+- **E:** gestures drive the flight interface **in simulation** (hover, move, descend). *Changed 2026-11-26: no land request; it was removed in GitHub #81 (2026-10-27), and `mission_node` never asks for a landing ([[04 Mission Node]] §5).*
+
+> [!info] Status 2026-11-24 (from the GitHub issues)
+> - **Open:** gestures drive `flight_interface` in PX4 SITL (#202); the Sprint 3 demo, position hold in SITL and the cage plus the first sim-to-real measurement (#203). The cage part is blocked until the MTF-02P is fitted (the drone has not arrived) and waits for #201.
+> - The gaps found by the 2026-11-24 docs review (a sensor REQ, Module 2 owners and REQs, Module 1 close-out issues, the second track label, the motor pole and 5V checks) go to **Sprint 4 planning** (Sprint 4 starts 2026-11-30, the last sprint before the Christmas break and the end of Module 1).
+> - **2026-11-26:** the Sprint 3 demo (#203) shows gestures flying PX4 SITL (hover, move, descend). Position hold in SITL stays in #199. The cage part moved to #240 and waits for the flight cage (#239): no props-on flights until it is set up. The sim-to-real report is #244, props off.
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
 
@@ -208,7 +218,7 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
 | **CLI** | Command-line interface: here the Betaflight CLI in the Configurator, used for `diff all` and `status`. |
 | **RTT** | Round-trip time: how long a packet takes to go out and come back. |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **XT60** | The battery connector on the pack. An XT30 to XT60 adapter is used on the drone. |
 | **IMU** | Inertial Measurement Unit: the gyro and accelerometer on the FC. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
@@ -228,6 +238,6 @@ Requirement IDs are listed in [[Requirements]]. See also [[Weekly Rituals]].
 | **Track (A–E)** | The five ownership areas: A flight-safety, B embedded-link, C ground-ros2, D ci-test, E sim-gestures ([[Team Tracks]]). |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held: released = radio only (team, confirmed by the safety pilot 2026-11-24, ADR-010); its AUX channel is not mapped yet (#236). |
 | **Cascade controller** | Two loops in a row: the ground's velocity loop sets the attitude, the flight controller's attitude loop sets the motors. |
 | **Ground truth** | Gazebo's own position of the model, not PX4's estimate of it; `make sim-hold` judges on it. |

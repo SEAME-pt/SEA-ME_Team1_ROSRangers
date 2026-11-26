@@ -3,7 +3,7 @@ title: SEA:ME Drone — Practical Plan Home
 type: moc
 status: active
 date: 2026-10-12
-updated: 2026-11-24
+updated: 2026-11-26
 project: SEA autonomous drone
 aliases:
   - Home
@@ -23,7 +23,7 @@ tags:
 > - Closed GitHub issues so far: safety induction (#13), Betaflight 4.5.1 `diff all` baseline (#14), barometer re-check (#15), FC multimeter checks (#16), ESP AT firmware backup (#17), instructor questions (#18), XT30 to XT60 adapter and battery check (#19), PX4 SITL + Gazebo default quad (#29), docs vault in the repo (#36), `MSP_API_VERSION` / `MSP_STATUS` / `MSP_ATTITUDE` read over the FC USB (#24, closed 2026-10-19). See [[Study Plan v2#2. Sprint 0 — status (7–18 Oct)]].
 > - Done since 2026-10-20: ELRS link restored on 4.1.0 CE_LBT (2026-10-21, [[ADR-023 ELRS Firmware Version and Regulatory Domain|ADR-023]]). Failsafe with the TX off, with a video (2026-10-22, #22). Pi 4 HIL runner registered (2026-10-22, #48). `gesture_node` and `intent_node` in `dev` (#78). Betaflight SITL MSP tests in CI (#85, #87).
 > - Open: the first 4.5.1 hover (#23), the link-loss tests, being redone after hardware problems (#30), incident #69, the HIL runner setup (#48) and the HIL-without-spare-hardware spike (#61). Tasks live on the board, not here.
-> - All decisions are **accepted** as ADRs (ADR-001 to ADR-024). See [[Decision Register]].
+> - All decisions are **accepted** as ADRs (ADR-001 to ADR-025). See [[Decision Register]].
 > - Project: **gesture control** with MediaPipe, accepted by instructors as our Module 2 "edge inference in the loop".
 
 > [!info] Since then (2026-11-09)
@@ -38,7 +38,7 @@ tags:
 | Area | Notes |
 |---|---|
 | Plan | [[Study Plan v2]] · [[Roadmap to April 2027]] · [[Team Tracks]] · [[Requirements]] · [[Weekly Rituals]] · [[Dailys]] |
-| Decisions | [[Decision Register]] (ADR-001 to ADR-024, all accepted; ADR-010 and ADR-012 with conditions) |
+| Decisions | [[Decision Register]] (ADR-001 to ADR-025, all accepted; ADR-010 and ADR-012 with conditions) |
 | Architecture | [[Architecture Document]] · [[System Overview]] · [[Protocol Spec v0]] · [[Protocol Library Messages]] · [[ESP Link State Machine]] · [[MSP Cheat Sheet]] · [[Betaflight Setup]] · [[Wiring and Pinout]] · [[PX4 SITL Setup]] |
 | CI/CD | [[CI-CD Overview]] · [[Repository Layout]] · [[GitHub Actions Starter]] · [[Testing Strategy]] · [[HIL Runner]] |
 | Hardware | [[Hardware Inventory]] · [[Safety Rules]] · [[Battery Log]] · [[ESP Bench Test Plan]] · [[Radio Link Tests]] · [[Height Sensor Study]] |
@@ -53,7 +53,7 @@ tags:
 | Hardware identification | [[2.5Drone]] |
 | Ground ↔ ESP link | [[PC_to_ESP]] · [[ESP8266_AT_Commands_and_UDP]] (stock AT firmware, replaced by [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]]) |
 | ESP ↔ FC link | [[ESP_to_FC]] |
-| Optical flow | [[ThoneFlow]] |
+| Optical flow and height | [[Height Sensor Study]] (MTF-02P, chosen 2026-11-24) · [[ThoneFlow]] (dropped, history) |
 | Gesture recogniser | [[02 Gesture Node\|Gesture Node]] |
 
 ## 3. The five things to remember
@@ -100,4 +100,4 @@ The values used in the frontmatter `status` of these notes:
 | **Safety pilot** | The trained person at the cage with the RadioMaster and line of sight. The radio always wins over code. |
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held: released = radio only (team, confirmed by the safety pilot 2026-11-24, ADR-010); its AUX channel is not mapped yet (#236). |

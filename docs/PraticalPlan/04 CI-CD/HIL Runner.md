@@ -52,7 +52,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 2. GitHub → the repo → Settings → Actions → Runners → **New self-hosted runner** → Linux ARM64. Follow the commands. Add the label `hil-drone`. Install it as a service.
 3. udev rules for the two USB-serial devices.
 4. Connect `wlan0` to the ESP SoftAP (NetworkManager profile, static IP). Internet goes through Ethernet. The firmware must include ArduinoOTA, protected by the same PSK. As built, the Pi has no Ethernet, so it time-slices its Wi-Fi instead (§3.1).
-5. Store the PSK as the repo secret `SD_PSK_HIL`: 64 hex characters (32 bytes). `hil.yaml` passes it as `SEAME_PSK`, which the gateway build and the session tests read; the bridge ignores it (§3.1).
+5. Store the PSK as the repo secret `SD_PSK_HIL`: 64 hex characters (32 bytes). `hil.yaml` passes it as `SEAME_PSK`, which the gateway build and the session tests read; the bridge ignores it (§3.1). `hil.yaml` also reads `SEAME_AP_SSID_HIL`, `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (passed as `SEAME_AP_SSID`, `SEAME_AP_PASS`, `SEAME_OTA_PASS`) and pins the SoftAP channel `SEAME_AP_CHANNEL: "6"` (#207). A manual run (`workflow_dispatch`) picks the firmware env: `esp` or `esp_loop_timing` (REQ-SW-005 profile, #146).
 
 ### 3.1 As built (2026-10-22, GitHub #48)
 
@@ -68,7 +68,7 @@ This is the target setup. What is built today (one spare ESP, no FC, USB flashin
 | Original firmware backup | `spare_esp_backup.bin`, 4 194 304 bytes, SHA-256 `b063fb4c08cee2f31d477310ab159551cc883cf616ddc385441d924795242f7e`. Kept off the repo. |
 | Flashing | Over USB with `esptool`. Auto-reset via DTR/RTS works, no button needed. `hil.yaml` builds the `esp` env (the gateway, #101, the default since #106 on 2026-11-13) and uploads it to `/dev/hil-esp`, then runs the tests (§4). The job has a 30 min timeout. Flash `esp_bridge` by hand if you need the bridge. Until 2026-11-13 the job flashed the bridge (`esp`) and then the gateway (`esp_gateway_usb`), with one window each. |
 | SoftAP | Its own name and passwords, never the drone's: Secrets `SEAME_AP_SSID_HIL` (`seame-hil-23e4`), `SEAME_AP_PASS_HIL` and `SEAME_OTA_PASS_HIL` (8+ characters, different from each other: `secrets.py` stops the build otherwise, ADR-024 D3). `hil.yaml` stops if the SSID is empty. `SD_PSK_HIL` is the protocol PSK (ADR-002, 64 hex characters), passed as `SEAME_PSK` to the gateway build and the session tests; it was reset to a new random key on 2026-11-10, when the gateway (#174) started needing it. |
-| Network | The Pi has only its built-in Wi-Fi, used for the internet, so it time-slices it: Wi-Fi tests run in windows of under 2 minutes (decided 2026-10-26, [[ADR-020 HIL Runner|ADR-020]], #48). The lab profile is `netplan-wlan0-SEAME`, autoconnect on. `runner` may run `sudo nmcli` without a password (`/etc/sudoers.d/hil-nmcli`). The window is `drone/tests/hil/softap_window.sh` (§3.2). |
+| Network | The Pi has only its built-in Wi-Fi, used for the internet, so it time-slices it: Wi-Fi tests run in windows of under 2 minutes (decided 2026-10-26, [[ADR-020 HIL Runner\|ADR-020]], #48). The lab profile is `netplan-wlan0-SEAME`, autoconnect on. `runner` may run `sudo nmcli` without a password (`/etc/sudoers.d/hil-nmcli`). The window is `drone/tests/hil/softap_window.sh` (§3.2). |
 
 ### 3.2 Wi-Fi window (`softap_window.sh`, #106)
 

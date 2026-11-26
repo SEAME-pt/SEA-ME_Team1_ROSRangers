@@ -33,13 +33,13 @@ flowchart LR
   subgraph Air["Drone (cage)"]
     ESP["ESP8266<br/>custom firmware: gateway + failsafe"]
     FC["OddityRC F7 AIO<br/>Betaflight: attitude/rate loops"]
-    FLOW["ThoneFlow-3901U<br/>(not installed)"]
+    FLOW["MTF-02P flow + ToF height<br/>(not fitted yet)"]
     ELRS["ELRS BETAFPV Nano"]
     VTX["VT5804 VTX"]
   end
   FI <-->|"UDP control/telemetry<br/>TCP session/events<br/>WPA2 SoftAP + HMAC"| ESP
   ESP <-->|"MSP · UART4 · 115200"| FC
-  FLOW -.->|"CX-OF 19200<br/>see ADR-016"| ESP
+  FLOW -.->|"MSP · UART1<br/>see ADR-016, ADR-011"| FC
   PILOT["Safety pilot<br/>RadioMaster Pocket"] -->|"ELRS 2.4 GHz<br/>ARM, modes, override switch"| ELRS
   ELRS -->|"CRSF · UART2"| FC
   FC -->|"Tramp · UART3"| VTX
@@ -59,7 +59,7 @@ Safety pilot (ELRS) > Betaflight failsafe > ESP link failsafe ([[ADR-004 ESP Fai
 | ESP → ground telemetry | 25 Hz | [[ADR-008 Telemetry Transport\|ADR-008]] |
 | ESP → FC `MSP_SET_RAW_RC` | 50 Hz, 8 channels, 22 bytes | [[ADR-009 ESP to FC Link\|ADR-009]] |
 | ESP polls `MSP_ATTITUDE` | 25 Hz; `MSP_ANALOG`/`MSP_STATUS` 5 Hz | [[ADR-009 ESP to FC Link\|ADR-009]] |
-| ThoneFlow | 66 Hz (datasheet) or 25 Hz (ArduPilot), to measure | [[ThoneFlow]] |
+| MTF-02P → FC | 50 Hz (datasheet), to measure | [[Height Sensor Study]] §3.4 |
 | Webcam + MediaPipe | ≥ 20 FPS (target). MediaPipe Holistic measured 14.5 FPS on 2026-10-27; 10 FPS is the minimum for the 10 Hz keep-alive | [[02 Gesture Node\|Gesture Node]] §3.1 |
 
 At 115200 baud (about 11.5 kB/s), the MSP traffic above uses under 30% of the UART.

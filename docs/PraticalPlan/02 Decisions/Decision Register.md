@@ -32,19 +32,19 @@ tags:
 | [[ADR-007 Portable Protocol Library and Custom ESP Firmware\|ADR-007]] | Custom firmware + portable C++ lib + Python twin | ✅ Accepted | OD-01, OD-19, FC-07, P7 |
 | [[ADR-008 Telemetry Transport\|ADR-008]] | State over UDP; events/logs/acks over TCP | ✅ Accepted | OD-15, supersedes P8 |
 | [[ADR-009 ESP to FC Link\|ADR-009]] | UART, MSP, 115200, allow-list | ✅ Accepted | FC-03, P1 (FC page) |
-| [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions (kill and takeover switches, 2026-10-23) | FC-09, P2 (FC page) |
-| [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2 | ✅ Accepted | FC-02, FC-01 (partly), P3 (FC page) |
+| [[ADR-010 MSP Override\|ADR-010]] | MSP Override with staged masks | ✅ Accepted with conditions (kill and takeover switches, 2026-10-23; **2026-11-24: takeover = SD held, released = radio only; throttle hand-over proposed, #236**) | FC-09, P2 (FC page) |
+| [[ADR-011 FC UART Allocation\|ADR-011]] | ESP on UART4; ELRS stays on UART2; **UART1 → MTF-02P** (2026-11-24, the ESP loses its fallback port) | ✅ Accepted (updated 2026-11-24) | FC-02, FC-01 (partly), P3 (FC page) |
 | [[ADR-012 ESP UART Pins\|ADR-012]] | UART0 GPIO1/3, never with USB attached | ✅ Accepted with conditions | FC-06, P4 (FC page) |
 | [[ADR-013 Wiring and Power\|ADR-013]] | Crossover, 3.3 V logic, FC 5V → ESP 5V | ✅ Accepted (checks pending) | FC-04/05 (partly), P5 (FC page) |
 | [[ADR-014 Betaflight Version\|ADR-014]] | **Yes**, upgrade to 2026.6.2 | ✅ Accepted (reflash permission granted 2026-10-14). **Upgrade done 2026-10-28** (update 2026-10-30) | FC-11 (mitigation) |
 | [[ADR-015 Gesture Input Source\|ADR-015]] | Ground webcam | ✅ Accepted | n/a |
-| [[ADR-016 Flow Sensor Path\|ADR-016]] | Characterise → ESP SoftwareSerial experiment (no extra MCU) · height from the DPS310 baro (2026-11-06: ToF height sensor proposed) | ✅ Accepted (revised 2026-10-14) | TF-01, TF-02, TF-11, TF-12 |
+| [[ADR-016 Flow Sensor Path\|ADR-016]] | **MicoAir MTF-02P** (flow + ToF height) on FC UART1, read by Betaflight, which also does Position Hold; the ThoneFlow is dropped. Height from the DPS310 baro until the sensor is fitted | ✅ Accepted (revised 2026-10-14; **2026-11-24: MTF-02P replaces the ThoneFlow**, not fitted yet) | TF-01, TF-02, TF-11, TF-12 |
 | [[ADR-017 Branching Model\|ADR-017]] | The team's `main` + `dev` model ([[Dev_Strategy]]) | ✅ Accepted | n/a |
 | [[ADR-018 Ground OS and ROS 2\|ADR-018]] | Ubuntu 24.04 + ROS 2 Jazzy | ✅ Accepted | n/a |
 | [[ADR-019 Sim Backends\|ADR-019]] | PX4 SITL + Betaflight SITL | ✅ Accepted | n/a |
 | [[ADR-020 HIL Runner\|ADR-020]] | Dedicated Pi as self-hosted runner. HIL target = spare ESP, FC in SITL; Wi-Fi tests by time-slicing, no dongle (2026-10-26) | ✅ Accepted (updated 2026-10-26, #61, #48) | n/a |
 | [[ADR-021 Removable ESP Connector\|ADR-021]] | ESP soldered directly to FC UART4, no connector (was: removable connector) | ✅ Accepted (team, 2026-10-20), **amended 2026-10-26:** direct soldering (team decision, recorded 2026-11-04, #69) | n/a |
-| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
+| [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged; golden-vectors hook 2026-11-23, PR #233; 2026-11-24: the 90 % gate covers every package in `ROS_PKGS`) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
 | [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16; §2.4 F1–F28 for #199, 2026-11-23 to 2026-11-26) | n/a |
@@ -57,7 +57,7 @@ tags:
   - OD-14: TCP loss invalidates control → **UDP decides liveness**.
   - OD-17: ground-side access point → **ESP SoftAP**.
   - P8: telemetry fallback → **split by meaning**.
-- ADR-016 was **revised** after reading [[ThoneFlow]]. SoftwareSerial is now an experiment, not the plan.
+- ADR-016 was **revised** after reading [[ThoneFlow]]. SoftwareSerial is now an experiment, not the plan. *2026-11-24: the ThoneFlow is dropped for the MTF-02P ([[ADR-016 Flow Sensor Path|ADR-016]] update).*
 - ADR-017 now follows the team's own [[Dev_Strategy]] instead of GitHub Flow.
 
 ## 3. What changed on 2026-10-21
@@ -115,6 +115,7 @@ tags:
 ## 11. What changed on 2026-11-23
 
 - 2026-11-23, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F1–F19 for #199 (controller + PX4 backend): measured velocity on `/estimate/velocity` (F1), masks 8 / 11 / 15 in the simulation with the pilot's axes filled by the `px4` backend (F2), a `px4` backend in a simulation-only `flight_interface` image (F3), a 15° roll / pitch ground cap (F4), `px4_offboard_bridge` deleted once the hold test passes (F5), nothing changes on the real drone (F6), a velocity loop only (F7); neutral = `active` false, also for the K6 window (F8), the velocity ceilings in the controller (F9), the controller active whenever its inputs are fresh (F10), staleness checked in the controller and the guard (F11), the controller in the demo too (F12), the `px4` backend filling the ESP's `/flight/state` fields so the guard has one code path (F13), throttle within hover ± 0.15 under mask 15 (F14), shared values repeated in each node's section and checked to agree (F15; first a `/**:` section, changed the same day because it stopped `-p backend:=loopback` from overriding `backend: esp` in `make real-dry`), `hover_throttle` 0.0 = not measured = inactive (F16), a `reason` field on `/control/attitude_setpoint` (F17), the guard clamps an out-of-limit setpoint with a warning and drops a malformed one (F18), neutral in the simulation = PX4's own zero-velocity hold (F19). Dated notes on §1's guard limits (F9), C1.1 (the attitude signs are REP-103, as `/fc/attitude`; the `reason` field), C1.2 (PX4's estimate counts in SITL only), C1.4 (the cap value), C1.5, C2 (F8) and E1.2 (the simulation will run `flight_interface`).
+- Decision **extended**: [[ADR-022 CI Gates and Lint Rules|ADR-022]]: a local pre-commit hook `golden-vectors` runs `drone/tests/vectors/generate.py --check`, so the `lint` job now fails when the committed vectors and their independent generator disagree (#232, PR #233).
 
 ## 12. What changed on 2026-11-24
 
@@ -170,4 +171,4 @@ See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[
 | **MSP_SET_ARMING_DISABLED** | MSP 99: value 1 stops the FC from arming, value 0 allows it again (ADR-024). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held: released = radio only (team, confirmed by the safety pilot 2026-11-24, ADR-010); its AUX channel is not mapped yet (#236). |

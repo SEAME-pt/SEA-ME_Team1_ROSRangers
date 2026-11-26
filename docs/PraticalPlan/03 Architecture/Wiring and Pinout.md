@@ -3,6 +3,7 @@ title: Wiring and Pinout
 type: hardware
 status: draft
 date: 2026-10-12
+updated: 2026-11-26
 project: SEA autonomous drone
 aliases:
   - FC Pad Identification
@@ -29,7 +30,7 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 
 | Pad | Function | Status |
 |---|---|---|
-| T1 / R1 | UART1 | free (spare) |
+| T1 / R1 | UART1 | reserved for the MTF-02P (2026-11-24, not soldered yet, [[ADR-011 FC UART Allocation\|ADR-011]]). The ESP has no spare FC UART |
 | R2 / T2 | UART2, ELRS (CRSF) | in use. **Confirmed with a multimeter** (2026-10-16, [[2.5Drone]] #22) |
 | R3 / T3 | UART3, Tramp VTX (SA/IRC) | in use |
 | **T4 / R4** | **UART4 → ESP** (PA0 / PA1) | free. **Continuity to the MCU side OK, no shorts to neighbours** (2026-10-16) → [[ADR-011 FC UART Allocation\|ADR-011]] |
@@ -37,7 +38,7 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 | CAM | analog camera **video input** (to the AT7456E OSD) | in use (camera soldered, [[2.5Drone]] #19). Not camera control: the target has no camera-control pin |
 | VTX | video output to the analog VTX | in use |
 | DV5V | 5 V supply for the **receiver** (the diagram powers TBS / ELRS / SBUS receivers from it) | **ELRS 5 V wire is here** (GitHub #41, reported 2026-10-20). Do not use for the ESP |
-| 5V, 3.3V, GND | power | the ELRS red wire was on a 5V pad and is now on DV5V (GitHub #41). The **5V** pad next to T4 feeds the ESP. The ELRS antenna is soldered. The failsafe re-test is still open (GitHub #22, #41) |
+| 5V, 3.3V, GND | power | the ELRS red wire was on a 5V pad and is now on DV5V (GitHub #41). The **5V** pad next to T4 feeds the ESP. The ELRS antenna is soldered. The failsafe re-test was done on 2026-10-22 (GitHub #22, #41) |
 | BAT | battery voltage (4–6S) for the analog VTX | in use. **Never** on an ESP pin |
 
 ### 1.1 Pad row next to UART4 (vendor diagram)
@@ -48,7 +49,7 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 ```
 
 - The diagram uses this row for a GPS on UART4 (T4, R4, 5V, GND). The ESP takes the same four pads.
-- The ELRS receiver in the diagram uses DV5V, GND, R2 and T2. Our ELRS red wire was on 5V (2026-10-16). **The team has moved it to DV5V** (reported 2026-10-20) to free the 5V pad and to keep radio interference low (GitHub #41, [[ADR-011 FC UART Allocation|ADR-011]]). The failsafe has **not** been re-tested since (GitHub #22, #41 stay open).
+- The ELRS receiver in the diagram uses DV5V, GND, R2 and T2. Our ELRS red wire was on 5V (2026-10-16). **The team has moved it to DV5V** (reported 2026-10-20) to free the 5V pad and to keep radio interference low (GitHub #41, [[ADR-011 FC UART Allocation|ADR-011]]). The failsafe was re-tested afterwards (2026-10-22, GitHub #22, #41).
 - The neighbours of T4 are 5V and R4; the neighbours of R4 are T4 and GND. The 2026-10-16 check found no short to any of them.
 
 ## 2. Connections
@@ -59,9 +60,12 @@ Functions come from the OddityRC wiring diagram ([vendor diagram](https://www.ro
 | FC **R4** | ESP **TX (GPIO1)** | MSP, ESP → FC |
 | FC **5V** | ESP **5V** | the ESP regulator makes 3.3 V. **Never 5 V on a GPIO.** |
 | FC **GND** | ESP **G** | common ground |
-| ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment |
-| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA |
-| ThoneFlow **GND** | ESP **G** | |
+| MTF-02P **TX** | FC **R1** | planned 2026-11-24, not soldered yet ([[ADR-011 FC UART Allocation\|ADR-011]] update) |
+| MTF-02P **RX** | FC **T1** | planned |
+| MTF-02P **5V** / **GND** | FC **5V** / **GND** | planned; datasheet 5 V. Shares the FC 5V rail with the ESP: measure its current on the bench, props off (200 mW or 0.5 W, [[Open Questions]]) |
+| ThoneFlow **TX** | ESP **D5 (GPIO14)** | only for the [[ADR-016 Flow Sensor Path\|ADR-016]] experiment. **Dropped 2026-11-24**, not wired (the MTF-02P goes on an FC UART instead) |
+| ThoneFlow **VCC** | ESP **3V3** | datasheet: 3.3–3.6 V, 10 mA. **Dropped 2026-11-24**, not wired |
+| ThoneFlow **GND** | ESP **G** | **Dropped 2026-11-24**, not wired |
 
 ```text
    FC (ODDITYRCF7AIO)                ESP8266          ThoneFlow-3901U (experiment)
@@ -92,7 +96,7 @@ The ESP is soldered straight to T4, R4, 5V and GND, wires end to end, **no conne
 | D8 (GPIO15) | boot strapping (must be low at boot) |
 | TX / RX | shared with USB: never connect USB and the FC together ([[ADR-012 ESP UART Pins\|ADR-012]]) |
 
-Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flow-bridge MCU were rejected on 2026-10-14, [[ADR-016 Flow Sensor Path|ADR-016]].)
+Free for later: D1 (GPIO5), D2 (GPIO4), D6, D7. (The ToF rangefinder and the flow-bridge MCU were rejected on 2026-10-14, [[ADR-016 Flow Sensor Path|ADR-016]]. 2026-11-24: the MTF-02P, a ToF rangefinder with flow, was then accepted; it connects to the FC, not the ESP.)
 
 ## 4. Glossary
 

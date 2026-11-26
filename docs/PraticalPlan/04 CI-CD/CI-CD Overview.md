@@ -60,7 +60,7 @@ Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job
 ## 2. Start now (no open decisions)
 
 1. Software repo with `main` + `dev` and protection ([[Branch_Protection]]). The tree is in [[Repository Layout]]; the workflow files are summarised in [[GitHub Actions Starter]].
-2. pre-commit: end-of-file, trailing whitespace, check-yaml, ruff + ruff-format, clang-format, shellcheck (§3).
+2. pre-commit: end-of-file, trailing whitespace, check-yaml, ruff + ruff-format, clang-format, shellcheck, golden vectors (§3).
 3. Empty C++ lib + 1 GoogleTest, coverage gate at **80%** from the start (as in `ci.yaml`). The target is 100%.
 4. pytest skeleton for the ground packages.
 5. PlatformIO build of a "hello" firmware for `esp`.
@@ -89,6 +89,7 @@ pre-commit run --all-files
 | `ruff-format` | Python formatting (auto-fixes). |
 | `clang-format` | C/C++ formatting for the protocol library and firmware (auto-fixes). |
 | `shellcheck` | Lints every shell script (today `scripts/sync-labels.sh` and the `drone/ground/docker/` and `drone/ground/tools/` scripts), warnings and errors only. |
+| `golden-vectors` | Runs `drone/tests/vectors/generate.py --check`: the committed vectors must match their independent generator. Fails when a vector was edited by hand or the generator changed without a regenerate (`python3 drone/tests/vectors/generate.py`). Local hook, needs only `python3` ([[ADR-022 CI Gates and Lint Rules\|ADR-022]], update 2026-11-23). |
 
 **Requirements.**
 
@@ -140,7 +141,7 @@ Recorded in [[ADR-022 CI Gates and Lint Rules|ADR-022]] (accepted; issue #73, PR
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **Gazebo** | The 3D physics simulator used with PX4 (Harmonic release). |
-| **PlatformIO** | The build system used for the ESP8266 firmware (envs `esp`, `esp_ota`). |
+| **PlatformIO** | The build system used for the ESP8266 firmware. `esp` is the gateway (default) and `esp_ota` its OTA build, `esp_bridge` the transparent bridge; the other envs (`esp_diag_*`, `esp_loop_timing`, `esp_late_log`) are bench diagnostics. |
 | **colcon** | The build tool for ROS 2 workspaces; `colcon test` runs each package's tests. |
 | **Coverage gate** | A CI step that fails when tests run less than a set share of the code (80 % C++/Python, 90 % ROS 2 nodes). |
 | **Dependabot** | GitHub bot that opens PRs to update pinned versions (actions, images, packages). |

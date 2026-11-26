@@ -20,3 +20,12 @@ repos:
     hooks:
       - id: shellcheck
         args: [--severity=warning]
+  # Golden vectors must match their independent generator (ADR-022 update 2026-11-23)
+  - repo: local
+    hooks:
+      - id: golden-vectors
+        name: golden vectors match generate.py
+        entry: python3 drone/tests/vectors/generate.py --check
+        language: system
+        files: ^drone/tests/vectors/
+        pass_filenames: false

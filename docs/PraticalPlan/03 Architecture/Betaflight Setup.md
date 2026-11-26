@@ -3,7 +3,7 @@ title: Betaflight Setup
 type: procedure
 status: draft
 date: 2026-10-12
-updated: 2026-11-18
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - betaflight
@@ -26,7 +26,8 @@ tags:
 | UART2 | Serial RX (ELRS, CRSF) | [[ESP_to_FC]] §2 |
 | UART3 | IRC Tramp VTX | [[ESP_to_FC]] §2 |
 | UART4 | MSP 115200 for the ESP (set 2026-10-13, `diff_all_2026-10-13_v3`, PR #9). The ESP is soldered to UART4 since 2026-10-19 | [[ADR-011 FC UART Allocation\|ADR-011]] |
-| UART1 / UART6 | unassigned | [[ESP_to_FC]] §2 |
+| UART1 | unassigned today; reserved for the MTF-02P (2026-11-24) | [[ADR-011 FC UART Allocation\|ADR-011]] |
+| UART6 | unassigned (only on the digital-VTX connector) | [[ADR-011 FC UART Allocation\|ADR-011]] |
 | Baro | DPS310, detected (`status` 2026-10-13/14) | [[2.5Drone]] |
 | Airmode | **On** (read 2026-11-06 over MSP, `MSP_FEATURE_CONFIG` mask `0x10440408`: RX_SERIAL, TELEMETRY, OSD, AIRMODE, ANTI_GRAVITY). `FEATURE_AIRMODE` is a Betaflight default and `diff_all_2026-10-30.txt` has no `feature -AIRMODE`; no AIRMODE switch is needed. Turning it off would be a config change (team approval, `diff all`, CHANGELOG). Safety Rules #18: disarm before handling | GitHub #161, PR #162 |
 
@@ -133,4 +134,4 @@ Start with **DROP** in the cage (low altitude). These values are Betaflight's ow
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Mask** | `msp_override_channels_mask`: which stick channels the ground controls (8 = yaw, 11 = roll+pitch+yaw, 15 = all four). |
 | **MSP Override** | Betaflight feature that lets MSP supply the values of selected RC channels, while ELRS stays the primary receiver (ADR-010). |
-| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). Its channel is not mapped yet. |
+| **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held: released = radio only (team, confirmed by the safety pilot 2026-11-24, ADR-010); its AUX channel is not mapped yet (#236). |

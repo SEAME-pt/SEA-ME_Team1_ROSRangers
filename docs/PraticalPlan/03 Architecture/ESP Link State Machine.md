@@ -49,7 +49,7 @@ constexpr std::uint32_t kHelloMinGapMs = 500;   // HELLO rate limit
 constexpr std::uint32_t kFailsafeNeutralMs = 1000; // 2026.6: neutral, then stop
                                                    // while the ground is quiet
 ```
-Source: [`drone/lib/protocol/include/sd/link.hpp` L27–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/52de267b646eeda8f5b3088ed1662ff5925e9cf1/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `52de267`
+Source: [`drone/lib/protocol/include/sd/link.hpp` L27–33](https://github.com/SEAME-pt/SEA-ME_Team1_ROSRangers/blob/ce9e919527866acafd4ae65ef16d7c87b64c7d4e/drone/lib/protocol/include/sd/link.hpp#L27-L33) @ `ce9e919`
 
 Details of the pending session:
 - **TCP:** a new TCP connection by itself changes nothing. While a session holds the one TCP slot, the ESP accepts one extra connection only to carry a `HELLO`, for at most 2 s; TCP keep-alive (seconds) frees a dead connection's slot ([[ADR-005 TCP Session|ADR-005]] entry). UDP and the failsafe are not affected.
