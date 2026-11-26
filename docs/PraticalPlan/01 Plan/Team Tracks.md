@@ -3,7 +3,7 @@ title: Team Tracks
 type: plan
 status: active
 date: 2026-10-12
-updated: 2026-10-26
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - plan
