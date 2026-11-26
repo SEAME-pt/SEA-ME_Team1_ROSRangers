@@ -8,10 +8,15 @@ make sim-smoke it starts its own intent_node and drives the chain through
 
     no hands -> ENGAGE -> descend (INDEX_DOWN) until Gazebo's height reads
     1.0 m -> no hands: settle, then hold zero velocity for 60 s
+    -> neutral phase: the controller paused 20 s (hover_throttle 0.0 through
+       its parameter service, ADR-025 F28 note 2026-11-26), PX4 holds the
+       frozen point (NeutralHold, F19) -> resumed (hover_throttle back)
 
 Pass/fail is judged on Gazebo's ground truth (the model's world pose, read
 with gz-transport, GZ_IP=127.0.0.1 as PX4 starts Gazebo) from the start point
-of the hold (hold_checks.py). PX4's estimate is logged next to it, not judged.
+of the hold (hold_checks.py), and on who held: the controller during the hold,
+PX4's position hold during the neutral phase. PX4's estimate is logged next
+to it, not judged.
 Writes a rosbag, truth.csv (the whole run) and summary.md to
 $LOG_DIR/sim-hold/<start time>/. Exit code 0 only if every check passed.
 
@@ -20,6 +25,7 @@ $LOG_DIR/sim-hold/<start time>/. Exit code 0 only if every check passed.
 
 import argparse
 import json
+import math
 import os
 import signal
 import subprocess
@@ -32,9 +38,11 @@ import rclpy
 from ament_index_python.packages import get_package_prefix
 from gz.msgs10.pose_v_pb2 import Pose_V
 from gz.transport13 import Node as GzNode
-from px4_msgs.msg import VehicleLocalPosition
+from px4_msgs.msg import OffboardControlMode, VehicleLocalPosition, VehicleStatus
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.parameter_client import AsyncParameterClient
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
@@ -53,6 +61,8 @@ TRUTH_TOPIC = "/world/default/pose/info"
 DESCENT_LEAD_M = 0.12
 DESCENT_TIMEOUT_SEC = 30.0
 SETTLE_SEC = 5.0  # after the descent, before the hold's start point
+CONTROLLER = "controller_node"  # its hover_throttle pauses it (F28 note)
+PARAM_TIMEOUT_SEC = 5.0
 BAG_TOPICS = [
     "/gesture/raw",
     "/gesture/intent",
@@ -62,10 +72,17 @@ BAG_TOPICS = [
     "/estimate/velocity",
     "/flight/state",
     "/fmu/in/vehicle_attitude_setpoint_v1",
+    "/fmu/in/trajectory_setpoint",
     "/fmu/in/offboard_control_mode",
     "/fmu/out/vehicle_local_position_v1",
     "/fmu/out/vehicle_status_v1",
 ]
+
+
+def yaw_from_quaternion(w, x, y, z):
+    """Yaw (rad) of a (w, x, y, z) rotation, Z-Y-X. Example: (0.707, 0, 0,
+    0.707) -> pi/2."""
+    return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
 
 
 class Recorder(Node):
@@ -78,8 +95,13 @@ class Recorder(Node):
         self.gesture = NO_HANDS
         self.lock = threading.Lock()
         self.truth = []  # (t, x, y, z) Gazebo world, z up
+        self.yaws = []  # (t, yaw rad) Gazebo world
         self.estimate = []  # (t, north, east, up) PX4's local position
         self.setpoints = []  # (t, /control/attitude_setpoint dict)
+        self.missions = []  # (t, /mission/state dict)
+        self.flights = []  # (t, /flight/state dict)
+        self.nav_states = []  # (t, PX4 nav_state)
+        self.modes = []  # (t, (attitude, position, velocity)) Offboard mode
         self.mission = {}
         self.flight = {}
 
@@ -100,6 +122,16 @@ class Recorder(Node):
             self._on_position,
             best_effort,
         )
+        self.create_subscription(
+            VehicleStatus, "/fmu/out/vehicle_status_v1", self._on_status, best_effort
+        )
+        self.create_subscription(
+            OffboardControlMode,
+            "/fmu/in/offboard_control_mode",
+            self._on_mode,
+            best_effort,
+        )
+        self.params = AsyncParameterClient(self, CONTROLLER)
         self.create_timer(1.0 / GESTURE_HZ, self._publish_gesture)
 
     def _publish_gesture(self):
@@ -117,9 +149,21 @@ class Recorder(Node):
 
     def _on_mission(self, msg):
         self.mission = self._json(msg)
+        with self.lock:
+            self.missions.append((time.time(), self.mission))
 
     def _on_flight(self, msg):
         self.flight = self._json(msg)
+        with self.lock:
+            self.flights.append((time.time(), self.flight))
+
+    def _on_status(self, msg):
+        with self.lock:
+            self.nav_states.append((time.time(), msg.nav_state))
+
+    def _on_mode(self, msg):
+        with self.lock:
+            self.modes.append((time.time(), (msg.attitude, msg.position, msg.velocity)))
 
     def _on_setpoint(self, msg):
         with self.lock:
@@ -135,8 +179,12 @@ class Recorder(Node):
         for pose in msg.pose:
             if pose.name == MODEL:
                 p = pose.position
+                q = pose.orientation
+                now = time.time()
+                yaw = yaw_from_quaternion(q.w, q.x, q.y, q.z)
                 with self.lock:
-                    self.truth.append((time.time(), p.x, p.y, p.z))
+                    self.truth.append((now, p.x, p.y, p.z))
+                    self.yaws.append((now, yaw))
                 return
 
     def height(self):
@@ -149,6 +197,81 @@ class Recorder(Node):
     def between(self, samples, t0, t1):
         with self.lock:
             return [s for s in samples if t0 <= s[0] <= t1]
+
+    def values_between(self, samples, t0, t1):
+        """The values of (t, value) samples between t0 and t1."""
+        return [value for _, value in self.between(samples, t0, t1)]
+
+
+def wait_future(future, timeout):
+    """The future's result once done (the executor spins in its own thread),
+    or None after `timeout` s."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if future.done():
+            return future.result()
+        time.sleep(0.02)
+    return None
+
+
+def controller_hover(node):
+    """The controller's hover_throttle now, or None if it does not answer."""
+    if not node.params.wait_for_services(timeout_sec=PARAM_TIMEOUT_SEC):
+        return None
+    reply = wait_future(
+        node.params.get_parameters(["hover_throttle"]), PARAM_TIMEOUT_SEC
+    )
+    if reply is None or not reply.values:
+        return None
+    return reply.values[0].double_value
+
+
+def set_controller_hover(node, value):
+    """Set the controller's hover_throttle (0.0 pauses it). (ok, reason)."""
+    request = node.params.set_parameters([Parameter("hover_throttle", value=value)])
+    reply = wait_future(request, PARAM_TIMEOUT_SEC)
+    if reply is None or not reply.results:
+        return False, "no answer from the controller"
+    result = reply.results[0]
+    return result.successful, result.reason
+
+
+def neutral_phase(node):
+    """Pause the controller for NEUTRAL_SEC, then resume it. Returns
+    (checks, notes)."""
+    hover = controller_hover(node)
+    if hover is None or hover == 0.0:
+        return [
+            sc.Check("neutral phase", False, f"controller hover_throttle {hover}")
+        ], []
+    ok, why = set_controller_hover(node, 0.0)
+    if not ok:
+        return [sc.Check("neutral phase: pause the controller", False, why)], []
+    t_pause = time.time()
+    say(f"neutral: controller paused for {hc.NEUTRAL_SEC:.0f} s, PX4 holds")
+    time.sleep(hc.NEUTRAL_SEC)
+    t_resume = time.time()
+    ok, why = set_controller_hover(node, hover)
+    if not ok:
+        # Leave nothing paused silently: say it loudly, the check fails
+        say(f"COULD NOT RESUME the controller: {why}")
+    time.sleep(hc.RESUME_SEC + 0.5)
+    t_from = t_pause + hc.NEUTRAL_SETTLE_SEC
+    truth = node.between(node.truth, t_from, t_resume)
+    checks = hc.box_checks(truth, "neutral (PX4 holds)")
+    checks.append(
+        hc.heading_check(node.between(node.yaws, t_from, t_resume), "neutral: heading")
+    )
+    checks.append(
+        hc.neutral_mode_check(node.values_between(node.modes, t_from, t_resume))
+    )
+    checks.append(
+        hc.resume_check(node.between(node.setpoints, t_resume, time.time()), t_resume)
+    )
+    notes = [
+        f"neutral phase (wall clock): {t_pause:.3f} to {t_resume:.3f}, hover {hover}"
+    ]
+    return checks, notes
 
 
 def say(text):
@@ -240,6 +363,15 @@ def run_scenario(node, hold_sec):
     checks = hc.hold_checks(truth, hold_sec)
     setpoints = [sp for _, sp in node.between(node.setpoints, t_start, t_end)]
     checks.append(hc.active_check(setpoints))
+    checks.append(
+        hc.commanding_check(
+            node.values_between(node.flights, t_start, t_end),
+            node.values_between(node.missions, t_start, t_end),
+            node.values_between(node.nav_states, t_start, t_end),
+            node.values_between(node.modes, t_start, t_end),
+        )
+    )
+    checks.append(hc.heading_check(node.between(node.yaws, t_start, t_end)))
 
     estimate = node.between(node.estimate, t_start, t_end)
     if truth and estimate:
@@ -249,6 +381,10 @@ def run_scenario(node, hold_sec):
             f"start to end of the hold: truth {true_h:.3f} m horizontal, "
             f"{true_v:+.3f} m vertical; PX4 estimate {est_h:.3f} m, {est_v:+.3f} m"
         )
+
+    neutral_checks, neutral_notes = neutral_phase(node)
+    checks += neutral_checks
+    notes += neutral_notes
     return checks, notes, (t_start, t_end)
 
 

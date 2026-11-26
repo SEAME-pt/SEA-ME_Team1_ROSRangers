@@ -7,7 +7,7 @@
 #    the heading good for control, ADR-025 F23)
 # 3. configures and activates flight_interface (flight_interface_sim, backend
 #    px4) with ros2 lifecycle (F22): the operator's steps in real mode. From
-#    then on it streams setpoints: PX4's zero-velocity hold while it does not
+#    then on it streams setpoints: PX4's position hold while it does not
 #    command (F19)
 # 4. waits until PX4 receives that stream (PX4 refuses Offboard without it)
 # 5. arms, takes off to 2.0 m, waits until PX4 calls its heading good for
@@ -56,10 +56,9 @@ stop() {
 }
 trap 'stop 0' TERM INT
 
-# Value of one field of a PX4 uORB topic, from the PX4 shell (px4-listener).
-px4_field() {
-    "$BIN/px4-listener" "$1" 2>/dev/null | awk -F': ' -v f="$2" '$1 ~ "^ *" f "$" {print $2; exit}'
-}
+# px4_field, streaming, armed, nav_state, up_high, height, heading_good
+# shellcheck source=sim_lib.sh
+source "$(dirname "$0")/sim_lib.sh"
 
 # Waits until the command succeeds, at most $1 s, once per second.
 wait_until() {
@@ -125,29 +124,14 @@ wait_until 120 fi_active ||
     fail "flight_interface not active in 120 s (its log: logs/flight_interface_sim/latest.log)"
 
 say "4/6 Waiting for the Offboard stream from flight_interface"
-# PX4 refuses Offboard unless offboard_control_mode keeps arriving: two
-# different timestamps one second apart. The listener prints
-# "timestamp: 123456789 (0.012 seconds ago)": only the number counts (the
-# "seconds ago" part changes even when nothing arrives).
-stream_last=""
-streaming() {
-    local now
-    now=$(px4_field offboard_control_mode timestamp | awk '{print $1}')
-    if [ -n "$now" ] && [ -n "$stream_last" ] && [ "$now" != "$stream_last" ]; then
-        return 0
-    fi
-    stream_last=$now
-    return 1
-}
+# PX4 refuses Offboard unless offboard_control_mode keeps arriving
+# (streaming, sim_lib.sh), checked once per second.
 wait_until 30 streaming || fail "no offboard_control_mode from flight_interface"
 
 say "5/6 Arm, take off to $TAKEOFF_ALT m, Offboard"
-# Every step checks that PX4 is ARMED: a mode switch (takeoff, loiter,
-# Offboard) is accepted while disarmed too, so the mode alone does not say
-# the drone flies. vehicle_status: arming_state 2 ARMED; nav_state 4
-# AUTO_LOITER (take-off done), 14 OFFBOARD, 17 AUTO_TAKEOFF.
-armed() { [ "$(px4_field vehicle_status arming_state)" = 2 ]; }
-nav_state() { px4_field vehicle_status nav_state; }
+# Every step checks that PX4 is ARMED (armed, sim_lib.sh): a mode switch
+# (takeoff, loiter, Offboard) is accepted while disarmed too, so the mode
+# alone does not say the drone flies.
 took_off() {
     if ! armed; then
         # Arming can be refused for a few seconds after "Ready" (estimator settling)
@@ -159,23 +143,13 @@ took_off() {
     armed && [ "$(nav_state)" = 17 ]
 }
 wait_until 30 took_off || fail "no take-off (not armed, or no AUTO_TAKEOFF)"
-# Take-off done: loitering, still armed, and above MIN_ALT. PX4 calls its
-# heading good for control only above 1.5 m (F23); local z is NED (down +).
-MIN_ALT=1.6
-up_high() {
-    local z
-    z=$(px4_field vehicle_local_position z | awk '{print $1}')
-    [ -n "$z" ] && awk -v z="$z" -v min="$MIN_ALT" 'BEGIN { exit !(-z >= min) }'
-}
+# Take-off done: loitering, still armed, and above MIN_ALT (up_high).
 loitering() { armed && [ "$(nav_state)" = 4 ] && up_high; }
 wait_until 60 loitering || fail "take-off did not reach $MIN_ALT m"
-# PX4's estimated height (m, up), for the log: the 0.25-0.4 m lost between
-# take-off and the scenarios' start (#199 Phase 8)
-height() { px4_field vehicle_local_position z | awk '{printf "%.2f", -$1}'; }
+# height (sim_lib.sh), for the log: the 0.25-0.4 m lost between take-off
+# and the scenarios' start (#199 Phase 8)
 say "take-off done: height $(height) m (PX4)"
-# Without it flight_interface publishes no /estimate/velocity and the
-# controller stays inactive (F23).
-heading_good() { [ "$(px4_field vehicle_local_position heading_good_for_control)" = True ]; }
+# heading_good (sim_lib.sh): without it the controller stays inactive (F23)
 wait_until 30 heading_good || fail "PX4's heading not good for control at $MIN_ALT m"
 offboard() {
     "$BIN/px4-commander" mode offboard >/dev/null 2>&1 || true

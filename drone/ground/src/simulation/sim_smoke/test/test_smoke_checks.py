@@ -8,8 +8,11 @@ from sim_smoke.smoke_checks import (
     SMOKE_MASKS,
     Check,
     body_displacement,
+    first_non_finite,
     first_zero_after,
+    heading_change_deg,
     hover_check,
+    hover_drift_check,
     is_zero,
     limits_check,
     loss_check,
@@ -251,3 +254,76 @@ def test_summary():
     assert text.endswith("1/2 checks passed: FAILED")
     assert summary([Check("a", True, "x")]).endswith("ALL PASSED")
     assert summary([]).endswith("FAILED")
+
+
+# ---------- non-finite samples (a NaN must never pass) ----------
+def test_first_non_finite():
+    assert first_non_finite([(0.1, 0.0), (0.2, 0.0)]) is None
+    assert first_non_finite([(0.1, 0.0), (math.nan, 0.0)]) == 1
+    assert first_non_finite([(math.inf,)]) == 0
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        lambda bad: limits_check([(0.1, 0.0, 0.0, 0.0), bad + (0.0,)]),
+        lambda bad: measured_speed_check([(0.0, 0.0, 0.0), bad]),
+        lambda bad: hover_check([(0.0, 0.0, 0.0), bad]),
+        lambda bad: hover_drift_check([(0.0, 0.0, -1.0), bad]),
+    ],
+)
+@pytest.mark.parametrize("bad", [(math.nan, 0.0, 0.0), (0.0, math.inf, 0.0)])
+def test_a_non_finite_sample_fails_and_is_named(check, bad):
+    result = check(bad)
+    assert not result.ok
+    assert "sample 1 is not finite" in result.detail
+
+
+def test_movement_with_a_non_finite_displacement_fails():
+    assert not movement_check("m", (0.0, math.nan, 0.0), "left", -1, 15).ok
+
+
+# ---------- REQ-SAF-017: the loss must be a real reaction ----------
+def test_loss_when_already_stopped_before_the_loss_fails():
+    # Moving at 1-5 s, zero from 5 s; intent lost at 15 s: the zero was
+    # already there, it is not a reaction to the loss
+    targets = [
+        (t, (0.0, -0.3, 0.0, 0.0) if t < 5.0 else (0.0,) * 4)
+        for t in ticks(20, 16, 1.0)
+    ]
+    check = loss_check(15.0, targets)
+    assert not check.ok and "not moving at the loss" in check.detail
+
+
+def test_loss_with_a_move_after_the_zero_fails():
+    targets = moving_then_zero(10.1)
+    targets.append((11.0, (0.0, -0.3, 0.0, 0.0)))
+    targets.sort()
+    check = loss_check(10.0, targets)
+    assert not check.ok and "move again" in check.detail
+
+
+def test_hover_drift():
+    still = [(1.0, 2.0, -1.5)] * 3
+    assert hover_drift_check(still).ok
+    assert hover_drift_check([(1.0, 2.0, -1.5), (1.2, 2.1, -1.4)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5), (1.3, 2.0, -1.5)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5), (1.0, 2.0, -1.2)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5)]).ok  # too few
+
+
+# ---------- heading ----------
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [(0.0, 15.0, 15.0), (179.0, -179.0, 2.0), (-170.0, 170.0, 20.0), (10.0, 10.0, 0.0)],
+)
+def test_heading_change_deg_wraps(start, end, expected):
+    turned = heading_change_deg(math.radians(start), math.radians(end))
+    assert turned == pytest.approx(expected)
+
+
+def test_movement_that_turns_fails():
+    displacement = (0.0, -0.5, 0.0)
+    assert movement_check("m", displacement, "left", -1, 15, turned_deg=9.0).ok
+    check = movement_check("m", displacement, "left", -1, 15, turned_deg=15.0)
+    assert not check.ok and "heading 15.0 deg" in check.detail

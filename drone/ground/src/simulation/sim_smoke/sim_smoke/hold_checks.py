@@ -8,11 +8,21 @@ are unit-tested on any machine.
 
 Positions are Gazebo's world pose of the model (x, y, z in metres, z up from
 the ground plane): the truth, not PX4's estimate. Every check returns a
-smoke_checks.Check (name, ok, detail).
+smoke_checks.Check (name, ok, detail). A non-finite sample fails the check
+that reads it.
+
+Who holds (ADR-025 F19): during the 60 s the CONTROLLER must hold (every
+/flight/state override_active, mission ENGAGED with intent NEUTRAL, PX4 in
+Offboard, attitude setpoints), not PX4's own hold. Then the neutral phase
+(#199, 2026-11-26): the controller is paused (hover_throttle 0.0), so
+flight_interface sends neutral and PX4 holds the frozen point
+(px4_logic.NeutralHold) in position Offboard; it must stay within the same
+REQ-NAV-001 box, and the controller must fly again once resumed.
 """
 
 import math
 
+from sim_smoke import smoke_checks as sc
 from sim_smoke.smoke_checks import Check
 
 HOLD_SEC = 60.0  # REQ-NAV-001
@@ -25,6 +35,16 @@ START_HEIGHT_TOL_M = 0.10
 # A gap in the ground truth longer than this means the drone was not watched:
 # the check cannot say it stayed inside.
 MAX_GAP_SEC = 0.5
+# Nothing commands yaw during the hold: the heading may change at most this.
+MAX_HEADING_DEG = 10.0
+# PX4's NAVIGATION_STATE_OFFBOARD (px4_msgs VehicleStatus)
+NAV_STATE_OFFBOARD = 14
+# The neutral phase: the controller paused this long; judged from
+# NEUTRAL_SETTLE_SEC after the pause (the switch takes a few ticks).
+NEUTRAL_SEC = 20.0
+NEUTRAL_SETTLE_SEC = 0.5
+# After the resume, an active setpoint must come within this.
+RESUME_SEC = 2.0
 
 
 def hold_checks(samples, hold_sec=HOLD_SEC):
@@ -41,6 +61,9 @@ def hold_checks(samples, hold_sec=HOLD_SEC):
     """
     if len(samples) < 2:
         return [Check("hold (REQ-NAV-001)", False, f"{len(samples)} truth samples")]
+    bad = sc.non_finite_check("hold (REQ-NAV-001)", samples)
+    if bad is not None:
+        return [bad]
     t0, x0, y0, z0 = samples[0]
     checks = []
 
@@ -99,6 +122,124 @@ def active_check(setpoints):
         total > 0 and active == total,
         f"{active} of {total} setpoints active",
     )
+
+
+def box_checks(samples, label):
+    """samples: [(t, x, y, z)]. The REQ-NAV-001 box from the first sample:
+    horizontal <= HORIZONTAL_M, vertical within +-VERTICAL_M. Used for the
+    neutral phase (label says which)."""
+    name_h = f"{label}: horizontal from its start point"
+    if len(samples) < 2:
+        return [Check(label, False, f"{len(samples)} truth samples")]
+    bad = sc.non_finite_check(label, samples)
+    if bad is not None:
+        return [bad]
+    _, x0, y0, z0 = samples[0]
+    horizontal = max(math.hypot(x - x0, y - y0) for _, x, y, _ in samples)
+    up = max(z - z0 for _, _, _, z in samples)
+    down = max(z0 - z for _, _, _, z in samples)
+    span = samples[-1][0] - samples[0][0]
+    return [
+        Check(
+            name_h,
+            horizontal <= HORIZONTAL_M,
+            f"max {horizontal:.3f} m (<= {HORIZONTAL_M}) over {span:.1f} s",
+        ),
+        Check(
+            f"{label}: vertical from its start point",
+            up <= VERTICAL_M and down <= VERTICAL_M,
+            f"max +{up:.3f} / -{down:.3f} m (+-{VERTICAL_M})",
+        ),
+    ]
+
+
+def heading_check(yaws, label="heading during the hold"):
+    """yaws: [(t, yaw rad)] of the ground truth. Nothing commands yaw, so the
+    heading stays within MAX_HEADING_DEG of the first (wrapped at +-180)."""
+    if len(yaws) < 2:
+        return Check(label, False, f"{len(yaws)} samples")
+    bad = sc.non_finite_check(label, yaws)
+    if bad is not None:
+        return bad
+    yaw0 = yaws[0][1]
+    turned = max(sc.heading_change_deg(yaw0, yaw) for _, yaw in yaws)
+    return Check(
+        label,
+        turned <= MAX_HEADING_DEG,
+        f"max {turned:.1f} deg (<= {MAX_HEADING_DEG:.0f})",
+    )
+
+
+def _all(items, rule):
+    """(count ok, total, index of the first that is not)."""
+    first_bad = None
+    count = 0
+    for index, item in enumerate(items):
+        if rule(item):
+            count += 1
+        elif first_bad is None:
+            first_bad = index
+    return count, len(items), first_bad
+
+
+def commanding_check(flights, missions, nav_states, modes):
+    """Over the hold window, the controller held the drone, not PX4 (F19):
+    every /flight/state has override_active true, every /mission/state is
+    ENGAGED with intent NEUTRAL, every PX4 nav_state is Offboard and every
+    OffboardControlMode is attitude (not position or velocity). Each list
+    must be non-empty. modes: (attitude, position, velocity) booleans."""
+    rules = (
+        ("flight override_active", flights, lambda f: f.get("override_active") is True),
+        (
+            "mission ENGAGED/NEUTRAL",
+            missions,
+            lambda m: m.get("mode") == "ENGAGED" and m.get("intent") == "NEUTRAL",
+        ),
+        ("PX4 Offboard", nav_states, lambda n: n == NAV_STATE_OFFBOARD),
+        ("attitude Offboard mode", modes, lambda m: tuple(m) == (True, False, False)),
+    )
+    parts = []
+    ok = True
+    for what, items, rule in rules:
+        count, total, first_bad = _all(items, rule)
+        parts.append(f"{what} {count}/{total}")
+        if total == 0 or first_bad is not None:
+            ok = False
+            if first_bad is not None:
+                parts[-1] += f" (first bad: {items[first_bad]})"
+    return Check("controller commanding during the hold (F19)", ok, ", ".join(parts))
+
+
+def neutral_mode_check(modes):
+    """modes: (attitude, position, velocity) during the neutral phase. PX4
+    holds the frozen point: every one is position Offboard."""
+    count, total, first_bad = _all(modes, lambda m: tuple(m) == (False, True, False))
+    detail = f"{count} of {total} position Offboard"
+    if first_bad is not None:
+        detail += f" (first bad: {tuple(modes[first_bad])})"
+    return Check(
+        "neutral: PX4 holds a position (NeutralHold)",
+        total > 0 and first_bad is None,
+        detail,
+    )
+
+
+def resume_check(setpoints, t_resume):
+    """setpoints: [(t, /control/attitude_setpoint dict)]. After the resume
+    the controller flies again: an active setpoint within RESUME_SEC."""
+    times = [
+        t - t_resume
+        for t, sp in setpoints
+        if t >= t_resume and sp.get("active") is True
+    ]
+    ok = bool(times) and times[0] <= RESUME_SEC
+    if times:
+        detail = (
+            f"first active setpoint {times[0]:.2f} s after the resume (<= {RESUME_SEC})"
+        )
+    else:
+        detail = "no active setpoint after the resume"
+    return Check("controller flies again after the neutral phase", ok, detail)
 
 
 def displacement(samples):

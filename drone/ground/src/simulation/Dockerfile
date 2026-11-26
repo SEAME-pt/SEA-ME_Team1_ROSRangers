@@ -53,7 +53,7 @@ CMD ["bash"]
 FROM ${PX4_IMAGE} AS sim
 USER root
 COPY docker/entrypoint.sh /entrypoint.sh
-COPY src/simulation/sim_start.sh /sim_start.sh
+COPY src/simulation/sim_start.sh src/simulation/sim_lib.sh /
 RUN mkdir -p /ws && chown dev:dev /ws
 USER dev
 WORKDIR /ws

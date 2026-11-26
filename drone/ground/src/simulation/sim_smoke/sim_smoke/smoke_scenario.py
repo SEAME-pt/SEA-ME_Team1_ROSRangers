@@ -79,6 +79,7 @@ class Recorder(Node):
         self.targets = []  # (header.stamp, (vx, vy, vz, wz))
         self.setpoints = []  # (receive time, /control/attitude_setpoint dict)
         self.velocities = []  # (receive time, (v_north, v_east, v_down)) measured
+        self.positions = []  # (receive time, (north, east, down)) measured
         self.position = None  # (n, e, d, heading)
         self.mission = {}
         self.flight = {}
@@ -126,7 +127,9 @@ class Recorder(Node):
 
     def _on_position(self, msg):
         self.position = (msg.x, msg.y, msg.z, msg.heading)
-        self.velocities.append((self.now(), (msg.vx, msg.vy, msg.vz)))
+        now = self.now()
+        self.velocities.append((now, (msg.vx, msg.vy, msg.vz)))
+        self.positions.append((now, (msg.x, msg.y, msg.z)))
 
     @staticmethod
     def _json(msg):
@@ -176,15 +179,22 @@ def move(node, name, gesture, seconds, axis, sign, mask):
     n0, e0, d0, yaw = node.position
     hold(node, gesture, seconds)
     hold(node, NO_HANDS, 2.0)
-    n1, e1, d1, _ = node.position
+    n1, e1, d1, yaw1 = node.position
     displacement = sc.body_displacement((n0, e0, d0), (n1, e1, d1), yaw)
-    check = sc.movement_check(name, displacement, axis, sign, mask)
+    turned = sc.heading_change_deg(yaw, yaw1)
+    check = sc.movement_check(name, displacement, axis, sign, mask, turned)
     say(f"{name}: {check.detail}")
     return check
 
 
 def window(samples, t0):
     return [values for t, values in samples if t >= t0]
+
+
+# REQ-SAF-017: the hover is judged from 2.5 s after the kill (the controller
+# has stopped the move by then) for HOVER_WINDOW_SEC.
+HOVER_FROM_SEC = 2.5
+HOVER_WINDOW_SEC = 4.0
 
 
 def run_scenario(node, intent):
@@ -204,7 +214,11 @@ def run_scenario(node, intent):
         return [
             sc.Check("chain ready", False, f"mission state {node.mission or 'none'}")
         ]
-    mask = int(node.flight.get("mask", 15))
+    mask = node.flight.get("mask")
+    if mask is None:
+        # Never assume a mask: 15 would judge REQ-SAF-018 as if the ground
+        # owned every axis (hold_scenario does the same)
+        return [sc.Check("mask", False, "no mask in /flight/state")]
     if mask not in sc.SMOKE_MASKS:
         # Only right and up are flown: under mask 8 nothing moves, so the
         # REQ-SAF-017 check could never pass. config/sim.yaml sets the mask.
@@ -231,10 +245,13 @@ def run_scenario(node, intent):
     intent.send_signal(signal.SIGKILL)
     intent.wait()
     hold(node, MOVE_RIGHT, 1.5)  # gestures keep coming: only /gesture/intent is lost
-    hold(node, NO_HANDS, 2.0)
+    # NO_HANDS until the hover window (from HOVER_FROM_SEC after the kill) is over
+    hold(node, NO_HANDS, HOVER_FROM_SEC + HOVER_WINDOW_SEC - 1.5)
     last_intent = max(node.intent_times, default=None)
     checks.append(sc.loss_check(last_intent, node.targets))
-    checks.append(sc.hover_check(window(node.velocities, t_kill + 2.5)))
+    hover_from = t_kill + HOVER_FROM_SEC
+    checks.append(sc.hover_check(window(node.velocities, hover_from)))
+    checks.append(sc.hover_drift_check(window(node.positions, hover_from)))
 
     targets = window(node.targets, t_start)
     checks.append(sc.rate_check([t for t, _ in node.targets if t >= t_start]))

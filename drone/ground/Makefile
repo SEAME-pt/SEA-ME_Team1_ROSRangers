@@ -525,6 +525,8 @@ sim-smoke: no-flight-interface env-sim px4-image-present
 # $(TESTLOG)/sim-hold-<n>.log (its checks are printed here), its bag,
 # truth.csv and summary.md in logs/sim-hold/<start time>/.
 sim-hold: no-flight-interface env-sim px4-image-present
+	@# RUNS=0 or a non-number would run nothing and pass (ADR-025 F26: 3 in a row)
+	@[[ "$(RUNS)" =~ ^[1-9][0-9]*$$ ]] || { echo "make sim-hold: RUNS must be 1 or more, got '$(RUNS)'"; exit 1; }
 	@mkdir -p logs $(TESTLOG)
 	@$(call stop_ros_daemon,sim)
 	@failed=0; \
