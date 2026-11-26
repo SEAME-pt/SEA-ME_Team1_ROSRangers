@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-11-13
+updated: 2026-11-24
 status: active
 version: 2.1
 project: SEA autonomous drone

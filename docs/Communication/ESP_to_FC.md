@@ -3,7 +3,7 @@ title: ESP8266 ↔ Flight Controller Serial Interface (Proposed)
 type: interface-design
 status: draft
 date: 2026-10-12
-updated: 2026-10-23
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - architecture
@@ -186,7 +186,7 @@ Betaflight UART numbering and board silkscreen labels may not match; do not assu
 
 - UART4 is the candidate port. For it to carry MSP, the FC's serial-port configuration would need to enable MSP on that port; this is a configuration change that is **not approved**.
 - MSP baud rate, and any other port settings, are **not defined here**.
-- UART1 and UART6 appeared unassigned too and are fallback candidates *if* UART4 proves unsuitable. Their physical availability is equally unconfirmed.
+- UART1 and UART6 appeared unassigned too and are fallback candidates *if* UART4 proves unsuitable. Their physical availability is equally unconfirmed. *Superseded 2026-11-24: UART1 goes to the MTF-02P (see FC-02).*
 
 ### 4.5 Electrical assumptions to be verified (not assumed true)
 
@@ -473,7 +473,7 @@ Evidence (logs, test records, photographs) is required for each.
 | # | Decision | Blocks | Owner | Status | Proposed resolution |
 |---|---|---|---|---|---|
 | FC-01 | Physical pads for the chosen UART (documentation + inspection) | Any wiring |  | Resolved (2026-10-16) | **T4/R4 pads exposed** (team pad list, 2026-10-12). Continuity to the MCU side OK and no shorts to neighbours (multimeter, 2026-10-16, GitHub #16). Vendor wiring diagram cross-checked. See [[Wiring and Pinout]]. |
-| FC-02 | Confirm UART4 is usable for MSP on this target; otherwise choose fallback (UART1/UART6) | Any wiring/config |  | Accepted | UART4 for the ESP; UART1 (T1/R1, free) is the fallback. ELRS stays on UART2, Tramp on UART3. [[ADR-011 FC UART Allocation\|ADR-011]] |
+| FC-02 | Confirm UART4 is usable for MSP on this target; otherwise choose fallback (UART1/UART6) | Any wiring/config |  | Accepted | UART4 for the ESP; UART1 (T1/R1) was the fallback until 2026-11-24; it now carries the MTF-02P, so the ESP has no spare FC UART ([[ADR-011 FC UART Allocation\|ADR-011]] update). ELRS stays on UART2, Tramp on UART3. [[ADR-011 FC UART Allocation\|ADR-011]] |
 | FC-03 | MSP baud rate and port settings | Bench testing |  | Accepted | 115200 8N1 (Betaflight MSP default); change only on measured need. [[ADR-009 ESP to FC Link\|ADR-009]] |
 | FC-04 | FC logic level and level-compatibility handling | Any wiring |  | Partly resolved | Both MCUs are 3.3 V logic devices; **measure** the T4 idle level before connecting. [[ADR-013 Wiring and Power\|ADR-013]] |
 | FC-05 | ESP8266 power source and supply arrangement | Any wiring |  | Partly resolved | FC 5V pad → ESP 5V pin; the FC 5V rail current is still to be measured. [[ADR-013 Wiring and Power\|ADR-013]] |
