@@ -138,7 +138,9 @@ def _param_node(hover=0.73, services=True, set_ok=True):
 
     def set_parameters(parameters):
         sets.append(parameters)
-        result = types.SimpleNamespace(successful=set_ok, reason="" if set_ok else "refused")
+        result = types.SimpleNamespace(
+            successful=set_ok, reason="" if set_ok else "refused"
+        )
         return Done(types.SimpleNamespace(results=[result]))
 
     params = types.SimpleNamespace(
@@ -159,7 +161,10 @@ def test_controller_hover_and_set(scenarios, monkeypatch):
     assert hold.set_controller_hover(node, 0.0) == (True, "")
     assert node.sets == [[("hover_throttle", 0.0)]]
     assert hold.controller_hover(_param_node(services=False)) is None
-    assert hold.set_controller_hover(_param_node(set_ok=False), 0.0) == (False, "refused")
+    assert hold.set_controller_hover(_param_node(set_ok=False), 0.0) == (
+        False,
+        "refused",
+    )
 
 
 def test_neutral_phase_refuses_without_a_controller(scenarios):

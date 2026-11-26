@@ -85,7 +85,9 @@ def test_armed_and_nav_state(tmp_path, arming, nav, armed, nav_out):
     assert run(bin_dir, "nav_state") == (0, nav_out)
 
 
-@pytest.mark.parametrize("z, high", [(-1.59, False), (-1.6, True), (-2.0, True), (0.0, False)])
+@pytest.mark.parametrize(
+    "z, high", [(-1.59, False), (-1.6, True), (-2.0, True), (0.0, False)]
+)
 def test_up_high_needs_1_6_m(tmp_path, z, high):
     bin_dir = fake_listener(
         tmp_path, {"vehicle_local_position": LOCAL_POSITION.format(z=z, good="True")}
@@ -101,7 +103,8 @@ def test_up_high_without_a_position_is_false(tmp_path):
 
 def test_height_is_up_positive(tmp_path):
     bin_dir = fake_listener(
-        tmp_path, {"vehicle_local_position": LOCAL_POSITION.format(z=-1.753, good="True")}
+        tmp_path,
+        {"vehicle_local_position": LOCAL_POSITION.format(z=-1.753, good="True")},
     )
     assert run(bin_dir, "height") == (0, "1.75")
 
