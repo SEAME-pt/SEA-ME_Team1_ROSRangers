@@ -33,6 +33,7 @@ import time
 
 from geometry_msgs.msg import TwistStamped
 from rcl_interfaces.msg import ParameterDescriptor, SetParametersResult
+from rclpy.duration import Duration
 from rclpy.node import Node
 from std_msgs.msg import String
 
@@ -49,6 +50,10 @@ from controller_node.controller_logic import (
 from controller_node.spin import run
 
 HEALTH_REPORT_SEC = 5.0
+# On the way out, how long to wait for subscribers to acknowledge the last
+# (stopped) setpoint before the node is destroyed. Without the wait the final
+# message can be lost when the node exits at once (seen in CI, PR #253).
+STOP_ACK_TIMEOUT_SEC = 0.5
 
 # Parameters that may change while running -> the field they set: on Gains
 # for the four gains, on Params for the rest. Every other parameter needs a
@@ -219,8 +224,10 @@ class ControllerNode(Node):
 
     def stop_output(self):
         """Publish one inactive setpoint on the way out (F8), so nobody keeps
-        the last one."""
+        the last one, and wait (at most STOP_ACK_TIMEOUT_SEC) until the
+        subscribers have it: the node is destroyed right after."""
         self._publish(self._logic.neutral(STOPPED))
+        self._pub.wait_for_all_acked(Duration(seconds=STOP_ACK_TIMEOUT_SEC))
 
 
 def main(args=None):

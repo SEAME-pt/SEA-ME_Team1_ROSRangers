@@ -152,6 +152,22 @@ class ControllerNodeTests(unittest.TestCase):
         self.assertEqual(len(stopped), 1)
         self.assertFalse(stopped[0]["active"])
 
+    def test_stop_output_waits_for_the_last_setpoint_to_arrive(self):
+        # The node is destroyed right after stop_output: it must wait for the
+        # subscribers' acks, or the final "stopped" can be lost (PR #253 CI)
+        node = self.start(mask=15, hover_throttle=HOVER)
+        waits = []
+        real_wait = node._pub.wait_for_all_acked
+
+        def recording_wait(timeout):
+            waits.append(timeout)
+            return real_wait(timeout)
+
+        node._pub.wait_for_all_acked = recording_wait
+        node.stop_output()
+        self.assertEqual(len(waits), 1)
+        self.assertAlmostEqual(waits[0].nanoseconds / 1e9, 0.5)
+
     def test_bad_parameters_refused(self):
         bad = (
             {"mask": 7},
