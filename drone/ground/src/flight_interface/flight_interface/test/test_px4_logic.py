@@ -190,8 +190,29 @@ def test_drone_state_follows_px4():
         "airborne": True,
         "fc_link_ok": True,
         "armed": True,
-        "rx_time": 0.1,
+        "rx_time": 0.0,  # when PX4's position came, not the poll time
     }
+
+
+def test_rx_time_is_when_px4_last_spoke():
+    # Status and position at 0.0, polled at 0.4: the guard's 0.5 s watchdog
+    # must count from 0.0, so a silent PX4 is lost at 0.5 s, not 0.9 s
+    logic = fresh()
+    assert logic.drone_state(0.4)["rx_time"] == 0.0
+    logic.on_position(NORTH, True, 0.3)
+    assert logic.drone_state(0.4)["rx_time"] == 0.3
+
+
+def test_px4_freshness_boundaries():
+    # Fresh at exactly the limit, stale just after it
+    logic = fresh()
+    logic.on_status(True, True, 0.0)
+    logic.on_position(NORTH, True, 1.5 - POSITION_TIMEOUT)
+    assert logic.drone_state(STATUS_TIMEOUT) is not None
+    assert logic.drone_state(STATUS_TIMEOUT + 1e-6) is None
+    logic = fresh()
+    assert logic.drone_state(POSITION_TIMEOUT) is not None
+    assert logic.drone_state(POSITION_TIMEOUT + 1e-6) is None
 
 
 def test_override_needs_armed_and_offboard():
@@ -376,3 +397,31 @@ def test_hold_ignores_non_finite_values(bad):
     hold = NeutralHold()
     hold.on_position(bad, 2.0, True, bad, True, bad, True, 0.0)
     assert nan_at(hold.target(True, 0.0)) == [True] * 4
+
+
+def test_hold_fills_an_empty_axis_from_a_later_fresh_value():
+    # Rule 5: frozen while nothing was fresh, then filled once, never moved
+    hold = NeutralHold()
+    assert nan_at(hold.target(True, 0.0)) == [True] * 4
+    feed(hold, now=0.1)
+    assert hold.target(True, 0.1) == approx((1.0, 2.0, -1.75, EAST))
+    feed(hold, ned=(3.0, 4.0, -1.0), heading=NORTH, now=0.2)
+    assert hold.target(True, 0.2) == approx((1.0, 2.0, -1.75, EAST))
+
+
+def test_hold_fills_only_the_empty_axes():
+    # Height frozen first (x/y invalid), then x/y and heading come: the height
+    # stays where it was frozen
+    hold = NeutralHold()
+    hold.on_position(1.0, 2.0, False, -1.75, True, EAST, False, 0.0)
+    assert nan_at(hold.target(True, 0.0)) == [True, True, False, True]
+    hold.on_position(1.0, 2.0, True, -1.9, True, EAST, True, 0.02)
+    assert hold.target(True, 0.02) == approx((1.0, 2.0, -1.75, EAST))
+
+
+def test_hold_freshness_boundary():
+    # A value exactly HOLD_POSITION_TIMEOUT old is used, a bit older is not
+    hold = NeutralHold()
+    feed(hold)
+    assert nan_at(hold.target(False, HOLD_POSITION_TIMEOUT)) == [False] * 4
+    assert nan_at(hold.target(False, HOLD_POSITION_TIMEOUT + 1e-6)) == [True] * 4

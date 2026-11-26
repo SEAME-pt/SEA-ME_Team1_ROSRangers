@@ -207,6 +207,13 @@ def test_link_lost_gives_zero_and_link_ok_false():
     )
 
 
+def test_link_fresh_boundary():
+    # A drone state exactly link_timeout old still counts, a bit older not
+    g = ready(0.0)
+    assert g.link_fresh(LINK_TIMEOUT) is True
+    assert g.link_fresh(LINK_TIMEOUT + 1e-6) is False
+
+
 def test_link_comes_back_with_a_new_drone_state():
     g = ready(0.0)
     assert g.link_fresh(1.0) is False
@@ -416,3 +423,28 @@ def test_masks_and_limits_match_mission_node_and_the_controller():
     assert TILT_CAP_DEG == controller_logic.MAX_TILT_CAP_DEG
     assert THROTTLE_BAND == controller_logic.MAX_THROTTLE_BAND
     assert YAW_RATE_CAP_DPS == controller_logic.CEILING_YAW_DPS
+
+
+def test_every_controller_output_is_a_setpoint_the_guard_accepts():
+    # C1.1, F17, F18: what controller_node publishes must parse here, with
+    # the same numbers and the same `active` (its `reason` is ignored)
+    controller_logic = pytest.importorskip("controller_node.controller_logic")
+    Controller = controller_logic.Controller
+    Params = controller_logic.Params
+    flying = Controller(Params(hover_throttle=HOVER, mask=15))
+    flying.on_target(0.3, -0.2, 0.1, 0.2, 0.0)
+    flying.on_velocity(0.0, 0.0, 0.0, 0.0)
+    outputs = [
+        flying.step(0.0),
+        Controller(Params(hover_throttle=0.0, mask=8)).step(0.0),
+        flying.neutral(controller_logic.STOPPED),
+    ]
+    assert outputs[0]["active"] is True
+    for out in outputs:
+        parsed = parse_setpoint(json.dumps(out))
+        assert parsed is not None, out
+        assert parsed.active == out["active"]
+        assert parsed.roll == pytest.approx(out["roll"])
+        assert parsed.pitch == pytest.approx(out["pitch"])
+        assert parsed.yaw_rate == pytest.approx(out["yaw_rate"])
+        assert parsed.throttle == pytest.approx(out["throttle"])

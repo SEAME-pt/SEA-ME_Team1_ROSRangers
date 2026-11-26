@@ -70,7 +70,7 @@ class Setpoint:
     active: bool = False
 
 
-NEUTRAL = Setpoint()  # no command (F8): ESP mode 0, px4 level + hover throttle
+NEUTRAL = Setpoint()  # no command (F8): ESP mode 0, px4 position hold (F19)
 
 # Attitude limits (C1.4): the ground caps, the same in the controller.
 TILT_CAP_DEG = 15.0  # F4

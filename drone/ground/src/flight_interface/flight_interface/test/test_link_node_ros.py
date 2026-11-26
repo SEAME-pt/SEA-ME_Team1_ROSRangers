@@ -76,6 +76,7 @@ ALLOWED = {
     "take_acks",  # read-only: the ESP's answers, logged (decision E2)
     "close",
     "name",
+    "estop_note",  # read-only text: what the E-stop answer says (A1)
 }
 # Data fields the tests themselves read; not calls by the node.
 TEST_FIELDS = {"sent", "log", "state", "connected", "closed", "calls", "acks"}

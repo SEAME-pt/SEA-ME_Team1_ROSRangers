@@ -196,7 +196,10 @@ class Px4Logic:
             "airborne": airborne,
             "fc_link_ok": True,
             "armed": self.armed,
-            "rx_time": now,
+            # When PX4 last spoke, not the poll time: the guard's 0.5 s
+            # watchdog then counts from PX4's last local position (50 Hz;
+            # status at 2 Hz would make it flap), as the ESP's rx time
+            "rx_time": self._position_t,
         }
 
     def reset_yaw(self):
@@ -255,6 +258,10 @@ class NeutralHold:
          it: the next gap freezes a new point.
       4. An axis without a fresh, valid value is NaN: PX4 holds zero velocity
          there, as before. Example: z valid and x/y not -> a height hold only.
+      5. A NaN axis of the frozen point takes the first fresh value that comes
+         later (ADR-025 F19 note, 2026-11-26); an axis that has a value never
+         moves. Example: frozen (nan, nan, -1.75, nan) at 0.0, fresh
+         (1, 2, -1.9, east) at 0.02 -> (1, 2, -1.75, east) from then on.
     """
 
     def __init__(self, timeout=HOLD_POSITION_TIMEOUT):
@@ -307,8 +314,21 @@ class NeutralHold:
         if offboard is not True:
             self._point = None
             return self._current(now)
+        current = self._current(now)
         if self._point is None:
-            self._point = self._current(now)
+            self._point = current
+            return self._point
+        north, east, down, heading = self._point
+        now_north, now_east, now_down, now_heading = current
+        # Rule 5: fill the empty axes, never move one that has a value
+        if math.isnan(north):
+            north = now_north
+            east = now_east
+        if math.isnan(down):
+            down = now_down
+        if math.isnan(heading):
+            heading = now_heading
+        self._point = (north, east, down, heading)
         return self._point
 
 

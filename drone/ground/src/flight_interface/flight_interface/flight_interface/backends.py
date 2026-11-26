@@ -43,6 +43,9 @@ class Backend:
     """Interface. Times are monotonic seconds."""
 
     name = "base"
+    # None: the E-stop answer says whether BYE went out. A backend with no BYE
+    # (px4) sets the text that says what happens instead (A1).
+    estop_note = None
 
     def send_setpoint(self, command, now):
         """Send one guard.Setpoint. active false is no command (F8): the ESP

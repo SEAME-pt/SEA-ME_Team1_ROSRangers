@@ -75,7 +75,11 @@ class Px4Backend(Backend):
         # Neutral is PX4's own hold (F19), but a commanding setpoint carries the
         # hover throttle on the axes the ground does not own (F2): 0.0 would be
         # thrust 0 there. Refused before anything is created.
-        if not (isinstance(hover_throttle, (int, float)) and hover_throttle > 0.0):
+        is_number = isinstance(hover_throttle, (int, float)) and not isinstance(
+            hover_throttle, bool
+        )
+        in_range = is_number and 0.0 < hover_throttle < 1.0
+        if not in_range:
             raise ValueError(
                 "backend px4 needs a measured hover_throttle (sim.yaml), got "
                 f"{hover_throttle!r}"
@@ -109,8 +113,6 @@ class Px4Backend(Backend):
                 m.VehicleLandDetected, LAND_TOPIC, self._on_land, qos
             ),
         ]
-        self.sent_attitude = 0  # counters for the tests and the log
-        self.sent_neutral = 0
 
     # ---------- PX4 -> here ----------
     def _on_status(self, msg):
@@ -190,7 +192,6 @@ class Px4Backend(Backend):
         sp.thrust_body = [float(v) for v in thrust_body]
         sp.yaw_sp_move_rate = float(yaw_rate)
         self._attitude_pub.publish(sp)
-        self.sent_attitude += 1
         return True
 
     def send_neutral(self, now):
@@ -214,16 +215,22 @@ class Px4Backend(Backend):
         sp.yaw = float(heading)
         sp.yawspeed = 0.0
         self._trajectory_pub.publish(sp)
-        self.sent_neutral += 1
         return True
 
+    # The E-stop answer's second half (ADR-025 A1: say what really happened)
+    estop_note = (
+        "no BYE on the sim backend: PX4 holds position, then its Offboard-loss "
+        "failsafe takes over"
+    )
+
     def end_session(self, now):
-        """E-stop: nothing to close. The node sends nothing more, and PX4's
-        Offboard-loss failsafe takes over (it never changes PX4's mode here)."""
+        """E-stop: nothing to close, nothing sent (False). The node sends
+        nothing more, and PX4's Offboard-loss failsafe takes over (it never
+        changes PX4's mode here)."""
         self.logic.reset_yaw()
         self.pilot.reset()
         self.hold.release()
-        return True
+        return False
 
     def request_resume(self, now, session):
         self._node.get_logger().warning(

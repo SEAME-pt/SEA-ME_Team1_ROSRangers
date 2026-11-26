@@ -32,6 +32,7 @@ except ImportError:
 
 from flight_interface.backends import make_backend
 from flight_interface.guard import NEUTRAL, Setpoint
+from flight_interface.px4_logic import quaternion_from_euler
 
 HOVER = 0.7
 EAST = math.pi / 2
@@ -129,16 +130,19 @@ def feed_px4(
     valid=True,
     z_deriv=None,
     ned=START,
+    xy_valid=None,
+    heading_good=True,
 ):
     """z_deriv: the rate of PX4's height estimate; by default the same as vz.
-    ned: the position (north, east, down), valid with `valid`."""
+    ned: the position (north, east, down), valid with `valid` (x/y with
+    `xy_valid` when given)."""
     status = rig.msgs.VehicleStatus()
     status.arming_state = 2 if armed else 1
     status.nav_state = 14 if offboard else 4
     rig.node.subs[STATUS_TOPIC](status)
     pos = rig.msgs.VehicleLocalPosition()
     pos.heading = heading
-    pos.heading_good_for_control = True
+    pos.heading_good_for_control = heading_good
     pos.vx, pos.vy, pos.vz = v
     if z_deriv is None:
         z_deriv = v[2]
@@ -147,12 +151,30 @@ def feed_px4(
     pos.v_z_valid = valid
     pos.z_valid = valid
     pos.x, pos.y, pos.z = ned
-    pos.xy_valid = valid
+    if xy_valid is None:
+        xy_valid = valid
+    pos.xy_valid = xy_valid
     rig.node.subs[POSITION_TOPIC](pos)
 
 
 def sent(rig, topic):
     return rig.node.pubs[topic].sent
+
+
+def yaw_of(q):
+    """The yaw (rad) of a (w, x, y, z) quaternion, Z-Y-X."""
+    w, x, y, z = q
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def turn_left(rig, seconds):
+    """Command a 45 deg/s left turn every 0.02 s for `seconds`, heading north
+    throughout: the yaw setpoint leads the heading."""
+    steps = round(seconds / 0.02)
+    for _ in range(steps):
+        rig.clock.now += 0.02
+        feed_px4(rig, heading=0.0)
+        rig.backend.send_setpoint(Setpoint(0.0, 0.0, 45.0, 0.73, True), rig.clock.now)
 
 
 # ---------- out ----------
@@ -166,6 +188,40 @@ def test_a_commanding_setpoint_goes_out_as_attitude(rig):
     assert sp.thrust_body == pytest.approx([0.0, 0.0, -0.72])
     assert len(sp.q_d) == 4 and sp.yaw_sp_move_rate == 0.0
     assert sent(rig, TRAJECTORY_SETPOINT_TOPIC) == []
+
+
+def test_the_attitude_values_reach_px4(rig):
+    # FLU roll 2, pitch 5 (nose down), yaw rate 10 left, facing east ->
+    # FRD roll 2, pitch -5, yaw east; yaw rate -10 deg/s
+    feed_px4(rig, heading=EAST)
+    rig.backend.send_setpoint(Setpoint(2.0, 5.0, 10.0, 0.72, True), 0.0)
+    (sp,) = sent(rig, ATTITUDE_SETPOINT_TOPIC)
+    expected = quaternion_from_euler(math.radians(2.0), -math.radians(5.0), EAST)
+    assert sp.q_d == pytest.approx(list(expected))
+    assert sp.yaw_sp_move_rate == pytest.approx(-math.radians(10.0))
+
+
+@pytest.mark.parametrize("stop", ["send_neutral", "end_session"])
+def test_neutral_and_estop_restart_the_yaw_from_the_heading(rig, stop):
+    # After a turn the yaw setpoint leads the heading (-9 deg here). Neutral
+    # or the E-stop forgets it: the next command starts at the real heading
+    # (east), not 30 deg behind it.
+    turn_left(rig, 0.2)
+    getattr(rig.backend, stop)(rig.clock.now)
+    rig.clock.now += 0.02
+    feed_px4(rig, heading=EAST)
+    rig.backend.send_setpoint(Setpoint(0.0, 0.0, 0.0, 0.73, True), rig.clock.now)
+    last = sent(rig, ATTITUDE_SETPOINT_TOPIC)[-1]
+    assert yaw_of(last.q_d) == pytest.approx(EAST)
+
+
+@pytest.mark.parametrize("stop", ["send_neutral", "end_session"])
+def test_neutral_and_estop_reset_the_simulated_pilot(stop, monkeypatch):
+    rig11 = make_rig(mask=11)
+    resets = []
+    monkeypatch.setattr(rig11.backend.pilot, "reset", lambda: resets.append(stop))
+    getattr(rig11.backend, stop)(0.0)
+    assert resets == [stop]
 
 
 def test_neutral_holds_where_it_started(rig):
@@ -220,6 +276,34 @@ def test_neutral_without_a_position_is_the_zero_velocity_hold(rig):
     (sp,) = sent(rig, TRAJECTORY_SETPOINT_TOPIC)
     assert all(math.isnan(v) for v in sp.position)
     assert sp.velocity == [0.0, 0.0, 0.0]
+
+
+def test_neutral_holds_only_the_axes_px4_gives(rig):
+    # z valid, x/y not: a height hold; position Offboard because one axis has
+    # a point, NaN north/east are PX4's zero-velocity hold there
+    feed_px4(rig, heading=EAST, xy_valid=False)
+    rig.backend.send_neutral(0.0)
+    (mode,) = sent(rig, OFFBOARD_MODE_TOPIC)
+    assert (mode.attitude, mode.position, mode.velocity) == (False, True, False)
+    (sp,) = sent(rig, TRAJECTORY_SETPOINT_TOPIC)
+    assert math.isnan(sp.position[0]) and math.isnan(sp.position[1])
+    assert sp.position[2] == pytest.approx(START[2])
+    assert sp.velocity == [0.0, 0.0, 0.0]
+    assert sp.yaw == pytest.approx(EAST)
+
+
+def test_a_setpoint_that_falls_back_to_neutral_keeps_the_point():
+    # Mask 11 without a measured velocity: an active setpoint becomes neutral
+    # (the pilot cannot fly). That must not release the frozen point.
+    rig11 = make_rig(mask=11)
+    feed_px4(rig11, valid=False, xy_valid=True)
+    rig11.backend.send_neutral(0.0)
+    rig11.backend.send_setpoint(Setpoint(0.0, 0.0, 0.0, HOVER, True), 0.0)
+    feed_px4(rig11, valid=False, xy_valid=True, ned=(3.0, 4.0, -1.0))
+    rig11.backend.send_neutral(0.0)
+    assert sent(rig11, ATTITUDE_SETPOINT_TOPIC) == []
+    for sp in sent(rig11, TRAJECTORY_SETPOINT_TOPIC):
+        assert sp.position[:2] == pytest.approx(list(START[:2]))
 
 
 def test_estop_releases_the_hold_point(rig):
@@ -286,6 +370,13 @@ def test_no_measured_velocity_when_px4_calls_it_invalid(rig):
     assert sent(rig, VELOCITY_TOPIC) == []
 
 
+def test_no_measured_velocity_without_a_usable_heading(rig):
+    # F23: body velocity needs the heading; without it nothing is published
+    feed_px4(rig, v=(0.3, 0.0, 0.0), heading_good=False)
+    feed_px4(rig, v=(0.3, 0.0, 0.0), heading=math.nan)
+    assert sent(rig, VELOCITY_TOPIC) == []
+
+
 # ---------- the simulated pilot (masks 8, 11) ----------
 def test_mask_11_pilot_holds_the_height():
     # Climbing at 0.2 m/s with the ground not owning throttle: less thrust
@@ -319,7 +410,8 @@ def test_arm_and_resume_send_nothing(rig):
     assert rig.backend.arm_control(15, 0.0, None) is False
     assert rig.backend.request_resume(0.0, None) is False
     assert len(rig.node.warnings) == 2
-    assert rig.backend.end_session(0.0) is True
+    assert rig.backend.end_session(0.0) is False  # nothing sent: no BYE here
+    assert "no BYE" in rig.backend.estop_note  # what the E-stop answer says
     every_topic = set(rig.node.pubs)
     assert every_topic == {
         OFFBOARD_MODE_TOPIC,
@@ -336,7 +428,7 @@ def test_close_destroys_everything(rig):
 
 
 # ---------- construction ----------
-@pytest.mark.parametrize("hover", [0.0, -0.5, None, "0.7"])
+@pytest.mark.parametrize("hover", [0.0, -0.5, None, "0.7", True, math.inf, 1.0, 1.5])
 def test_refuses_without_a_measured_hover_throttle(hover):
     node = FakeNode()
     with pytest.raises(ValueError):

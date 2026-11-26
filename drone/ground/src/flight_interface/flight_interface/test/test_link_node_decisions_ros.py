@@ -82,6 +82,7 @@ ALLOWED = {
     "take_acks",  # read-only: the ESP's answers, logged (decision E2)
     "close",
     "name",
+    "estop_note",  # read-only text: what the E-stop answer says (A1)
 }
 TEST_FIELDS = {
     "sent",
@@ -143,6 +144,16 @@ class FailingNeutralBackend(LoopbackBackend):
 
 class NoTcpBackend(LoopbackBackend):
     """No TCP: BYE cannot go out (the ESP fails over after T_loss)."""
+
+    def end_session(self, now):
+        super().end_session(now)
+        return False
+
+
+class NoByeBackend(LoopbackBackend):
+    """Like px4: no BYE exists, the backend says what happens instead (A1)."""
+
+    estop_note = "no BYE on the sim backend: PX4 holds position"
 
     def end_session(self, now):
         super().end_session(now)
@@ -261,6 +272,17 @@ class DecisionTests(unittest.TestCase):
         self.spin(0.2, yaw=0.3)
         self.assertEqual(
             self.call("estop").message, "estop latched, neutral + BYE sent"
+        )
+
+    def test_estop_on_a_backend_without_bye_says_what_happens(self):
+        self.replace(NoByeBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        response = self.call("estop")
+        self.assertTrue(response.success and self.node.guard.estop)
+        self.assertEqual(
+            response.message,
+            "estop latched, neutral + no BYE on the sim backend: PX4 holds position",
         )
 
     def test_a_failed_neutral_never_skips_bye(self):

@@ -504,11 +504,14 @@ class FlightInterface(Node):
             self._publish_state()
         except Exception as error:  # the latch is set; the next timer tries again
             self.get_logger().error(f"E-STOP: /flight/state failed: {error}")
-        sent = ("neutral + " if neutral else "") + (
-            "BYE sent"
-            if bye
-            else "BYE NOT sent (no TCP: the ESP fails over after T_loss)"
-        )
+        note = self.backend.estop_note
+        if note is not None:
+            ending = note
+        elif bye:
+            ending = "BYE sent"
+        else:
+            ending = "BYE NOT sent (no TCP: the ESP fails over after T_loss)"
+        sent = ("neutral + " if neutral else "") + ending
         self.get_logger().error(
             f"E-STOP ({reason}): {sent}, setpoints stopped; ~/reset_estop to clear"
         )
