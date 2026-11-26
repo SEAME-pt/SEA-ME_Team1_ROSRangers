@@ -3,7 +3,7 @@ title: CI/CD Overview
 type: ci-cd
 status: draft
 date: 2026-10-21
-updated: 2026-11-24
+updated: 2026-11-26
 project: SEA autonomous drone
 owner: Track D
 tags:
@@ -53,7 +53,7 @@ Each job is gated by `check-components` and turns on when its component exists (
 - They turn on when `drone/ground/src` exists (`ground-ros2`) or `drone/ground/docker-compose.yml` exists (`ground-docker`).
 - On a PR they run only when it changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`. Pushes to `dev` and `main` always run them. See §4 for why. The simulation lives in `drone/ground/src/simulation/`, so a PR that only changes the simulation runs them too: slower, but harmless.
 
-**Simulation checks job.** `sim-smoke-python` runs the pytest tests of the sim-only `sim_smoke` package that need no ROS and no `px4_msgs`: `smoke_checks.py` and `hold_checks.py`, the pass/fail rules of `make sim-smoke` and `make sim-hold`, with a **90 % coverage gate**. It turns on when `drone/ground/src/simulation/sim_smoke/setup.py` exists. The simulation itself is not run in CI.
+**Simulation checks job.** `sim-smoke-python` runs the pytest tests of the sim-only `sim_smoke` package that need no ROS and no `px4_msgs`: `smoke_checks.py` and `hold_checks.py`, the pass/fail rules of `make sim-smoke` and `make sim-hold`, with a **90 % coverage gate**, plus the scenarios' helpers (ROS imports stubbed) and `sim_lib.sh`, the PX4 readers of `sim_start.sh`, against a fake `px4-listener` (2026-11-26, #199). It turns on when `drone/ground/src/simulation/sim_smoke/setup.py` exists. The simulation itself is not run in CI.
 
 Every job in `ci.yaml` has a `timeout-minutes` limit (5–30 min), so a hung job can't hold a runner for GitHub's default of 6 h.
 

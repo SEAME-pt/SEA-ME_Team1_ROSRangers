@@ -3,7 +3,7 @@ title: Flight Interface Node (attitude setpoint → drone, drone state → /flig
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-25
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - gestures
@@ -87,7 +87,7 @@ The node starts **unconfigured**. The operator runs `configure`, then `activate`
 | ARM | only the operator's `~/arm_control`, in `SESSION_IDLE`, with a fresh link and the FC alive. Never by itself, also not after a reconnect (REQ-SAF-023) |
 | RESUME | only the operator's `~/resume`, after the ESP's link failsafe. Never by itself |
 | Held requests | ARM and RESUME go out after 1.5 s of neutral setpoints; dropped after 3 s or when their conditions go |
-| E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop` |
+| E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop`. The `px4` backend (sim) has no `BYE`: its answer says so, and PX4's Offboard-loss failsafe takes over (A1 note, 2026-11-26) |
 | Sessions | the `esp` backend reconnects by itself, never with ARM |
 | No restart | a dead node stays dead; the ESP's failsafe takes over |
 | ROS stays on this PC | the real mode's domain from `env/real.env` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services. A native `ros2 launch` on the host defaults to `ROS_DOMAIN_ID=42` (ADR-025 E1.4) |

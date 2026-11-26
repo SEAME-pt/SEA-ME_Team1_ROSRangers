@@ -3,7 +3,7 @@ title: Controller_Node (velocity target → attitude setpoint)
 type: architecture
 status: draft
 date: 2026-11-24
-updated: 2026-11-24
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - gestures
@@ -24,7 +24,7 @@ aliases:
 > [!WARNING] Status: DRAFT
 > - Flies only where a measured velocity exists. In the simulation (PX4 SITL) it does: `make sim-hold` holds 60 s, at most 0.19 m off (limit 0.25 m; REQ-NAV-001, [[PX4 SITL Setup]] §7.5). On the real drone there is none until the flow + height estimator (#200), so it stays inactive and nothing that reaches the drone changes.
 > - The gains are the starting values; they were enough in SITL. The real drone gets its own tuning in the cage.
-> - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4 (F1–F27).
+> - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4 (F1–F28).
 
 ---
 
@@ -58,7 +58,7 @@ The gesture chain thinks in velocities; the flight controller holds an attitude.
 - `/mission/velocity_target` (`TwistStamped`, body FLU, yaw rate in rad/s) from `mission_node`.
 - `/estimate/velocity` (`TwistStamped`, body FLU): the measured velocity. In the simulation `flight_interface`'s `px4` backend publishes it from PX4; on the drone, the estimator of #200.
 - Parameters (`controller_node.py`): `mask`, `hover_throttle`, `rate_hz`, the gains `kp_xy`, `ki_xy`, `kp_z`, `ki_z`, `tilt_cap_deg`, `throttle_band`, `target_timeout_sec`, `velocity_timeout_sec`, the topic names. A bad value stops the node at start-up. `mask` and `hover_throttle` must equal `flight_interface`'s: each mode file repeats them in both sections and `test_config.py` checks they agree.
-- **Live tuning** (ADR-025 F28): the gains, `tilt_cap_deg`, `throttle_band` and the two timeouts can change while it runs, checked like at start-up; a bad value is refused and the old one kept, and the log says `retuned: …`. `mask`, `hover_throttle`, `rate_hz` and the topics need a restart. From `drone/ground/`, in the mode's domain ([[01 ROS2 Nodes Installation|01]] §5):
+- **Live tuning** (ADR-025 F28): the gains, `tilt_cap_deg`, `throttle_band` and the two timeouts can change while it runs, checked like at start-up; a bad value is refused and the old one kept, and the log says `retuned: …`. A batch is all or none. `hover_throttle` may only go to 0.0 (a pause: always inactive, so `flight_interface` sends neutral) and back to its start value (F28 note, 2026-11-26; `make sim-hold` uses it). `mask`, `rate_hz` and the topics need a restart. From `drone/ground/`, in the mode's domain ([[01 ROS2 Nodes Installation|01]] §5):
 
   ```bash
   docker compose --env-file env/sim.env run --rm echo ros2 param set /controller_node kp_xy 1.2
@@ -87,7 +87,7 @@ The worked examples are in the comments of `controller_logic.py`. The integrator
 | Rule | In short |
 | :--- | :--- |
 | Input clamp | the target is clamped first: 0.5 m/s horizontal (as a vector, direction kept), 0.5 m/s vertical, 45 °/s yaw; a non-finite value counts as 0 |
-| Stale target | older than 0.25 s → a zero target: the drone holds zero velocity (REQ-SAF-017) |
+| Stale target | not fresh at the next tick (older than 0.25 s then) → a zero target: the drone holds zero velocity, at most 0.25 s after the last target (REQ-SAF-017, F11 note 2026-11-26) |
 | Active | only while a measured velocity arrived in the last 0.25 s and the hover throttle is measured (not 0.0). A zero target with a fresh measurement is active: "hold zero velocity", also while `mission_node` is not `ENGAGED` |
 | Limits | roll / pitch ≤ 15°, throttle within hover ± 0.15. `flight_interface`'s guard checks the same limits again |
 | Inactive | `active` false with the `reason`: neutral, whatever the numbers |
@@ -133,7 +133,7 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 | Decision | Why |
 | :--- | :--- |
 | Its own node, not inside `flight_interface` | Control law and the link / safety node stay apart (C1.1, C1.5) |
-| Gains changeable live, mask and hover throttle not | Tuning in the cage without restarts; the mask and hover throttle must equal `flight_interface`'s (F15, F28) |
+| Gains changeable live, mask not, hover throttle only to 0.0 and back | Tuning in the cage without restarts; the mask and hover throttle must equal `flight_interface`'s (F15, F28) |
 | The measured velocity from a neutral topic | The controller never imports PX4 messages: the same code flies the simulation and the drone (F1) |
 | A velocity loop only, no position loop | Simplest; SITL showed it holds within REQ-NAV-001. A position loop comes only if a hold fails on drift (F7) |
 | Gains tuned in the simulation stay in `config/sim.yaml` | The real drone starts from the code defaults and is tuned on its own (F27) |
@@ -184,6 +184,6 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Neutral / inactive** | `active` false: no command; the numbers are level and the hover throttle, and nothing may use them. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
-| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |
 | **Velocity target** | The velocity `mission_node` wants, on `/mission/velocity_target` (body FLU, 20 Hz). |

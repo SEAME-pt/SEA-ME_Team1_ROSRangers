@@ -74,7 +74,7 @@ cmake --build build && ctest --test-dir build --output-on-failure
 
 pytest drone/ground/src/sd_protocol_py   # Python protocol twin (80 % gate)
 pytest drone/tests/tools -q              # bench tool unit tests
-python3 drone/tests/vectors/generate.py --check   # golden vectors up to date (pre-commit hook)
+python3 drone/tests/vectors/generate.py --check   # golden vectors up to date (also a pytest in drone/tests/tools, CI scripts-python)
 
 # Ground nodes: the Makefile is in drone/ground/, not the repo root
 cd drone/ground
@@ -139,12 +139,12 @@ Golden vectors: once committed, `drone/tests/vectors/*.json` are the source of t
 ## CI
 
 - `ci.yaml`: `lint` (pre-commit) always runs. `check-components` turns each job on only when its component exists:
-  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `drone/tests/tools/test_*.py` → `scripts-python` (bench tool unit tests), `drone/ground/src/simulation/sim_smoke/setup.py` → `sim-smoke-python` (the pass/fail rules of `make sim-smoke`, no ROS), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `drone/ground/src` → `ground-ros2` (colcon test + 90 % coverage gate for the packages listed in its `ROS_PKGS`: `gesture_node`, `intent_node`, `mission_node`, `controller_node`, `flight_interface`, `ground_bringup`; `drone/ground/tools/pkg_dirs.sh` finds each one's folder, and a missing or doubled package fails the job instead of skipping it), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test, including the `controller` and `flight_interface` images). The simulation tests (`make sim-smoke`, `make sim-hold`) run on a laptop, not in CI. Skips print a `::notice`.
+  `drone/lib/protocol/CMakeLists.txt` → `protocol-cpp`, `drone/ground/src/sd_protocol_py/pyproject.toml` → `ground-python`, `drone/tests/tools/test_*.py` → `scripts-python` (bench tool unit tests), `drone/ground/src/simulation/sim_smoke/setup.py` → `sim-smoke-python` (the pass/fail rules of `make sim-smoke` and `make sim-hold`, the scenario helpers and `sim_lib.sh`, no ROS), `drone/tests/hil/softap_window.sh` → `hil-unit` (HIL tests that need no bench: the Wi-Fi window script against a fake `nmcli`), `drone/firmware/esp8266/platformio.ini` → `esp-firmware`, both + `drone/tests/sitl/*.py` → `betaflight-sitl`, `drone/ground/src` → `ground-ros2` (colcon test + 90 % coverage gate for the packages listed in its `ROS_PKGS`: `gesture_node`, `intent_node`, `mission_node`, `controller_node`, `flight_interface`, `ground_bringup`; `drone/ground/tools/pkg_dirs.sh` finds each one's folder, and a missing or doubled package fails the job instead of skipping it), `drone/ground/docker-compose.yml` → `ground-docker` (smoke test, including the `controller` and `flight_interface` images). The simulation tests (`make sim-smoke`, `make sim-hold`) run on a laptop, not in CI. Skips print a `::notice`.
 - `ground-ros2` and `ground-docker` also have a PR path filter: they run only when the PR changes `drone/ground/`, `drone/tests/ros/` or `ci.yaml`; pushes to `dev`/`main` always run them. Keep filters inside `check-components` (`if:`), never in `on: paths`: a workflow that never starts leaves required checks pending.
 - Every job has `timeout-minutes`; give new jobs one too.
 - `hil.yaml` runs on the self-hosted `hil-drone` runner when firmware and `drone/tests/hil/*.py` exist. No LiPo on the HIL bench, ever.
 - Adding a component turns its job on immediately. Ship at least one real test with it: empty pytest and coverage gates fail.
-- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff, clang-format, shellcheck, golden vectors). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
+- Run `pre-commit run --all-files` before pushing (end-of-file, whitespace, check-yaml, ruff + ruff-format, clang-format, shellcheck). Ruff rules are in the root `ruff.toml` (`E`, `W`, `F`, `B`, `I`; `E501` off). `ruff check --fix` sorts imports (install `ruff==0.6.9`; the hook itself only reports).
 
 ## Code style
 

@@ -3,7 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
-updated: 2026-11-25
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - simulation
@@ -135,7 +135,7 @@ The sim is its own mode: profile `sim` and `drone/ground/env/sim.env` (its own R
 
 **What the `px4` backend does** (`flight_interface/px4_backend.py`, the rules in `px4_logic.py`):
 
-- While the controller commands, it sends PX4 an attitude setpoint (quaternion and thrust, body FLU turned into PX4's FRD / NED); while nothing commands (`active` false), it streams the position and heading where that started, with a zero velocity, so PX4 holds that point itself (ADR-025 F19 note, 2026-11-25). Before Offboard the point follows the drone; an axis without a fresh position is a zero-velocity hold.
+- While the controller commands, it sends PX4 an attitude setpoint (quaternion and thrust, body FLU turned into PX4's FRD / NED); while nothing commands (`active` false), it streams the position and heading where that started, with a zero velocity, so PX4 holds that point itself (ADR-025 F19 note, 2026-11-25). Before Offboard the point follows the drone; an axis without a fresh position is a zero-velocity hold until the first fresh value fills it (F19 note, 2026-11-26).
 - It turns PX4's status into the drone state the guard reads: `override_active` is "armed and in Offboard", the sim's takeover switch.
 - It publishes the measured velocity on `/estimate/velocity` for the controller: horizontal from PX4's velocity, vertical from the rate of PX4's height (`z_deriv`; PX4's own `vz` carries a bias in SITL).
 - Under masks 8 and 11 a **simulated pilot** flies the axes the ground does not own (height, and roll / pitch under 8), holding zero velocity on each, as the safety pilot's sticks do on the drone ([[ADR-025 flight_interface Ground Node|ADR-025]] F2). Without it, a fixed hover throttle there let the drone climb away.
@@ -187,11 +187,13 @@ To test REQ-SAF-017 it kills `intent_node` rather than stopping the gestures: wi
 
 | Check | Pass when |
 |---|---|
-| Direction | the commanded body axis moved ≥ 0.3 m the right way, the others ≤ 0.25 m; an axis outside the mask does not move |
+| Direction | the commanded body axis moved ≥ 0.3 m the right way, the others ≤ 0.25 m, the heading ≤ 10°; an axis outside the mask does not move |
 | REQ-CTL-001 | every target ≤ 0.3 m/s lateral, 0.2 m/s vertical, 20 °/s yaw; measured speed ≤ 0.5 m/s |
-| REQ-SAF-017 | zero target from `mission_node` ≤ 0.25 s after the last `/gesture/intent`; 2.5 s after the loss the drone hovers: measured horizontal and vertical speed ≤ 0.1 m/s. With the controller a zero target is "hold zero velocity", so PX4 never gets a zero velocity setpoint: the hover is the proof |
+| REQ-SAF-017 | the last target before the loss was a move, and `mission_node`'s zero comes ≤ 0.25 s after the last `/gesture/intent` and stays zero; from 2.5 s after the loss, for 4 s, the drone hovers: measured horizontal and vertical speed ≤ 0.1 m/s and ≤ 0.25 m drift. While the controller commands, a zero target is "hold zero velocity", so PX4 gets no zero velocity setpoint: the hover is the proof |
 | REQ-SAF-018 | no target on an axis outside the mask, and no active attitude setpoint commanding one (outside the mask: level, hover throttle) |
 | REQ-SW-001 | `/mission/velocity_target` at 20 Hz ± 10 %, no gap above 150 ms |
+
+A missing mask in `/flight/state` fails the run (it is never assumed), and so does any non-finite sample a check reads.
 
 **Timing.** The REQ-SAF-017 delay and the REQ-SW-001 rate use the stamp each target was **published** with (`header.stamp`), so the DDS delay to the test container does not count against `mission_node`. The loss is timed from when the scenario received the last `/gesture/intent` (it has no stamp). Every container reads the same host wall clock.
 
@@ -201,14 +203,14 @@ REQ-NAV-001: at 1.0 m, with zero velocity setpoints, the drone stays within **0.
 
 ```sh
 make sim-hold          # 3 runs; passes only if all 3 pass
-make sim-hold RUNS=1   # one run
+make sim-hold RUNS=1   # one run (RUNS must be 1 or more)
 ```
 
-**Scenario** (`sim_smoke/hold_scenario.py`): no hands → `ENGAGE` → the descend gesture until Gazebo's height reads 1.0 m → no hands for 5 s, then the hold: 60 s of no hands. It reads the true position straight from Gazebo (gz-transport, the model `x500_0`), next to PX4's estimate.
+**Scenario** (`sim_smoke/hold_scenario.py`): no hands → `ENGAGE` → the descend gesture until Gazebo's height reads 1.0 m → no hands for 5 s, then the hold: 60 s of no hands. Then the **neutral phase** (2026-11-26): the scenario pauses the controller for 20 s by setting its `hover_throttle` to 0.0 through the parameter service (ADR-025 F28 note), so `flight_interface` sends neutral and PX4 holds the frozen point (F19); then it sets the value back. It reads the true position and heading straight from Gazebo (gz-transport, the model `x500_0`), next to PX4's estimate.
 
-**Checks** (`hold_checks.py`, unit-tested in `sim-smoke-python`): the hold starts at 1.0 ± 0.1 m; 60 s held with no gap in the truth; the largest horizontal distance and vertical deviation from the start point; the controller active for every setpoint of the hold. `summary.md` also lists, not judged, the start and end of the hold in the truth and in PX4's estimate.
+**Checks** (`hold_checks.py`, unit-tested in `sim-smoke-python`): the hold starts at 1.0 ± 0.1 m; 60 s held with no gap in the truth; the largest horizontal distance and vertical deviation from the start point; the controller active for every setpoint of the hold; who held (every `/flight/state` with `override_active`, `mission_node` ENGAGED with intent NEUTRAL, PX4 in Offboard, every Offboard mode attitude: PX4's own hold would pass the distance checks too); the heading within 10°. Neutral phase, from 0.5 s after the pause: the same 0.25 m / ±0.15 m box from its own start point, the heading within 10°, every Offboard mode position, and an active setpoint within 2 s of the resume. A non-finite sample fails the check. `summary.md` also lists, not judged, the start and end of the hold in the truth and in PX4's estimate.
 
-The first runs (2026-11-24, #199): 3 of 3, at most 0.19 m horizontally and 0.08 m vertically, with the controller's starting gains.
+The first runs (2026-11-24, #199): 3 of 3, at most 0.19 m horizontally and 0.08 m vertically, with the controller's starting gains. With the neutral phase (2026-11-26): 3 of 3, 12/12 checks each; the hold at most 0.18 m off, the neutral hold at most 0.11 m and 0.06 m, the controller flying again 0.02 s after the resume.
 
 ### 7.6 Output
 
@@ -262,7 +264,7 @@ To keep a run as evidence, zip its folder and attach it to the issue.
 | **GCS** | Ground Control Station, e.g. QGroundControl. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **FLU** | Forward-Left-Up body frame (ROS REP-103), the frame of `/mission/velocity_target`. |
-| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **Mask** | `msp_override_channels_mask`: which axes the ground commands (8 yaw, 11 roll + pitch + yaw, 15 all four). The simulation's is in `config/sim.yaml`. |
 | **Ground truth** | Gazebo's own position of the model, not PX4's estimate of it; `make sim-hold` judges on it. |
 | **Hover throttle** | The throttle (0–1) that holds the drone level in the air; 0.73 for the simulated x500. |

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-25
+updated: 2026-11-26
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -47,7 +47,7 @@ tags:
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
-| [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16) | n/a |
+| [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16; §2.4 F1–F28 for #199, 2026-11-23 to 2026-11-26) | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -126,11 +126,15 @@ tags:
 
 - 2026-11-25, note on [[ADR-025 flight_interface Ground Node|ADR-025]] F19 (#199): the `px4` backend's neutral holds the position and heading where it started (a position setpoint), not only a zero velocity, which climbed in SITL with PX4's biased `vz`. Simulation only.
 
-## 14. Still open
+## 14. What changed on 2026-11-26
+
+- 2026-11-26, notes on [[ADR-025 flight_interface Ground Node|ADR-025]] (#199, from the branch's test report, BrunoBMFT): F19, an axis empty when the hold point froze is filled by the first fresh value; F11 **changed**, the controller's target must be fresh at the next tick, like the guard's; F13, the `px4` drone state's `rx_time` is PX4's last position, not the poll time; F28 **changed**, `hover_throttle` may go to 0.0 (a pause) and back live; A1, the `px4` E-stop answer says there is no BYE; F26, `make sim-hold` checks who held and has a neutral phase; F25, `make sim-smoke` checks heading, drift after the loss, a missing mask and non-finite samples; F8, the `px4` neutral is a position hold. Simulation only, except F11 and F28, which apply to the controller in every mode.
+
+## 15. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 15. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 | --- | --- |

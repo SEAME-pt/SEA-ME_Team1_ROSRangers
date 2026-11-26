@@ -160,7 +160,7 @@ A trained landmark classifier instead of the rule-based `recognize()`, and the s
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
 | **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
-| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |

@@ -347,5 +347,5 @@ Recognition problems: [[02 Gesture Node]] §13. Modes and velocities: [[04 Missi
 | **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
 | **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
-| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
