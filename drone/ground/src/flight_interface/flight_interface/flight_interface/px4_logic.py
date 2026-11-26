@@ -20,8 +20,10 @@ then moved by yaw_rate * dt each tick, never more than YAW_LEAD_CAP ahead of
 or behind the real heading. A yaw rate of 0 holds the heading. Every neutral
 resets it, so the next command starts from where the drone points.
 
-Neutral (F19): PX4 holds position itself (velocity Offboard, zero velocity),
-the backend's send_neutral(); nothing here.
+Neutral (F19): PX4 holds position itself. NeutralHold gives the point: the
+drone's position and heading when neutral starts in Offboard (ADR-025 F19 note,
+2026-11-25). A zero velocity alone drifted up in SITL: PX4's own vz is biased
+(the F1 note), so the drone climbed while the controller was stopped.
 
 Drone state for the guard (F13):
   * fresh while PX4's status (STATUS_TIMEOUT) and local position
@@ -232,6 +234,82 @@ class Px4Logic:
         q_d = quaternion_from_euler(roll, pitch, self._yaw_sp)
         thrust_body = (0.0, 0.0, -float(setpoint.throttle))
         return q_d, thrust_body, yaw_rate
+
+
+# ---------- the neutral hold point (SIMULATION ONLY) ----------
+# A position or heading older than this is not used for the hold point (the
+# same limit as flight_interface's setpoints).
+HOLD_POSITION_TIMEOUT = 0.25
+
+
+class NeutralHold:
+    """The point PX4 holds while the backend sends neutral (F19).
+
+    Rules (ADR-025 F19 note, 2026-11-25):
+      1. Not in Offboard (on the ground, PX4's own take-off): the point follows
+         the drone, so the switch to Offboard never sends it back to where
+         neutral started.
+      2. In Offboard, the first neutral tick freezes the drone's position
+         (north, east, down, NED metres) and heading (rad).
+      3. A commanding setpoint (the controller is back) or the E-stop releases
+         it: the next gap freezes a new point.
+      4. An axis without a fresh, valid value is NaN: PX4 holds zero velocity
+         there, as before. Example: z valid and x/y not -> a height hold only.
+    """
+
+    def __init__(self, timeout=HOLD_POSITION_TIMEOUT):
+        self.timeout = timeout
+        self._xy = None  # (north, east)
+        self._xy_t = None
+        self._z = None  # down
+        self._z_t = None
+        self._heading = None
+        self._heading_t = None
+        self._point = None  # frozen (north, east, down, heading), NaN = none
+
+    def on_position(
+        self, north, east, xy_valid, down, z_valid, heading, heading_good, now
+    ):
+        """A local position message. Invalid or non-finite values are not used."""
+        if xy_valid is True and _finite(north) and _finite(east):
+            self._xy = (float(north), float(east))
+            self._xy_t = now
+        if z_valid is True and _finite(down):
+            self._z = float(down)
+            self._z_t = now
+        if heading_good is True and _finite(heading):
+            self._heading = float(heading)
+            self._heading_t = now
+
+    def _fresh(self, t, now):
+        return t is not None and 0.0 <= now - t <= self.timeout
+
+    def _current(self, now):
+        """(north, east, down, heading) now, NaN for each stale axis."""
+        north = math.nan
+        east = math.nan
+        down = math.nan
+        heading = math.nan
+        if self._fresh(self._xy_t, now):
+            north, east = self._xy
+        if self._fresh(self._z_t, now):
+            down = self._z
+        if self._fresh(self._heading_t, now):
+            heading = self._heading
+        return north, east, down, heading
+
+    def release(self):
+        """The controller took over (or E-stop): the next gap freezes anew."""
+        self._point = None
+
+    def target(self, offboard, now):
+        """The point for this neutral tick: (north, east, down, heading)."""
+        if offboard is not True:
+            self._point = None
+            return self._current(now)
+        if self._point is None:
+            self._point = self._current(now)
+        return self._point
 
 
 # ---------- the simulated pilot (SIMULATION ONLY) ----------

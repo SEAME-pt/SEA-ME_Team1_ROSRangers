@@ -35,6 +35,7 @@ from flight_interface.guard import NEUTRAL, Setpoint
 
 HOVER = 0.7
 EAST = math.pi / 2
+START = (1.0, 2.0, -1.75)  # north, east, down (m): 1.75 m up
 
 
 class Msg:
@@ -127,8 +128,10 @@ def feed_px4(
     v=(0.0, 0.0, 0.0),
     valid=True,
     z_deriv=None,
+    ned=START,
 ):
-    """z_deriv: the rate of PX4's height estimate; by default the same as vz."""
+    """z_deriv: the rate of PX4's height estimate; by default the same as vz.
+    ned: the position (north, east, down), valid with `valid`."""
     status = rig.msgs.VehicleStatus()
     status.arming_state = 2 if armed else 1
     status.nav_state = 14 if offboard else 4
@@ -143,6 +146,8 @@ def feed_px4(
     pos.v_xy_valid = valid
     pos.v_z_valid = valid
     pos.z_valid = valid
+    pos.x, pos.y, pos.z = ned
+    pos.xy_valid = valid
     rig.node.subs[POSITION_TOPIC](pos)
 
 
@@ -163,19 +168,69 @@ def test_a_commanding_setpoint_goes_out_as_attitude(rig):
     assert sent(rig, TRAJECTORY_SETPOINT_TOPIC) == []
 
 
-def test_neutral_is_px4s_zero_velocity_hold(rig):
-    # F19: active false -> velocity Offboard, zero velocity: PX4 holds itself.
-    feed_px4(rig)
+def test_neutral_holds_where_it_started(rig):
+    # F19: active false -> position Offboard at the point where neutral
+    # started, zero velocity: PX4 holds that point itself.
+    feed_px4(rig, heading=EAST)
     for command in (Setpoint(10.0, 10.0, 30.0, 0.9, False), NEUTRAL):
         assert rig.backend.send_setpoint(command, 0.0) is True
+    feed_px4(rig, heading=0.0, ned=(1.5, 2.0, -2.2))  # drifted 0.45 m up
     assert rig.backend.send_neutral(0.0) is True
     modes = sent(rig, OFFBOARD_MODE_TOPIC)
-    assert [(m.attitude, m.velocity) for m in modes] == [(False, True)] * 3
+    assert [(m.attitude, m.position, m.velocity) for m in modes] == [
+        (False, True, False)
+    ] * 3
     for sp in sent(rig, TRAJECTORY_SETPOINT_TOPIC):
+        assert sp.position == pytest.approx(list(START))
+        assert sp.yaw == pytest.approx(EAST)
         assert sp.velocity == [0.0, 0.0, 0.0] and sp.yawspeed == 0.0
-        assert all(math.isnan(v) for v in sp.position)
-        assert math.isnan(sp.yaw)
     assert sent(rig, ATTITUDE_SETPOINT_TOPIC) == []
+
+
+def test_after_the_controller_neutral_holds_a_new_point(rig):
+    feed_px4(rig)
+    rig.backend.send_neutral(0.0)
+    rig.backend.send_setpoint(Setpoint(0.0, 0.0, 0.0, HOVER, True), 0.0)
+    feed_px4(rig, ned=(3.0, 4.0, -1.0))
+    rig.backend.send_neutral(0.0)
+    first, second = sent(rig, TRAJECTORY_SETPOINT_TOPIC)
+    assert first.position == pytest.approx(list(START))
+    assert second.position == pytest.approx([3.0, 4.0, -1.0])
+
+
+def test_neutral_follows_the_drone_until_offboard(rig):
+    # On the ground and in PX4's take-off: never freeze there
+    feed_px4(rig, offboard=False)
+    rig.backend.send_neutral(0.0)
+    feed_px4(rig, offboard=False, ned=(1.0, 2.0, -1.0))
+    rig.backend.send_neutral(0.0)
+    feed_px4(rig, offboard=True, ned=(1.0, 2.0, -1.7))
+    rig.backend.send_neutral(0.0)
+    feed_px4(rig, offboard=True, ned=(1.0, 2.0, -1.9))
+    rig.backend.send_neutral(0.0)
+    downs = [sp.position[2] for sp in sent(rig, TRAJECTORY_SETPOINT_TOPIC)]
+    assert downs == pytest.approx([-1.75, -1.0, -1.7, -1.7])
+
+
+def test_neutral_without_a_position_is_the_zero_velocity_hold(rig):
+    feed_px4(rig, valid=False)
+    rig.backend.send_neutral(0.0)
+    (mode,) = sent(rig, OFFBOARD_MODE_TOPIC)
+    assert (mode.position, mode.velocity) == (False, True)
+    (sp,) = sent(rig, TRAJECTORY_SETPOINT_TOPIC)
+    assert all(math.isnan(v) for v in sp.position)
+    assert sp.velocity == [0.0, 0.0, 0.0]
+
+
+def test_estop_releases_the_hold_point(rig):
+    feed_px4(rig)
+    rig.backend.send_neutral(0.0)
+    rig.backend.end_session(0.0)
+    feed_px4(rig, ned=(5.0, 5.0, -1.2))
+    rig.backend.send_neutral(0.0)
+    assert sent(rig, TRAJECTORY_SETPOINT_TOPIC)[1].position == pytest.approx(
+        [5.0, 5.0, -1.2]
+    )
 
 
 def test_no_heading_yet_gives_the_hold_not_an_attitude(rig):

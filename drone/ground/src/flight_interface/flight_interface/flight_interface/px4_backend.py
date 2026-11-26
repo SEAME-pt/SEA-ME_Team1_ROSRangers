@@ -8,8 +8,11 @@ image has: make_backend() imports this module only for backend:=px4.
 Out, every tick (PX4 needs the stream before and during Offboard):
   * a commanding setpoint: OffboardControlMode(attitude) +
     VehicleAttitudeSetpoint (q_d, thrust_body, yaw_sp_move_rate);
-  * neutral (F19): OffboardControlMode(velocity) + TrajectorySetpoint with a
-    zero velocity, so PX4 holds position itself.
+  * neutral (F19): OffboardControlMode(position) + TrajectorySetpoint with
+    the point and heading where neutral started in Offboard (px4_logic
+    NeutralHold) and a zero velocity, so PX4 holds that point itself. An axis
+    without a fresh position is NaN: PX4 holds zero velocity there
+    (OffboardControlMode(velocity) when no axis has one).
 In: vehicle_status, vehicle_local_position, vehicle_land_detected -> the
 drone state for the guard (poll()), and /estimate/velocity (F1) from each
 local position whose velocity PX4 calls valid. Its vertical part is z_deriv,
@@ -34,7 +37,7 @@ from geometry_msgs.msg import TwistStamped
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 from flight_interface.backends import Backend
-from flight_interface.px4_logic import Px4Logic, SimPilot, ned_to_flu
+from flight_interface.px4_logic import NeutralHold, Px4Logic, SimPilot, ned_to_flu
 
 NAN = math.nan
 # PX4 v1.17's uXRCE-DDS topics; versioned messages get a _v<N> suffix.
@@ -82,6 +85,7 @@ class Px4Backend(Backend):
         self._clock = clock
         self.logic = Px4Logic(mask)
         self.pilot = SimPilot(mask, hover_throttle)
+        self.hold = NeutralHold()
         qos = px4_qos()
         m = self._msgs
         self._mode_pub = node.create_publisher(
@@ -116,7 +120,18 @@ class Px4Backend(Backend):
         self.logic.on_status(armed, offboard, self._clock())
 
     def _on_position(self, msg):
-        self.logic.on_position(msg.heading, msg.heading_good_for_control, self._clock())
+        now = self._clock()
+        self.logic.on_position(msg.heading, msg.heading_good_for_control, now)
+        self.hold.on_position(
+            msg.x,
+            msg.y,
+            msg.xy_valid,
+            msg.z,
+            msg.z_valid,
+            msg.heading,
+            msg.heading_good_for_control,
+            now,
+        )
         # z_deriv (down, m/s) is the rate of z: valid with z and vz
         velocity_valid = msg.v_xy_valid and msg.v_z_valid and msg.z_valid
         if not (velocity_valid and msg.heading_good_for_control):
@@ -141,13 +156,15 @@ class Px4Backend(Backend):
         # PX4 message timestamps in µs, as px4_ros_com's offboard example
         return self._node.get_clock().now().nanoseconds // 1000
 
-    def _mode(self, attitude):
+    def _mode(self, kind):
+        """kind: "attitude" (a commanding setpoint), "position" (neutral with
+        a hold point) or "velocity" (neutral without one)."""
         mode = self._msgs.OffboardControlMode()
         mode.timestamp = self._timestamp_us()
-        mode.position = False
-        mode.velocity = not attitude
+        mode.position = kind == "position"
+        mode.velocity = kind == "velocity"
         mode.acceleration = False
-        mode.attitude = attitude
+        mode.attitude = kind == "attitude"
         mode.body_rate = False
         mode.thrust_and_torque = False
         mode.direct_actuator = False
@@ -165,7 +182,8 @@ class Px4Backend(Backend):
         if attitude is None:  # no fresh heading
             return self.send_neutral(now)
         q_d, thrust_body, yaw_rate = attitude
-        self._mode(attitude=True)
+        self.hold.release()  # the next neutral freezes a new point
+        self._mode("attitude")
         sp = self._msgs.VehicleAttitudeSetpoint()
         sp.timestamp = self._timestamp_us()
         sp.q_d = [float(v) for v in q_d]
@@ -176,17 +194,24 @@ class Px4Backend(Backend):
         return True
 
     def send_neutral(self, now):
-        """F19: zero velocity, PX4 holds position itself."""
+        """F19: PX4 holds the point where neutral started (NeutralHold), with
+        a zero velocity; NaN axes are a zero-velocity hold."""
         self.logic.reset_yaw()
         self.pilot.reset()
-        self._mode(attitude=False)
+        north, east, down, heading = self.hold.target(self.logic.offboard, now)
+        position = [float(north), float(east), float(down)]
+        has_point = any(math.isfinite(v) for v in position)
+        if has_point:
+            self._mode("position")
+        else:
+            self._mode("velocity")
         sp = self._msgs.TrajectorySetpoint()
         sp.timestamp = self._timestamp_us()
-        sp.position = [NAN, NAN, NAN]
+        sp.position = position
         sp.velocity = [0.0, 0.0, 0.0]
         sp.acceleration = [NAN, NAN, NAN]
         sp.jerk = [NAN, NAN, NAN]
-        sp.yaw = NAN
+        sp.yaw = float(heading)
         sp.yawspeed = 0.0
         self._trajectory_pub.publish(sp)
         self.sent_neutral += 1
@@ -197,6 +222,7 @@ class Px4Backend(Backend):
         Offboard-loss failsafe takes over (it never changes PX4's mode here)."""
         self.logic.reset_yaw()
         self.pilot.reset()
+        self.hold.release()
         return True
 
     def request_resume(self, now, session):

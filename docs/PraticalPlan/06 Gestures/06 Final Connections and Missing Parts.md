@@ -3,7 +3,7 @@ title: Final Connections and Missing Parts
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-24
+updated: 2026-11-25
 project: SEA autonomous drone
 tags:
   - gestures
@@ -55,7 +55,7 @@ Controller built (#199): `controller_node`, [[07 Controller Node]]. It flies the
 
 ### 2.2 PX4 backend for `flight_interface`
 
-Built (#199). The `px4` backend sends the attitude setpoints to PX4 SITL (or PX4's own zero-velocity hold while nothing commands), publishes `/flight/state` from PX4 and the measured velocity on `/estimate/velocity`. It runs only in the simulation image of `flight_interface`, as the service `flight_interface_sim` of `make sim` ([[PX4 SITL Setup]] §7, [[05 Flight Interface Node|05]], [[ADR-019 Sim Backends|ADR-019]]).
+Built (#199). The `px4` backend sends the attitude setpoints to PX4 SITL (or PX4's own position hold while nothing commands), publishes `/flight/state` from PX4 and the measured velocity on `/estimate/velocity`. It runs only in the simulation image of `flight_interface`, as the service `flight_interface_sim` of `make sim` ([[PX4 SITL Setup]] §7, [[05 Flight Interface Node|05]], [[ADR-019 Sim Backends|ADR-019]]).
 
 ### 2.3 Gestures driving `flight_interface` in the simulator
 

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-24
+updated: 2026-11-25
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -122,11 +122,15 @@ tags:
 - 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] F26–F27 for #199 Phase 8: the SITL hold test is `make sim-hold`, descending to about 1.0 m by gesture, judged on Gazebo ground truth from the hold's start point, 3 runs in a row (F26); sim-tuned gains only in `config/sim.yaml` (F27).
 - 2026-11-24, decision **added**: ADR-025 F28, the controller's gains and limits can be changed live with `ros2 param set`, checked like at start-up. Decision **changed**: F12, the demo runs no controller. Note on F21: `px4_msgs` built in its own image stage. Decision **changed**: F2, a simulated pilot in the `px4` backend flies the axes the ground does not own (masks 8, 11), since a fixed hover throttle let the simulated drone fly away.
 
-## 13. Still open
+## 13. What changed on 2026-11-25
+
+- 2026-11-25, note on [[ADR-025 flight_interface Ground Node|ADR-025]] F19 (#199): the `px4` backend's neutral holds the position and heading where it started (a position setpoint), not only a zero velocity, which climbed in SITL with PX4's biased `vz`. Simulation only.
+
+## 14. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 14. Glossary
+## 15. Glossary
 
 | Term | Meaning |
 | --- | --- |

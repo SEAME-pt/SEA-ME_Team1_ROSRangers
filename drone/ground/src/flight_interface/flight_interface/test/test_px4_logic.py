@@ -8,11 +8,13 @@ import pytest
 
 from flight_interface.guard import Setpoint
 from flight_interface.px4_logic import (
+    HOLD_POSITION_TIMEOUT,
     LAND_TIMEOUT,
     PILOT_VELOCITY_TIMEOUT,
     POSITION_TIMEOUT,
     STATUS_TIMEOUT,
     YAW_LEAD_CAP,
+    NeutralHold,
     Px4Logic,
     SimPilot,
     flu_to_frd,
@@ -306,3 +308,71 @@ def test_reset_clears_the_integrators():
     assert out.throttle == pytest.approx(
         HOVER / (math.cos(math.radians(3.0)) * math.cos(math.radians(2.0)))
     )
+
+
+# ---------- the neutral hold point ----------
+def nan_at(values):
+    return [math.isnan(v) for v in values]
+
+
+def feed(hold, ned=(1.0, 2.0, -1.75), heading=EAST, now=0.0, valid=True):
+    north, east, down = ned
+    hold.on_position(north, east, valid, down, valid, heading, valid, now)
+
+
+def test_hold_follows_the_drone_until_offboard():
+    hold = NeutralHold()
+    feed(hold)
+    assert hold.target(False, 0.0) == approx((1.0, 2.0, -1.75, EAST))
+    feed(hold, ned=(1.0, 2.0, -1.0))
+    assert hold.target(False, 0.0) == approx((1.0, 2.0, -1.0, EAST))
+
+
+def test_hold_freezes_on_the_first_offboard_tick():
+    hold = NeutralHold()
+    feed(hold)
+    assert hold.target(True, 0.0) == approx((1.0, 2.0, -1.75, EAST))
+    feed(hold, ned=(1.5, 2.0, -2.2), heading=NORTH, now=0.1)
+    assert hold.target(True, 0.1) == approx((1.0, 2.0, -1.75, EAST))
+
+
+def test_release_freezes_a_new_point():
+    hold = NeutralHold()
+    feed(hold)
+    hold.target(True, 0.0)
+    hold.release()
+    feed(hold, ned=(3.0, 4.0, -1.0), now=0.1)
+    assert hold.target(True, 0.1) == approx((3.0, 4.0, -1.0, EAST))
+
+
+def test_leaving_offboard_unfreezes():
+    hold = NeutralHold()
+    feed(hold)
+    hold.target(True, 0.0)
+    feed(hold, ned=(0.0, 0.0, -1.0), now=0.1)
+    assert hold.target(False, 0.1) == approx((0.0, 0.0, -1.0, EAST))
+    assert hold.target(True, 0.1) == approx((0.0, 0.0, -1.0, EAST))
+
+
+def test_hold_axes_need_a_fresh_value():
+    hold = NeutralHold()
+    assert nan_at(hold.target(True, 0.0)) == [True] * 4  # nothing yet
+    hold = NeutralHold()
+    feed(hold)
+    late = HOLD_POSITION_TIMEOUT + 0.01
+    assert nan_at(hold.target(True, late)) == [True] * 4
+
+
+def test_hold_uses_each_axis_only_when_valid():
+    # z valid, x/y not: a height hold only; a bad heading: no yaw hold
+    hold = NeutralHold()
+    hold.on_position(1.0, 2.0, False, -1.75, True, EAST, False, 0.0)
+    assert nan_at(hold.target(True, 0.0)) == [True, True, False, True]
+    assert hold.target(True, 0.0)[2] == -1.75
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, None, True])
+def test_hold_ignores_non_finite_values(bad):
+    hold = NeutralHold()
+    hold.on_position(bad, 2.0, True, bad, True, bad, True, 0.0)
+    assert nan_at(hold.target(True, 0.0)) == [True] * 4

@@ -3,7 +3,7 @@ title: Flight Interface Node (attitude setpoint → drone, drone state → /flig
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-24
+updated: 2026-11-25
 project: SEA autonomous drone
 tags:
   - gestures
@@ -83,7 +83,7 @@ The node starts **unconfigured**. The operator runs `configure`, then `activate`
 | Watchdog | no valid drone state for 0.5 s → zero setpoints and `link_ok` false, so `mission_node` goes `IDLE`; no latch |
 | Gate | a commanding setpoint needs `STREAMING`, override on, a known mask and the FC link alive; otherwise neutral |
 | Limits | roll / pitch ≤ 15°, yaw rate ≤ 45 °/s, throttle within hover ± 0.15 (only under mask 15). Beyond them: clamped, with a throttled warning. Axes outside the mask: level and the hover throttle. Mask 15 with no measured hover throttle: neutral |
-| Neutral | `active` false. The `esp` backend sends mode 0 (the pilot's sticks); the `px4` backend streams a zero velocity, so PX4 holds position |
+| Neutral | `active` false. The `esp` backend sends mode 0 (the pilot's sticks); the `px4` backend streams the position where neutral started (zero velocity), so PX4 holds that point |
 | ARM | only the operator's `~/arm_control`, in `SESSION_IDLE`, with a fresh link and the FC alive. Never by itself, also not after a reconnect (REQ-SAF-023) |
 | RESUME | only the operator's `~/resume`, after the ESP's link failsafe. Never by itself |
 | Held requests | ARM and RESUME go out after 1.5 s of neutral setpoints; dropped after 3 s or when their conditions go |
@@ -241,7 +241,7 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 | **Backend** | The part of the node that talks to one kind of drone: `loopback`, `esp`, `px4` (simulation only). |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **Hover throttle** | The throttle (0–1) that holds the drone level in the air; 0.0 means not measured. |
-| **Neutral** | `active` false: no command. The `esp` backend sends mode 0, the `px4` backend a zero-velocity hold. |
+| **Neutral** | `active` false: no command. The `esp` backend sends mode 0, the `px4` backend PX4's position hold where neutral started. |
 | **E-stop** | Emergency stop: the node sends neutral and `BYE`, then nothing until reset. |
 | **FLU** | Body frame with x forward, y left, z up (REP-103). |
 | **Lifecycle node** | A ROS 2 node with managed states (unconfigured, inactive, active), changed with `ros2 lifecycle set`. |

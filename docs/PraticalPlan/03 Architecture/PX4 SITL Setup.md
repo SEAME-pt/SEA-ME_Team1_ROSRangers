@@ -3,7 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
-updated: 2026-11-24
+updated: 2026-11-25
 project: SEA autonomous drone
 tags:
   - simulation
@@ -135,7 +135,7 @@ The sim is its own mode: profile `sim` and `drone/ground/env/sim.env` (its own R
 
 **What the `px4` backend does** (`flight_interface/px4_backend.py`, the rules in `px4_logic.py`):
 
-- While the controller commands, it sends PX4 an attitude setpoint (quaternion and thrust, body FLU turned into PX4's FRD / NED); while nothing commands (`active` false), it streams a zero velocity, so PX4 holds position itself.
+- While the controller commands, it sends PX4 an attitude setpoint (quaternion and thrust, body FLU turned into PX4's FRD / NED); while nothing commands (`active` false), it streams the position and heading where that started, with a zero velocity, so PX4 holds that point itself (ADR-025 F19 note, 2026-11-25). Before Offboard the point follows the drone; an axis without a fresh position is a zero-velocity hold.
 - It turns PX4's status into the drone state the guard reads: `override_active` is "armed and in Offboard", the sim's takeover switch.
 - It publishes the measured velocity on `/estimate/velocity` for the controller: horizontal from PX4's velocity, vertical from the rate of PX4's height (`z_deriv`; PX4's own `vz` carries a bias in SITL).
 - Under masks 8 and 11 a **simulated pilot** flies the axes the ground does not own (height, and roll / pitch under 8), holding zero velocity on each, as the safety pilot's sticks do on the drone ([[ADR-025 flight_interface Ground Node|ADR-025]] F2). Without it, a fixed hover throttle there let the drone climb away.
