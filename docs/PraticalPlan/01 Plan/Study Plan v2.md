@@ -146,11 +146,12 @@ tags: [plan]
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
 - **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead. Position hold in the cage is Betaflight Position Hold with the MTF-02P on UART1 (team, 2026-11-24), not ground velocity setpoints. The **sim-to-real measurement** compares the REQ-NAV-002 numbers (0.5 m radius, ±0.3 m height, 30 s): the ground controller in PX4 SITL (#199) against Betaflight Position Hold in the cage (#203).*
-- **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
+- **E:** gestures drive the flight interface **in simulation** (hover, move, descend). *Changed 2026-11-26: no land request; it was removed in GitHub #81 (2026-10-27), and `mission_node` never asks for a landing ([[04 Mission Node]] §5).*
 
 > [!info] Status 2026-11-24 (from the GitHub issues)
 > - **Open:** gestures drive `flight_interface` in PX4 SITL (#202); the Sprint 3 demo, position hold in SITL and the cage plus the first sim-to-real measurement (#203). The cage part is blocked until the MTF-02P is fitted (the drone has not arrived) and waits for #201.
 > - The gaps found by the 2026-11-24 docs review (a sensor REQ, Module 2 owners and REQs, Module 1 close-out issues, the second track label, the motor pole and 5V checks) go to **Sprint 4 planning** (Sprint 4 starts 2026-11-30, the last sprint before the Christmas break and the end of Module 1).
+> - **2026-11-26:** the Sprint 3 demo (#203) shows gestures flying PX4 SITL (hover, move, descend). Position hold in SITL stays in #199. The cage part moved to #240 and waits for the flight cage (#239): no props-on flights until it is set up. The sim-to-real report is #244, props off.
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
 
