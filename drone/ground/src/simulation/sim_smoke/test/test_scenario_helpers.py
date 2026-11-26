@@ -46,15 +46,20 @@ class _Anything(types.ModuleType):
 def scenarios(monkeypatch):
     for name in STUBBED:
         monkeypatch.setitem(sys.modules, name, _Anything(name))
+    # CI's sim-smoke-python job has no PyYAML: stub it so the module imports,
+    # and remember that, so the one test that parses YAML can skip
     try:
         import yaml  # noqa: F401
+
+        has_yaml = True
     except ImportError:
         monkeypatch.setitem(sys.modules, "yaml", _Anything("yaml"))
+        has_yaml = False
     for name in ("sim_smoke.smoke_scenario", "sim_smoke.hold_scenario"):
         monkeypatch.delitem(sys.modules, name, raising=False)
     smoke = importlib.import_module("sim_smoke.smoke_scenario")
     hold = importlib.import_module("sim_smoke.hold_scenario")
-    yield types.SimpleNamespace(smoke=smoke, hold=hold)
+    yield types.SimpleNamespace(smoke=smoke, hold=hold, has_yaml=has_yaml)
     for name in ("sim_smoke.smoke_scenario", "sim_smoke.hold_scenario"):
         sys.modules.pop(name, None)
 
@@ -71,7 +76,9 @@ def test_hover_window_covers_at_least_3_s(scenarios):
 
 
 def test_hover_throttle_reads_the_controllers(scenarios, tmp_path):
-    pytest.importorskip("yaml")
+    # Not importorskip: the fixture's stub would make it pass with no PyYAML
+    if not scenarios.has_yaml:
+        pytest.skip("PyYAML not installed")
     path = tmp_path / "sim.yaml"
     path.write_text("controller_node:\n  ros__parameters:\n    hover_throttle: 0.73\n")
     assert scenarios.smoke.hover_throttle(str(path)) == 0.73
