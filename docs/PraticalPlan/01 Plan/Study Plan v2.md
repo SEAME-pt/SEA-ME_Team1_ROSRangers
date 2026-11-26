@@ -2,7 +2,7 @@
 title: Study Plan v2 — Sprint 0 and Module 1
 type: plan
 date: 2026-10-15
-updated: 2026-11-13
+updated: 2026-11-24
 status: active
 version: 2.1
 project: SEA autonomous drone
@@ -103,7 +103,7 @@ tags: [plan]
 
 | Track | Practice |
 |---|---|
-| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). *Changed 2026-10-30: the upgrade was done on 2026-10-28 without the 4.5.1 hover (incident #126); the baseline hover (#23) is redone on 2026.6.2 ([[ADR-014 Betaflight Version|ADR-014]]).* |
+| A | **Failsafe first, on 4.5.1:** TX-off test with a video (#22, #41; *done 2026-10-22*), then the 4.5.1 cage hover (#23). Only after both pass: upgrade to **2026.6.2** ([[Betaflight Setup]]), re-enter the configuration by hand (don't paste the 4.5 diff), try a cloud build with ALTHOLD if the baro works and it fits, re-test failsafe, re-fly, save the new `diff all`. If time runs out, the upgrade moves to week 3. MSP Override stays bench-only until then ([[Safety Rules]] #14). *Changed 2026-10-30: the upgrade was done on 2026-10-28 without the 4.5.1 hover (incident #126); the baseline hover (#23) is redone on 2026.6.2 ([[ADR-014 Betaflight Version\|ADR-014]]).* |
 | B | *Changed 2026-10-20: the ESP is already soldered (incident #69), and the soldered link loses 0.7–3.7 % against 0 % before (#30). 2026-10-23: these figures came from runs with hardware problems and are being measured again (#30).* **Find the cause of the loss, cheapest check first** (10 min each, near): FC on USB with the radio off → radio on and bound → ESP antenna turned away from the frame. Finish S2-02, S2-06 and S1-08 (ESP current) on the soldered link. Post the [[ESP_to_FC]] §10 joint evidence (#69). Agree the pass threshold (OD-22, #63). Props off ([[Safety Rules]] #13). |
 | C | Python MSP + UDP client. Publish `/fc/attitude` and `/fc/battery` from bridge telemetry. Record a rosbag. Decide the telemetry set (FC-12, #63) by 2026-10-23. Develop against the FC USB link or a recorded log, so C does not wait for B's fix. *Done 2026-11-09 (#96, PR #169): `fc_telemetry` publishes both topics, measured on the bench 2026-11-06 ([[Architecture Document]] §2). FC-12 is still open.* |
 | D | C++ protocol library skeleton + GoogleTest + gcovr gate at **80%** (matches `ci.yaml`; target 100%). PlatformIO build job for `esp`. **Bring the Betaflight SITL job forward from week 3**: with no spare FC it partly replaces HIL. Run the HIL/SITL spike (#61) and ask the instructors what counts as HIL. |
@@ -146,11 +146,12 @@ tags: [plan]
 ## 8. Week 6 · 23–27 Nov · Position hold · *Sprint 3 demo Fri*
 
 - **All:** velocity setpoints from the ground controller hold position in the cage using the flow estimate. Throttle stays with the pilot (or ALTHOLD). Same commanded motion in PX4 SITL → **sim-to-real measurement**. *Changed 2026-11-24: the cage part is **blocked** until the MTF-02P is soldered and checked on the bench (the drone has not arrived). The SITL part goes ahead. Position hold in the cage is Betaflight Position Hold with the MTF-02P on UART1 (team, 2026-11-24), not ground velocity setpoints. The **sim-to-real measurement** compares the REQ-NAV-002 numbers (0.5 m radius, ±0.3 m height, 30 s): the ground controller in PX4 SITL (#199) against Betaflight Position Hold in the cage (#203).*
-- **E:** gestures drive the flight interface **in simulation** (hover, move, land request).
+- **E:** gestures drive the flight interface **in simulation** (hover, move, descend). *Changed 2026-11-26: no land request; it was removed in GitHub #81 (2026-10-27), and `mission_node` never asks for a landing ([[04 Mission Node]] §5).*
 
 > [!info] Status 2026-11-24 (from the GitHub issues)
 > - **Open:** gestures drive `flight_interface` in PX4 SITL (#202); the Sprint 3 demo, position hold in SITL and the cage plus the first sim-to-real measurement (#203). The cage part is blocked until the MTF-02P is fitted (the drone has not arrived) and waits for #201.
 > - The gaps found by the 2026-11-24 docs review (a sensor REQ, Module 2 owners and REQs, Module 1 close-out issues, the second track label, the motor pole and 5V checks) go to **Sprint 4 planning** (Sprint 4 starts 2026-11-30, the last sprint before the Christmas break and the end of Module 1).
+> - **2026-11-26:** the Sprint 3 demo (#203) shows gestures flying PX4 SITL (hover, move, descend). Position hold in SITL stays in #199. The cage part moved to #240 and waits for the flight cage (#239): no props-on flights until it is set up. The sim-to-real report is #244, props off.
 
 ## 9. Week 7 · 30 Nov – 4 Dec · Fault injection and hardening
 

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-23
+updated: 2026-11-24
 project: SEA autonomous drone
 aliases:
   - ADR Register
