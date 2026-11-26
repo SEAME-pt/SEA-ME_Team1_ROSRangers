@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-11-06
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - safety
