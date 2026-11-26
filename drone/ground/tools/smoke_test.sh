@@ -1,7 +1,7 @@
 #!/bin/bash
 # Docker smoke test for the ground images (CI job ground-docker, `make smoke`).
 #
-#   1. Build gesture, intent, mission, echo and flight_interface.
+#   1. Build gesture, intent, mission, controller, echo and flight_interface.
 #   2. Run each package's tests inside its own image, none skipped: the
 #      image's own OpenCV, MediaPipe, sd_protocol and ROS must work, not only
 #      CI's install.
@@ -24,8 +24,11 @@
 #      by compose, wrote logs/smoke/<service>/latest.log, every line
 #      timestamped. A container stopped with docker stop keeps every line its
 #      command prints while stopping (the entrypoint is PID 1 there).
-#   7. flight_interface, from its compose service (real.yaml, with
-#      -p backend:=loopback after it; a dummy secrets file mounted, no PSK):
+#   7. The controller, from its compose service with real.yaml: only
+#      inactive setpoints (no_hover_throttle, F16), never an active one, and
+#      a clean docker stop. flight_interface, from its compose service
+#      (real.yaml, with -p backend:=loopback after it; a dummy secrets file
+#      mounted, no PSK):
 #      configure + activate, its /flight/state
 #      reaches mission, which stays IDLE (not_streaming) for 5 s: the
 #      loopback drone has no override, so nothing can engage. /flight/state
@@ -74,11 +77,14 @@ FLIGHT_INTERFACE=$PROJECT-flight_interface-1
 ECHO=$PROJECT-echo
 MISSION_ECHO=$PROJECT-mission-echo
 FI_MISSION_ECHO=$PROJECT-fi-mission-echo
+CONTROLLER=$PROJECT-controller
+CTRL_ECHO=$PROJECT-controller-echo
 LIFECYCLE=$PROJECT-lifecycle
 MONITOR=$PROJECT-monitor
 STOPPER=$PROJECT-stopper
 CONTAINERS=("$INTENT" "$MISSION" "$FLIGHT" "$GESTURE" "$ECHO" "$MISSION_ECHO"
-    "$MONITOR" "$STOPPER" "$FLIGHT_INTERFACE" "$FI_MISSION_ECHO" "$LIFECYCLE")
+    "$MONITOR" "$STOPPER" "$FLIGHT_INTERFACE" "$FI_MISSION_ECHO" "$LIFECYCLE"
+    "$CONTROLLER" "$CTRL_ECHO")
 # flight_interface's service mounts the PSK file (psk.json by default)
 # read-only and refuses to start without one. The smoke test only runs the loopback backend, which
 # never reads it: an empty dummy, never a real key.
@@ -149,7 +155,8 @@ cleanup() {
         done
     fi
     docker rm -f "$GESTURE" "$ECHO" "$MISSION_ECHO" "$MONITOR" "$STOPPER" \
-        "$FI_MISSION_ECHO" "$LIFECYCLE" "$FLIGHT_INTERFACE" >/dev/null 2>&1 || true
+        "$FI_MISSION_ECHO" "$LIFECYCLE" "$FLIGHT_INTERFACE" "$CONTROLLER" \
+        "$CTRL_ECHO" >/dev/null 2>&1 || true
     $COMPOSE down >/dev/null 2>&1 || true
     rm -f "$SEAME_SECRETS_FILE"
     summary "$code"
@@ -250,7 +257,8 @@ run_tests rosrangers/mission:jazzy mission_node
 # controller), which these images do not have. CI's ground-ros2 runs them with
 # every package installed.
 run_pytest rosrangers/flight_interface:jazzy flight_interface \
-    --deselect test/test_guard.py::test_masks_and_limits_match_mission_node_and_the_controller
+    --deselect test/test_guard.py::test_masks_and_limits_match_mission_node_and_the_controller \
+    --deselect test/test_guard.py::test_every_controller_output_is_a_setpoint_the_guard_accepts
 run_pytest rosrangers/controller:jazzy controller_node \
     --deselect test/test_ceilings_match.py::test_ceilings_and_masks_match_mission_node
 
@@ -381,6 +389,19 @@ lifecycle() {
 # service reads real.yaml (backend esp): the loopback backend replaces it here,
 # never the drone.
 $COMPOSE up -d mission
+# The controller from its compose service with real.yaml, as in real mode:
+# no measured hover throttle there (F16), so every setpoint is inactive
+# (no_hover_throttle) and flight_interface sends only neutral (F6)
+docker run -d --name "$CTRL_ECHO" "${ROS[@]}" rosrangers/echo:jazzy \
+    ros2 topic echo --field data /control/attitude_setpoint std_msgs/msg/String >/dev/null
+$COMPOSE run -d --name "$CONTROLLER" controller \
+    /ws/install/controller_node/lib/controller_node/controller_node \
+    --ros-args --params-file /config/real.yaml >/dev/null
+wait_for "$CTRL_ECHO" '"reason": "no_hover_throttle"' 30 ||
+    fail "the controller (real.yaml) published no inactive no_hover_throttle setpoint within 30 s"
+! docker logs "$CTRL_ECHO" 2>&1 | grep -F '"active": true' >/dev/null ||
+    fail "the controller published an ACTIVE setpoint with real.yaml (no hover throttle)"
+echo "    controller (real.yaml): inactive setpoints, reason no_hover_throttle"
 $COMPOSE run -d --name "$FLIGHT_INTERFACE" flight_interface \
     /ws/install/flight_interface/lib/flight_interface/flight_interface \
     --ros-args --params-file /config/real.yaml -p backend:=loopback >/dev/null
@@ -419,12 +440,16 @@ done
 [[ $pubs == 1 ]] ||
     fail "/flight/state has ${pubs:-no} publisher(s), expected exactly 1 (flight_interface)"
 echo "    /flight/state has exactly one publisher (ros2 topic info)"
+! docker logs "$CTRL_ECHO" 2>&1 | grep -F '"active": true' >/dev/null ||
+    fail "the controller published an ACTIVE setpoint with real.yaml during step 7"
+stop_and_check "$CONTROLLER"
 stop_and_check "$FLIGHT_INTERFACE"
 stop_and_check "$MISSION"
-docker kill "$FI_MISSION_ECHO" >/dev/null 2>&1 || true # not checked: instrument
+docker kill "$FI_MISSION_ECHO" "$CTRL_ECHO" >/dev/null 2>&1 || true # not checked: instruments
 check_log flight_interface "active: setpoints go out from the next fresh setpoint"
 # docker stop deactivated it first: one last neutral setpoint, then this line
 check_log flight_interface "inactive: no more setpoints"
+check_log controller "mask 8, hover throttle 0.0"
 
 echo "PASS: images, in-image tests, gesture -> intent -> mission across containers," \
-    "monitor, clean stops, node logs, flight_interface -> mission"
+    "monitor, clean stops, node logs, controller (real.yaml) inactive, flight_interface -> mission"
