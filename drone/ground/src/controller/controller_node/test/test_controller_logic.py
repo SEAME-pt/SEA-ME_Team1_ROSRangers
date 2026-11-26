@@ -234,6 +234,23 @@ class TestFreshness(unittest.TestCase):
         self.assertEqual(out["pitch"], 0.0)
         self.assertEqual(out["throttle"], HOVER)
 
+    def test_target_must_be_fresh_at_the_next_tick(self):
+        # F11: target at 0.0, timeout 0.25 s, tick 0.02 s. At 0.23 the next
+        # tick (0.25) is still inside: used. At 0.24 the next tick (0.26) is
+        # not: zero now, so the zero is out by 0.24 s, never after 0.25 s.
+        controller = make(gains=P_ONLY)
+        controller.on_target(0.5, 0.0, 0.0, 0.0, 0.0)
+        controller.on_velocity(0.0, 0.0, 0.0, 0.23)
+        self.assertGreater(controller.step(0.23)["pitch"], 0.0)
+        controller.on_velocity(0.0, 0.0, 0.0, 0.24)
+        self.assertEqual(controller.step(0.24)["pitch"], 0.0)
+
+    def test_tick_period_checked(self):
+        for bad in (0.0, -0.02, 0.2, math.nan):
+            with self.subTest(tick_period=bad):
+                with self.assertRaises(ValueError):
+                    Controller(Params(hover_throttle=HOVER, mask=15), tick_period=bad)
+
     def test_no_target_yet_is_hold(self):
         controller = make()
         controller.on_velocity(0.0, 0.0, 0.0, 0.0)
@@ -362,6 +379,32 @@ class RetuneTests(unittest.TestCase):
             controller.retune(Params(hover_throttle=HOVER, mask=11))
         with self.assertRaisesRegex(ValueError, "hover_throttle"):
             controller.retune(Params(hover_throttle=0.6, mask=15))
+
+    def test_hover_throttle_0_pauses_and_the_start_value_resumes(self):
+        # F28 note 2026-11-26: 0.0 = not measured = inactive (flight_interface
+        # sends neutral); back to the start value = active again
+        controller = make()
+        controller.on_velocity(0.0, 0.0, 0.0, 0.0)
+        controller.retune(Params(hover_throttle=0.0, mask=15))
+        out = controller.step(0.0)
+        self.assertFalse(out["active"])
+        self.assertEqual(out["reason"], NO_HOVER_THROTTLE)
+        with self.assertRaisesRegex(ValueError, "hover_throttle"):
+            controller.retune(Params(hover_throttle=0.6, mask=15))
+        controller.retune(Params(hover_throttle=HOVER, mask=15))
+        self.assertTrue(controller.step(0.02)["active"])
+
+    def test_a_bad_value_in_a_batch_changes_nothing(self):
+        # All or none: a good gain together with a bad cap is refused whole
+        controller = make()
+        old = controller.params
+        batch = Params(
+            hover_throttle=HOVER, mask=15, tilt_cap_deg=20.0, gains=Gains(kp_xy=1.5)
+        )
+        with self.assertRaises(ValueError):
+            controller.retune(batch)
+        self.assertIs(controller.params, old)
+        self.assertEqual(controller.params.gains.kp_xy, 1.0)
 
 
 if __name__ == "__main__":

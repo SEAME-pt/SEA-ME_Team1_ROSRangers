@@ -68,6 +68,10 @@ REASONS = (OK, NO_VELOCITY, STALE_VELOCITY, NO_HOVER_THROTTLE, STOPPED)
 
 # A longer step means a missed tick or a paused clock: no integration then.
 MAX_DT = 0.1
+# The node's tick at 50 Hz. A target must still be fresh at the NEXT tick, as
+# in the flight_interface guard, so the zero goes out within target_timeout
+# whatever the tick phase (F11, REQ-SAF-017; ADR-025 F11 note 2026-11-26).
+DEFAULT_TICK_PERIOD = 0.02
 
 # Axes the ground owns per override mask, as in mission_node and the guard.
 MASK_AXES = {
@@ -207,9 +211,15 @@ class Controller:
     """Keeps the latest target and measured velocity; step() gives the
     setpoint to publish now."""
 
-    def __init__(self, params):
+    def __init__(self, params, tick_period=DEFAULT_TICK_PERIOD):
         params.validate()
+        if not _finite(tick_period) or not 0.0 < tick_period <= MAX_DT:
+            raise ValueError(f"tick_period must be in (0, {MAX_DT}], got {tick_period}")
         self.params = params
+        self.tick_period = float(tick_period)
+        # F15: hover_throttle equals flight_interface's. Live, it may only go
+        # to 0.0 (not measured: always inactive, a pause) and back to this.
+        self._start_hover = params.hover_throttle
         self.owned = MASK_AXES[params.mask]
         self._target = (0.0, 0.0, 0.0, 0.0)
         self._target_t = None
@@ -225,14 +235,20 @@ class Controller:
         ValueError, and nothing changes, if a value is bad (the same checks
         as at start-up) or if the mask or the hover throttle would change:
         those must equal flight_interface's (F15), so they change only with
-        a restart of both. The integrators are kept, so a gain change does
-        not jump the output back to zero."""
+        a restart of both. The one exception: hover_throttle may go to 0.0
+        (not measured, F16: always inactive, so flight_interface sends neutral)
+        and back to its start value, which pauses the controller (ADR-025 F28
+        note, 2026-11-26; make sim-hold's neutral phase uses it). The
+        integrators are kept, so a gain change does not jump the output back
+        to zero."""
         params.validate()
         if params.mask != self.params.mask:
             raise ValueError("mask cannot change while running (restart the node)")
-        if params.hover_throttle != self.params.hover_throttle:
+        allowed = (HOVER_NOT_MEASURED, self._start_hover)
+        if params.hover_throttle not in allowed:
             raise ValueError(
-                "hover_throttle cannot change while running (restart the node)"
+                "hover_throttle can only change to 0.0 (pause) or back to "
+                f"{self._start_hover} while running (restart the node)"
             )
         self.params = params
 
@@ -257,7 +273,9 @@ class Controller:
         return t is not None and 0.0 <= now - t <= limit
 
     def target_fresh(self, now):
-        return self._fresh(self._target_t, now, self.params.target_timeout)
+        """Fresh only if still fresh at the next tick (F11)."""
+        next_tick = now + self.tick_period
+        return self._fresh(self._target_t, next_tick, self.params.target_timeout)
 
     def velocity_fresh(self, now):
         return self._fresh(self._velocity_t, now, self.params.velocity_timeout)

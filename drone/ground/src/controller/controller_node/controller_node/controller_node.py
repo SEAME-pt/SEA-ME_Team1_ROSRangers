@@ -20,7 +20,8 @@ hover_throttle 0.0 = not measured = always inactive (F16).
 Live tuning (#199): the gains, tilt_cap_deg, throttle_band and the two
 timeouts can change while it runs (`ros2 param set /controller_node kp_xy
 1.2`), checked like at start-up; a bad value is refused and the old one kept.
-mask, hover_throttle, rate_hz and the topics need a restart.
+hover_throttle only to 0.0 (a pause: always inactive) and back to its start
+value. mask, rate_hz and the topics need a restart.
 
 Ctrl+C and SIGTERM (docker stop) are a normal stop: one last inactive
 setpoint, then exit code 0. A bad parameter: FATAL log and exit code 1.
@@ -54,6 +55,7 @@ HEALTH_REPORT_SEC = 5.0
 # restart (mask and hover_throttle must stay equal to flight_interface's, F15).
 LIVE_GAINS = {"kp_xy": "kp_xy", "ki_xy": "ki_xy", "kp_z": "kp_z", "ki_z": "ki_z"}
 LIVE_PARAMS = {
+    "hover_throttle": "hover_throttle",  # only to 0.0 and back (retune)
     "tilt_cap_deg": "tilt_cap_deg",
     "throttle_band": "throttle_band",
     "target_timeout_sec": "target_timeout",
@@ -117,7 +119,7 @@ class ControllerNode(Node):
             gains=gains,
         )
         # Params.validate() raises ValueError: FATAL and exit 1 (spin.run).
-        self._logic = Controller(params)
+        self._logic = Controller(params, tick_period=1.0 / rate)
         # Registered after every declare_parameter: it sees only later changes.
         self.add_on_set_parameters_callback(self._on_set_parameters)
 

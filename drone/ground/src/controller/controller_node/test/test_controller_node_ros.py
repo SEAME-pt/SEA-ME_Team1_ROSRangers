@@ -184,6 +184,7 @@ class ControllerNodeTests(unittest.TestCase):
             ("kp_xy", "fast", "number"),
             ("mask", 11, "restart"),
             ("hover_throttle", 0.6, "restart"),
+            ("hover_throttle", "0.0", "number"),
             ("rate_hz", 20.0, "restart"),
         )
         for name, value, why in refused:
@@ -195,6 +196,24 @@ class ControllerNodeTests(unittest.TestCase):
         self.assertEqual(params.tilt_cap_deg, 15.0)
         self.assertEqual(params.gains.kp_xy, 1.0)
         self.assertEqual(params.mask, 15)
+        self.assertEqual(node.get_parameter("kp_xy").value, 1.0)
+
+    def test_live_hover_throttle_pause_and_resume(self):
+        node = self.start(mask=15, hover_throttle=HOVER)
+        result = node.set_parameters([Parameter("hover_throttle", value=0.0)])[0]
+        self.assertTrue(result.successful, result.reason)
+        self.assertEqual(node._logic.params.hover_throttle, 0.0)
+        result = node.set_parameters([Parameter("hover_throttle", value=HOVER)])[0]
+        self.assertTrue(result.successful, result.reason)
+        self.assertEqual(node._logic.params.hover_throttle, HOVER)
+
+    def test_live_batch_is_all_or_none(self):
+        node = self.start(mask=15, hover_throttle=HOVER)
+        result = node.set_parameters_atomically(
+            [Parameter("kp_xy", value=1.5), Parameter("tilt_cap_deg", value=20.0)]
+        )
+        self.assertFalse(result.successful)
+        self.assertEqual(node._logic.params.gains.kp_xy, 1.0)
         self.assertEqual(node.get_parameter("kp_xy").value, 1.0)
 
 
