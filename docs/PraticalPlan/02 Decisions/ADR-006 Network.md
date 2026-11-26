@@ -3,7 +3,7 @@ title: ADR-006 — Wi-Fi Network Topology and Security
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-03
+updated: 2026-11-26
 project: SEA autonomous drone
 aliases:
   - D06
@@ -47,8 +47,19 @@ The decision is unchanged. The protocol review of 2026-11-03 (#97) set the ports
 The decision is unchanged. The #194 TCP stall on the SoftAP went away with the ESP's SPI flash clock at 80 MHz instead of 40 MHz (15 of 15 HIL runs green, PR #212). Likely cause: the 40 MHz clock's harmonic at 2440 MHz is inside channel 6; the 80 MHz harmonics fall at 2400 and 2480 MHz.
 
 - The HIL spare ESP (`env:esp`, flashed over USB) runs at **80 MHz**.
-- The drone (`env:esp_ota`) stays at **40 MHz** until its flash chip is checked for 80 MHz (`esptool.py flash_id`, over USB, with the ESP off the FC: its USB shares UART0 with the FC link, [[ADR-012 ESP UART Pins|ADR-012]]). A chip that can't run 80 MHz would leave the ESP unbootable after an OTA update. So HIL tests a different flash clock than the drone flies; the stall was only seen on the HIL bench.
+- The drone (`env:esp_ota`) stays at **40 MHz** (lifted 2026-11-26, see below) until its flash chip is checked for 80 MHz (`esptool.py flash_id`, over USB, with the ESP off the FC: its USB shares UART0 with the FC link, [[ADR-012 ESP UART Pins|ADR-012]]). A chip that can't run 80 MHz would leave the ESP unbootable after an OTA update. So HIL tests a different flash clock than the drone flies; the stall was only seen on the HIL bench.
 - The SoftAP channel is limited to **1–11**: the 80 MHz harmonic at 2480 MHz is inside channel 13. `secrets.py` stops the build outside 1–11.
+
+### Update 2026-11-26: the drone at 80 MHz too
+
+The decision is unchanged. The drone's ESP now runs its flash at **80 MHz**, like the HIL spare (#218). The 2026-11-19 entry's limit (drone at 40 MHz) is lifted:
+
+- **The chip is rated for it.** `late_log.py` read chip ID `0016405e` (JEDEC `5E 40 16`): a Zbit ZB25VQ32, rated 104 MHz for the fast reads the ESP uses in DIO mode (datasheet, #218). The HIL spare has the same chip. It was read over Wi-Fi, so the ESP stayed on the FC.
+- **Every env builds at 80 MHz**, from one line in the shared `[env]` section of `platformio.ini`. Never give an env 40 MHz: an OTA that changes the clock (40 ↔ 80) makes `eboot` erase and rewrite the bootloader sector at the next boot, a window of a fraction of a second. A power loss in that window needs a USB recovery, with the ESP taken off the FC ([[ADR-012 ESP UART Pins|ADR-012]]). An OTA at the same clock leaves that sector alone.
+- **HIL rehearsal.** Dot99 ran the 40 → 80 MHz OTA on the HIL spare first: passed (2026-11-26).
+- **Drone OTA and power cut** (props off). After the OTA of `esp_late_log_ota`, the SoftAP was back in about 10 s and `bus` read 80 MHz. After a power cut it read 80 MHz again. Then `esp_ota` went back on the same way.
+- **Link.** About 100 s of 50 Hz control: 0 refused or dropped frames, 0 link-loss silences. The link failsafe came 268 ms after the last SETPOINT (T_loss 250 ms plus the Wi-Fi trip). Results and CSVs on #218.
+- So HIL and the drone now test and fly the same flash clock. The channel limit (1–11) stays.
 
 ## 3. Consequences
 
@@ -75,3 +86,6 @@ There is no free Ethernet port at the HIL bench. The Pi uses its one Wi-Fi radio
 | **SoftAP** | Software access point: the ESP creates its own Wi-Fi network that the ground PC joins (ADR-006). |
 | **WPA2-PSK** | Wi-Fi security mode where every client uses the same pre-shared key (the ESP SoftAP, ADR-006). |
 | **PSK** | Pre-shared key: a secret agreed in advance (Wi-Fi password, HMAC key). Never committed. |
+| **Flash clock** | The SPI bus clock between the ESP8266 and its flash chip (40 or 80 MHz), set in the image header at build time. Its harmonics can fall inside a Wi-Fi channel. |
+| **eboot** | The Arduino core's bootloader at the start of the ESP flash. After an OTA it copies the new image into place. |
+| **OTA** | Over-the-air update: flashing the ESP over Wi-Fi instead of USB ([[ADR-024 OTA Firmware Updates\|ADR-024]]). |

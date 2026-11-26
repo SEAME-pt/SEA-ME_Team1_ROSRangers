@@ -18,7 +18,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 | Wi-Fi settings | Stored in the ESP flash by AT commands | Compiled in at build time from `~/.config/seame-drone/` (`secrets.py`) |
 | Channel change | `network setup --channel`, ESP on USB | Edit `bridge.json`, rebuild, OTA upload |
 | Updates | USB only | OTA over Wi-Fi (port 8266, password), USB for the first flash and recovery |
-| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DOUT), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
+| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DIO, 80 MHz since #218), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
 | Sleep | Set by hand (`AT+SLEEP`) | `WIFI_NONE_SLEEP` always |
 | AT commands | Yes | No: `esp_at.py` checks that send `AT` fail |
 
@@ -92,6 +92,8 @@ Back up the flash before the first custom flash (`drone/tools/bench/esp_at.py ba
 6. Check the link: `python3 drone/tools/bench/ground_link.py` (a session opens and STATE shows the FC values; `seame.py msp info` only works on the bridge), and note the SHA-256. If the FC refuses to arm (`ARMING_DISABLED_MSP` in `MSP_STATUS`), the image did not release the ADR-024 lock; power-cycle the FC (disconnect the battery and the FC USB).
 
 If a build breaks OTA, the only way back is a USB recovery (above).
+
+Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). A 40 ↔ 80 MHz change makes the bootloader rewrite its own sector at the next boot, and a power loss then needs a USB recovery (ADR-006 entry of 2026-11-26, #218).
 
 ## Gateway (#101, #102, envs `esp`, `esp_ota`)
 
