@@ -31,7 +31,7 @@ except ImportError:
     rclpy = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 92
+TEST_DOMAIN_ID = 74
 
 
 def setpoint_json(pitch=0.0, yaw_rate=0.0):
@@ -77,6 +77,7 @@ ALLOWED = {
     "close",
     "name",
     "estop_note",  # read-only text: what the E-stop answer says (A1)
+    "estop_note_no_neutral",  # read-only text: the same with no neutral (A7)
 }
 # Data fields the tests themselves read; not calls by the node.
 TEST_FIELDS = {"sent", "log", "state", "connected", "closed", "calls", "acks"}

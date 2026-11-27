@@ -217,10 +217,18 @@ class Px4Backend(Backend):
         self._trajectory_pub.publish(sp)
         return True
 
-    # The E-stop answer's second half (ADR-025 A1: say what really happened)
+    # The E-stop answer's second half (ADR-025 A1: say what really happened).
+    # After the one neutral PX4 holds that position (NeutralHold, F19); with
+    # no neutral (A7: internal error) it keeps the last setpoint it got,
+    # usually an attitude setpoint. Either way nothing more is sent, so its
+    # Offboard-loss failsafe takes over.
     estop_note = (
         "no BYE on the sim backend: PX4 holds position, then its Offboard-loss "
         "failsafe takes over"
+    )
+    estop_note_no_neutral = (
+        "no BYE on the sim backend: no neutral went out, so PX4 keeps the last "
+        "setpoint it got until its Offboard-loss failsafe takes over"
     )
 
     def end_session(self, now):

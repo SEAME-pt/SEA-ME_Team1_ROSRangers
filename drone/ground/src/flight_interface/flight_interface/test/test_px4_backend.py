@@ -412,6 +412,8 @@ def test_arm_and_resume_send_nothing(rig):
     assert len(rig.node.warnings) == 2
     assert rig.backend.end_session(0.0) is False  # nothing sent: no BYE here
     assert "no BYE" in rig.backend.estop_note  # what the E-stop answer says
+    assert "holds position" in rig.backend.estop_note  # after the one neutral
+    assert "keeps the last" in rig.backend.estop_note_no_neutral  # A7
     every_topic = set(rig.node.pubs)
     assert every_topic == {
         OFFBOARD_MODE_TOPIC,

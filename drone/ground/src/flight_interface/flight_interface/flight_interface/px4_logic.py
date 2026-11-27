@@ -357,7 +357,8 @@ def _clamp(value, low, high):
 class _PilotAxis:
     """PI on one axis with an output limit and anti-windup (as the
     controller's): no integration while the output is at its limit and the
-    error pushes it further, or when the time step is not in (0, MAX_DT]."""
+    error pushes it further, or when the time step is not in (0, MAX_DT].
+    Its gains are fixed (no live tuning), so the bare integral is kept."""
 
     def __init__(self, kp, ki):
         self.kp = kp
@@ -367,15 +368,36 @@ class _PilotAxis:
     def reset(self):
         self.integral = 0.0
 
-    def step(self, error, limit, dt):
-        output = self.kp * error + self.ki * self.integral
+    def output(self, error):
+        """kp * error + ki * integral, not clamped."""
+        return self.kp * error + self.ki * self.integral
+
+    def integrate(self, error, dt, at_high, at_low):
+        """Grow the integral by error * dt, unless dt is not usable or the
+        output is at its high (low) limit and the error pushes it higher
+        (lower): anti-windup."""
         dt_ok = dt is not None and 0.0 < dt <= MAX_DT
-        pushing_up = output >= limit and error > 0.0
-        pushing_down = output <= -limit and error < 0.0
+        pushing_up = at_high and error > 0.0
+        pushing_down = at_low and error < 0.0
         if dt_ok and not pushing_up and not pushing_down:
             self.integral = self.integral + error * dt
-            output = self.kp * error + self.ki * self.integral
-        return _clamp(output, -limit, limit)
+
+    def step(self, error, limit, dt):
+        before = self.output(error)
+        self.integrate(error, dt, before >= limit, before <= -limit)
+        return _clamp(self.output(error), -limit, limit)
+
+
+def _tilted_throttle(correction, hover, lift_share):
+    """The pilot's throttle while tilted and whether it is at the top or the
+    bottom of the band (for the z anti-windup), as the controller's
+    tilted_throttle: correction kept within the band, divided by the share
+    of thrust that lifts, clamped to hover +- band."""
+    level_throttle = hover + _clamp(correction, -THROTTLE_BAND, THROTTLE_BAND)
+    raw = level_throttle / lift_share
+    high = hover + THROTTLE_BAND
+    low = hover - THROTTLE_BAND
+    return _clamp(raw, low, high), raw >= high, raw <= low
 
 
 class SimPilot:
@@ -448,13 +470,13 @@ class SimPilot:
             # Hover plus a correction within the band, divided by the share
             # of thrust that lifts while tilted. Example: climbing at 0.2 m/s
             # -> correction 0.3 * -0.2 = -0.06 -> 0.73 - 0.06 = 0.67 level,
-            # 0.67 / cos(5 deg) = 0.673 at 5 deg of roll.
-            correction = self._z.step(0.0 - up, THROTTLE_BAND, dt)
-            level_throttle = self.hover + correction
+            # 0.67 / cos(5 deg) = 0.673 at 5 deg of roll. Anti-windup looks
+            # at that final throttle (PR #253 review).
+            error_z = 0.0 - up
             lift_share = math.cos(math.radians(roll)) * math.cos(math.radians(pitch))
-            throttle = _clamp(
-                level_throttle / lift_share,
-                self.hover - THROTTLE_BAND,
-                self.hover + THROTTLE_BAND,
-            )
+            before = self._z.output(error_z)
+            _, at_high, at_low = _tilted_throttle(before, self.hover, lift_share)
+            self._z.integrate(error_z, dt, at_high, at_low)
+            correction = self._z.output(error_z)
+            throttle, _, _ = _tilted_throttle(correction, self.hover, lift_share)
         return dataclasses.replace(setpoint, roll=roll, pitch=pitch, throttle=throttle)

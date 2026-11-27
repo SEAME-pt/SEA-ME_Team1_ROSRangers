@@ -378,11 +378,18 @@ class Guard:
         self._pending = None
 
     def note_sent(self, command, now):
-        """The node tells the guard what the backend really sent (it is not
-        called when nothing went out, e.g. between sessions), so the neutral
-        window counts only setpoints that left this PC. A commanding
-        setpoint (active, F8) or a gap of NEUTRAL_MAX_GAP or more restarts the
-        window."""
+        """The node passes the guard's command for a setpoint the backend
+        sent (it is not called when nothing went out, e.g. between sessions),
+        so the neutral window counts only setpoints that left this PC. A
+        commanding setpoint (active, F8) or a gap of NEUTRAL_MAX_GAP or more
+        restarts the window.
+
+        It is the guard's command, not the bytes on the wire: the ESP backend
+        sends mode 0 for every setpoint (F6), so during STREAMING the window
+        may count "active" while the drone got neutral. That never delays a
+        request: an ARM or RESUME stays pending only in SESSION_IDLE or
+        LINK_FAILSAFE (request_due), where command() always gives NEUTRAL, and
+        both read the same drone state in the same tick (PR #253 review)."""
         neutral = command is not None and not command.active
         gap_ok = (
             self._last_sent_t is not None

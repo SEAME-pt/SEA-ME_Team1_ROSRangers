@@ -312,6 +312,29 @@ def test_integrates_while_the_error_stays():
     assert later > first  # still sinking: the integrator adds throttle
 
 
+def test_no_throttle_windup_while_the_tilt_clamps_it():
+    # PR #253 review: the z anti-windup looks at the final throttle. Full tilt
+    # on both axes (lift share cos(15 deg)^2 = 0.933) while sinking at 0.2 m/s:
+    # the top (0.85) is reached once (0.70 + c) / 0.933 >= 0.85, i.e.
+    # c >= 0.093, still inside the band (0.15). The integral must stop there.
+    p = SimPilot(8, HOVER)
+    now = 0.0
+    for _ in range(500):  # 10 s
+        p.on_velocity(50.0, -50.0, -0.2, now)
+        out = p.fly(GROUND, now)
+        now = now + 0.02
+    assert out.throttle == pytest.approx(HOVER + 0.15)
+    stuck = p._z.integral
+    for _ in range(500):
+        p.on_velocity(50.0, -50.0, -0.2, now)
+        p.fly(GROUND, now)
+        now = now + 0.02
+    assert p._z.integral == stuck
+    needed = (HOVER + 0.15) * math.cos(math.radians(15.0)) ** 2 - HOVER
+    correction = p._z.output(0.2)
+    assert correction <= needed + p._z.ki * 0.2 * 0.02
+
+
 def test_no_fresh_velocity_is_none():
     assert SimPilot(11, HOVER).fly(GROUND, 0.0) is None  # never one
     stale = pilot(11, now=0.0)

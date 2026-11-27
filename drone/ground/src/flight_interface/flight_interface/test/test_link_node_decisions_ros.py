@@ -42,7 +42,7 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 94
+TEST_DOMAIN_ID = 76
 
 
 def setpoint_json(pitch=0.0, yaw_rate=0.0):
@@ -83,6 +83,7 @@ ALLOWED = {
     "close",
     "name",
     "estop_note",  # read-only text: what the E-stop answer says (A1)
+    "estop_note_no_neutral",  # read-only text: the same with no neutral (A7)
 }
 TEST_FIELDS = {
     "sent",
@@ -154,6 +155,7 @@ class NoByeBackend(LoopbackBackend):
     """Like px4: no BYE exists, the backend says what happens instead (A1)."""
 
     estop_note = "no BYE on the sim backend: PX4 holds position"
+    estop_note_no_neutral = "no BYE on the sim backend: PX4 keeps the last setpoint"
 
     def end_session(self, now):
         super().end_session(now)
@@ -284,6 +286,16 @@ class DecisionTests(unittest.TestCase):
             response.message,
             "estop latched, neutral + no BYE on the sim backend: PX4 holds position",
         )
+
+    def test_estop_without_a_neutral_on_a_backend_without_bye(self):
+        # A7 (internal error): no neutral, so the sim backend's PX4 keeps the
+        # last setpoint, not a held position (PR #253 review)
+        self.replace(NoByeBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        sent = self.node._estop("internal error: test", with_neutral=False)
+        self.assertEqual(sent, "no BYE on the sim backend: PX4 keeps the last setpoint")
+        self.assertNotIn("neutral", self.log())
 
     def test_a_failed_neutral_never_skips_bye(self):
         self.replace(FailingNeutralBackend(state=STREAMING))

@@ -505,6 +505,10 @@ class FlightInterface(Node):
         except Exception as error:  # the latch is set; the next timer tries again
             self.get_logger().error(f"E-STOP: /flight/state failed: {error}")
         note = self.backend.estop_note
+        no_neutral_note = self.backend.estop_note_no_neutral
+        if not neutral and no_neutral_note is not None:
+            # A7 or a failed neutral: PX4 never got the hold (px4 backend)
+            note = no_neutral_note
         if note is not None:
             ending = note
         elif bye:

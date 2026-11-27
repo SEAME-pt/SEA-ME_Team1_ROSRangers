@@ -44,8 +44,11 @@ class Backend:
 
     name = "base"
     # None: the E-stop answer says whether BYE went out. A backend with no BYE
-    # (px4) sets the text that says what happens instead (A1).
+    # (px4) sets the text that says what happens instead (A1): estop_note
+    # after the one neutral, estop_note_no_neutral when none went out (A7,
+    # a failed neutral, or nothing was being sent).
     estop_note = None
+    estop_note_no_neutral = None
 
     def send_setpoint(self, command, now):
         """Send one guard.Setpoint. active false is no command (F8): the ESP
