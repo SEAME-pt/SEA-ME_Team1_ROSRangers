@@ -297,6 +297,11 @@ smoke:
 # flight_interface_sim), and every rule that would stop the chain it flies with.
 # Only running containers count; there is no override. A docker ps that fails
 # also refuses: no check, no start.
+# flight_interface_sim (make sim, sim-smoke, sim-hold) is not counted on
+# purpose: every mode rule stops the running stack first ($(STOP_COMPOSE)
+# down), so a sim flight_interface is replaced, never doubled, and stopping
+# it stops only the simulation. Counting it would also refuse make sim-down,
+# the way to stop the sim (PR #253 review).
 no-flight-interface:
 	@names=$$(docker ps --filter label=com.docker.compose.service=flight_interface \
 		--format '{{.Names}}') || { echo "make: cannot list Docker containers," \
