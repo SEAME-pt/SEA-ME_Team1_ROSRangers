@@ -22,7 +22,7 @@ aliases:
 
 > [!WARNING] Status: DRAFT
 > - Backends: `loopback` (no drone), `esp` (the gateway firmware) and `px4` (PX4 SITL, simulation only; [[PX4 SITL Setup]] §7).
-> - Its input is the controller's attitude setpoint ([[07 Controller Node]]). On the real drone the controller stays inactive until there is a measured velocity (#200), and the `esp` backend sends every setpoint as mode 0 (neutral) for now, so nothing that reaches the drone has changed. `override_active` comes from the ESP (#176, PR #198): true only when the ESP reports the pilot's override on.
+> - Its input is the controller's attitude setpoint ([[07 Controller Node]]). On the real drone the controller stays inactive (it is simulation-only: Betaflight's Position Hold holds position there, ADR-025 F29), and the `esp` backend sends every setpoint as mode 0 (neutral) for now, so nothing that reaches the drone has changed. `override_active` comes from the ESP (#176, PR #198): true only when the ESP reports the pilot's override on.
 > - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]].
 
 ---
@@ -258,6 +258,6 @@ The decisions are in [[ADR-025 flight_interface Ground Node|ADR-025]]. The ones 
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Guard** | The rules in `guard.py` that decide whether a setpoint may go to the drone (gate, limits, mask, timeouts). |
 | **Mask** | `msp_override_channels_mask`: which axes the ground commands (8 yaw, 11 roll + pitch + yaw, 15 all four). |
-| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |

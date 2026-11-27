@@ -12,7 +12,7 @@ tags:
 
 # Architecture Document (Module 1)
 
-> [!info] Status: complete for Module 1 (2026-11-20): every section is filled from merged code and bench results. One figure is still open: the gesture → motors latency (§4), which needs a measured velocity on the drone (#200), so the controller can send real setpoints. Final review 2026-12-11.
+> [!info] Status: complete for Module 1 (2026-11-20): every section is filled from merged code and bench results. One figure is still open: the gesture → motors latency (§4), which needs gestures to reach the motors on the drone (through Betaflight Position Hold, ADR-025 F29 note 2026-11-27). Final review 2026-12-11.
 > Module 1 deliverable, REQ-SYS-001, issue #98. This page brings together what is decided elsewhere and links to the sources instead of copying them: [[System Overview]] (target picture), [[Protocol Spec v0]] (wire format), [[ESP Link State Machine]] (ESP behaviour), the ADRs in the [[Decision Register]].
 >
 > **Owners per section:** §1 layers Dot99 · §2 node graph **BrunoBMFT** (he wrote the nodes) · §3 message contracts follow the Protocol Spec v0 freeze (ptorrao-git, #97) · §4 timing budget Dot99 with ptorrao-git.
@@ -70,7 +70,7 @@ flowchart LR
   GEST -->|"/gesture/raw<br/>or UDP :5005"| INT[intent_node]
   INT -->|"/gesture/intent<br/>20 Hz"| MIS[mission_node]
   MIS -->|"/mission/velocity_target<br/>20 Hz"| CTL["controller_node<br/>(#199)"]
-  EST["/estimate/velocity<br/>sim: px4 backend; drone: #200"] -.-> CTL
+  EST["/estimate/velocity<br/>sim only: px4 backend"] -.-> CTL
   CTL -->|"/control/attitude_setpoint<br/>50 Hz"| FI["flight_interface<br/>lifecycle node (#103)"]
   MIS -->|"/mission/state"| OUT([logs, rosbag])
   FI -->|"/flight/state"| MIS
@@ -86,7 +86,7 @@ flowchart LR
 | `gesture_node` | webcam | `/gesture/raw` (`String`, JSON), or UDP to `intent_node` | per frame, with keep-alive; MediaPipe Holistic 14.5 FPS measured 2026-10-27 | in `dev`, CI + Docker |
 | `intent_node` | `/gesture/raw` or UDP `:5005` (parameter `input_source`) | `/gesture/intent` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, CI + Docker |
 | `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`. Demo mode: `fake_flight_state` feeds `/flight/state`. Real mode: `ground_bringup` `real.launch.py` (`make real`) starts `flight_interface` with `backend: esp` and `mask: 8` (`config/real.yaml`), which publishes the real `/flight/state` |
-| `controller_node` | `/mission/velocity_target`, `/estimate/velocity` (`TwistStamped`, body FLU); `/flight/state` (its integrators run only while that says the output is applied, ADR-025 F10 note 2026-11-27) | `/control/attitude_setpoint` (`String`, JSON: `roll`, `pitch` deg, `yaw_rate` °/s, `throttle` 0–1, `active`, `reason`) | 50 Hz (`rate_hz`), active or not | in `dev` (#199). Flies only with a measured velocity: in the simulation from the `px4` backend; on the drone none until #200, so it sends `active` false. [[07 Controller Node]] |
+| `controller_node` | `/mission/velocity_target`, `/estimate/velocity` (`TwistStamped`, body FLU); `/flight/state` (its integrators run only while that says the output is applied, ADR-025 F10 note 2026-11-27) | `/control/attitude_setpoint` (`String`, JSON: `roll`, `pitch` deg, `yaw_rate` °/s, `throttle` 0–1, `active`, `reason`) | 50 Hz (`rate_hz`), active or not | in `dev` (#199). Flies only with a measured velocity: in the simulation from the `px4` backend; on the drone none (simulation-only controller, ADR-025 F29 note 2026-11-27), so it sends `active` false. [[07 Controller Node]] |
 | `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` in `ground_bringup`'s `demo.launch.py` (`make`) and `mission_node`'s `mission_demo.launch.py` (no ESP needed) |
 | `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06. A bench tool now: UDP 5760 needs the `esp_bridge` firmware, and with the gateway `flight_interface` publishes these topics |
 | `flight_interface` lifecycle node (`flight_interface` package) | `/control/attitude_setpoint` (`String`, JSON, from `controller_node`) | `/flight/state` (JSON as above, plus the fields below); `/fc/attitude`, `/fc/battery` from `STATE` (ESP backend, `publish_fc`); services `~/estop`, `~/reset_estop`, `~/resume`, `~/arm_control` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | in `dev` (#103, PR #187): `loopback` and `esp` backends; the `esp` backend sends every setpoint as mode 0 (neutral) for now. The `px4` backend (simulation only, #199) flies PX4 SITL and also publishes `/estimate/velocity`. Details below and in [[ADR-025 flight_interface Ground Node\|ADR-025]] |
@@ -200,7 +200,7 @@ Measured in #30 on the custom bridge firmware (ESP Bench Test Plan S1-05 / S1-09
 | Failsafe trips at cage distance | 0–1 per 10 min normally, 11 in the worst run | #30, accepted: a trip is safe by design |
 | `intent_node` neutral / stale timeouts | 0.3 s / 2.0 s | `intent_node` parameters `neutral_timeout_sec`, `stale_timeout_sec` |
 | FC attitude → ground topic (`/fc/attitude` delay, `fc_telemetry` over the transparent bridge) | avg 11 ms, max 50 ms; MSP round trip median 13.5–14.4 ms | #96, bench 2026-11-06 |
-| Gesture → motors end to end | **not measured yet**: on the drone the controller stays inactive until a measured velocity exists (#200), and the `esp` backend sends mode 0, so a gesture doesn't reach the motors yet | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
+| Gesture → motors end to end | **not measured yet**: on the drone the controller is not used (Betaflight Position Hold holds position and gestures will nudge it, ADR-025 F29 note 2026-11-27), and the `esp` backend sends mode 0, so a gesture doesn't reach the motors yet | [[System Overview]] §4: telemetry echoes `last_ctrl_seq` + `t_send_us` to measure it |
 
 Still to measure: the end-to-end gesture → motors latency, once the controller sends real setpoints.
 
@@ -261,7 +261,7 @@ Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Comma
 | **Yaw zero** | The FC yaw reading taken as 0 at the first attitude sample after `fc_telemetry` starts or `flight_interface` is configured, and again after each `activate`. Needed because the drone has no magnetometer, so Betaflight's yaw only counts from FC power-up and drifts. |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **FLU** | Body frame with x forward, y left, z up (REP-103). |
-| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

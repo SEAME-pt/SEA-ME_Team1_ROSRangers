@@ -281,7 +281,7 @@ To keep a run as evidence, zip its folder and attach it to the issue.
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
 | **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
-| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
 | **PSK** | Pre-shared key: the secret the ground and the ESP use to authenticate the session. |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |
 | **RTL** | Return to launch: PX4's failsafe that flies back and lands; here it fires when the setpoint stream stops. |

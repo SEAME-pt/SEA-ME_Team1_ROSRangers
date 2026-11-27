@@ -22,7 +22,7 @@ aliases:
 `controller_node` sits between [[04 Mission Node|mission_node]] and [[05 Flight Interface Node|flight_interface]]. It turns the velocity `mission_node` wants ("0.3 m/s to the right") into the attitude that gets the drone there (roll, pitch, yaw rate, throttle), using the velocity the drone really has. It is the outer loop of a cascade: the inner loop, attitude → motors, stays in the flight controller (Betaflight on the drone, PX4 in the simulator).
 
 > [!WARNING] Status: DRAFT
-> - Flies only where a measured velocity exists. In the simulation (PX4 SITL) it does: `make sim-hold` holds 60 s, at most about 0.21 m off (limit 0.25 m; REQ-NAV-001, [[PX4 SITL Setup]] §7.5). On the real drone there is none until the flow + height estimator (#200), so it stays inactive and nothing that reaches the drone changes.
+> - Flies only where a measured velocity exists. In the simulation (PX4 SITL) it does: `make sim-hold` holds 60 s, at most about 0.21 m off (limit 0.25 m; REQ-NAV-001, [[PX4 SITL Setup]] §7.5). It is simulation-only: on the real drone nothing publishes a measured velocity, so it stays inactive and nothing that reaches the drone changes. There, Betaflight's Position Hold holds position and gestures will nudge it ([[ADR-025 flight_interface Ground Node|ADR-025]] F29).
 > - The gains are the starting values; they were enough in SITL. The real drone gets its own tuning in the cage.
 > - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4 (F1–F28).
 
@@ -33,7 +33,7 @@ aliases:
 ```mermaid
 flowchart LR
   M[mission_node] -->|"/mission/velocity_target<br/>TwistStamped, body FLU, 20 Hz"| C["<b>controller_node</b>"]
-  E["measured velocity<br/>sim: flight_interface (px4)<br/>drone: estimator (#200)"] -->|"/estimate/velocity<br/>TwistStamped, body FLU"| C
+  E["measured velocity<br/>sim: flight_interface (px4)<br/>drone: none"] -->|"/estimate/velocity<br/>TwistStamped, body FLU"| C
   C -->|"/control/attitude_setpoint<br/>JSON, 50 Hz"| FI[flight_interface]
   FI -.->|"/flight/state<br/>(is the output applied?)"| C
 ```
@@ -57,7 +57,7 @@ The gesture chain thinks in velocities; the flight controller holds an attitude.
 ## 📥 3. Input
 
 - `/mission/velocity_target` (`TwistStamped`, body FLU, yaw rate in rad/s) from `mission_node`.
-- `/estimate/velocity` (`TwistStamped`, body FLU): the measured velocity. In the simulation `flight_interface`'s `px4` backend publishes it from PX4; on the drone, the estimator of #200.
+- `/estimate/velocity` (`TwistStamped`, body FLU): the measured velocity. In the simulation `flight_interface`'s `px4` backend publishes it from PX4; on the real drone nothing publishes it (Betaflight holds position itself, ADR-025 F29).
 - `/flight/state` (JSON) from `flight_interface`: whether the output is **applied**, i.e. reaches the vehicle (`link_ok`, `STREAMING`, override on, a known mask: the guard's own gate). It only decides whether the integrators run (§4); it never makes the output inactive.
 - Parameters (`controller_node.py`): `mask`, `hover_throttle`, `rate_hz`, the gains `kp_xy`, `ki_xy`, `kp_z`, `ki_z`, `tilt_cap_deg`, `throttle_band`, `target_timeout_sec`, `velocity_timeout_sec`, the topic names. A bad value stops the node at start-up. `mask` and `hover_throttle` must equal `flight_interface`'s: each mode file repeats them in both sections and `test_config.py` checks they agree.
 - **Live tuning** (ADR-025 F28): the gains, `tilt_cap_deg`, `throttle_band` and the two timeouts can change while it runs, checked like at start-up; a bad value is refused and the old one kept, and the log says `retuned: …`. A batch is all or none. `hover_throttle` may only go to 0.0 (a pause: always inactive, so `flight_interface` sends neutral) and back to its start value (F28 note, 2026-11-26; `make sim-hold` uses it). `mask`, `rate_hz` and the topics need a restart. From `drone/ground/`, in the mode's domain ([[01 ROS2 Nodes Installation|01]] §5):
@@ -125,7 +125,7 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 
 | Mode | Measured velocity | Hover throttle | What it does |
 | :--- | :--- | :--- | :--- |
-| real (`make real`) | none until #200 | not set | inactive: `flight_interface` sends neutral |
+| real (`make real`) | none (Betaflight holds position, ADR-025 F29) | not set | inactive: `flight_interface` sends neutral |
 | sim (`make sim`, `sim-smoke`, `sim-hold`) | from PX4 | 0.73 | flies ([[PX4 SITL Setup]] §7) |
 
 ---
@@ -160,8 +160,7 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 
 ## ❓ 11. Open points
 
-- [ ] **A measured velocity on the drone** (#200, flow + height): until then the controller is inactive on the real drone.
-- [ ] **Gains for the real drone**, tuned in the cage (REQ-NAV-002).
+- The controller is not used on the real drone: Betaflight's Position Hold holds position (REQ-NAV-002) and gestures will nudge it through MSP Override on roll / pitch ([[ADR-025 flight_interface Ground Node|ADR-025]] F29). Using it on the drone would be a new [[ADR-016 Flow Sensor Path|ADR-016]] decision.
 - [ ] **Yaw-only pass-through on the drone** (mask 8) once the bench allows it (ADR-025 F6).
 
 ---
@@ -184,13 +183,13 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 | **Integral term** | The I part of the output, `ki` × the integral of the error; stored as such, so a `ki` change does not jump the output. |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle that the drone should hold. |
 | **Hover throttle** | The throttle (0–1) that holds the drone level in the air; 0.0 means not measured. |
-| **Measured velocity** | The velocity the drone really has, from an estimator (PX4 in SITL, #200 on the drone). |
+| **Measured velocity** | The velocity the drone really has, from an estimator: PX4's in the simulation. On the real drone the ground gets none. |
 | **FLU** | Body frame with x forward, y left, z up (REP-103). |
 | **REP-103** | The ROS convention for units and frame directions. |
 | **Mask** | `msp_override_channels_mask`: which axes the ground commands (8 yaw, 11 roll + pitch + yaw, 15 all four). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **Estimator** | Code that computes the drone's velocity from sensors (flow, IMU, barometer); on the drone it is #200. |
+| **Estimator** | Code that computes the drone's velocity from sensors (flow, IMU, barometer). In the simulation PX4's; on the drone Betaflight's own, used by its Position Hold and not sent to the ground. |
 | **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
 | **Neutral / inactive** | `active` false: no command; the numbers are level and the hover throttle, and nothing may use them. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |

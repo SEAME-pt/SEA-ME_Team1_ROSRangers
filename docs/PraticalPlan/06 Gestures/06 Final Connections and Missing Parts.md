@@ -3,7 +3,7 @@ title: Final Connections and Missing Parts
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-25
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -21,7 +21,7 @@ What the gesture chain still needs before a gesture moves the real drone (§2), 
 
 | § | Part | Why | Status |
 | :---: | :--- | :--- | :---: |
-| 2.1 | controller + estimator | velocity target → attitude setpoints | ==🟢controller built== (#199); ==🟠estimator== (#200) |
+| 2.1 | controller | velocity target → attitude setpoints | ==🟢built, simulation only== (#199); on the drone Betaflight holds position |
 | 2.2 | PX4 backend for `flight_interface` | the simulator through the real node | ==🟢built== (#199) |
 | 2.3 | gestures driving `flight_interface` in the simulator | the whole chain end to end | ==🟡runs== (`make sim`); ==🟠webcam tests== (#202) |
 | 2.4 | `override_active` from the ESP | the gate in `mission_node` and `flight_interface` | ==🟢built== (#176) |
@@ -40,18 +40,17 @@ What the gesture chain still needs before a gesture moves the real drone (§2), 
 ```mermaid
 flowchart LR
   M[mission_node] -->|"/mission/velocity_target"| C["controller_node<br/>(2.1)"]
-  E["estimator<br/>(2.1, missing, #200)"] -.->|"/estimate/velocity<br/>(drone)"| C
   C -->|"/control/attitude_setpoint"| FI[flight_interface]
   FI -->|esp| ESP([ESP gateway])
   FI -->|"px4 (2.2)"| PX4([PX4 SITL])
   FI -->|"/estimate/velocity<br/>(sim)"| C
 ```
 
-### 2.1 Controller + estimator
+### 2.1 Controller
 
 Turns `/mission/velocity_target` and the measured velocity into attitude and throttle on `/control/attitude_setpoint`, which `flight_interface` sends. Its contract: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4.
 
-Controller built (#199): `controller_node`, [[07 Controller Node]]. It flies the simulation, where the `px4` backend gives the measured velocity; `make sim-hold` holds 60 s within REQ-NAV-001. On the real drone it stays inactive until the estimator (flow, IMU, baro; #200) publishes `/estimate/velocity`.
+Controller built (#199): `controller_node`, [[07 Controller Node]]. It flies the simulation, where the `px4` backend gives the measured velocity; `make sim-hold` holds 60 s within REQ-NAV-001. It is simulation-only: on the real drone nothing publishes `/estimate/velocity`, so it stays inactive. There, Betaflight's Position Hold holds position with the flow sensor ([[ADR-016 Flow Sensor Path|ADR-016]]), and gestures will move the drone by nudging it: a roll or pitch deflection beyond Betaflight's `pos_hold_deadband` becomes a target velocity, and on release the drone brakes and holds the new point. That needs a roll / pitch mask and the FC's override mask set on the drone, and is flown only after the cage ([[ADR-025 flight_interface Ground Node|ADR-025]] F29).
 
 ### 2.2 PX4 backend for `flight_interface`
 
@@ -116,7 +115,6 @@ Shows the mode, intent and reason from `/mission/state` to the operator. Display
 | **Tasks API** | MediaPipe's newer API that replaces the removed `mp.solutions`. |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
-| **Estimator** | Code that computes the drone's velocity from sensors (flow, IMU, barometer); on the drone it is #200. |
-| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |

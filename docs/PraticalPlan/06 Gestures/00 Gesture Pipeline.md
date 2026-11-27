@@ -3,7 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-24
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -46,7 +46,7 @@ flowchart LR
 | `intent_node` ([[03 Intent Node\|03]]) | decides what the **operator** wants; filters noise and lost hands | `/gesture/raw` → `/gesture/intent` | ==🟢built== |
 | `mission_node` ([[04 Mission Node\|04]]) | decides what the **drone** does: modes, limits, owned axes | `/gesture/intent` + `/flight/state` → `/mission/velocity_target` | ==🟢built==, numbers not reviewed |
 | `fake_flight_state`, `fake_intent` ([[04 Mission Node\|04]] §7) | test without a drone | made-up `/flight/state`, `/gesture/intent` | ==🟠pretend, never with a real drone== |
-| `controller_node` ([[07 Controller Node\|07]]) | velocity → attitude, using the measured velocity | `/mission/velocity_target` + `/estimate/velocity` → `/control/attitude_setpoint` | ==🟢built== (flies in the simulator; on the drone it waits for the estimator, [[06 Final Connections and Missing Parts\|06]] §2.1) |
+| `controller_node` ([[07 Controller Node\|07]]) | velocity → attitude, using the measured velocity | `/mission/velocity_target` + `/estimate/velocity` → `/control/attitude_setpoint` | ==🟢built== (flies in the simulator only; on the drone Betaflight holds position, [[06 Final Connections and Missing Parts\|06]] §2.1) |
 | `flight_interface` ([[05 Flight Interface Node\|05]]) | sends setpoints to the drone safely, publishes the real `/flight/state` | setpoints → ESP (or PX4 in the simulator), drone → `/flight/state` | ==🟢built== (ESP and PX4 backends) |
 | ESP8266 firmware ([[Protocol Spec v0]]) | bridges Wi-Fi to the FC | packets → MSP | ==🔴planned== |
 
@@ -159,7 +159,7 @@ A trained landmark classifier instead of the rule-based `recognize()`, and the s
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data (the drone link). |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
 | **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
-| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4 in the simulation, from the estimator (#200) on the drone. |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
 | **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
 | **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
