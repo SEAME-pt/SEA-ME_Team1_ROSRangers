@@ -212,7 +212,7 @@ sd::LinkConfig make_config() {
   c.failsafe_output = sd::FailsafeOutput::kNeutralThenStop; // 2026.6.2
   memcpy(c.fw_version, kFwVersion, sd::kFwVersionSize);
   c.random = hardware_random;
-  c.late_bound_ms = sd::kLateBoundMs; // #204: 200 ms, provisional
+  c.late_bound_ms = sd::kLateBoundMs; // 200 ms, confirmed on #219
   return c;
 }
 

@@ -112,7 +112,7 @@ The Receiver runs every check on each incoming frame: seal, session, message typ
 
 ## LateCheck: frames that arrive too late (#171, #204)
 
-Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or RESUME_REQUEST that arrived more than 200 ms (provisional) after it was sent, against the session's offset between the ground's clock and the ESP's.
+Spec §4 rule 3a. The ESP's Receivers refuse a SETPOINT, ARM_CONTROL_REQUEST or RESUME_REQUEST that arrived more than 200 ms (confirmed 2026-11-25 by the ESP-S1-09 re-run, #219) after it was sent, against the session's offset between the ground's clock and the ESP's.
 
 | Test | What it does | Why it matters |
 |---|---|---|
