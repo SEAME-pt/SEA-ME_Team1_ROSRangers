@@ -14,8 +14,13 @@ without it, so the bridge and HIL builds are unchanged.
 import json
 import os
 import pathlib
+import sys
 
 Import("env")
+
+# A pre: script has no __file__; ota_guard.py sits next to it.
+sys.path.insert(0, env.subst("$PROJECT_DIR"))
+import ota_guard  # noqa: E402
 
 CONFIG_DIR = pathlib.Path.home() / ".config" / "seame-drone"
 
@@ -61,15 +66,13 @@ env.Append(
     + [("AP_CHANNEL", channel)]
 )
 if env.GetProjectOption("upload_protocol", "") == "espota":
-    # The drone runs at 80 MHz flash (#218). An OTA image with another flash
-    # clock makes eboot rewrite the bootloader sector at the next boot, and a
-    # power loss then needs a USB recovery with the ESP off the FC (ADR-006).
-    f_flash = env.GetProjectOption("board_build.f_flash", "")
-    if f_flash != "80000000L":
-        env.Exit(
-            f"ERROR: OTA env with board_build.f_flash = {f_flash or 'the board default'}, "
-            "not 80000000L (#218). Merge dev into this branch before any OTA."
-        )
+    # An OTA image must keep the drone's bootloader sector: 80 MHz flash, the
+    # same platform, board and flash layout (ota_guard.py, #218, ADR-006). It
+    # checks the build, not the drone: after a USB restore of a 40 MHz backup,
+    # read the running clock (`bus` in late_log.py) before any OTA.
+    refusal = ota_guard.ota_refusal(lambda name: env.GetProjectOption(name, ""))
+    if refusal is not None:
+        env.Exit(refusal)
     # UPLOAD_FLAGS, not UPLOADERFLAGS: the platform builder runs after this
     # pre: script and replaces UPLOADERFLAGS for espota.
     env.Append(UPLOAD_FLAGS=[f"--auth={values['OTA_PASS']}"])

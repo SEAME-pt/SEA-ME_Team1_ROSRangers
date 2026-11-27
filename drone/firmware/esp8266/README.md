@@ -18,7 +18,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 | Wi-Fi settings | Stored in the ESP flash by AT commands | Compiled in at build time from `~/.config/seame-drone/` (`secrets.py`) |
 | Channel change | `network setup --channel`, ESP on USB | Edit `bridge.json`, rebuild, OTA upload |
 | Updates | USB only | OTA over Wi-Fi (port 8266, password), USB for the first flash and recovery |
-| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DIO: header byte 2 = `02` in the drone's 2026-10-22 backup, and OTA keeps the running mode; 80 MHz since #218), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
+| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DIO: header byte 2 = `02` in the drone's 2026-10-22 backup, and OTA keeps the running mode of an uncompressed image; 80 MHz since #218), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
 | Sleep | Set by hand (`AT+SLEEP`) | `WIFI_NONE_SLEEP` always |
 | AT commands | Yes | No: `esp_at.py` checks that send `AT` fail |
 
@@ -93,7 +93,7 @@ Back up the flash before the first custom flash (`drone/tools/bench/esp_at.py ba
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
-Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). After an OTA, `eboot` rewrites the bootloader sector (its first 4 KB) when that sector differs from the new image's: a flash clock or size change, or a new `eboot` from a platform update. A power loss during that rewrite needs a USB recovery (ADR-006 entry of 2026-11-26, #218). `secrets.py` refuses an OTA env that isn't at 80 MHz, but branches cut from `dev` before #218 don't have that check and still build the OTA envs at 40 MHz: **merge `dev` into a branch before any OTA from it.** An OTA that does change that sector (for example after a platform version bump) is done over USB, or with a charged battery and nobody touching the power until the SoftAP is back, as on 2026-11-26.
+Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). After an OTA, `eboot` rewrites the bootloader sector (its first 4 KB) when that sector differs from the new image's: a flash clock or size change, or a new `eboot` from a platform update. A power loss during that rewrite needs a USB recovery (ADR-006 entry of 2026-11-26, #218). `secrets.py` refuses an OTA env that isn't at 80 MHz or doesn't use the same platform, board and flash layout (`ota_guard.py`). The guard checks the build, not the drone: after a USB restore of a 40 MHz backup, an 80 MHz OTA still rewrites sector 0, so read the running clock first (`bus` in `late_log.py`). Branches cut from `dev` before #218 don't have that check and still build the OTA envs at 40 MHz: **merge `dev` into a branch before any OTA from it.** When that sector has to change (for example after a platform version bump), flash such an image over USB (`env:esp`, ESP off the FC), or OTA it with a charged battery and nobody touching the power until the SoftAP is back, as on 2026-11-26.
 
 ## Gateway (#101, #102, envs `esp`, `esp_ota`)
 
@@ -229,7 +229,8 @@ Pass: every cycle comes back by itself with the expected reason (`Software Watch
 | File | What |
 |---|---|
 | `platformio.ini` | Envs and platform version |
-| `secrets.py` | Pre-build script: Wi-Fi and OTA secrets, channel |
+| `secrets.py` | Pre-build script: Wi-Fi and OTA secrets, channel, the OTA guard |
+| `ota_guard.py` | Which settings an OTA env may have, so it keeps the drone's bootloader sector (#218); tests in `drone/tests/tools/test_ota_guard.py` |
 | `src/main.cpp` | The bridge (and the `WITH_*` diagnosis switches) |
 | `../../tools/bench/esp_timing.py` | Reads the `esp_diag_timing` reports |
 | `../../tools/bench/tcp_load.py` | S1-07 TCP load against `esp_diag_tcp` |
