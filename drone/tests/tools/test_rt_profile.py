@@ -1,6 +1,8 @@
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[3] / "drone" / "tools" / "bench")
 )
@@ -31,8 +33,15 @@ def test_parse_tasks_reads_the_rows_by_header():
     }
 
 
-def test_parse_tasks_reads_a_committed_capture():
-    log = REPO / "drone/config/betaflight/4.5.1/cli_read_2026-10-16_172704.txt"
+@pytest.mark.parametrize(
+    "log",
+    [
+        "drone/config/betaflight/4.5.1/cli_read_2026-10-16_172704.txt",
+        "drone/config/betaflight/2026.6.2/cli_read_2026-11-25_112409.txt",
+    ],
+)
+def test_parse_tasks_reads_a_committed_capture(log):
+    log = REPO / log
     names = [r["name"] for r in rt_profile.parse_tasks(log.read_text())]
     assert {"GYRO", "PID", "SERIAL"} <= set(names)
 
