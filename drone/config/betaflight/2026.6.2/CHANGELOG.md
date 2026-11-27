@@ -80,6 +80,8 @@ Lines added on top of the baseline (Thiago, #189 comment of 2026-11-27):
 
 | Setting | Before | After | Why |
 |---|---|---|---|
-| `acc_calibration` | 43,27,-26,1 | **1,0,-46,1** | Re-calibrated on the new FC (#189) by Paulo, drone flat and still (`MSP_ACC_CALIBRATION` over USB; the 2026.6.2 app has no button for it). |
+| `acc_calibration` | 43,27,-26,1 | **1,0,-46,1** | Re-calibrated on the new FC (#189) by Paulo with the drone fully assembled, props off, flat and still (`MSP_ACC_CALIBRATION` over USB; the 2026.6.2 app has no button for it). |
+
+Motor pole count checked the same day (#189, Open Questions "Physical checks"): one motor bell has 12 magnets, so `motor_poles = 12` is right and stays (no change).
 
 Nothing else changed: the rest of the file is the same as `diff_all_2026-11-25_112415.txt`. Read-only capture: `cli_read_2026-11-27_145007.txt`.
