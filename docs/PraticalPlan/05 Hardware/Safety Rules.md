@@ -49,11 +49,11 @@ tags:
     - the **60 % throttle limit** stays in the Betaflight config (`throttle_limit_percent = 60`, `drone/config/betaflight/2026.6.2/`).
 
     Fly low, short and away from anything overhead. A height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06).
-20. **USB: unplug by the plug, with strain relief** (added 2026-11-27, prevention from incident GitHub #184, where the FC USB connector was torn off the board while unplugging; the FC was replaced, #189). Applies to the FC and the ESP USB connectors.
+20. **USB: unplug by the plug, with strain relief** (added 2026-11-27, prevention from incident GitHub #184, where the FC USB connector was torn off the board while unplugging; the FC was replaced, #189). Applies to the FC USB on the drone, and to any USB board on the bench (for example the spare ESP). The drone's ESP never has USB plugged in while it is wired to the FC (#9).
     - **Strain relief:** tape or tie the USB cable to the frame or the bench before the session, so a pulled or snagged cable loads the tape, not the connector.
     - **Unplug** by holding the plug, never the cable. Pull straight out, never at an angle, and hold the board or frame with the other hand.
-    - **Never move, turn or lift the drone** while a USB cable is plugged in. Unplug first.
-    - **Inspect** the USB connector and its solder joints before a session that uses USB. A loose connector or a cracked joint: stop, and file it (#12).
+    - **With props on, no USB cable is plugged in** (new with this rule; #3 and #16 already keep USB to the props-off stages). **With props off**, the drone may be held and moved with USB plugged in, for example for sensor checks (#108, #200): the cable has slack and is taped to the frame, the person holding the drone keeps the cable in the same hand or next to it, and nobody walks between the drone and the PC. Holding it follows #18: disarmed, and nothing on the PC can drive the motors (no Motors tab, motor-direction tool or MSP through the bridge; the Sensors tab is fine).
+    - **Inspect** the USB connector and its solder joints before a session that uses USB. A loose connector or a cracked joint: stop, and file it (rule #12).
 21. **No props-on flight until the flight cage is in the lab** (added 2026-11-27; team decision of 2026-11-26, GitHub #239). The netted cage the facilitators are buying replaces today's clear area (glossary "Cage"). Until it is delivered and set up, all drone work is **props off on the bench**, and every flight issue waits for #239 (#134, #201, #240). The glossary and the session rules inside the net are updated when the cage arrives (#239).
 
 ---
@@ -101,6 +101,7 @@ tags:
 | **LiPo** | Lithium-polymer battery: the 4S flight pack. Handle it by the rules in Safety Rules. |
 | **Bridge** | The transparent UART↔UDP bridge: the ESP forwards bytes between the FC UART and the ground over Wi-Fi without parsing them. |
 | **USB** | Universal Serial Bus: used to flash the ESP and to power or configure the FC from a PC. |
+| **Strain relief** | Tape or a cable tie that holds a cable to the frame or the bench, so a pull or snag loads the tape and not the connector's solder joints (rule #20, incident #184). |
 | **REQ-SAF-001 to 008** | Safety requirements (old IDs SAF-01 to SAF-08) defined in ESP_to_FC §8 and registered in [[Requirements]]: independent ELRS path, pilot takeover, no arming from code. |
 | **Cage** | Not a physical cage: a clear area in the lab with at least 1.20 m to any obstacle on every side, and no net or roof. Flights happen only there. (Corrected 2026-10-29: earlier pages said "netted cage", #126.) |
 | **ELRS** | ExpressLRS: the open-source radio-control link between the RadioMaster Pocket and the BETAFPV Nano receiver on the drone. |
