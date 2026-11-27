@@ -61,9 +61,9 @@ Configuration after the changes above. Same as `diff_all_2026-10-28.txt` plus `a
 
 | Item | Value |
 |---|---|
-| FC | New ODDITYRCF7AIO (STM32F722), USB serial `386236743135`, `mcu_id 002f003e3135511038333636`. Replaced by Thiago with team approval on 2026-11-25; the old FC is retired (its USB data path was damaged, #184) |
-| Firmware | Betaflight 2026.6.2 cloud build (`e0b7bb01b`): CRSF, OSD (analog), DSHOT, Pin IO, VTX, Optical Flow, Range Finder, Altitude Hold, Position Hold. No GPS |
-| Settings | The `diff_all_2026-10-30.txt` baseline, without `acc_calibration`, plus the MTF-02P setup below. Captured read-only in `diff_all_2026-11-25_112415.txt` |
+| FC | New ODDITYRCF7AIO (STM32F722), USB serial `386236743135`, `mcu_id 002f003e3135511038333636`. Replaced by Thiago on 2026-11-25; the old FC is retired (its USB data path was damaged, #184) |
+| Firmware | Betaflight 2026.6.2 cloud build (`e0b7bb01b`), build key `d093b8fa48a8292d13ad3552d950be36` (from `status`): CRSF, OSD (analog), DSHOT, Pin IO, VTX, Optical Flow, Range Finder, Altitude Hold, Position Hold. No GPS, no Flight Plan. **Not** the 2026-10-28 hex above, which has GPS: do not flash that one to this FC. The no-GPS hex is not attached yet |
+| Settings | The `diff_all_2026-10-30.txt` baseline, without the old FC's `acc_calibration` (`21,-11,-52,1`), plus the MTF-02P setup below. The new board was first calibrated on 2026-11-25 (`43,27,-26,1`), before it was fully assembled. Captured read-only in `diff_all_2026-11-25_112415.txt` |
 
 Lines added on top of the baseline (Thiago, #189 comment of 2026-11-27):
 
