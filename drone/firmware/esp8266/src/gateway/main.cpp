@@ -5,7 +5,8 @@
 // What it does:
 // - FC link (ADR-009): one scheduler (sd::FcLink) owns UART0 = FC UART4. It
 //   polls MSP_ATTITUDE (25 Hz), MSP_STATUS / MSP_ANALOG (5 Hz) and
-//   MSP_API_VERSION (1 Hz), and sends MSP_SET_RAW_RC ahead of the polls. Every
+//   MSP_API_VERSION (1 Hz), and sends MSP_SET_RAW_RC ahead of the polls,
+//   except an urgent status or box list poll on a slow FC (#252). Every
 //   MSP frame goes through the allow-list in sd::msp; nothing from the network
 //   is ever written to the UART.
 // - Ground link (Protocol Spec v0): the ESP Link State Machine (sd::Link) on

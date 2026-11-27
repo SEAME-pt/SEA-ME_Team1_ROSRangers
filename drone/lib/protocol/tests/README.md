@@ -268,6 +268,10 @@ The ESP speaks MSP v1 to the FC over the UART (ADR-009). It may only send the co
 | `FcLink.OverrideBoxOnTheSecondPage` | Page 0 has 32 boxes without 50: the next request asks for page 1 (payload 1), box 50 is its 4th entry → box 35, read from the extra mode byte | Works on an FC with more than 32 modes |
 | `FcLink.BoxListExpiresWhenNotReadFor10Seconds` | The FC answers everything but MSP_BOXIDS: 10 s after the last list, `override_state()` is unknown although STATUS still says bit 22 is on | A box list that is no longer confirmed is never trusted |
 | `FcLink.ALostBoxIdsPageRestartsFromPageZero` | Page 0 full, the page-1 request times out: the next MSP_BOXIDS asks for page 0 again | A lost reply never leaves the list half-read for good |
+| `FcLink.ASlowFcKeepsOverrideKnownWhileRcStreams` | An FC that answers every request 19 ms late (Betaflight's SERIAL task at 100 Hz, as on the drone on 2026-11-26) with RC at 50 Hz for 30 s: the status stays under 500 ms old, `override_state()` is never unknown, the box list is never forgotten, and no RC gap reaches 100 ms | On a slow FC, RC no longer starves the status and box list polls: `override` stays known while streaming (#252). Fails without the urgent poll |
+| `FcLink.ASlowFcKeepsOverrideKnownAcrossTheMillisWrap` | The same slow FC, starting 15 s before `millis()` wraps: status fresh, override known, RC accepted throughout | The urgent poll survives the 49.7-day wrap (#252) |
+| `FcLink.ASlowFcReadsABoxListLongerThanOnePage` | The slow FC with 32 boxes on page 0 and MSP OVERRIDE on page 1 (box 35): the box is found, override never unknown, RC accepted throughout | Page 1 of a long box list also goes before RC, so the list is never forgotten on a slow FC (#252 review) |
+| `FcLink.AnFcSilentOnStatusIsNoWorseThanBefore252` | The slow FC never answers MSP_STATUS for 30 s: at most 17 timeouts and at most 15803 ms of RC not accepted, the numbers measured before #252 (139 and 27001 without the back-off) | The `kUrgentBackoffMs` back-off: an urgent request that times out does not cost RC ~120 ms every cycle (#188, #252 review) |
 
 ## Link: the ESP link state machine (#102)
 

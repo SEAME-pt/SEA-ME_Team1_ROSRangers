@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "sd/fc_link.hpp"
@@ -813,4 +814,153 @@ TEST(FcLink, ALostBoxIdsPageRestartsFromPageZero) {
   EXPECT_EQ(pages[1], 1);
   EXPECT_EQ(pages[2], 0);
   EXPECT_FALSE(fc.has_boxes());
+}
+
+// #252: an FC that answers every request 19 ms after it was sent, as the drone
+// does with Betaflight's SERIAL task at 100 Hz. 2026-11-26 link test: 83
+// requests in 1.55 s (~54 a second, ~19 ms each), 79 of them RC. An RC answer
+// then arrives just after the next RC is due, so without #252 no poll fits.
+// RC at 50 Hz from `start`. By default: box list with MSP OVERRIDE on box 22,
+// override on.
+namespace {
+
+struct SlowFc {
+  std::uint32_t start = 0; // the first ms (near 0xFFFFFFFF tests the wrap)
+  std::uint32_t duration = 30000;
+  std::uint32_t warm_up = 3000; // checks start after this
+  int silent_cmd = -1;          // this command is never answered
+  Bytes page0 = kBoxIdsMask8;
+  Bytes page1; // answered to a page-1 request
+  Bytes status = kStatusOverrideOn;
+};
+
+struct SlowFcRun {
+  std::uint32_t worst_status_age = 0; // after the warm-up
+  std::uint32_t unknown_override_ms = 0;
+  std::uint32_t not_accepted_ms = 0; // rc_accepted() false
+  std::uint32_t longest_rc_gap = 0;  // between two RC frames sent
+};
+
+SlowFcRun run_slow_fc(sd::FcLink &fc, const SlowFc &setup) {
+  constexpr std::uint32_t kAnswerMs = 19;
+  const std::uint16_t ch[sd::msp::kRcChannels] = {1500, 1500, 1000, 1500,
+                                                  1500, 1500, 1500, 1500};
+  SlowFcRun run;
+  int pending = -1; // the command waiting for its answer
+  bool page1_req = false;
+  std::uint32_t sent_at = 0;
+  bool rc_seen = false;
+  std::uint32_t last_rc = 0;
+  for (std::uint32_t i = 0; i <= setup.duration; ++i) {
+    const std::uint32_t t = setup.start + i; // wraps like millis()
+    if (i % 20 == 0) {
+      fc.set_rc(ch);
+    }
+    if (pending >= 0 && t - sent_at >= kAnswerMs) {
+      Bytes payload;
+      if (pending == sd::msp::kStatus) {
+        payload = setup.status;
+      } else if (pending == sd::msp::kBoxIds) {
+        payload = page1_req ? setup.page1 : setup.page0;
+      } else if (pending == sd::msp::kApiVersion) {
+        payload = {0, 1, 48};
+      } else if (pending != sd::msp::kSetRawRc) {
+        payload = Bytes(9, 0);
+      }
+      if (pending != setup.silent_cmd) {
+        answer(fc, reply_frame(static_cast<std::uint8_t>(pending), payload), t);
+      }
+      pending = -1;
+    }
+    if (pending < 0) {
+      Bytes req;
+      const int cmd = poll_frame(fc, t, req);
+      if (cmd >= 0) {
+        pending = cmd;
+        page1_req = cmd == sd::msp::kBoxIds && req[3] == 1 && req[5] == 1;
+        sent_at = t;
+        if (cmd == sd::msp::kSetRawRc) {
+          if (rc_seen) {
+            run.longest_rc_gap = std::max(run.longest_rc_gap, t - last_rc);
+          }
+          rc_seen = true;
+          last_rc = t;
+        }
+      }
+    }
+    if (i < setup.warm_up) {
+      continue;
+    }
+    run.worst_status_age =
+        std::max(run.worst_status_age, t - fc.telemetry().status_ms);
+    if (fc.override_state(t) == sd::OverrideState::kUnknown) {
+      ++run.unknown_override_ms;
+    }
+    if (!fc.rc_accepted(t)) {
+      ++run.not_accepted_ms;
+    }
+  }
+  return run;
+}
+
+} // namespace
+
+TEST(FcLink, ASlowFcKeepsOverrideKnownWhileRcStreams) {
+  // Before #252 the status went 1-3 s stale here and override stayed unknown.
+  sd::FcLink fc;
+  const SlowFcRun run = run_slow_fc(fc, SlowFc{});
+  EXPECT_LT(run.worst_status_age, sd::kOverrideStatusMaxAgeMs);
+  EXPECT_EQ(run.unknown_override_ms, 0U);
+  // The box list is read again before it would be forgotten (10 s).
+  EXPECT_TRUE(fc.has_boxes());
+  // RC still flows: no gap reaches kRcMaxGapMs, so ARM / RESUME stay possible.
+  EXPECT_LT(run.longest_rc_gap, sd::kRcMaxGapMs);
+  EXPECT_EQ(run.not_accepted_ms, 0U);
+  EXPECT_GE(fc.counters().rc_sent, 1350U); // of 1501 RC sets in 30 s
+  EXPECT_EQ(fc.counters().timeouts, 0U);
+}
+
+TEST(FcLink, ASlowFcKeepsOverrideKnownAcrossTheMillisWrap) {
+  sd::FcLink fc;
+  SlowFc setup;
+  setup.start = 0xFFFFFFFFU - 15000U; // wraps half way through the 30 s
+  const SlowFcRun run = run_slow_fc(fc, setup);
+  EXPECT_LT(run.worst_status_age, sd::kOverrideStatusMaxAgeMs);
+  EXPECT_EQ(run.unknown_override_ms, 0U);
+  EXPECT_EQ(run.not_accepted_ms, 0U);
+}
+
+TEST(FcLink, ASlowFcReadsABoxListLongerThanOnePage) {
+  // 32 boxes on page 0 without MSP OVERRIDE: page 1 must get a slot too, or
+  // the list is never read again and override turns unknown after 10 s.
+  sd::FcLink fc;
+  SlowFc setup;
+  setup.page0.clear();
+  for (std::uint8_t i = 0; i < 32; ++i) {
+    setup.page0.push_back(i < 30 ? i : static_cast<std::uint8_t>(i + 30));
+  }
+  setup.page1 = {51, 52, 53, 50, 57}; // MSP OVERRIDE is box 35
+  setup.status = kStatusOverrideOff;
+  setup.status[15] = 1; // one extra mode byte ...
+  setup.status.insert(setup.status.begin() + 16, 0x08); // ... bit 35 on
+  const SlowFcRun run = run_slow_fc(fc, setup);
+  EXPECT_EQ(fc.override_box(), 35);
+  EXPECT_EQ(run.unknown_override_ms, 0U);
+  EXPECT_EQ(run.not_accepted_ms, 0U);
+}
+
+TEST(FcLink, AnFcSilentOnStatusIsNoWorseThanBefore252) {
+  // An FC that answers RC but never MSP_STATUS. An urgent request that times
+  // out costs RC a timeout and a drain (~120 ms gap, #188 needs 1 s of acks),
+  // so after one that kind waits kUrgentBackoffMs. Measured on this setup:
+  // before #252, 17 timeouts and RC not accepted for 15803 of 27001 ms (the
+  // normal status poll times out too); with #252 and no back-off, 139 and
+  // 27001. The back-off keeps it at the old numbers.
+  sd::FcLink fc;
+  SlowFc setup;
+  setup.silent_cmd = sd::msp::kStatus;
+  const SlowFcRun run = run_slow_fc(fc, setup);
+  EXPECT_LE(fc.counters().timeouts, 17U);
+  EXPECT_LE(run.not_accepted_ms, 15803U);
+  EXPECT_EQ(run.unknown_override_ms, 27001U); // no status: never known
 }

@@ -6,12 +6,12 @@
 namespace sd {
 
 FcLink::FcLink()
-    : polls_{{msp::kAttitude, kAttitudePeriodMs, 0, false},
-             {msp::kStatus, kStatusPeriodMs, 0, false},
-             {msp::kAnalog, kAnalogPeriodMs, 0, false},
+    : polls_{{msp::kAttitude, kAttitudePeriodMs, 0, false, false, 0},
+             {msp::kStatus, kStatusPeriodMs, 0, false, false, 0},
+             {msp::kAnalog, kAnalogPeriodMs, 0, false, false, 0},
              // Last: at start-up the polls above go first, as before.
-             {msp::kApiVersion, kApiVersionPeriodMs, 0, false},
-             {msp::kBoxIds, kBoxIdsPeriodMs, 0, false}} {}
+             {msp::kApiVersion, kApiVersionPeriodMs, 0, false, false, 0},
+             {msp::kBoxIds, kBoxIdsPeriodMs, 0, false, false, 0}} {}
 
 void FcLink::set_rc(const std::uint16_t channels[msp::kRcChannels]) {
   if (rc_pending_) {
@@ -60,6 +60,67 @@ bool FcLink::any_poll_due(std::uint32_t now_ms) const {
       });
 }
 
+FcLink::Poll *FcLink::most_overdue_poll(std::uint32_t now_ms) {
+  Poll *next = nullptr;
+  std::uint32_t most_late = 0;
+  for (Poll &p : polls_) {
+    const std::uint32_t since = now_ms - p.last_sent_ms;
+    if (p.sent_once && since < p.period_ms) {
+      continue;
+    }
+    const std::uint32_t late = p.sent_once ? since - p.period_ms : UINT32_MAX;
+    if (next == nullptr || late > most_late) {
+      next = &p;
+      most_late = late;
+    }
+  }
+  return next;
+}
+
+FcLink::Poll *FcLink::find_poll(std::uint8_t cmd) {
+  Poll *const found =
+      std::find_if(std::begin(polls_), std::end(polls_),
+                   [cmd](const Poll &p) { return p.cmd == cmd; });
+  if (found == std::end(polls_)) {
+    return nullptr;
+  }
+  return found;
+}
+
+FcLink::Poll *FcLink::urgent_poll(std::uint32_t now_ms) {
+  const auto is_urgent = [this, now_ms](const Poll &p) {
+    // A request of this kind timed out recently: not urgent (an FC that never
+    // answers it must not cost RC ~100 ms every cycle, #188).
+    if (p.timed_out && now_ms - p.timeout_ms < kUrgentBackoffMs) {
+      return false;
+    }
+    // The next page of a box list being read is urgent too, or a list longer
+    // than one page would never be read again on a slow FC.
+    if (p.cmd == msp::kBoxIds && box_page_ > 0) {
+      return true;
+    }
+    // Never before the first request of its kind (start-up keeps the usual
+    // order: attitude first, RC first), and only when due.
+    if (!p.sent_once || now_ms - p.last_sent_ms < p.period_ms) {
+      return false;
+    }
+    if (p.cmd == msp::kStatus) {
+      return !status_fresh(now_ms, kStatusUrgentAgeMs);
+    }
+    if (p.cmd == msp::kBoxIds) {
+      return !has_boxes_ || now_ms - boxes_ms_ >= kBoxIdsUrgentAgeMs;
+    }
+    return false;
+  };
+  // polls_ lists MSP_STATUS before MSP_BOXIDS, so the status goes first.
+  Poll *const found =
+      std::find_if(std::begin(polls_), std::end(polls_), is_urgent);
+  if (found == std::end(polls_)) {
+    return nullptr;
+  }
+  return found;
+}
+
 std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
                          std::size_t out_cap) {
   expire(now_ms);
@@ -75,6 +136,11 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     if (in_flight_cmd_ == msp::kBoxIds) {
       box_page_ = 0; // a lost page: read the list again from the start
     }
+    Poll *const lost = find_poll(in_flight_cmd_);
+    if (lost != nullptr) {
+      lost->timed_out = true; // #252: not urgent for kUrgentBackoffMs
+      lost->timeout_ms = now_ms;
+    }
     // A silent FC must not starve the polls: after an RC timeout one due poll
     // goes before the next RC, so the FC is seen when it answers again.
     poll_first_ = in_flight_cmd_ == msp::kSetRawRc;
@@ -89,7 +155,11 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     draining_ = false;
   }
   // RC goes first: it is the control output (50 Hz), the polls fit around it.
-  if (rc_pending_ && !(poll_first_ && any_poll_due(now_ms))) {
+  // Two exceptions: after an RC timeout one due poll goes first, and an urgent
+  // status or box list poll goes first on a slow FC (#252).
+  Poll *const urgent = urgent_poll(now_ms);
+  const bool poll_turn = poll_first_ && any_poll_due(now_ms);
+  if (rc_pending_ && urgent == nullptr && !poll_turn) {
     const std::size_t n = msp::encode_set_raw_rc(rc_, out, out_cap);
     if (n == 0) {
       return 0;
@@ -102,20 +172,12 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     ++counters_.rc_sent;
     return n;
   }
-  // The most overdue poll goes first, so a slow FC still gets every kind of
-  // request in turn. A poll never sent is the most overdue.
-  Poll *next = nullptr;
-  std::uint32_t most_late = 0;
-  for (Poll &p : polls_) {
-    const std::uint32_t since = now_ms - p.last_sent_ms;
-    if (p.sent_once && since < p.period_ms) {
-      continue;
-    }
-    const std::uint32_t late = p.sent_once ? since - p.period_ms : UINT32_MAX;
-    if (next == nullptr || late > most_late) {
-      next = &p;
-      most_late = late;
-    }
+  // An urgent poll goes as it is. Otherwise the most overdue poll goes first,
+  // so a slow FC still gets every kind of request in turn. A poll never sent
+  // is the most overdue.
+  Poll *next = urgent;
+  if (next == nullptr) {
+    next = most_overdue_poll(now_ms);
   }
   if (next == nullptr) {
     return 0;
@@ -161,6 +223,10 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   }
   in_flight_ = false;
   ++counters_.replies;
+  Poll *const answered = find_poll(reply.cmd);
+  if (answered != nullptr) {
+    answered->timed_out = false; // #252: urgent again when needed
+  }
   // #188: a new run after a timeout, or after a silence of kFcLostMs with no
   // request in flight (a stalled loop): checked before last_reply_ms_ moves.
   if (!alive_run_ || !any_reply_ || now_ms - last_reply_ms_ >= kFcLostMs) {

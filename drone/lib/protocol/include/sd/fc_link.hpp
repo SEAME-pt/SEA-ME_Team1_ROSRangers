@@ -30,6 +30,22 @@ constexpr std::uint32_t kApiVersionPeriodMs = 1000;
 constexpr std::uint32_t kBoxIdsPeriodMs = 1000;
 // override_state() needs an MSP_STATUS younger than this (polled at 5 Hz).
 constexpr std::uint32_t kOverrideStatusMaxAgeMs = 500;
+// #252: Betaflight answers MSP once per SERIAL task pass (100 Hz by default),
+// so each exchange takes ~19 ms on the drone and RC at 50 Hz can take every
+// slot.
+// A due MSP_STATUS poll goes before the next RC when the last status is this
+// old, so override_state() stays known: 300 ms, plus at most one RC in flight
+// (kReplyTimeoutMs), plus the status reply (kReplyTimeoutMs), is 400 ms, under
+// kOverrideStatusMaxAgeMs. It delays that RC by one exchange (~16 ms).
+constexpr std::uint32_t kStatusUrgentAgeMs = 300;
+// #252: likewise a due MSP_BOXIDS poll when the list is this old, so it is read
+// again long before kMaxValueAgeMs forgets it (override_state() needs it).
+constexpr std::uint32_t kBoxIdsUrgentAgeMs = 5000;
+// #252: after an urgent-kind request timed out, it is not urgent again for this
+// long. An FC that never answers it would otherwise cost RC a timeout and a
+// drain (~100 ms) every cycle, which breaks the 1 s of RC acks ARM and RESUME
+// need (#188). With 5 s it happens at most once every 5 s.
+constexpr std::uint32_t kUrgentBackoffMs = 5000;
 constexpr std::uint32_t kReplyTimeoutMs = 50;
 // After a timeout, nothing is sent for this long and any reply that arrives is
 // dropped, so a late reply that comes within the drain window is never taken as
@@ -105,7 +121,8 @@ public:
   std::size_t poll(std::uint32_t now_ms, std::uint8_t *out,
                    std::size_t out_cap);
 
-  // The RC channels (AETR) to send as MSP_SET_RAW_RC, ahead of every poll.
+  // The RC channels (AETR) to send as MSP_SET_RAW_RC, ahead of every poll
+  // except an urgent status or box list poll (#252).
   // Only the latest set is kept: one not sent yet is replaced (rc_replaced).
   // The firmware calls it at 50 Hz with what sd::Link::fc_output() returns.
   void set_rc(const std::uint16_t channels[msp::kRcChannels]);
@@ -158,6 +175,10 @@ private:
     std::uint32_t period_ms;
     std::uint32_t last_sent_ms;
     bool sent_once;
+    // #252: the last request of this kind timed out at timeout_ms (cleared by
+    // a reply), so it is not urgent for kUrgentBackoffMs.
+    bool timed_out;
+    std::uint32_t timeout_ms;
   };
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
@@ -165,6 +186,13 @@ private:
   void forget_boxes();
   void expire(std::uint32_t now_ms);
   bool any_poll_due(std::uint32_t now_ms) const;
+  // #252: the due poll that goes before RC (status, then the box list), or
+  // nullptr.
+  Poll *urgent_poll(std::uint32_t now_ms);
+  // The most overdue due poll (a poll never sent first), or nullptr.
+  Poll *most_overdue_poll(std::uint32_t now_ms);
+  // The poll of command `cmd`, or nullptr (RC is not a poll).
+  Poll *find_poll(std::uint8_t cmd);
 
   Poll polls_[5];
   bool rc_pending_ = false;
