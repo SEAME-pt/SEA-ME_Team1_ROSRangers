@@ -82,6 +82,8 @@ Only after Stages 1 and 2 pass:
 
 Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and #25 (session 2026-10-14). The "Who" column is the GitHub author of the record, not necessarily who ran the test. Raw files are in `results/` and `config/betaflight/4.5.1/` of the tooling branch (PR #11), not in this repo yet.
 
+**Flash clock:** on the drone, and with the bridge and diag builds, every run before 2026-11-26 was at 40 MHz flash. The HIL spare's `env:esp` has been at 80 MHz since 2026-11-19 (#212). From 2026-11-26 every env builds at 80 MHz (ADR-006, #218). Don't compare old and new runs as if only the change under test differed.
+
 **Setups:**
 
 - **2026-10-14:** the ESP alone on USB, no FC (#25).
@@ -156,21 +158,24 @@ From #30, 2026-10-16. With the initial `T_loss` = 250 ms ([[ADR-004 ESP Failsafe
 ### Still open
 
 - S1-08 current in mA (recorded as partial on 2026-10-23, no meter); the USB-meter method no longer works, method open (2026-11-06, #164). S1-07 and S1-10 (bridge part) passed on 2026-10-26; repeat S1-10 on the gateway firmware.
-- Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall.
+- Follow-ups from S1-09 (2026-10-23), not blocking: retry a reply when the ESP's Wi-Fi send queue is full, channel check 1 / 6 / 11, the 65–210 ms "FC" times seen right after a Wi-Fi stall. **2026-11-25 (#219):** the late re-run's run 1 (channel 6) had a ~400 ms stall at 10.0 min (after frame 29951; the next 16 frames arrived 215–456 ms late) that caused one link failsafe, and a 271 ms stall; runs 2 and 3 had none. Use these numbers for the channel check.
 - [[ESP_to_FC]] §10 photos of the soldered joints: not taken (the checks themselves were done, #69).
 - S2-05 and S2-06 on the soldered link. S2-02 passed on it (#69), numbers not recorded. S2-06 was not run: the link was only lost by accident (§4).
 
-### ESP-S1-09 re-run with the real `t_send_us` (#219, prepared 2026-11-19)
+### ESP-S1-09 re-run with the real `t_send_us` (#219, prepared 2026-11-19, run 2026-11-25)
 
-Confirms or retunes the late-check bound (Protocol Spec §4 rule 3a, 200 ms provisional) on real cage traffic. Same setup as the 2026-10-23 runs: drone in the cage, props off, battery on, laptop in the coding room, 3 × 10 min at 50 Hz. Needs the drone back (#189).
+Confirms or retunes the late-check bound (Protocol Spec §4 rule 3a, 200 ms provisional; **confirmed 2026-11-25**, §4 results log) on real cage traffic. Same setup as the 2026-10-23 runs: drone in the cage, props off, battery on, laptop in the coding room, 3 × 10 min at 50 Hz. Needs the drone back (#189).
 
-1. Flash the logging build over Wi-Fi: `pio run -d drone/firmware/esp8266 -e esp_late_log_ota -t upload`. It stays at 40 MHz flash like `esp_ota` (ADR-006, 2026-11-19). `ground_link.py` should report firmware `sd-gw 0.2.0L`.
-2. Terminal 1: `python3 drone/tools/bench/late_log.py listen --csv s1-09_late_run1.csv`. It prints the flash chip line once: note the **chip ID** on #218 and look up the chip's rated clock in its datasheet. The `bus` value is only the clock this build set (40 MHz), not what the chip can do. At the end it prints how many records the ESP had to drop, and saves it, with the dropped count and the record packets lost on the way, to `results/s1-09_late_run1.csv.info.json`.
+1. Flash the logging build over Wi-Fi: `pio run -d drone/firmware/esp8266 -e esp_late_log_ota -t upload`. It runs at 80 MHz flash like every env (ADR-006, 2026-11-26; at 40 MHz until then). `ground_link.py` should report firmware `sd-gw 0.2.0L`.
+2. Terminal 1: `python3 drone/tools/bench/late_log.py listen --csv s1-09_late_run1.csv`. It prints the flash chip line once: it showed chip ID `0016405e` (Zbit ZB25VQ32, rated 104 MHz, #218). The `bus` value is the clock the build set (80 MHz since 2026-11-26), not what the chip can do. At the end it prints how many records the ESP had to drop, and saves it, with the dropped count and the record packets lost on the way, to `results/s1-09_late_run1.csv.info.json`.
 3. Terminal 2: `python3 drone/tools/bench/ground_link.py` (the 50 Hz control stream, `t_send_us` from `CLOCK_MONOTONIC_RAW`), 10 min, then `q`; wait at least 2 s (the ESP sends its last batch, then the final counts and batch number), then Ctrl+C in terminal 1. Repeat for runs 2 and 3.
 4. `python3 drone/tools/bench/late_log.py analyze results/s1-09_late_run1.csv` for each run, and paste the tables on #219. **A run with a WARNING doesn't count:** dropped records or record packets lost on the way (the counts are incomplete, and a lost packet looks like a silence), an ESP restart during the run, or frames the replay refused with the check off (wrong order or sessions). Repeat it.
+   **2026-11-25 (BrunoBMFT, #219):** a run with lost record packets counts if every `T_loss` silence is checked against the missing records (the `seq` numbers before and after the silence) and only the silences that are not holes in the log are kept. Dropped records, a restart or refused replay frames still mean the run is repeated.
 5. Flash the flight build back: `pio run -d drone/firmware/esp8266 -e esp_ota -t upload`.
 
-**Pass** (BrunoBMFT's conditions, #171): "Extra failsafes" is 0 at the chosen bound; a run without Wi-Fi stalls refuses nothing; the largest lateness in normal traffic stays below the bound. A frame held back 250 ms or more is refused by construction (the bound is below 250 ms). If 200 ms fails, pick the smallest bound in the table that passes, then change `kLateBoundMs` with a dated spec §8 and ADR-003 entry.
+**Pass** (BrunoBMFT's conditions, #171): "Extra failsafes" is 0 at the chosen bound (reworded 2026-11-25, see below); a run without Wi-Fi stalls refuses nothing; the largest lateness in normal traffic stays below the bound. A frame held back 250 ms or more is refused by construction (the bound is below 250 ms). If 200 ms fails, pick the smallest bound in the table that passes, then change `kLateBoundMs` with a dated spec §8 and ADR-003 entry.
+
+**2026-11-25 (BrunoBMFT, #219): the first condition now reads:** "No extra failsafe from refusing frames younger than the bound. A stall that only delivers frames older than the bound counts as a link loss, and the failsafe it causes is expected." It always meant false failsafes in normal traffic. In run 1 a ~400 ms stall delivered only frames 0.2–0.44 s old; refusing them is the late check's job, and [[ADR-004 ESP Failsafe|ADR-004]] requires a failsafe after 250 ms of link loss. Result: **200 ms confirmed** (§4 results log, Protocol Spec v1.6.3).
 
 The log is one line per SETPOINT (`session_id`, `seq`, `t_send_us`, the check's receive time, `micros()`, the result) on UDP 5770 (`WITH_LATE_LOG` in `src/gateway/main.cpp`). The ESP keeps up to three batches of 20, sends a full batch at once (also right after the UDP reads, so the burst after a stall is kept), and sends a batch again 30 ms after a failed send (not on every loop pass, which would load the stalled link). Only a full buffer drops records, and they are counted; a new drop is reported within 1 s. The F line uses the same backoff. Every record packet carries a batch number, and the F line carries the next one (also sent once 1 s after the stream stops), so `listen` counts the packets lost in the air, including the last one. It splits the run at an ESP restart (the numbers start again at 0) and keeps the highest dropped count of each boot.
 

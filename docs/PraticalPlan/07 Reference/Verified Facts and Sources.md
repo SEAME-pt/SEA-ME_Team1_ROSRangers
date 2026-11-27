@@ -3,7 +3,7 @@ title: Verified Facts and Sources
 type: reference
 status: active
 date: 2026-10-12
-updated: 2026-11-24
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - reference
@@ -47,6 +47,8 @@ tags:
 | ArduPilot lists the ThoneFlow under CX-OF (25 Hz, different layout); a rangefinder is needed for height | ArduPilot wiki `common-cheerson-cxof.rst`, `AP_OpticalFlow_CXOF.cpp` |
 | MicoAir MTF-02P: flow + ToF height, 2 cm to 6 m, 2 cm accuracy below 2 m, 50 Hz, UART 115200 with MSP / MAVLink / Micolink (jumper), 5 V. Betaflight 2026.6.2 reads it as `rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT` | MicoAir product page, Betaflight 2026.6.2 source ([[Height Sensor Study]] §6, sources 4 and 8) |
 | ESP8266: `Serial.swap()` → GPIO15/13; `Serial1` TX-only; boot-strap pins; `WIFI_NONE_SLEEP`; signed OTA (RSA-2048 + SHA256); core 3.1.2 | `esp8266/Arduino` docs and tags |
+| ESP flash chip (drone and HIL spare): ID `0016405e` = JEDEC `5E 40 16`, Zbit ZB25VQ32, 4 MB, rated 104 MHz for the single, DOUT and DIO fast reads (0Bh, 3Bh, BBh); both run at 80 MHz. The drone's flash mode is DIO: header byte 2 = `02` in its 2026-10-22 backup, and an OTA keeps the running mode of an uncompressed image | **team** (`late_log.py` F line, 2026-11-26; backup header) + Zbit datasheet, #218 |
+| Arduino core 3.1.2 `eboot`: after an OTA it compares the whole bootloader sector (first 4 KB: `eboot` and the image header) with the new image's and rewrites it only when they differ. A flash clock or size change, or a new `eboot`, rewrites it. The mode byte doesn't: for an uncompressed image `Updater` sets its mode to the running one before writing (it skips gzip images; we never upload `.bin.gz`) | `esp8266/Arduino` 3.1.2 `bootloaders/eboot/eboot.c` L181–200, `cores/esp8266/Updater.cpp` L385–405 |
 | micro-ROS supports ESP32, not ESP8266 | micro_ros_arduino / micro_ros_platformio READMEs |
 | MediaPipe 1.1.0: aarch64 wheels, Python 3.9–3.14, no `mp.solutions` | PyPI + wheel contents |
 
