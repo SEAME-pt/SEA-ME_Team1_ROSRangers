@@ -325,11 +325,11 @@ void service_tcp(sd::Link &link, uint32_t now) {
 // batch number counts the packets that left the ESP, so late_log.py sees a
 // packet lost in the air as a gap (#219, #225 follow-up).
 //
-// The F line names the flash chip for #218: look its ID up in the chip's
-// datasheet for the rated clock. bus_hz (getFlashChipSpeed()) is only the
-// bus clock this build set (40 MHz on the drone), not what the chip is
-// rated for. It is sent rarely: the log itself adds ~2.5 packets/s on the
-// link it measures, which the flight build doesn't have.
+// The F line names the flash chip (#218: 0016405e, Zbit ZB25VQ32, rated
+// 104 MHz). bus_hz (getFlashChipSpeed()) is only the bus clock this build
+// set (80 MHz, platformio.ini), not what the chip is rated for. It is sent
+// rarely: the log itself adds ~2.5 packets/s on the link it measures, which the
+// flight build doesn't have.
 constexpr uint16_t kLateLogPort = 5770;
 constexpr size_t kLateLogBatch = 20;              // ~1.1 kB of text: one frame
 constexpr size_t kLateLogCap = 3 * kLateLogBatch; // the burst after a stall

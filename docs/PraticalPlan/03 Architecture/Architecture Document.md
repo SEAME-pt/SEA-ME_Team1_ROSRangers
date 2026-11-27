@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: active
 date: 2026-11-02
-updated: 2026-11-20
+updated: 2026-11-26
 project: SEA autonomous drone
 tags:
   - architecture
@@ -215,7 +215,7 @@ Plotted by `drone/tools/bench/rt_profile.py` from two logs, never by hand. Comma
 - **Betaflight 2026.6.2, 2026-11-25 capture (new FC after #189, USB, props off, no battery; log `drone/config/betaflight/2026.6.2/cli_read_2026-11-25_112409.txt`):** PID loop 8 kHz (7968 Hz), PID max load 46.2 % (avg 31.8 %), FILTER 27.0 % (15.4 %), GYRO 5.5 % (2.4 %), total 50.6 %. No task runs late in the gyro/filter/PID chain (`late` = 0). SERIAL's 2381 µs max is the CLI session itself. The 4.5.1 capture of 2026-10-16 (PID 57.9 %, total 51.5 % excluding SERIAL) stays in `drone/config/betaflight/4.5.1/` for comparison.
 ![[esp_loop_period.png]]
 
-- **ESP loop jitter, drone, 2026-11-17 capture (`sd-gw 0.2.0T`, 704 s UDP control stream, props off, 40 MHz flash clock; raw log `results/esp_loop_2026-11-17.csv`, not committed):** 18 993 758 loops, median 31 µs, p99 88 µs, p99.9 1.47 ms, p99.99 1.98 ms, max 6.17 ms. 55 526 loops (0.3 %) took 1 ms or more; one took 5 ms or more; none reached the 20 ms RC period (`MSP_SET_RAW_RC` at 50 Hz). The worst stall is under a third of that period, so `loop()` keeps up with the control stream. The 0.4–0.6 ms and 1–2 ms bumps are loops that handle a packet or an MSP exchange (assumption, not measured per path). Percentiles are bucket lower edges (buckets are at most 6.25 % wide): median 31 µs means 31–32 µs, p99 88 µs means 88–92 µs. The max is exact. The time spent sending the 1 Hz report is left out of the histogram on purpose; only this build has that cost. The capture was taken at 40 MHz flash; don't compare it with an 80 MHz capture (the HIL spare ESP runs at 80 MHz since #212).
+- **ESP loop jitter, drone, 2026-11-17 capture (`sd-gw 0.2.0T`, 704 s UDP control stream, props off, 40 MHz flash clock; raw log `results/esp_loop_2026-11-17.csv`, not committed):** 18 993 758 loops, median 31 µs, p99 88 µs, p99.9 1.47 ms, p99.99 1.98 ms, max 6.17 ms. 55 526 loops (0.3 %) took 1 ms or more; one took 5 ms or more; none reached the 20 ms RC period (`MSP_SET_RAW_RC` at 50 Hz). The worst stall is under a third of that period, so `loop()` keeps up with the control stream. The 0.4–0.6 ms and 1–2 ms bumps are loops that handle a packet or an MSP exchange (assumption, not measured per path). Percentiles are bucket lower edges (buckets are at most 6.25 % wide): median 31 µs means 31–32 µs, p99 88 µs means 88–92 µs. The max is exact. The time spent sending the 1 Hz report is left out of the histogram on purpose; only this build has that cost. The capture was taken at 40 MHz flash; don't compare it with an 80 MHz capture (the HIL spare ESP runs at 80 MHz since #212, the drone since #218, 2026-11-26).
 
 ## 5. Related pages
 
