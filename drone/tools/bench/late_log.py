@@ -61,6 +61,26 @@ from sd_protocol.setpoint import SETPOINT_SIZE  # noqa: E402
 PORT = 5770
 FIELDS = ("pc_time_s", "session", "seq", "t_send_us", "rx_us", "micros", "result")
 CHIP_FIELDS = ("chip_id", "vendor", "real_size", "bus_hz")
+# The drone's and the HIL spare's flash chip: Zbit ZB25VQ32, rated 104 MHz (#218).
+KNOWN_CHIP_ID = "0016405e"
+
+
+def chip_line(info):
+    """The F line for the operator. bus is the clock the build set, not the
+    chip's rating. A chip other than the known one gets a warning: its rated
+    clock must be checked before it runs at 80 MHz (ADR-006, #218)."""
+    line = (
+        f"flash chip: id {info['chip_id']}, vendor {info['vendor']}, "
+        f"{info['real_size']} bytes, bus {info['bus_hz']} Hz (the clock this build set)"
+    )
+    if info["chip_id"] != KNOWN_CHIP_ID:
+        line += (
+            f"\nWARNING: not the known chip {KNOWN_CHIP_ID} (Zbit ZB25VQ32, rated "
+            "104 MHz). Check this chip's datasheet before it runs at 80 MHz (#218)."
+        )
+    return line
+
+
 BOUNDS_MS = (100, 150, 200, 250)
 T_LOSS_US = 250_000
 REPLAY_KEY = bytes(32)  # the replay seals its own frames; any key works
@@ -404,12 +424,7 @@ def cmd_listen(args):
                 chip[k] == info[k] for k in CHIP_FIELDS
             )
             if not same_chip:
-                print(
-                    f"flash chip: id {info['chip_id']}, vendor {info['vendor']}, "
-                    f"{info['real_size']} bytes, bus {info['bus_hz']} Hz (the clock "
-                    "this build set, not the chip's rating: look the ID up for #218)",
-                    flush=True,
-                )
+                print(chip_line(info), flush=True)
             chip = info
     except KeyboardInterrupt:
         pass

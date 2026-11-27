@@ -93,7 +93,7 @@ Back up the flash before the first custom flash (`drone/tools/bench/esp_at.py ba
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
-Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). A 40 ↔ 80 MHz change makes the bootloader rewrite its own sector at the next boot, and a power loss then needs a USB recovery (ADR-006 entry of 2026-11-26, #218).
+Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). After an OTA, `eboot` rewrites the bootloader sector (its first 4 KB) when that sector differs from the new image's: a flash clock or size change, or a new `eboot` from a platform update. A power loss during that rewrite needs a USB recovery (ADR-006 entry of 2026-11-26, #218). `secrets.py` refuses an OTA env that isn't at 80 MHz, but branches cut from `dev` before #218 don't have that check and still build the OTA envs at 40 MHz: **merge `dev` into a branch before any OTA from it.**
 
 ## Gateway (#101, #102, envs `esp`, `esp_ota`)
 

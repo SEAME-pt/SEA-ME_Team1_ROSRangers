@@ -82,6 +82,8 @@ Only after Stages 1 and 2 pass:
 
 Recorded from GitHub #30 (comments of 2026-10-16, 2026-10-19 and 2026-10-23) and #25 (session 2026-10-14). The "Who" column is the GitHub author of the record, not necessarily who ran the test. Raw files are in `results/` and `config/betaflight/4.5.1/` of the tooling branch (PR #11), not in this repo yet.
 
+**Flash clock:** every run before 2026-11-26 was at 40 MHz flash, the bridge and diag builds included. From 2026-11-26 every env builds at 80 MHz (ADR-006, #218). Don't compare old and new runs as if only the change under test differed.
+
 **Setups:**
 
 - **2026-10-14:** the ESP alone on USB, no FC (#25).

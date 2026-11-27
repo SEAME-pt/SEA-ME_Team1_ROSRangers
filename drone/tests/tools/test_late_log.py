@@ -211,3 +211,16 @@ def test_a_packet_without_a_batch_line_has_no_batch():
     assert batch is None and chip["dropped"] == 0 and chip["next_batch"] == 57
     _, old, _ = late_log.parse_packet(b"F,001640ef,239,4194304,40000000,0\n", 0.0)
     assert old["next_batch"] is None  # an F line from #225's firmware
+
+
+def test_chip_line_warns_only_for_an_unknown_chip():
+    known = {
+        "chip_id": "0016405e",
+        "vendor": "94",
+        "real_size": "4194304",
+        "bus_hz": "80000000",
+    }
+    line = late_log.chip_line(known)
+    assert "bus 80000000 Hz" in line and "WARNING" not in line
+    other = dict(known, chip_id="001640ef")
+    assert "WARNING: not the known chip 0016405e" in late_log.chip_line(other)
