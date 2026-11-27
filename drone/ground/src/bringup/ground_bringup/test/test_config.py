@@ -39,7 +39,7 @@ except ImportError:
 PACKAGE = Path(__file__).resolve().parents[1]
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them)
-TEST_DOMAIN_ID = 97
+TEST_DOMAIN_ID = 79
 
 # node name -> (module, class)
 NODES = {
@@ -134,17 +134,23 @@ class ConfigFileTests(unittest.TestCase):
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
 class NodesDeclareEveryKeyTests(unittest.TestCase):
     def check(self, mode):
+        """Every node section of the mode file, on the real node. A node
+        whose package is not installed here is left out, and the others are
+        still checked; the test is reported as skipped at the end if any
+        was left out (PR #253 review). With REQUIRE_ROS_TESTS=1 (CI) a
+        missing package fails in node_class instead."""
         path = PACKAGE / "config" / f"{mode}.yaml"
         rclpy.init(
             args=["--ros-args", "--params-file", str(path)], domain_id=TEST_DOMAIN_ID
         )
+        missing = set()
         try:
             data = config(mode)
-            self.check_shared(mode)
             for name, section in data.items():
                 cls = node_class(name)
                 if cls is None:
-                    self.skipTest(f"{name} not installed")
+                    missing.add(name)
+                    continue
                 with self.subTest(mode=mode, node=name):
                     node = cls()
                     try:
@@ -156,18 +162,24 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
                             self.assertEqual(node.get_parameter(key).value, value, key)
                     finally:
                         node.destroy_node()
+            missing.update(self.check_shared(mode))
         finally:
             rclpy.shutdown()
+        if missing:
+            self.skipTest(f"not installed, not checked: {', '.join(sorted(missing))}")
 
     def check_shared(self, mode):
         """F15: every node the mode starts that declares a SHARED_KEYS key
         has the same value for it (from the file, or its default if the
-        file forgot it there)."""
+        file forgot it there). Compares the nodes that are installed here;
+        returns the names of those that are not."""
+        missing = set()
         values = {key: {} for key in SHARED_KEYS}
         for name in sorted(MODE_NODES[mode]):
             cls = node_class(name)
             if cls is None:
-                self.skipTest(f"{name} not installed")
+                missing.add(name)
+                continue
             node = cls()
             try:
                 for key in SHARED_KEYS:
@@ -178,6 +190,7 @@ class NodesDeclareEveryKeyTests(unittest.TestCase):
         for key, by_node in values.items():
             with self.subTest(mode=mode, key=key):
                 self.assertLessEqual(len(set(by_node.values())), 1, by_node)
+        return missing
 
     def test_real_dry_override_wins(self):
         # make real-dry: real.yaml, then -p backend:=loopback. The override
