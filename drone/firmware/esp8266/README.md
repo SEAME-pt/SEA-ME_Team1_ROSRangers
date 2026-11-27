@@ -18,7 +18,7 @@ Spike: #30 (ESP Bench Test Plan Stage 2). Results and open questions are in that
 | Wi-Fi settings | Stored in the ESP flash by AT commands | Compiled in at build time from `~/.config/seame-drone/` (`secrets.py`) |
 | Channel change | `network setup --channel`, ESP on USB | Edit `bridge.json`, rebuild, OTA upload |
 | Updates | USB only | OTA over Wi-Fi (port 8266, password), USB for the first flash and recovery |
-| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DIO, 80 MHz since #218), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
+| Flash map | 512 KB + 512 KB header, boot warning `mismatch map` | 4 MB (DIO: header byte 2 = `02` in the drone's 2026-10-22 backup, and OTA keeps the running mode; 80 MHz since #218), `eagle.flash.4m1m.ld`: ~1 MB for the app (334 KB used), no warning |
 | Sleep | Set by hand (`AT+SLEEP`) | `WIFI_NONE_SLEEP` always |
 | AT commands | Yes | No: `esp_at.py` checks that send `AT` fail |
 
@@ -93,7 +93,7 @@ Back up the flash before the first custom flash (`drone/tools/bench/esp_at.py ba
 
 If a build breaks OTA, the only way back is a USB recovery (above).
 
-Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). After an OTA, `eboot` rewrites the bootloader sector (its first 4 KB) when that sector differs from the new image's: a flash clock or size change, or a new `eboot` from a platform update. A power loss during that rewrite needs a USB recovery (ADR-006 entry of 2026-11-26, #218). `secrets.py` refuses an OTA env that isn't at 80 MHz, but branches cut from `dev` before #218 don't have that check and still build the OTA envs at 40 MHz: **merge `dev` into a branch before any OTA from it.**
+Never OTA an image with a different flash clock: every env is 80 MHz (`platformio.ini` `[env]`). After an OTA, `eboot` rewrites the bootloader sector (its first 4 KB) when that sector differs from the new image's: a flash clock or size change, or a new `eboot` from a platform update. A power loss during that rewrite needs a USB recovery (ADR-006 entry of 2026-11-26, #218). `secrets.py` refuses an OTA env that isn't at 80 MHz, but branches cut from `dev` before #218 don't have that check and still build the OTA envs at 40 MHz: **merge `dev` into a branch before any OTA from it.** An OTA that does change that sector (for example after a platform version bump) is done over USB, or with a charged battery and nobody touching the power until the SoftAP is back, as on 2026-11-26.
 
 ## Gateway (#101, #102, envs `esp`, `esp_ota`)
 
