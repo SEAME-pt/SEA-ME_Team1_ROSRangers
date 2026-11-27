@@ -3,7 +3,7 @@ title: Safety Rules
 type: safety
 status: active
 date: 2026-10-20
-updated: 2026-11-24
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - safety
@@ -49,6 +49,12 @@ tags:
     - the **60 % throttle limit** stays in the Betaflight config (`throttle_limit_percent = 60`, `drone/config/betaflight/2026.6.2/`).
 
     Fly low, short and away from anything overhead. A height sensor is proposed ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-06).
+20. **USB: unplug by the plug, with strain relief** (added 2026-11-27, prevention from incident GitHub #184, where the FC USB connector was torn off the board while unplugging; the FC was replaced, #189). Applies to the FC and the ESP USB connectors.
+    - **Strain relief:** tape or tie the USB cable to the frame or the bench before the session, so a pulled or snagged cable loads the tape, not the connector.
+    - **Unplug** by holding the plug, never the cable. Pull straight out, never at an angle, and hold the board or frame with the other hand.
+    - **Never move, turn or lift the drone** while a USB cable is plugged in. Unplug first.
+    - **Inspect** the USB connector and its solder joints before a session that uses USB. A loose connector or a cracked joint: stop, and file it (#12).
+21. **No props-on flight until the flight cage is in the lab** (added 2026-11-27; team decision of 2026-11-26, GitHub #239). The netted cage the facilitators are buying replaces today's clear area (glossary "Cage"). Until it is delivered and set up, all drone work is **props off on the bench**, and every flight issue waits for #239 (#134, #201, #240). The glossary and the session rules inside the net are updated when the cage arrives (#239).
 
 ---
 
