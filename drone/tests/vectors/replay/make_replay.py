@@ -10,7 +10,8 @@ These runs have no real t_send_us, so t_send_us is the nominal 50 Hz slot
 (seq x 20 ms), corrected for the PC sender's slot slips: the lowest lag in a
 ±30 s window steps by whole 20 ms slots when the sender slipped, and only
 those whole-slot steps are added back. Clock drift and Wi-Fi delay stay in
-the data. The S1-09 re-run with the real t_send_us replaces this (#204).
+the data. The S1-09 re-run with the real t_send_us (2026-11-25, #219)
+confirmed the 200 ms bound on real cage traffic.
 
 Run from the repository root: python3 drone/tests/vectors/replay/make_replay.py
 The CSVs are bench data and stay out of the repo (.gitignore); the C++ test
