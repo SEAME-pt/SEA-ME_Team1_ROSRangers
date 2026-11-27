@@ -53,6 +53,33 @@ Logs not in Git: `BTFL_BLACKBOX_LOG_PILOTIX-BROOK_20261029_122340` and `_144308`
 - **Drift:** level on the bench (pitch 0.1°, roll −0.1°) and level in flight, yet it drifts slowly. Without a position sensor that is expected.
 - **#131:** stable hover with no stick input until a physical contact drove one motor to 0 % and the others to ~91 %.
 
-## 2026-10-30 · `diff_all_2026-10-30.txt` (current)
+## 2026-10-30 · `diff_all_2026-10-30.txt`
 
 Configuration after the changes above. Same as `diff_all_2026-10-28.txt` plus `alt_hold_climb_rate`, `altitude_lpf`, `ap_hover_throttle`, `angle_limit = 15` and the rateprofile 0 throttle settings.
+
+## 2026-11-25 · New FC (#189, incident #184)
+
+| Item | Value |
+|---|---|
+| FC | New ODDITYRCF7AIO (STM32F722), USB serial `386236743135`, `mcu_id 002f003e3135511038333636`. Replaced by Thiago with team approval on 2026-11-25; the old FC is retired (its USB data path was damaged, #184) |
+| Firmware | Betaflight 2026.6.2 cloud build (`e0b7bb01b`): CRSF, OSD (analog), DSHOT, Pin IO, VTX, Optical Flow, Range Finder, Altitude Hold, Position Hold. No GPS |
+| Settings | The `diff_all_2026-10-30.txt` baseline, without `acc_calibration`, plus the MTF-02P setup below. Captured read-only in `diff_all_2026-11-25_112415.txt` |
+
+Lines added on top of the baseline (Thiago, #189 comment of 2026-11-27):
+
+| Setting | Why |
+|---|---|
+| `serial UART1 1 115200 57600 0 115200` | MTF-02P on UART1, MSP 115200 (ADR-011, ADR-016 update 2026-11-24) |
+| `rangefinder_hardware = MTF02P`, `opticalflow_hardware = MT` | The MTF-02P's ToF height and optical flow |
+| `altitude_source = RANGEFINDER_PREFER` | ALTHOLD prefers the rangefinder over the baro (ADR-016) |
+| `poshold_position_source = OPTICALFLOW_ONLY` | Position Hold from the flow, no GPS (ADR-016 update 2026-11-24) |
+| `aux 3 11 2 1700 2100 0 0` | POS HOLD on AUX3 1700–2100, the same SC range as ALTHOLD |
+| `ap_max_angle = 15` | The most the autopilot may tilt in ALTHOLD/POSHOLD, the same as `angle_limit = 15` (default 50) |
+
+## 2026-11-27 · `diff_all_2026-11-27_145012.txt` (current)
+
+| Setting | Before | After | Why |
+|---|---|---|---|
+| `acc_calibration` | 43,27,-26,1 | **1,0,-46,1** | Re-calibrated on the new FC (#189) by Paulo, drone flat and still (`MSP_ACC_CALIBRATION` over USB; the 2026.6.2 app has no button for it). |
+
+Nothing else changed: the rest of the file is the same as `diff_all_2026-11-25_112415.txt`. Read-only capture: `cli_read_2026-11-27_145007.txt`.

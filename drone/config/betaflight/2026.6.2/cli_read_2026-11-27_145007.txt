@@ -1,0 +1,163 @@
+# Read-only Betaflight CLI output. Nothing was saved to the FC.
+
+# ===== version
+# Betaflight / STM32F722 (F722) 2026.6.2 Nov 25 2026 / 09:07:45 (e0b7bb01b) MSP API: 1.48
+# config rev: 3a406c5
+# board: manufacturer_id: ODTY, board_name: ODDITYRCF7AIO
+
+# ===== status
+MCU: STM32F722xx CLK=216MHz, Vref=3.27V, Core temp=46degC
+STACK: 2048b (0x20010000)
+CONFIG: CONFIGURED (3913b / 16384b)
+
+DEVICES DETECTED: SPI=1, I2C=1 (0 errors)
+GYRO: (1) ICM42688P enabled locked dma
+ACC: ICM42688P
+BARO: DPS310
+RANGEFINDER: MTF02P
+OSD: MAX7456 (30 x 13)
+FLASH: JEDEC ID=0x00ef4018 16M
+
+BUILD KEY: d093b8fa48a8292d13ad3552d950be36 (2026.6.2)
+
+System Uptime: 5 seconds
+CPU:51%, cycle time: 126, GYRO rate: 7968, RX rate: 0, System rate: 10
+Voltage: 0.01V (0S battery - NOT PRESENT)
+Arming disable flags: RXLOSS CALIB CLI DSHOT_TELEM
+
+# ===== serial
+serial VCP 1 115200 57600 0 115200
+serial UART1 1 115200 57600 0 115200
+serial UART2 64 115200 57600 0 115200
+serial UART3 8192 115200 57600 0 115200
+serial UART4 1 115200 57600 0 115200
+serial UART6 0 115200 57600 0 115200
+
+# ===== get failsafe
+msp_override_failsafe = OFF
+Allowed values: OFF, ON
+
+failsafe_delay = 15
+Allowed range: 1 - 200
+
+failsafe_landing_time = 60
+Allowed range: 0 - 250
+
+failsafe_throttle = 1000
+Allowed range: 750 - 2250
+
+failsafe_switch_mode = STAGE1
+Allowed values: STAGE1, KILL, STAGE2
+
+failsafe_throttle_low_delay = 100
+Allowed range: 0 - 300
+
+failsafe_procedure = DROP
+Allowed values: AUTO-LAND, DROP, GPS-RESCUE
+
+failsafe_recovery_delay = 5
+Allowed range: 1 - 200
+
+failsafe_stick_threshold = 30
+Allowed range: 0 - 50
+
+# ===== get msp_override
+msp_override_channels_mask = 0
+Allowed range: 0 - 262143
+
+msp_override_failsafe = OFF
+Allowed values: OFF, ON
+
+# ===== get vbat
+vbat_max_cell_voltage = 435
+battery_profile 0
+Allowed range: 100 - 500
+Default value: 430
+
+vbat_full_cell_voltage = 410
+battery_profile 0
+Allowed range: 100 - 500
+
+vbat_min_cell_voltage = 330
+battery_profile 0
+Allowed range: 100 - 500
+
+vbat_warning_cell_voltage = 350
+battery_profile 0
+Allowed range: 100 - 500
+
+vbat_hysteresis = 1
+Allowed range: 0 - 250
+
+vbat_detect_cell_voltage = 300
+Allowed range: 0 - 2000
+
+use_vbat_alerts = ON
+Allowed values: OFF, ON
+
+vbat_cutoff_percent = 100
+Allowed range: 0 - 100
+
+vbat_display_lpf_period = 30
+Allowed range: 1 - 255
+
+vbat_sag_lpf_period = 2
+Allowed range: 1 - 255
+
+vbat_duration_for_warning = 0
+Allowed range: 0 - 150
+
+vbat_duration_for_critical = 0
+Allowed range: 0 - 150
+
+vbat_scale = 110
+Allowed range: 0 - 255
+
+vbat_divider = 10
+Allowed range: 1 - 255
+
+vbat_multiplier = 1
+Allowed range: 1 - 255
+
+vbat_sag_compensation = 100
+profile 0
+Allowed range: 0 - 150
+Default value: 0
+
+osd_vbat_pos = 234
+Allowed range: 0 - 65535
+
+# ===== get vtx_power
+vtx_power = 1
+Allowed range: 0 - 7
+Default value: 0
+
+# ===== tasks
+Task list             rate/hz  max/us  avg/us maxload avgload  total/ms   late    run reqd/us
+00 - (         SYSTEM)     10       1       0    0.0%    0.0%         0      0     76       0
+01 - (         SYSTEM)    996       3       0    0.2%    0.0%         4      0   7549       0
+02 - (           GYRO)   7968      10       2    7.9%    2.3%       159      0  60381       0
+03 - (         FILTER)   7968      32      20   25.4%   16.0%      1276      0  60381       0
+04 - (            PID)   7968      67      40   53.3%   32.5%      2410      0  60381       0
+05 - (            ACC)    995      10       5    0.9%    0.5%        36      2   7547       6
+06 - (       ATTITUDE)    498      14       7    0.6%    0.3%        28      1   3777      10
+07 - (             RX)     20      20      15    0.0%    0.0%         7      4    507      12
+08 - (         SERIAL)    100    2379       4   23.6%    0.0%        12      0    747      15
+09 - (       DISPATCH)    996       2       0    0.1%    0.0%         4      0   7549       1
+10 - (BATTERY_VOLTAGE)    199       4       2    0.0%    0.0%         3      0   1512       2
+11 - (BATTERY_CURRENT)     50       2       0    0.0%    0.0%         0      0    379       1
+12 - ( BATTERY_ALERTS)      5       4       2    0.0%    0.0%         0      0     38       3
+13 - (         BEEPER)    100       7       4    0.0%    0.0%         1      0    747       7
+14 - (        ALTHOLD)    100       1       0    0.0%    0.0%         0      0    747       1
+15 - (        POSHOLD)    100       6       0    0.0%    0.0%         0      2    747       5
+16 - (           BARO)     20      21       4    0.0%    0.0%         5      2    907       3
+19 - (       ALTITUDE)    100      13      11    0.1%    0.1%         5      2    747      12
+20 - (      TELEMETRY)    496       9       0    0.4%    0.0%         4      0   3747       1
+21 - (            OSD)     12      30      17    0.3%    0.2%        21     10   1542      26
+23 - (            CMS)     20       6       1    0.0%    0.0%         0      1    152       5
+24 - (        VTXCTRL)      5      30       1    0.0%    0.0%         0      2     38      29
+26 - (    ADCINTERNAL)      2       4       2    0.0%    0.0%         0      0      8       3
+28 - (  SPEED_NEGOT'N)     99       9       1    0.0%    0.0%         0      1    747       5
+29 - (      OSD_CTEXT)     99       6       0    0.0%    0.0%         0      1    747       3
+Check Functions (RX, ...)           8       3            0.0%         5
+Total                                                   51.9%
