@@ -43,7 +43,7 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     RECONNECT_AFTER = RECONNECT_EVERY = HANDSHAKE_TIMEOUT = TICK = 0.0
 
 from flight_interface.backends import make_backend
-from flight_interface.guard import NEUTRAL_WINDOW, ZERO, Guard
+from flight_interface.guard import NEUTRAL, NEUTRAL_WINDOW, Guard
 
 pytestmark = pytest.mark.skipif(esp_backend is None, reason="sd_protocol not installed")
 PACKAGE = pathlib.Path(esp_backend.__file__).parent if esp_backend else None
@@ -182,7 +182,7 @@ def test_no_gateway_is_an_error_not_an_exception(fake):
     backend = EspBackend(*addr, TEST_PSK)
     for i in range(10):
         assert backend.poll(i * TICK) == []
-        backend.send_setpoint(ZERO, i * TICK)
+        backend.send_setpoint(NEUTRAL, i * TICK)
     assert backend.errors >= 1 and not backend.session_open
     assert backend.request_resume(0.2, backend.session_id) is False
     backend.close()
@@ -873,9 +873,9 @@ def test_no_arm_on_a_session_the_esp_has_not_confirmed(clock, fake, backend):
 
 
 def test_a_setpoint_counts_only_when_it_went_out(clock, fake, backend):
-    assert backend.send_setpoint(ZERO, 0.0) is False  # no session yet
+    assert backend.send_setpoint(NEUTRAL, 0.0) is False  # no session yet
     clock.run(0.3)
-    assert backend.send_setpoint(ZERO, clock.now) is True
+    assert backend.send_setpoint(NEUTRAL, clock.now) is True
     assert backend.send_neutral(clock.now) is True
 
 

@@ -1,11 +1,32 @@
-# Simulation mode: the ground nodes against PX4 SITL + Gazebo.
-# ros2 launch ground_bringup sim.launch.py (make sim runs PX4, the XRCE agent
-# and px4_offboard_bridge in the px4 container; the bridge publishes
-# /flight/state). SIMULATION ONLY.
+# Simulation mode: the ground nodes against PX4 SITL + Gazebo. SIMULATION ONLY.
+# ros2 launch ground_bringup sim.launch.py starts gesture, intent, mission and
+# the controller. make sim also runs flight_interface (service
+# flight_interface_sim, backend px4: it needs px4_msgs, so only in its sim
+# image) and PX4 + the XRCE agent (the px4 container, which configures and
+# activates flight_interface, ADR-025 F22). flight_interface publishes
+# /flight/state from PX4.
 #
 # Only the values this mode sets; every other parameter keeps the default its
 # node declares. Each key must be a parameter its node declares
 # (test/test_config.py checks it).
+#
+# mask and hover_throttle are shared: every node of this mode that declares
+# one must have the same value (ADR-025 F15, test/test_config.py checks it).
+# The simulation's mask is set only here (F24): edit it, then restart
+# `make sim`. 8 yaw, 11 x y yaw, 15 all (throttle too). Under 8 and 11 a
+# simulated pilot in the px4 backend flies the other axes (ADR-025 F2).
 intent_node:
   ros__parameters:
     input_source: topic   # gesture_node's /gesture/raw, not UDP
+
+controller_node:
+  ros__parameters:
+    mask: 15              # the same as flight_interface's (F15)
+    hover_throttle: 0.73  # F20: measured in attitude Offboard (make sim-smoke, 2026-11-24)
+
+flight_interface:
+  ros__parameters:
+    backend: px4          # PX4 SITL through the XRCE agent (F3), never the drone
+    mask: 15              # the same as controller_node's (F15)
+    hover_throttle: 0.73  # F20, the same as controller_node's
+    publish_fc: false     # no FC in the simulation: no /fc/* (NO_FC in echo)

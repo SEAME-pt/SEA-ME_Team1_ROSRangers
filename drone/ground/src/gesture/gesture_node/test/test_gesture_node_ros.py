@@ -44,7 +44,7 @@ except ImportError:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 81
+TEST_DOMAIN_ID = 60
 
 
 class GestureProbe:

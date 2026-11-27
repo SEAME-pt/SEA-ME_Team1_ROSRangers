@@ -7,8 +7,9 @@
 # leave those values empty. Checked, with every problem on stderr:
 #   * env/MODE.env exists;
 #   * COMPOSE_PROFILES and GROUND_MODE are MODE (the file is that mode's);
-#   * GROUND_DOMAIN_ID is a whole number 0-101, not 81-98 (the tests'), not
-#     0 or 42 (the domains native runs use by default);
+#   * GROUND_DOMAIN_ID is a whole number 0-101, not 60-101 (the tests'
+#     block, ADR-025 E1.4 note 2026-11-27), not 0 or 42 (the domains native
+#     runs use by default); so a mode uses 1-41 or 43-59;
 #   * GROUND_DISCOVERY_RANGE is LOCALHOST or SUBNET;
 #   * no other filled-in env/*.env uses the same domain.
 # The file is read with grep, never sourced: nothing in it runs.
@@ -53,8 +54,8 @@ if [[ -z $domain ]]; then
     problem "GROUND_DOMAIN_ID is empty: ask the safety pilot"
 elif ! [[ $domain =~ ^[0-9]+$ ]] || ((10#$domain > 101)); then
     problem "GROUND_DOMAIN_ID must be a whole number 0-101, got '$domain'"
-elif ((10#$domain >= 81 && 10#$domain <= 98)); then
-    problem "GROUND_DOMAIN_ID $domain is in the tests' range 81-98"
+elif ((10#$domain >= 60)); then
+    problem "GROUND_DOMAIN_ID $domain is in the tests' block 60-101"
 elif ((10#$domain == 0 || 10#$domain == 42)); then
     # 0: a terminal with no ROS_DOMAIN_ID; 42: the native launch files'
     # default. A native flight_interface would join the mode (ADR-025 E1.4)

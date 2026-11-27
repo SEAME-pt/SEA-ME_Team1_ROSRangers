@@ -9,7 +9,21 @@
 # mounts ~/.config/seame-drone/psk.json (the PSK only, E3.2) read-only at
 # run time, at the path the node reads (/home/ros/.config/seame-drone/secrets.json).
 # The user has the host user's uid, so it can read that file (mode 600).
-FROM base
+#
+# Stages (the last one is the default, so a plain build is always the normal
+# image):
+#   flight_interface  the node; no px4_msgs. compose's flight_interface
+#                     service (real mode), make smoke, CI.
+#   px4_msgs          SIMULATION ONLY: px4_msgs built alone, from the PX4
+#                     image's source (the build context `px4`). Its own stage,
+#                     so a change to flight_interface's code never rebuilds it.
+#   sim               SIMULATION ONLY (#199, ADR-025 F3, F21): the
+#                     flight_interface stage plus the built px4_msgs, for the
+#                     px4 backend. compose's flight_interface_sim service
+#                     (make sim, make sim-smoke, make sim-hold) builds it with
+#                     target sim and the build context `px4` (the PX4 image,
+#                     make px4-image).
+FROM base AS flight_interface
 
 # pip for sd_protocol, pyserial for msp.py (SerialTransport); pytest (in
 # ros-base) runs the package's tests (make smoke runs them inside this image)
@@ -35,3 +49,23 @@ RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select flight_interface
 # defaults (ROS_DOMAIN_ID 42, LOCALHOST discovery) come from compose's
 # environment instead. backend:=esp: --ros-args -p backend:=esp
 CMD ["/ws/install/flight_interface/lib/flight_interface/flight_interface"]
+
+# ---------- SIMULATION ONLY (#199, ADR-025 F21) ----------
+# px4_msgs from the PX4 image, built again here. The PX4 image built it with
+# --symlink-install: its install/ is links into its build/ and src/, so only
+# the source (the .msg files, CMakeLists.txt, package.xml) is copied, and
+# colcon builds real files. Its release (release/1.17) matches PX4 v1.17's
+# messages. A few minutes the first time; the stage depends only on the base
+# image and that source, so it stays cached when flight_interface changes.
+FROM base AS px4_msgs
+COPY --from=px4 --chown=ros:ros /home/dev/ros2_px4_ws/src/px4_msgs src/px4_msgs
+RUN . /opt/ros/jazzy/setup.sh && colcon build --packages-select px4_msgs \
+    && rm -rf build log src
+
+# The normal image plus the built px4_msgs, next to flight_interface in
+# /ws/install (install/setup.bash finds every package there when sourced).
+FROM flight_interface AS sim
+COPY --from=px4_msgs /ws/install/px4_msgs /ws/install/px4_msgs
+
+# ---------- The default: the normal image (no px4_msgs) ----------
+FROM flight_interface

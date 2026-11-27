@@ -29,7 +29,7 @@ except ImportError:
     rclpy = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 93
+TEST_DOMAIN_ID = 75
 NODE = [sys.executable, "-m", "flight_interface.link_node"]
 
 

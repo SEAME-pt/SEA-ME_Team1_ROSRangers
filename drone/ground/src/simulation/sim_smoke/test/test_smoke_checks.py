@@ -3,17 +3,20 @@
 import math
 
 import pytest
-from px4_offboard_bridge.smoke_checks import (
+from sim_smoke.smoke_checks import (
     MASK_AXES,
     SMOKE_MASKS,
     Check,
     body_displacement,
+    first_non_finite,
     first_zero_after,
+    heading_change_deg,
     hover_check,
+    hover_drift_check,
     is_zero,
     limits_check,
-    loss_checks,
-    mask_setpoints_check,
+    loss_check,
+    mask_attitude_check,
     mask_targets_check,
     measured_speed_check,
     movement_check,
@@ -106,16 +109,43 @@ def test_mask_targets():
     assert not mask_targets_check([], 15).ok
 
 
-def test_mask_setpoints():
-    move = (0.3, 0.1, 0.0, 0.0)
-    climb = (0.0, 0.0, -0.2, 0.0)
-    yaw = (0.0, 0.0, 0.0, 0.3)
-    assert mask_setpoints_check([move, climb, yaw], 15).ok
-    assert mask_setpoints_check([move, yaw], 11).ok
-    assert not mask_setpoints_check([climb], 11).ok
-    assert mask_setpoints_check([yaw], 8).ok
-    assert not mask_setpoints_check([move], 8).ok
-    assert not mask_setpoints_check([], 11).ok
+HOVER = 0.6
+
+
+def attitude(roll=0.0, pitch=0.0, yaw_rate=0.0, throttle=HOVER, active=True):
+    return {
+        "roll": roll,
+        "pitch": pitch,
+        "yaw_rate": yaw_rate,
+        "throttle": throttle,
+        "active": active,
+        "reason": "ok" if active else "stale_velocity",
+    }
+
+
+def test_mask_attitude():
+    tilt = attitude(roll=-3.0, pitch=2.0)
+    climb = attitude(throttle=0.68)
+    yaw = attitude(yaw_rate=10.0)
+    assert mask_attitude_check([tilt, climb, yaw], 15, HOVER).ok
+    assert mask_attitude_check([tilt, yaw], 11, HOVER).ok
+    assert not mask_attitude_check([climb], 11, HOVER).ok  # throttle not owned
+    assert mask_attitude_check([yaw], 8, HOVER).ok
+    assert not mask_attitude_check([attitude(roll=1.0)], 8, HOVER).ok
+    assert not mask_attitude_check([attitude(pitch=1.0)], 8, HOVER).ok
+
+
+def test_mask_attitude_counts_only_active_setpoints():
+    # An inactive setpoint commands nothing (F8), whatever its numbers
+    ignored = attitude(roll=5.0, throttle=0.9, active=False)
+    check = mask_attitude_check([attitude(), ignored], 8, HOVER)
+    assert check.ok
+    assert "0 of 1 active" in check.detail and "1 inactive" in check.detail
+
+
+def test_mask_attitude_needs_an_active_setpoint():
+    assert not mask_attitude_check([], 11, HOVER).ok
+    assert not mask_attitude_check([attitude(active=False)], 11, HOVER).ok
 
 
 # ---------- direction ----------
@@ -172,26 +202,24 @@ def moving_then_zero(t_zero, end=12.0):
 
 
 def test_loss_within_limits_passes():
-    checks = loss_checks(10.0, moving_then_zero(10.2), moving_then_zero(10.25))
-    assert [c.ok for c in checks] == [True, True], checks
-    assert "200 ms" in checks[0].detail
+    check = loss_check(10.0, moving_then_zero(10.2))
+    assert check.ok, check
+    assert "200 ms" in check.detail
 
 
 def test_loss_too_slow_fails():
-    mission, px4 = loss_checks(10.0, moving_then_zero(10.4), moving_then_zero(10.35))
-    assert not mission.ok and not px4.ok
+    assert not loss_check(10.0, moving_then_zero(10.3)).ok
 
 
 def test_loss_never_zero_fails():
-    checks = loss_checks(10.0, moving_then_zero(99.0), moving_then_zero(10.1))
-    assert not checks[0].ok and checks[0].detail == "never zero"
-    assert checks[1].ok
+    check = loss_check(10.0, moving_then_zero(99.0))
+    assert not check.ok and check.detail == "never zero"
 
 
 def test_loss_without_intent_or_movement_fails():
-    assert not loss_checks(None, [], [])[0].ok
+    assert not loss_check(None, []).ok
     still = [(t, (0.0, 0.0, 0.0, 0.0)) for t in ticks(20, 12)]
-    assert not loss_checks(10.0, still, still)[0].ok
+    assert not loss_check(10.0, still).ok
 
 
 def test_hover_still_passes():
@@ -226,3 +254,76 @@ def test_summary():
     assert text.endswith("1/2 checks passed: FAILED")
     assert summary([Check("a", True, "x")]).endswith("ALL PASSED")
     assert summary([]).endswith("FAILED")
+
+
+# ---------- non-finite samples (a NaN must never pass) ----------
+def test_first_non_finite():
+    assert first_non_finite([(0.1, 0.0), (0.2, 0.0)]) is None
+    assert first_non_finite([(0.1, 0.0), (math.nan, 0.0)]) == 1
+    assert first_non_finite([(math.inf,)]) == 0
+
+
+@pytest.mark.parametrize(
+    "check",
+    [
+        lambda bad: limits_check([(0.1, 0.0, 0.0, 0.0), bad + (0.0,)]),
+        lambda bad: measured_speed_check([(0.0, 0.0, 0.0), bad]),
+        lambda bad: hover_check([(0.0, 0.0, 0.0), bad]),
+        lambda bad: hover_drift_check([(0.0, 0.0, -1.0), bad]),
+    ],
+)
+@pytest.mark.parametrize("bad", [(math.nan, 0.0, 0.0), (0.0, math.inf, 0.0)])
+def test_a_non_finite_sample_fails_and_is_named(check, bad):
+    result = check(bad)
+    assert not result.ok
+    assert "sample 1 is not finite" in result.detail
+
+
+def test_movement_with_a_non_finite_displacement_fails():
+    assert not movement_check("m", (0.0, math.nan, 0.0), "left", -1, 15).ok
+
+
+# ---------- REQ-SAF-017: the loss must be a real reaction ----------
+def test_loss_when_already_stopped_before_the_loss_fails():
+    # Moving at 1-5 s, zero from 5 s; intent lost at 15 s: the zero was
+    # already there, it is not a reaction to the loss
+    targets = [
+        (t, (0.0, -0.3, 0.0, 0.0) if t < 5.0 else (0.0,) * 4)
+        for t in ticks(20, 16, 1.0)
+    ]
+    check = loss_check(15.0, targets)
+    assert not check.ok and "not moving at the loss" in check.detail
+
+
+def test_loss_with_a_move_after_the_zero_fails():
+    targets = moving_then_zero(10.1)
+    targets.append((11.0, (0.0, -0.3, 0.0, 0.0)))
+    targets.sort()
+    check = loss_check(10.0, targets)
+    assert not check.ok and "move again" in check.detail
+
+
+def test_hover_drift():
+    still = [(1.0, 2.0, -1.5)] * 3
+    assert hover_drift_check(still).ok
+    assert hover_drift_check([(1.0, 2.0, -1.5), (1.2, 2.1, -1.4)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5), (1.3, 2.0, -1.5)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5), (1.0, 2.0, -1.2)]).ok
+    assert not hover_drift_check([(1.0, 2.0, -1.5)]).ok  # too few
+
+
+# ---------- heading ----------
+@pytest.mark.parametrize(
+    "start, end, expected",
+    [(0.0, 15.0, 15.0), (179.0, -179.0, 2.0), (-170.0, 170.0, 20.0), (10.0, 10.0, 0.0)],
+)
+def test_heading_change_deg_wraps(start, end, expected):
+    turned = heading_change_deg(math.radians(start), math.radians(end))
+    assert turned == pytest.approx(expected)
+
+
+def test_movement_that_turns_fails():
+    displacement = (0.0, -0.5, 0.0)
+    assert movement_check("m", displacement, "left", -1, 15, turned_deg=9.0).ok
+    check = movement_check("m", displacement, "left", -1, 15, turned_deg=15.0)
+    assert not check.ok and "heading 15.0 deg" in check.detail

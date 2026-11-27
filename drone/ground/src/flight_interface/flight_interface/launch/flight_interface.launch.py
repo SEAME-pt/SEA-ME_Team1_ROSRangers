@@ -25,7 +25,7 @@ from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration
 from launch_ros.actions import Node
 
-TEAM_DOMAIN_ID = "42"  # E1: not 0, outside the tests' range 81-98
+TEAM_DOMAIN_ID = "42"  # E1: not 0, outside the tests' block 60-101
 
 
 def keep_or_default(name, default):

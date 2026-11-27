@@ -37,7 +37,7 @@ FPS = 30
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 83
+TEST_DOMAIN_ID = 62
 
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")

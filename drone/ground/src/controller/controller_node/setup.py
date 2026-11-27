@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = "px4_offboard_bridge"
+package_name = "controller_node"
 
 setup(
     name=package_name,
@@ -12,15 +12,14 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="Thiago de Paula",
-    maintainer_email="thiagodepaulapt@gmail.com",
-    description="SIMULATION ONLY: mission velocity target to PX4 offboard (#86)",
+    maintainer="Bruno",
+    maintainer_email="bmmc136@gmail.com",
+    description="Cascade controller: velocity target -> /control/attitude_setpoint",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "px4_offboard_bridge = px4_offboard_bridge.bridge_node:main",
-            "sim_smoke_scenario = px4_offboard_bridge.smoke_scenario:main",
+            "controller_node = controller_node.controller_node:main",
         ],
     },
 )

@@ -35,7 +35,7 @@ KEYS = {"intent", "gesture", "reason", "t", "xy"}
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 82
+TEST_DOMAIN_ID = 61
 
 
 def packet(gesture, t=1.0, xy=None):

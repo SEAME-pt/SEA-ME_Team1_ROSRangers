@@ -6,7 +6,7 @@
 #              the coverage run (package tests + drone/tests/ros, 90 %, as CI's
 #              ground-ros2); without it, the package tests that need no ROS
 #              and a SKIP row for the ROS suites. Then sd_protocol_py, the C++
-#              protocol library, px4_offboard_bridge, drone/tests/tools, the HIL
+#              protocol library, sim_smoke's checks, drone/tests/tools, the HIL
 #              host part and pre-commit
 #   unit       the suites that need no ROS (no pre-commit)
 #   pkg        colcon test only            e2e   drone/tests/ros only
@@ -270,13 +270,14 @@ suite_cpp() {
     row protocol-cpp "$status" "$passed" $((passed + failed)) "${note:+$note, }no coverage gate (CI: 80%)"
 }
 
-suite_bridge() {
+# make sim-smoke's and make sim-hold's checks (no ROS, no PX4), as CI's sim-smoke-python
+suite_sim_smoke() {
     local log=$LOG code
-    (cd src/simulation/px4_offboard_bridge && "$PY" "${PYTEST[@]}" test \
-        --cov=px4_offboard_bridge.bridge_logic --cov=px4_offboard_bridge.smoke_checks \
+    (cd src/simulation/sim_smoke && "$PY" "${PYTEST[@]}" test \
+        --cov=sim_smoke.smoke_checks --cov=sim_smoke.hold_checks \
         --cov-report=term --cov-fail-under=90) 2>&1 | tee -a "$log"
     code=${PIPESTATUS[0]}
-    pytest_row px4_offboard_bridge "$code" "$log" "coverage $(cov_total "$log") (>=90%)"
+    pytest_row sim_smoke "$code" "$log" "coverage $(cov_total "$log") (>=90%)"
 }
 
 suite_scripts() {
@@ -290,8 +291,11 @@ suite_scripts() {
 suite_hil() {
     local log=$LOG code
     # -p no:launch_testing: with ROS sourced, that plugin's collect hook
-    # overrides --ignore and collects gateway/wifi; these aren't launch tests
-    run "$log" "$PY" "${PYTEST[@]}" -p no:launch_testing "$REPO/drone/tests/hil" \
+    # overrides --ignore and collects gateway/wifi; these aren't launch tests.
+    # -p no:launch_ros too: launch_testing_ros implements a hook of the
+    # launch_testing plugin, so with only that one off pytest stops at once
+    # ("unknown hook 'pytest_launch_collect_makemodule'")
+    run "$log" "$PY" "${PYTEST[@]}" -p no:launch_testing -p no:launch_ros "$REPO/drone/tests/hil" \
         --ignore="$REPO/drone/tests/hil/gateway/wifi"
     code=$?
     pytest_row 'hil (host part)' "$code" "$log"
@@ -357,6 +361,14 @@ sys.exit(0)' 2>>"$log"; then
     local version
     version=$(git -C "$BF_DIR" describe --tags 2>/dev/null || echo '?')
     [[ $version == "$BF_VERSION" ]] || echo "run_tests.sh: $BF_DIR is $version, CI uses $BF_VERSION" | tee -a "$log"
+    # MSP Override mask and switches for test_msp_override.py, as CI does:
+    # --config writes eeprom.bin in $BF_DIR and exits; every boot loads it.
+    # Every run, so the EEPROM always matches override.cli.
+    (cd "$BF_DIR" && timeout -k 5 20 ./obj/main/betaflight_SITL.elf \
+        --config "$REPO/drone/tests/sitl/override.cli") >>"$log" 2>&1 || {
+        row betaflight-sitl FAIL 0 '?' "SITL --config override.cli failed, see $log"
+        return
+    }
     # Known SITL race (betaflight#15840, #181): boot again when it does not
     # answer MSP within 15 s, at most 3 boots (as in CI)
     pid=
@@ -425,9 +437,9 @@ goal=${1:-test}
 case $goal in
     test)
         if have_ros; then suites=(colcon coverage); else suites=(nonros_pkgs); fi
-        suites+=(sd_protocol cpp bridge scripts hil precommit)
+        suites+=(sd_protocol cpp sim_smoke scripts hil precommit)
         ;;
-    unit) suites=(nonros_pkgs sd_protocol cpp bridge scripts hil) ;;
+    unit) suites=(nonros_pkgs sd_protocol cpp sim_smoke scripts hil) ;;
     pkg) suites=(colcon) ;;
     e2e) suites=(e2e) ;;
     sitl) suites=(sitl) ;;
@@ -443,7 +455,7 @@ ROWS=$TESTLOG/$goal.rows
 : >"$ROWS"
 # Log name of each suite: $TESTLOG/<name>.log
 declare -A LOGNAME=([colcon]=colcon [coverage]=coverage [e2e]=e2e [nonros_pkgs]=unit
-    [sd_protocol]=sd_protocol [cpp]=protocol-cpp [bridge]=px4_offboard_bridge
+    [sd_protocol]=sd_protocol [cpp]=protocol-cpp [sim_smoke]=sim_smoke
     [scripts]=scripts [hil]=hil-host [precommit]=pre-commit [sitl]=sitl)
 
 if [[ $goal == test ]] && ! have_ros; then

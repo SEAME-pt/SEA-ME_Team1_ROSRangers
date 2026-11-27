@@ -35,7 +35,7 @@ except ImportError:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 84
+TEST_DOMAIN_ID = 63
 NODE = [sys.executable, "-m", "intent_node.intent_node", "--ros-args"]
 
 

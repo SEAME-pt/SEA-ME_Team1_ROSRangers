@@ -1,4 +1,4 @@
-"""Checks of the PX4 SITL smoke test (make sim-smoke, #86), with NO ROS imports.
+"""Checks of the PX4 SITL smoke test (make sim-smoke, #86, #199), with NO ROS imports.
 
 smoke_scenario.py records what the chain did; these functions judge it, so the
 pass/fail rules are unit-tested on any machine. Every check returns a Check:
@@ -7,9 +7,22 @@ name, ok, and a one-line detail with the measured values.
     REQ-SW-001   /mission/velocity_target at 20 Hz
     REQ-CTL-001  commanded speeds within the mission limits; measured speed
                  within the hard ceiling
-    REQ-SAF-017  zero velocity within 0.25 s of losing /gesture/intent
-    REQ-SAF-018  no axis outside the override mask commanded or moving
+    REQ-SAF-017  mission_node's zero target within 0.25 s of losing
+                 /gesture/intent, then the drone hovers
+    REQ-SAF-018  no axis outside the override mask commanded (velocity target
+                 and attitude setpoint) or moving
     direction    the drone moves the way the gesture says, and only that way
+                 (the heading included)
+
+A sample with a non-finite number (NaN, inf) fails the check that reads it,
+naming the sample: Python's max() would silently skip a NaN.
+
+Since #199 the ground's controller flies PX4 with attitude setpoints
+(/control/attitude_setpoint -> flight_interface's px4 backend). A zero target
+is "hold zero velocity" (ADR-025 F10), so PX4 never gets a zero velocity
+setpoint: REQ-SAF-017 is judged at mission_node's output and by the measured
+hover, REQ-SAF-018 on /control/attitude_setpoint and by the measured drift
+(F25).
 """
 
 import math
@@ -17,8 +30,9 @@ from collections import namedtuple
 
 Check = namedtuple("Check", "name ok detail")
 
-# mission_node defaults (REQ-CTL-001) and the hard ceilings of mission_node and
-# the bridge. EPS absorbs float noise in the published values.
+# mission_node defaults (REQ-CTL-001) and the hard ceiling of mission_node and
+# the controller's input clamp (F9). EPS absorbs float noise in the published
+# values.
 LIMIT_LATERAL_MPS = 0.3
 LIMIT_VERTICAL_MPS = 0.2
 LIMIT_YAW_DPS = 20.0
@@ -30,7 +44,6 @@ RATE_TOLERANCE = 0.1  # 18-22 Hz
 MAX_GAP_SEC = 0.15  # three ticks: one late tick is fine, a stall is not
 
 LOSS_LIMIT_SEC = 0.25  # REQ-SAF-017, at the mission_node output
-BRIDGE_TICK_SEC = 0.05  # the bridge forwards the zero at its next 20 Hz tick
 
 # Body axes (FLU) per override mask, as in mission_node.
 AXES = ("forward", "left", "up", "yaw")
@@ -50,6 +63,34 @@ HOVER_MPS = 0.1
 # every other axis (and an axis outside the mask) at most MAX_DRIFT_M.
 MIN_MOVE_M = 0.3
 MAX_DRIFT_M = 0.25
+# No move commands yaw: the heading may change at most this (deg).
+MAX_HEADING_DEG = 10.0
+
+
+def first_non_finite(samples):
+    """Index of the first sample with a non-finite number, or None.
+    samples: sequences of numbers. Example: [(0.1, 0), (nan, 0)] -> 1."""
+    for index, sample in enumerate(samples):
+        for value in sample:
+            if not math.isfinite(value):
+                return index
+    return None
+
+
+def non_finite_check(name, samples):
+    """A failed Check naming the first non-finite sample, or None if all are
+    finite."""
+    index = first_non_finite(samples)
+    if index is None:
+        return None
+    return Check(name, False, f"sample {index} is not finite: {tuple(samples[index])}")
+
+
+def heading_change_deg(start, end):
+    """The smallest turn (deg) from heading `start` to `end` (rad).
+    Example: 179 deg -> -179 deg is 2 deg, not 358."""
+    turn = (end - start + math.pi) % (2.0 * math.pi) - math.pi
+    return abs(math.degrees(turn))
 
 
 def is_zero(values):
@@ -80,6 +121,9 @@ def rate_check(stamps, name="/mission/velocity_target rate"):
 # ---------- REQ-CTL-001 ----------
 def limits_check(targets):
     """targets: (vx, vy, vz, wz) of /mission/velocity_target, body FLU, rad/s."""
+    bad = non_finite_check("commanded speed (REQ-CTL-001)", targets)
+    if bad is not None:
+        return bad
     lateral = max((math.hypot(t[0], t[1]) for t in targets), default=0.0)
     vertical = max((abs(t[2]) for t in targets), default=0.0)
     yaw = max((math.degrees(abs(t[3])) for t in targets), default=0.0)
@@ -99,6 +143,9 @@ def limits_check(targets):
 
 def measured_speed_check(velocities):
     """velocities: (v_north, v_east, v_down) PX4 measured. Within the hard ceiling."""
+    bad = non_finite_check("measured speed (REQ-CTL-001 ceiling)", velocities)
+    if bad is not None:
+        return bad
     horizontal = max((math.hypot(v[0], v[1]) for v in velocities), default=0.0)
     vertical = max((abs(v[2]) for v in velocities), default=0.0)
     top = CEILING_LINEAR_MPS
@@ -126,26 +173,34 @@ def mask_targets_check(targets, mask):
     )
 
 
-def mask_setpoints_check(setpoints, mask):
-    """setpoints: (v_north, v_east, v_down, yawspeed) sent to PX4.
+def mask_attitude_check(setpoints, mask, hover_throttle):
+    """setpoints: the /control/attitude_setpoint dicts (roll, pitch, yaw_rate,
+    throttle, active). Only the active ones command (ADR-025 F8).
 
-    Mask 11 must send v_down 0; mask 8 must send no velocity at all. With
-    mask 15 every axis is owned.
+    An axis outside the mask is level: pitch 0 without "forward", roll 0
+    without "left", yaw_rate 0 without "yaw", and the throttle exactly the
+    hover throttle without "up" (mask 8 and 11). The controller writes these
+    values as they are, so they are compared exactly. Example, mask 11, hover
+    0.6: (roll -3, pitch 0, yaw_rate 0, throttle 0.6) is fine; throttle 0.65
+    is not: the ground does not own throttle there.
     """
     owned = owned_axes(mask)
+    active = [sp for sp in setpoints if sp.get("active") is True]
 
     def outside(sp):
-        n, e, d, _ = sp
-        horizontal = "forward" not in owned and (n != 0.0 or e != 0.0)
-        vertical = "up" not in owned and d != 0.0
-        return horizontal or vertical
+        pitch = "forward" not in owned and sp.get("pitch") != 0.0
+        roll = "left" not in owned and sp.get("roll") != 0.0
+        yaw = "yaw" not in owned and sp.get("yaw_rate") != 0.0
+        throttle = "up" not in owned and sp.get("throttle") != hover_throttle
+        return pitch or roll or yaw or throttle
 
-    bad = sum(1 for sp in setpoints if outside(sp))
-    ok = bool(setpoints) and bad == 0
+    bad = sum(1 for sp in active if outside(sp))
+    ok = bool(active) and bad == 0
     return Check(
-        f"PX4 setpoints outside mask {mask} (REQ-SAF-018)",
+        f"attitude setpoints outside mask {mask} (REQ-SAF-018)",
         ok,
-        f"{bad} of {len(setpoints)} setpoints move an axis outside the mask",
+        f"{bad} of {len(active)} active setpoints command an axis outside the "
+        f"mask ({len(setpoints) - len(active)} inactive)",
     )
 
 
@@ -159,12 +214,17 @@ def body_displacement(start, end, yaw):
     return forward, -right, -dd
 
 
-def movement_check(name, displacement, axis, sign, mask):
+def movement_check(name, displacement, axis, sign, mask, turned_deg=0.0):
     """The commanded axis moved MIN_MOVE_M the right way and nothing else drifted.
 
     displacement: (forward, left, up). axis: "forward", "left" or "up".
     sign: +1 or -1. An axis outside the mask must not move at all (REQ-SAF-018).
+    turned_deg: how far the heading changed (heading_change_deg); no move
+    commands yaw, so more than MAX_HEADING_DEG fails.
     """
+    bad = non_finite_check(name, [tuple(displacement) + (turned_deg,)])
+    if bad is not None:
+        return bad
     owned = owned_axes(mask)
     moves = dict(zip(AXES[:3], displacement))
     parts = [f"{a} {v:+.2f} m" for a, v in moves.items()]
@@ -176,7 +236,10 @@ def movement_check(name, displacement, axis, sign, mask):
     else:
         ok = all(abs(v) <= MAX_DRIFT_M for v in moves.values())
         rule = f"{axis} not in mask {mask}: every axis <= {MAX_DRIFT_M} m"
-    return Check(name, ok, f"{', '.join(parts)} ({rule})")
+    turned_ok = turned_deg <= MAX_HEADING_DEG
+    parts.append(f"heading {turned_deg:.1f} deg")
+    rule += f", heading <= {MAX_HEADING_DEG:.0f} deg"
+    return Check(name, ok and turned_ok, f"{', '.join(parts)} ({rule})")
 
 
 # ---------- REQ-SAF-017 ----------
@@ -188,42 +251,40 @@ def first_zero_after(samples, t0):
     return None
 
 
-def loss_checks(last_intent, targets, setpoints):
-    """Zero velocity after /gesture/intent stops.
+def loss_check(last_intent, targets):
+    """Zero target after /gesture/intent stops (REQ-SAF-017, F25).
 
     last_intent: receive time of the last /gesture/intent before intent_node was
-    killed. targets / setpoints: (t, values) of /mission/velocity_target and
-    /fmu/in/trajectory_setpoint, t = the PUBLISH stamp (header.stamp, PX4
-    timestamp), all on the same wall clock. The delivery delay of the zero to
-    the test is not counted: it is not mission_node's. REQ-SAF-017 is about the mission_node output
-    (<= 0.25 s). The bridge forwards it at its next tick, so PX4 may get it
-    one tick (0.05 s) later.
+    killed. targets: (t, values) of /mission/velocity_target, t = the PUBLISH
+    stamp (header.stamp), on the same wall clock. The delivery delay of the
+    zero to the test is not counted: it is not mission_node's. The drone
+    itself is judged by hover_check: the controller then holds zero velocity.
     """
-    name = "zero after losing /gesture/intent (REQ-SAF-017)"
+    name = "zero after losing /gesture/intent (REQ-SAF-017): mission_node output"
     if last_intent is None:
-        return [Check(name, False, "no /gesture/intent received")]
-    if not any(t <= last_intent and not is_zero(v) for t, v in targets):
-        return [
-            Check(name, False, "the drone was not commanded to move before the loss")
-        ]
-    checks = []
-    for label, samples, limit in (
-        ("mission_node output", targets, LOSS_LIMIT_SEC),
-        ("PX4 setpoint", setpoints, LOSS_LIMIT_SEC + BRIDGE_TICK_SEC),
-    ):
-        t_zero = first_zero_after(samples, last_intent)
-        if t_zero is None:
-            checks.append(Check(f"{name}: {label}", False, "never zero"))
-            continue
-        delay = t_zero - last_intent
-        checks.append(
-            Check(
-                f"{name}: {label}",
-                delay <= limit,
-                f"{delay * 1000:.0f} ms (<= {limit * 1000:.0f} ms)",
-            )
+        return Check(name, False, "no /gesture/intent received")
+    before = [v for t, v in targets if t <= last_intent]
+    if not before or is_zero(before[-1]):
+        # The last target before the loss must be a move: otherwise a zero
+        # that was already there would pass as the reaction to the loss
+        return Check(name, False, "not moving at the loss (last target before it zero)")
+    t_zero = first_zero_after(targets, last_intent)
+    if t_zero is None:
+        return Check(name, False, "never zero")
+    moved_again = [t for t, v in targets if t > t_zero and not is_zero(v)]
+    if moved_again:
+        return Check(
+            name,
+            False,
+            f"zero at +{(t_zero - last_intent) * 1000:.0f} ms, then a move again "
+            f"at +{(moved_again[0] - last_intent) * 1000:.0f} ms",
         )
-    return checks
+    delay = t_zero - last_intent
+    return Check(
+        name,
+        delay <= LOSS_LIMIT_SEC,
+        f"{delay * 1000:.0f} ms (<= {LOSS_LIMIT_SEC * 1000:.0f} ms)",
+    )
 
 
 def hover_check(velocities):
@@ -232,12 +293,36 @@ def hover_check(velocities):
     name = "hovers after the loss (REQ-SAF-017)"
     if not velocities:
         return Check(name, False, "no PX4 velocity")
+    bad = non_finite_check(name, velocities)
+    if bad is not None:
+        return bad
     horizontal = max(math.hypot(v[0], v[1]) for v in velocities)
     vertical = max(abs(v[2]) for v in velocities)
     ok = horizontal <= HOVER_MPS and vertical <= HOVER_MPS
     detail = (
         f"max horizontal {horizontal:.2f} m/s, vertical {vertical:.2f} m/s "
-        f"(<= {HOVER_MPS}) 2.5 s after the kill"
+        f"(<= {HOVER_MPS}) from 2.5 s after the kill, {len(velocities)} samples"
+    )
+    return Check(name, ok, detail)
+
+
+def hover_drift_check(positions):
+    """positions: (north, east, down) PX4 measured over the hover window
+    after the loss. The drone stays within MAX_DRIFT_M of the first one,
+    horizontally and vertically (REQ-SAF-017: it hovers, it does not creep)."""
+    name = "stays put after the loss (REQ-SAF-017)"
+    if len(positions) < 2:
+        return Check(name, False, f"{len(positions)} PX4 positions")
+    bad = non_finite_check(name, positions)
+    if bad is not None:
+        return bad
+    n0, e0, d0 = positions[0]
+    horizontal = max(math.hypot(n - n0, e - e0) for n, e, _ in positions)
+    vertical = max(abs(d - d0) for _, _, d in positions)
+    ok = horizontal <= MAX_DRIFT_M and vertical <= MAX_DRIFT_M
+    detail = (
+        f"max {horizontal:.2f} m horizontal, {vertical:.2f} m vertical "
+        f"(<= {MAX_DRIFT_M}) over {len(positions)} samples"
     )
     return Check(name, ok, detail)
 

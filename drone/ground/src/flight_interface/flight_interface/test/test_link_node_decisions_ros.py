@@ -15,10 +15,11 @@ import time
 import unittest
 
 from flight_interface.backends import LoopbackBackend
+from flight_interface.guard import NEUTRAL
 
 try:
     import rclpy
-    from geometry_msgs.msg import TwistStamped, Vector3Stamped
+    from geometry_msgs.msg import Vector3Stamped
     from rclpy.executors import SingleThreadedExecutor
     from rclpy.lifecycle import TransitionCallbackReturn
     from rclpy.parameter import Parameter
@@ -41,7 +42,23 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 94
+TEST_DOMAIN_ID = 76
+
+
+def setpoint_json(pitch=0.0, yaw_rate=0.0):
+    """What controller_node publishes on /control/attitude_setpoint: an active
+    setpoint (C1.1, F17), throttle inside 0-1."""
+    return json.dumps(
+        {
+            "roll": 0.0,
+            "pitch": pitch,
+            "yaw_rate": yaw_rate,
+            "throttle": 0.5,
+            "active": True,
+            "reason": "ok",
+        }
+    )
+
 
 # fc_link_ok true: ARM, RESUME and control need the FC link alive (E6.1).
 STREAMING = {
@@ -65,6 +82,8 @@ ALLOWED = {
     "take_acks",  # read-only: the ESP's answers, logged (decision E2)
     "close",
     "name",
+    "estop_note",  # read-only text: what the E-stop answer says (A1)
+    "estop_note_no_neutral",  # read-only text: the same with no neutral (A7)
 }
 TEST_FIELDS = {
     "sent",
@@ -132,6 +151,17 @@ class NoTcpBackend(LoopbackBackend):
         return False
 
 
+class NoByeBackend(LoopbackBackend):
+    """Like px4: no BYE exists, the backend says what happens instead (A1)."""
+
+    estop_note = "no BYE on the sim backend: PX4 holds position"
+    estop_note_no_neutral = "no BYE on the sim backend: PX4 keeps the last setpoint"
+
+    def end_session(self, now):
+        super().end_session(now)
+        return False
+
+
 class NothingGoesOutBackend(LoopbackBackend):
     """Between sessions: every setpoint is refused (K6 must not count them)."""
 
@@ -173,7 +203,7 @@ class DecisionTests(unittest.TestCase):
             10,
         )
         self.target_pub = self.probe.create_publisher(
-            TwistStamped, "/mission/velocity_target", 10
+            String, "/control/attitude_setpoint", 10
         )
         self.clients = {
             name: self.probe.create_client(Trigger, f"/flight_interface/{name}")
@@ -204,8 +234,8 @@ class DecisionTests(unittest.TestCase):
             if self.fake is not None:
                 self.fake.step(time.monotonic())
             if yaw is not None and time.monotonic() >= next_pub:
-                msg = TwistStamped()
-                msg.twist.angular.z = yaw
+                msg = String()
+                msg.data = setpoint_json(yaw_rate=yaw)
                 self.target_pub.publish(msg)
                 next_pub = time.monotonic() + 0.05
             self.executor.spin_once(timeout_sec=0.005)
@@ -245,6 +275,27 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(
             self.call("estop").message, "estop latched, neutral + BYE sent"
         )
+
+    def test_estop_on_a_backend_without_bye_says_what_happens(self):
+        self.replace(NoByeBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        response = self.call("estop")
+        self.assertTrue(response.success and self.node.guard.estop)
+        self.assertEqual(
+            response.message,
+            "estop latched, neutral + no BYE on the sim backend: PX4 holds position",
+        )
+
+    def test_estop_without_a_neutral_on_a_backend_without_bye(self):
+        # A7 (internal error): no neutral, so the sim backend's PX4 keeps the
+        # last setpoint, not a held position (PR #253 review)
+        self.replace(NoByeBackend(state=STREAMING))
+        self.activate()
+        self.spin(0.2, yaw=0.3)
+        sent = self.node._estop("internal error: test", with_neutral=False)
+        self.assertEqual(sent, "no BYE on the sim backend: PX4 keeps the last setpoint")
+        self.assertNotIn("neutral", self.log())
 
     def test_a_failed_neutral_never_skips_bye(self):
         self.replace(FailingNeutralBackend(state=STREAMING))
@@ -427,7 +478,7 @@ class DecisionTests(unittest.TestCase):
         self.activate()
         self.spin(0.3, yaw=0.3)
         self.assertFalse(self.states[-1]["link_ok"])
-        self.assertEqual(self.backend.sent[-1][1], (0.0, 0.0, 0.0, 0.0))
+        self.assertEqual(self.backend.sent[-1][1], NEUTRAL)
 
     # ---------- REQ-SAF-023 ----------
     def test_estop_reset_and_resume_never_use_anything_but_the_allowed_calls(self):

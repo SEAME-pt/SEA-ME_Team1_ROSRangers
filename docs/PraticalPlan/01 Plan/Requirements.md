@@ -3,7 +3,7 @@ title: Requirements
 type: plan
 status: active
 date: 2026-10-21
-updated: 2026-11-16
+updated: 2026-11-24
 project: SEA autonomous drone
 tags:
   - plan
@@ -114,7 +114,7 @@ Values proposed 2026-10-20 ([[ADR-016 Flow Sensor Path|ADR-016]] update). The te
 
 | ID | Requirement | Source | Verification | Level | Status |
 |---|---|---|---|---|---|
-| REQ-NAV-001 | Position hold in PX4 SITL: at 1.0 m, with zero velocity setpoints from the flight interface, the drone stays within **0.25 m** horizontally and **±0.15 m** vertically of the start point for **60 s**. | [[Study Plan v2]] §11 · [[ADR-016 Flow Sensor Path\|ADR-016]] | test | SITL (PX4 + Gazebo ground truth, on a laptop; CI job later, [[CI-CD Overview]] §1) | draft |
+| REQ-NAV-001 | Position hold in PX4 SITL: at 1.0 m, with zero velocity setpoints from the flight interface, the drone stays within **0.25 m** horizontally and **±0.15 m** vertically of the start point for **60 s**. | [[Study Plan v2]] §11 · [[ADR-016 Flow Sensor Path\|ADR-016]] | test | SITL (PX4 + Gazebo ground truth, on a laptop; CI job later, [[CI-CD Overview]] §1) | verified: `make sim-hold`, 3 of 3 runs (max 0.19 m, ±0.08 m), 2026-11-24, #199 ([[PX4 SITL Setup]] §7.5) |
 | REQ-NAV-002 | Position hold in the cage: at about 1.0 m, with Betaflight Position Hold using the MTF-02P (flow + ToF height) and the pilot hands-off on roll/pitch, the drone stays inside a **0.5 m radius** for **30 s**, in **3 of 3** runs. When height is automatic (ALTHOLD), height stays within **±0.3 m**. If the pilot has the throttle, height is not judged. *Changed 2026-11-24: was "the ground controller holding position from the flow estimate"; Betaflight Position Hold with the MTF-02P holds position instead ([[ADR-016 Flow Sensor Path\|ADR-016]] update).* | [[Study Plan v2]] §11 · [[ADR-016 Flow Sensor Path\|ADR-016]] | test | cage (floor tape grid + overhead video) | draft |
 
 ### Control (`REQ-CTL`)
@@ -220,3 +220,4 @@ Old IDs came from [[PC_to_ESP]], [[ESP_to_FC]] and [[04 Mission Node]], and from
 | **E-stop** | Emergency stop: when something fails, the drone is brought to a safe stop, in the air or on the ground. The faults it must cover are in [[Testing Strategy]] §2. |
 | **Kill switch** | SA on the RadioMaster, which is also the ARM switch: releasing it disarms and stops the motors ([[Radio Link Tests]] RL-12). |
 | **Takeover switch** | The MSP Override switch on the radio: turning it off ends ground control, and from then on the drone takes commands only from the radio (ADR-010). It is **SD**, held: released = radio only (team, confirmed by the safety pilot 2026-11-24, ADR-010); its AUX channel is not mapped yet (#236). |
+| **Ground truth** | Gazebo's own position of the model, not PX4's estimate of it; `make sim-hold` judges on it. |

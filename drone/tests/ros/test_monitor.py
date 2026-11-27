@@ -53,7 +53,7 @@ else:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 91
+TEST_DOMAIN_ID = 73
 
 RAW = {"gesture": "INDEX_RIGHT", "t": 1.0, "xy": None}
 INTENT = {
@@ -92,7 +92,7 @@ FLIGHT = {
     "resume_pending": False,
     "arm_pending": False,
 }
-# The demo's fake_flight_state and the sim's bridge send only these.
+# The demo's fake_flight_state sends only these.
 FLIGHT_STANDIN = {
     "link_ok": True,
     "esp_state": "STREAMING",
@@ -185,6 +185,7 @@ class RowTests(MonitorTestCase):
                 "/gesture/intent",
                 "/mission/state",
                 "/mission/velocity_target",
+                "/control/attitude_setpoint",
             },
         )
 
@@ -200,9 +201,10 @@ class RowTests(MonitorTestCase):
                 "intent",
                 "mission",
                 "velocity",
+                "control",
             ],
         )
-        self.assertEqual([age for _, age, _ in snapshot], [None] * 7)
+        self.assertEqual([age for _, age, _ in snapshot], [None] * 8)
 
     def test_flight_row_from_flight_interface(self):
         self.feed("/flight/state", string(FLIGHT))
@@ -410,7 +412,7 @@ class TableTests(MonitorTestCase):
         self.assertEqual(
             line,
             "flight: - | gesture: - | intent: MOVE_RIGHT ok INDEX_RIGHT "
-            "| mission: - | velocity: right 0.30 m/s",
+            "| mission: - | velocity: right 0.30 m/s | control: -",
         )
         self.feed("/mission/velocity_target", twist())
         self.assertIn("velocity: 0", monitor.one_line(self.monitor.snapshot()))
@@ -911,7 +913,7 @@ class ModeTests(MonitorTestCase):
             "demo": "fake_flight_state  /flight/state",
             "real": "flight_interface  /flight/state",
             "real-dry": "flight_interface  /flight/state",
-            "sim": "px4_offboard_bridge  /flight/state",
+            "sim": "flight_interface  /flight/state",
             None: "/flight/state",
         }
         for mode, source in sources.items():
@@ -993,6 +995,7 @@ class PublisherTests(MonitorTestCase):
             (
                 "/flight/state",
                 "/mission/velocity_target",
+                "/control/attitude_setpoint",
                 "/fc/attitude",
                 "/fc/battery",
             ),
@@ -1237,6 +1240,102 @@ class CallbackErrorTests(MonitorTestCase):
     def test_none_without_an_error(self):
         self.assertIsNone(self.monitor.last_error())
         self.assertEqual(monitor.alerts(self.monitor.snapshot(), error=None), [])
+
+
+# controller_node's /control/attitude_setpoint (#199, ADR-025 C1.1, F17)
+SETPOINT = {
+    "roll": -3.04,
+    "pitch": 1.5,
+    "yaw_rate": 0.0,
+    "throttle": 0.612,
+    "active": True,
+    "reason": "ok",
+}
+
+
+@unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")
+class ControlTests(MonitorTestCase):
+    """The CONTROL row: the controller's attitude setpoint (#199)."""
+
+    def lines_under(self):
+        lines = monitor.table(self.monitor.snapshot())
+        heading = next(i for i, line in enumerate(lines) if line.startswith("CONTROL"))
+        end = lines.index("", heading)
+        return lines[heading], lines[heading + 1 : end]
+
+    def test_active_shows_the_numbers_with_their_signs(self):
+        self.feed("/control/attitude_setpoint", string(SETPOINT))
+        heading, lines = self.lines_under()
+        self.assertEqual(
+            heading,
+            f"{'CONTROL':9} {'controller_node  /control/attitude_setpoint':42} live",
+        )
+        self.assertEqual(
+            lines,
+            [
+                "    active      True",
+                "    reason      ok",
+                "    roll        -3.0 deg",
+                "    pitch       +1.5 deg",
+                "    yaw rate    +0 deg/s",
+                "    throttle    0.61",
+            ],
+        )
+
+    def test_inactive_shows_only_why(self):
+        # An inactive setpoint commands nothing (F8): its numbers are not shown
+        inactive = dict(SETPOINT, active=False, reason="no_velocity")
+        self.feed("/control/attitude_setpoint", string(inactive))
+        _, lines = self.lines_under()
+        self.assertEqual(
+            lines, ["    active      False", "    reason      no_velocity"]
+        )
+
+    def test_a_broken_number_shows_a_question_mark(self):
+        for value in (None, "1.0", True, float("nan")):
+            with self.subTest(value=value):
+                data = dict(SETPOINT, roll=value)
+                self.feed("/control/attitude_setpoint", string(data))
+                self.assertEqual(self.rows()["control"]["roll"], "?")
+
+    def test_bad_json(self):
+        self.feed("/control/attitude_setpoint", String(data="{not json"))
+        self.assertEqual(self.rows()["control"], {"bad": "{not json"})
+        self.assertIn("control: {not json", monitor.one_line(self.monitor.snapshot()))
+
+    def test_one_line_has_no_numbers(self):
+        # They change 50 times a second while active: one line each would flood
+        self.feed("/control/attitude_setpoint", string(SETPOINT))
+        line = monitor.one_line(self.monitor.snapshot())
+        self.assertTrue(line.endswith("| control: active=True reason=ok"), line)
+        self.assertNotIn("roll", line)
+
+    def test_demo_says_why_control_is_empty(self):
+        # ADR-025 F12: the demo runs no controller
+        lines = monitor.table(self.monitor.snapshot(), mode="demo")
+        heading = next(i for i, line in enumerate(lines) if line.startswith("CONTROL"))
+        self.assertEqual(lines[heading + 1], "    no data: demo has no controller")
+        for mode in ("real", "sim"):
+            with self.subTest(mode=mode):
+                lines = monitor.table(self.monitor.snapshot(), mode=mode)
+                heading = next(
+                    i for i, line in enumerate(lines) if line.startswith("CONTROL")
+                )
+                self.assertEqual(lines[heading + 1], "")
+
+    def test_two_controllers_alert(self):
+        self.node.publishers["/control/attitude_setpoint"] = [
+            "controller_node",
+            "controller_node",
+        ]
+        self.node.timers[0][1]()  # the graph query
+        topic = "/control/attitude_setpoint"
+        since, names = self.monitor.extra[topic]
+        self.monitor.extra[topic] = (since - 2.0, names)  # held for 2 s
+        self.assertEqual(
+            self.monitor.doubled(),
+            [(topic, ["controller_node", "controller_node"])],
+        )
 
 
 @unittest.skipIf(rclpy is None, "ROS 2 (rclpy) not available")

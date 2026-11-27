@@ -3,7 +3,9 @@ where the drone state comes from.
 
 A backend has these methods and no others the node may call:
 
-  send_setpoint(command, now)  one setpoint (vx, vy, vz, wz), body FLU;
+  send_setpoint(command, now)  one guard.Setpoint (roll, pitch, yaw_rate,
+                               throttle, active; body FLU, REP-103, ADR-025
+                               C1.1); active false = no command (F8).
                                True if it went out
   send_neutral(now)            one neutral setpoint (SETPOINT mode 0); True if
                                it went out
@@ -29,20 +31,29 @@ says it is due (decisions A4, K6): ARM is always an operator action, never the
 node's (REQ-SAF-023). Tests check both: the node
 calls nothing else on its own, and no other code builds the frame.
 
-Backends: `loopback` (tests and dry runs, no drone) and `esp` (sd_protocol over
-TCP/UDP to the gateway firmware, esp_backend.py). The PX4 SITL backend waits
-for decision C1.
+Backends: `loopback` (tests and dry runs, no drone), `esp` (sd_protocol over
+TCP/UDP to the gateway firmware, esp_backend.py) and `px4` (SIMULATION ONLY:
+PX4 SITL through the XRCE agent, px4_backend.py, #199, ADR-025 F3).
 """
+
+from flight_interface.guard import NEUTRAL
 
 
 class Backend:
     """Interface. Times are monotonic seconds."""
 
     name = "base"
+    # None: the E-stop answer says whether BYE went out. A backend with no BYE
+    # (px4) sets the text that says what happens instead (A1): estop_note
+    # after the one neutral, estop_note_no_neutral when none went out (A7,
+    # a failed neutral, or nothing was being sent).
+    estop_note = None
+    estop_note_no_neutral = None
 
     def send_setpoint(self, command, now):
-        """Send one velocity setpoint (vx, vy, vz, wz), body FLU. Returns True
-        if it went out (the node counts only those for the K6 window)."""
+        """Send one guard.Setpoint. active false is no command (F8): the ESP
+        sends mode 0. Returns True if it went out (the node counts only those
+        for the K6 window)."""
         raise NotImplementedError
 
     def send_neutral(self, now):
@@ -113,19 +124,19 @@ class LoopbackBackend(Backend):
             }
         )
         self.connected = connected
-        self.sent = []  # (now, command); a neutral is recorded as a zero command
+        self.sent = []  # (now, Setpoint); a neutral is recorded as NEUTRAL
         self.log = []  # (now, what): "setpoint", "neutral", "bye", "resume", "arm"
         self.armed_masks = []  # masks passed to arm_control()
         self.acks = []  # answers a test queues for take_acks()
         self.closed = False
 
     def send_setpoint(self, command, now):
-        self.sent.append((now, tuple(command)))
+        self.sent.append((now, command))
         self.log.append((now, "setpoint"))
         return True
 
     def send_neutral(self, now):
-        self.sent.append((now, (0.0, 0.0, 0.0, 0.0)))
+        self.sent.append((now, NEUTRAL))
         self.log.append((now, "neutral"))
         return True
 
@@ -153,16 +164,29 @@ class LoopbackBackend(Backend):
         self.closed = True
 
 
-BACKENDS = ("loopback", "esp")
+BACKENDS = ("loopback", "esp", "px4")
 
 
-def make_backend(name, esp_host="192.168.4.1", esp_port=5759, psk=None, warn=None):
+def make_backend(
+    name,
+    esp_host="192.168.4.1",
+    esp_port=5759,
+    psk=None,
+    warn=None,
+    node=None,
+    mask=None,
+    hover_throttle=0.0,
+):
     """The backend named by the `backend` parameter. ValueError for others.
 
     `esp` needs sd_protocol (drone/ground/src/sd_protocol_py) and the PSK; it is
     imported only here, so the loopback backend runs without sd_protocol.
     `warn(message)` gets load_psk's warning about a secrets file other users
-    can read (decision E3)."""
+    can read (decision E3).
+
+    `px4` (SIMULATION ONLY) needs the node (its publishers and subscriptions),
+    the configured mask, a measured hover_throttle and px4_msgs, which only the
+    simulation image has: imported only here too (ADR-025 F3)."""
     if name == "loopback":
         return LoopbackBackend()
     if name == "esp":
@@ -171,6 +195,8 @@ def make_backend(name, esp_host="192.168.4.1", esp_port=5759, psk=None, warn=Non
         if psk is None:
             psk = load_psk(warn=warn)
         return EspBackend(esp_host, esp_port, psk)
-    raise ValueError(
-        f"backend must be one of {', '.join(BACKENDS)} (px4 waits for C1), got {name!r}"
-    )
+    if name == "px4":
+        from flight_interface.px4_backend import Px4Backend
+
+        return Px4Backend(node, mask, hover_throttle)
+    raise ValueError(f"backend must be one of {', '.join(BACKENDS)}, got {name!r}")

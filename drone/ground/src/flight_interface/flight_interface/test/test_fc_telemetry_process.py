@@ -37,7 +37,7 @@ except ImportError:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 90
+TEST_DOMAIN_ID = 72
 NODE = [sys.executable, "-m", "flight_interface.fc_telemetry", "--ros-args"]
 ANSWERS = {
     msp.MSP_ATTITUDE: struct.pack("<hhh", 12, -34, 56),

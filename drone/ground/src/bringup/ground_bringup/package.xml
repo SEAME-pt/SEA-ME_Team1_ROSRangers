@@ -12,6 +12,7 @@
   <exec_depend>gesture_node</exec_depend>
   <exec_depend>intent_node</exec_depend>
   <exec_depend>mission_node</exec_depend>
+  <exec_depend>controller_node</exec_depend>  <!-- real and sim -->
   <exec_depend>flight_interface</exec_depend>  <!-- real.launch.py -->
 
   <test_depend>python3-pytest</test_depend>

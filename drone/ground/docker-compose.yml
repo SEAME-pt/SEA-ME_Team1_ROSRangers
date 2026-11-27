@@ -9,9 +9,12 @@
 # mode's services, parameters and ROS domain always go together. /flight/state
 # has exactly one publisher in each.
 #   demo  gesture, intent, mission, echo + fake_flight_state (PRETEND /flight/state)
-#   real  gesture, intent, mission, echo + flight_interface (the drone, ADR-025)
-#   sim   gesture, intent, mission, echo + px4 (PX4 SITL + Gazebo + bridge; SIMULATION ONLY)
-#   sim-smoke  the headless simulation test (px4, mission, sim_smoke), not a mode
+#   real  gesture, intent, mission, controller, echo + flight_interface (the drone, ADR-025)
+#   sim   gesture, intent, mission, controller, echo + flight_interface_sim
+#         (backend px4) + px4 (PX4 SITL + Gazebo; SIMULATION ONLY)
+#   sim-smoke  the headless simulation test (px4, mission, controller,
+#         flight_interface_sim, sim_smoke), not a mode
+#   sim-hold   the SITL hold test, REQ-NAV-001 (the same + sim_hold), not a mode
 # `base` has no profile: compose refuses a build context from a service it
 # does not see. It only runs `true`.
 #
@@ -167,7 +170,7 @@ services:
 
   mission:
     <<: *node
-    profiles: [demo, real, sim, sim-smoke]
+    profiles: [demo, real, sim, sim-smoke, sim-hold]
     build:
       context: .
       dockerfile: src/mission/Dockerfile
@@ -180,6 +183,32 @@ services:
       LOG_NAME: mission
     command:
       - /ws/install/mission_node/lib/mission_node/mission_node
+      - --ros-args
+      - --params-file
+      - /config/${GROUND_MODE:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}.yaml
+
+  # The cascade controller (#199, ADR-025 C1): /mission/velocity_target and
+  # /estimate/velocity -> /control/attitude_setpoint. Inactive (neutral) while
+  # it has no measured velocity or no measured hover throttle (F6, F16), as
+  # in real today. In the simulation flight_interface_sim's px4 backend
+  # publishes /estimate/velocity and sim.yaml sets the hover throttle, so it
+  # flies. Not in the demo (F12, changed 2026-11-24). The mode file's
+  # controller_node section gives the mask and the hover throttle (F15).
+  controller:
+    <<: *node
+    profiles: [real, sim, sim-smoke, sim-hold]
+    build:
+      context: .
+      dockerfile: src/controller/Dockerfile
+      additional_contexts:
+        base: service:base
+    depends_on: *after-base
+    image: rosrangers/controller:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: controller
+    command:
+      - /ws/install/controller_node/lib/controller_node/controller_node
       - --ros-args
       - --params-file
       - /config/${GROUND_MODE:?copy env.example/ to env/ and .env.example to .env, with the values from the safety pilot}.yaml
@@ -274,19 +303,54 @@ services:
         bind:
           create_host_path: false
 
-  # ---------- SIMULATION ONLY (#86): make sim, make sim-smoke ----------
-  # Profiles sim and sim-smoke, so demo and real never start them. The bridge
-  # publishes /flight/state from PX4, so fake_flight_state (demo) and
-  # flight_interface (real) must not run with them. Never use with the real drone.
+  # ---------- SIMULATION ONLY (#86, #199): make sim, make sim-smoke ----------
+  # Profiles sim and sim-smoke, so demo and real never start them.
+  # flight_interface_sim publishes /flight/state from PX4, so fake_flight_state
+  # (demo) and flight_interface (real) must not run with them. Never use with
+  # the real drone.
 
-  # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent + px4_offboard_bridge.
-  # src/simulation/sim_start.sh arms, takes off and switches to Offboard, then the
-  # healthcheck turns healthy. MASK=8|11|15 (default 15; make sim-smoke takes
-  # 11|15 only). GUI=1 opens Gazebo: the default here is 0, make sim passes 1
-  # (its own default), so plain `docker compose --profile sim up` is headless.
+  # flight_interface with the px4 backend (#199, ADR-025 F3, F21): the sim
+  # stage of its Dockerfile (px4_msgs from the PX4 image, the build context
+  # `px4`). sim.yaml: backend px4, mask, hover throttle. No PSK (there is no
+  # ESP). Starts unconfigured, like the real one; sim_start.sh (the px4
+  # container) configures and activates it once PX4 is ready (F22), so it
+  # starts with px4, not after px4's healthcheck: px4 only turns healthy in
+  # Offboard, which needs this node's stream. No restart (A6).
+  flight_interface_sim:
+    <<: *node
+    profiles: [sim, sim-smoke, sim-hold]
+    restart: "no"
+    build:
+      context: .
+      dockerfile: src/flight_interface/Dockerfile
+      target: sim
+      additional_contexts:
+        base: service:base
+        px4: docker-image://${PX4_IMAGE:-seame-px4-sim:jazzy-1.17}
+    depends_on: *after-base
+    image: rosrangers/flight_interface-sim:jazzy
+    environment:
+      <<: *node-env
+      LOG_NAME: flight_interface_sim
+      # The XRCE agent runs in the px4 container (uid 1000) and this one as
+      # the host's uid: UDP only, as the px4 services.
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+    command:
+      - /ws/install/flight_interface/lib/flight_interface/flight_interface
+      - --ros-args
+      - --params-file
+      - /config/sim.yaml   # whatever GROUND_MODE says: this service is the sim
+
+  # PX4 SITL + Gazebo (headless) + Micro XRCE-DDS agent.
+  # src/simulation/sim_start.sh sets the take-off height (2.0 m, F23), configures
+  # and activates flight_interface_sim, waits for its Offboard stream, arms,
+  # takes off and switches to Offboard, then the healthcheck turns healthy.
+  # The mask is in config/sim.yaml (F24). GUI=1 opens Gazebo: the default
+  # here is 0, make sim passes 1 (its own default), so plain
+  # `docker compose --profile sim up` is headless.
   px4:
     <<: *node
-    profiles: [sim, sim-smoke]
+    profiles: [sim, sim-smoke, sim-hold]
     build: &px4-build
       context: .
       dockerfile: src/simulation/Dockerfile
@@ -305,7 +369,6 @@ services:
     environment:
       <<: *node-env
       LOG_NAME: px4
-      MASK: ${MASK:-15}
       GUI: ${GUI:-0}
       DISPLAY: ${DISPLAY:-:0}
       # This image's user (dev, uid 1000) and the ground images' user (ros,
@@ -316,16 +379,22 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${GROUND_LOG_DIR:-./logs}:/logs
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # start_period covers the longest sim_start.sh can take before it touches
+    # /tmp/sim_ready: its waits add up to 300 (PX4 ready) + 10 (take-off
+    # height set) + 120 (flight_interface active) + 30 (Offboard stream) +
+    # 30 (take-off) + 60 (take-off height) + 30 (heading good) + 20
+    # (Offboard) = 600 s. A slow first start must not mark px4 unhealthy
+    # while the script would still finish (PR #253 review).
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/sim_ready"]
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 420s
+      start_period: 600s
 
-  # The scripted scenario and its checks (smoke_scenario.py in
-  # px4_offboard_bridge): its own intent_node, gestures on /gesture/raw, a
-  # rosbag and summary.md in logs/sim-smoke/<start time>/.
+  # The scripted scenario and its checks (src/simulation/sim_smoke/): its own
+  # intent_node, gestures on /gesture/raw, a rosbag and summary.md in
+  # logs/sim-smoke/<start time>/. Reads the hover throttle from /config/sim.yaml.
   sim_smoke:
     <<: *node
     profiles: [sim-smoke]
@@ -337,8 +406,34 @@ services:
         condition: service_healthy
       mission:
         condition: service_started
+      controller:
+        condition: service_started
     environment:
       <<: *node-env
       LOG_NAME: sim-smoke
       FASTDDS_BUILTIN_TRANSPORTS: UDPv4
-    command: ["/ws/install/px4_offboard_bridge/lib/px4_offboard_bridge/sim_smoke_scenario"]
+    command: ["/ws/install/sim_smoke/lib/sim_smoke/sim_smoke_scenario"]
+
+  # The SITL hold test (#199 Phase 8, REQ-NAV-001, ADR-025 F26): descend to
+  # 1.0 m by gesture, hold 60 s, judged on Gazebo's ground truth (gz-transport;
+  # PX4 starts Gazebo with GZ_IP=127.0.0.1, so the reader needs the same). A
+  # rosbag, truth.csv and summary.md in logs/sim-hold/<start time>/.
+  sim_hold:
+    <<: *node
+    profiles: [sim-hold]
+    attach: true
+    build: *px4-build
+    image: rosrangers/px4-sim:jazzy
+    depends_on:
+      px4:
+        condition: service_healthy
+      mission:
+        condition: service_started
+      controller:
+        condition: service_started
+    environment:
+      <<: *node-env
+      LOG_NAME: sim-hold
+      FASTDDS_BUILTIN_TRANSPORTS: UDPv4
+      GZ_IP: 127.0.0.1
+    command: ["/ws/install/sim_smoke/lib/sim_smoke/sim_hold_scenario"]

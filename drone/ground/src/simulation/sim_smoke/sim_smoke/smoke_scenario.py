@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""sim_smoke_scenario: scripted gestures against PX4 SITL, then the checks (SIM ONLY, #86).
+"""sim_smoke_scenario: scripted gestures against PX4 SITL, then the checks (SIM ONLY, #86, #199).
 
 make sim-smoke runs it in its own container once the px4 container is healthy
-(PX4 armed, airborne and in Offboard, the bridge streaming). It starts its own
+(PX4 armed, airborne and in Offboard, flight_interface streaming the
+controller's attitude setpoints through its px4 backend). It starts its own
 intent_node, so it can kill it for the REQ-SAF-017 check, and drives the chain
 through /gesture/raw only (mission_node owns /mission/velocity_target):
 
@@ -11,6 +12,9 @@ through /gesture/raw only (mission_node owns /mission/velocity_target):
 
 It records a rosbag of the chain, judges what happened with smoke_checks and
 writes summary.md next to the bag. Exit code 0 only if every check passed.
+The mask comes from /flight/state (flight_interface's, from config/sim.yaml),
+the hover throttle from the same file (mounted at /config, SIM_CONFIG
+replaces the path).
 
     sim_smoke_scenario [--out DIR]     (default: $LOG_DIR/sim-smoke/<start time>)
 """
@@ -26,15 +30,16 @@ import time
 from datetime import datetime
 
 import rclpy
+import yaml
 from ament_index_python.packages import get_package_prefix
 from geometry_msgs.msg import TwistStamped
-from px4_msgs.msg import TrajectorySetpoint, VehicleLocalPosition
+from px4_msgs.msg import VehicleLocalPosition
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
-from px4_offboard_bridge import smoke_checks as sc
+from sim_smoke import smoke_checks as sc
 
 GESTURE_HZ = 30.0  # about gesture_node's camera rate
 NO_HANDS = "NONE"
@@ -43,12 +48,16 @@ MOVE_RIGHT = "L:NONE+R:THUMB_RIGHT"
 CLIMB_UP = "L:NONE+R:INDEX_UP"
 
 READY_TIMEOUT_SEC = 60.0
+SIM_CONFIG = os.environ.get("SIM_CONFIG", "/config/sim.yaml")
 BAG_TOPICS = [
     "/gesture/raw",
     "/gesture/intent",
     "/mission/velocity_target",
     "/mission/state",
+    "/control/attitude_setpoint",
+    "/estimate/velocity",
     "/flight/state",
+    "/fmu/in/vehicle_attitude_setpoint_v1",
     "/fmu/in/trajectory_setpoint",
     "/fmu/in/offboard_control_mode",
     "/fmu/out/vehicle_local_position_v1",
@@ -68,8 +77,9 @@ class Recorder(Node):
         # this container is not counted against mission_node (REQ-SAF-017).
         self.intent_times = []  # receive time
         self.targets = []  # (header.stamp, (vx, vy, vz, wz))
-        self.setpoints = []  # (PX4 timestamp, (v_north, v_east, v_down, yawspeed))
+        self.setpoints = []  # (receive time, /control/attitude_setpoint dict)
         self.velocities = []  # (receive time, (v_north, v_east, v_down)) measured
+        self.positions = []  # (receive time, (north, east, down)) measured
         self.position = None  # (n, e, d, heading)
         self.mission = {}
         self.flight = {}
@@ -87,10 +97,7 @@ class Recorder(Node):
         self.create_subscription(String, "/mission/state", self._on_mission, 10)
         self.create_subscription(String, "/flight/state", self._on_flight, 10)
         self.create_subscription(
-            TrajectorySetpoint,
-            "/fmu/in/trajectory_setpoint",
-            self._on_setpoint,
-            best_effort,
+            String, "/control/attitude_setpoint", self._on_setpoint, 10
         )
         self.create_subscription(
             VehicleLocalPosition,
@@ -101,7 +108,7 @@ class Recorder(Node):
         self.create_timer(1.0 / GESTURE_HZ, self._publish_gesture)
 
     def now(self):
-        """Wall clock (s), the clock mission_node and the bridge stamp with."""
+        """Wall clock (s), the clock mission_node stamps with."""
         return self.get_clock().now().nanoseconds / 1e9
 
     def _publish_gesture(self):
@@ -116,13 +123,13 @@ class Recorder(Node):
         self.targets.append((stamp, (t.linear.x, t.linear.y, t.linear.z, t.angular.z)))
 
     def _on_setpoint(self, msg):
-        v = msg.velocity
-        stamp = msg.timestamp / 1e6  # µs, the bridge's ROS clock
-        self.setpoints.append((stamp, (v[0], v[1], v[2], msg.yawspeed)))
+        self.setpoints.append((self.now(), self._json(msg)))
 
     def _on_position(self, msg):
         self.position = (msg.x, msg.y, msg.z, msg.heading)
-        self.velocities.append((self.now(), (msg.vx, msg.vy, msg.vz)))
+        now = self.now()
+        self.velocities.append((now, (msg.vx, msg.vy, msg.vz)))
+        self.positions.append((now, (msg.x, msg.y, msg.z)))
 
     @staticmethod
     def _json(msg):
@@ -141,6 +148,13 @@ class Recorder(Node):
 
 def say(text):
     print(f"[sim-smoke] {text}", flush=True)
+
+
+def hover_throttle(path=SIM_CONFIG):
+    """config/sim.yaml's hover throttle (ADR-025 F20), the controller's."""
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    return float(data["controller_node"]["ros__parameters"]["hover_throttle"])
 
 
 def wait_for(what, condition, timeout):
@@ -165,15 +179,22 @@ def move(node, name, gesture, seconds, axis, sign, mask):
     n0, e0, d0, yaw = node.position
     hold(node, gesture, seconds)
     hold(node, NO_HANDS, 2.0)
-    n1, e1, d1, _ = node.position
+    n1, e1, d1, yaw1 = node.position
     displacement = sc.body_displacement((n0, e0, d0), (n1, e1, d1), yaw)
-    check = sc.movement_check(name, displacement, axis, sign, mask)
+    turned = sc.heading_change_deg(yaw, yaw1)
+    check = sc.movement_check(name, displacement, axis, sign, mask, turned)
     say(f"{name}: {check.detail}")
     return check
 
 
 def window(samples, t0):
     return [values for t, values in samples if t >= t0]
+
+
+# REQ-SAF-017: the hover is judged from 2.5 s after the kill (the controller
+# has stopped the move by then) for HOVER_WINDOW_SEC.
+HOVER_FROM_SEC = 2.5
+HOVER_WINDOW_SEC = 4.0
 
 
 def run_scenario(node, intent):
@@ -193,10 +214,14 @@ def run_scenario(node, intent):
         return [
             sc.Check("chain ready", False, f"mission state {node.mission or 'none'}")
         ]
-    mask = int(node.flight.get("mask", 15))
+    mask = node.flight.get("mask")
+    if mask is None:
+        # Never assume a mask: 15 would judge REQ-SAF-018 as if the ground
+        # owned every axis (hold_scenario does the same)
+        return [sc.Check("mask", False, "no mask in /flight/state")]
     if mask not in sc.SMOKE_MASKS:
         # Only right and up are flown: under mask 8 nothing moves, so the
-        # REQ-SAF-017 check could never pass. The Makefile refuses it too.
+        # REQ-SAF-017 check could never pass. config/sim.yaml sets the mask.
         return [sc.Check("mask", False, f"mask {mask}: sim-smoke needs 11 or 15")]
     say(f"chain ready, mask {mask}")
 
@@ -220,17 +245,22 @@ def run_scenario(node, intent):
     intent.send_signal(signal.SIGKILL)
     intent.wait()
     hold(node, MOVE_RIGHT, 1.5)  # gestures keep coming: only /gesture/intent is lost
-    hold(node, NO_HANDS, 2.0)
+    # NO_HANDS until the hover window (from HOVER_FROM_SEC after the kill) is over
+    hold(node, NO_HANDS, HOVER_FROM_SEC + HOVER_WINDOW_SEC - 1.5)
     last_intent = max(node.intent_times, default=None)
-    checks += sc.loss_checks(last_intent, node.targets, node.setpoints)
-    checks.append(sc.hover_check(window(node.velocities, t_kill + 2.5)))
+    checks.append(sc.loss_check(last_intent, node.targets))
+    hover_from = t_kill + HOVER_FROM_SEC
+    checks.append(sc.hover_check(window(node.velocities, hover_from)))
+    checks.append(sc.hover_drift_check(window(node.positions, hover_from)))
 
     targets = window(node.targets, t_start)
     checks.append(sc.rate_check([t for t, _ in node.targets if t >= t_start]))
     checks.append(sc.limits_check(targets))
     checks.append(sc.measured_speed_check(window(node.velocities, t_start)))
     checks.append(sc.mask_targets_check(targets, mask))
-    checks.append(sc.mask_setpoints_check(window(node.setpoints, t_start), mask))
+    checks.append(
+        sc.mask_attitude_check(window(node.setpoints, t_start), mask, hover_throttle())
+    )
     return checks
 
 

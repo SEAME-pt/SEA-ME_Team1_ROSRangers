@@ -60,7 +60,7 @@ def package_installed():
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 88
+TEST_DOMAIN_ID = 68
 ZERO = (0.0, 0.0, 0.0, 0.0)
 
 

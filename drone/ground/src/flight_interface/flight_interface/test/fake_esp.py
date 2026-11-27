@@ -45,7 +45,7 @@ import secrets
 import socket
 import struct
 
-from flight_interface.guard import ZERO
+from flight_interface.guard import NEUTRAL
 from sd_protocol.crypto import NONCE_SIZE, derive_keys
 from sd_protocol.frame import HEADER_SIZE, Header, MsgType, encode_frame, frame_size
 from sd_protocol.messages import (
@@ -658,7 +658,7 @@ class Clock:
             self.fake.step(self.now)
             self.states += self.backend.poll(self.now)
             if send:
-                self.backend.send_setpoint(ZERO, self.now)
+                self.backend.send_setpoint(NEUTRAL, self.now)
             self.fake.step(self.now)
             self.now = round(self.now + TICK, 6)
         return self.states[-1] if self.states else None

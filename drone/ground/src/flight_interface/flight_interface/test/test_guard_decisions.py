@@ -9,12 +9,13 @@ import pytest
 from flight_interface.backends import Backend, LoopbackBackend
 from flight_interface.guard import (
     ARM,
+    NEUTRAL,
     NEUTRAL_MAX_GAP,
     NEUTRAL_WINDOW,
     REQUEST_TIMEOUT,
     RESUME,
-    ZERO,
     Guard,
+    Setpoint,
 )
 
 STREAMING = {
@@ -30,6 +31,9 @@ FAILSAFE = {
     "fc_link_ok": True,
 }
 TICK = 0.02
+# Yaw left at 17 deg/s, commanding (mask 8 owns yaw only; no hover throttle
+# needed under mask 8, F16).
+YAW = Setpoint(0.0, 0.0, 17.0, 0.0, True)
 
 
 def guard_in(state, now=0.0):
@@ -47,7 +51,7 @@ def send_neutral_until(g, start, end, state=FAILSAFE, seen=None):
     due_at = None
     while t <= end + 1e-9:
         g.on_drone_state(state, t)
-        g.note_sent(ZERO, t)
+        g.note_sent(NEUTRAL, t)
         due = g.request_due(t)
         if due is not None:
             if seen is not None:
@@ -61,14 +65,14 @@ def send_neutral_until(g, start, end, state=FAILSAFE, seen=None):
 # ---------- A2: link loss gives zero and link_ok false, no latch ----------
 def test_link_loss_gives_zero_and_comes_back_without_a_reset():
     g = guard_in(STREAMING)
-    g.on_target(0.0, 0.0, 0.0, 0.3, now=0.0)
-    assert g.command(0.0) == pytest.approx((0.0, 0.0, 0.0, 0.3))
-    assert g.command(0.6) == ZERO  # no state for > 0.5 s
+    g.on_setpoint(YAW, now=0.0)
+    assert g.command(0.0) == YAW
+    assert g.command(0.6) == NEUTRAL  # no state for > 0.5 s
     assert g.flight_state(0.6)["link_ok"] is False
     assert g.estop is False  # A2: not latched
     g.on_drone_state(STREAMING, 0.7)
-    g.on_target(0.0, 0.0, 0.0, 0.3, now=0.7)
-    assert g.command(0.7) == pytest.approx((0.0, 0.0, 0.0, 0.3))
+    g.on_setpoint(YAW, now=0.7)
+    assert g.command(0.7) == YAW
 
 
 # ---------- receive time ----------
@@ -164,9 +168,29 @@ def test_a_non_neutral_setpoint_restarts_the_window():
     g = guard_in(FAILSAFE)
     g.request_resume(0.0)
     send_neutral_until(g, 0.0, 0.4)
-    g.note_sent((0.0, 0.0, 0.0, 0.1), 0.42)
+    g.note_sent(YAW, 0.42)
     due_at = send_neutral_until(g, 0.44, 2.5)
     assert due_at == pytest.approx(0.44 + NEUTRAL_WINDOW, abs=1.5 * TICK)
+
+
+def test_an_active_zero_restarts_the_window():
+    # F8: neutral is `active` false. An active "hold zero velocity" setpoint
+    # (all numbers 0, C2's active zero) is a command, not neutral.
+    g = guard_in(FAILSAFE)
+    g.request_resume(0.0)
+    send_neutral_until(g, 0.0, 0.4)
+    g.note_sent(Setpoint(0.0, 0.0, 0.0, 0.0, True), 0.42)
+    due_at = send_neutral_until(g, 0.44, 2.5)
+    assert due_at == pytest.approx(0.44 + NEUTRAL_WINDOW, abs=1.5 * TICK)
+
+
+def test_an_inactive_setpoint_counts_as_neutral_whatever_its_numbers():
+    g = guard_in(FAILSAFE)
+    g.request_resume(0.0)
+    send_neutral_until(g, 0.0, 0.4)
+    g.note_sent(Setpoint(10.0, -5.0, 30.0, 0.9, False), 0.42)
+    due_at = send_neutral_until(g, 0.44, 2.5)
+    assert due_at == pytest.approx(NEUTRAL_WINDOW, abs=1.5 * TICK)
 
 
 @pytest.mark.parametrize(
@@ -226,12 +250,12 @@ def test_flight_state_reports_failsafe_output_only_when_fresh():
 # ---------- backends (A1: neutral and BYE, A3: resume) ----------
 def test_loopback_records_neutral_bye_and_resume_in_order():
     b = LoopbackBackend()
-    assert b.send_setpoint((0.1, 0, 0, 0), 0.0) is True
+    assert b.send_setpoint(YAW, 0.0) is True
     assert b.send_neutral(0.1) is True
     assert b.end_session(0.1) is True
     assert b.request_resume(0.2, None) is True
     assert [what for _, what in b.log] == ["setpoint", "neutral", "bye", "resume"]
-    assert b.sent[-1] == (0.1, ZERO)
+    assert b.sent[-1] == (0.1, NEUTRAL)
 
 
 def test_base_backend_new_methods_are_only_an_interface():
@@ -252,9 +276,12 @@ def test_base_backend_new_methods_are_only_an_interface():
 )
 def test_fc_link_lost_closes_the_gate(fc_link_ok, open_):
     g = guard_in({**STREAMING, "fc_link_ok": fc_link_ok})
-    g.on_target(0.0, 0.0, 0.0, 0.3, now=0.0)
-    expected = (0.0, 0.0, 0.0, 0.3) if open_ else ZERO
-    assert g.command(0.0) == pytest.approx(expected)
+    g.on_setpoint(YAW, now=0.0)
+    if open_:
+        expected = YAW
+    else:
+        expected = NEUTRAL
+    assert g.command(0.0) == expected
     assert g.flight_state(0.0)["fc_link_ok"] is fc_link_ok
     # Decision K1: FC link lost -> link_ok false too, so mission_node goes IDLE.
     # E6.1: unknown (None) counts as lost.

@@ -3,7 +3,7 @@ title: Decision Register (ADR index)
 type: adr-index
 status: active
 date: 2026-10-12
-updated: 2026-11-26
+updated: 2026-11-27
 project: SEA autonomous drone
 aliases:
   - ADR Register
@@ -47,7 +47,7 @@ tags:
 | [[ADR-022 CI Gates and Lint Rules\|ADR-022]] | CI time limits, 90 % gate for the ROS 2 nodes, path filters inside jobs, stricter ruff + shellcheck | ✅ Accepted (2026-10-21, #73, PR #74 merged; golden-vectors hook 2026-11-23, PR #233; 2026-11-24: the 90 % gate covers every package in `ROS_PKGS`) | n/a |
 | [[ADR-023 ELRS Firmware Version and Regulatory Domain\|ADR-023]] | Radio and receiver both on ELRS 4.1.0, CE_LBT, team binding phrase | ✅ Accepted (team, 2026-10-21, #22) | n/a |
 | [[ADR-024 OTA Firmware Updates\|ADR-024]] | Keep OTA on the flight ESP: two different passwords, refused unless the FC is disarmed and no ground session is open; during an upload the FC cannot arm and no session opens | ✅ Accepted (2026-11-05, #62, PR #145). D1–D3 decided by the team, the upload lock on 2026-11-05 | OD-23 (partly) |
-| [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16) | n/a |
+| [[ADR-025 flight_interface Ground Node\|ADR-025]] | The ground node's safety rules: operator-only ARM / RESUME held for 1.5 s of neutral, E-stop with `BYE`, reconnect without ARM, FC state from `FC_HEALTH`, ROS on localhost | ✅ Accepted (#103, PR #187; decided 2026-11-09 to 2026-11-16; §2.4 F1–F29 for #199, 2026-11-23 to 2026-11-26; review notes and F29 2026-11-27) | n/a |
 
 ## 2. What changed on 2026-10-12
 
@@ -114,13 +114,30 @@ tags:
 
 ## 11. What changed on 2026-11-23
 
+- 2026-11-23, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F1–F19 for #199 (controller + PX4 backend): measured velocity on `/estimate/velocity` (F1), masks 8 / 11 / 15 in the simulation with the pilot's axes filled by the `px4` backend (F2), a `px4` backend in a simulation-only `flight_interface` image (F3), a 15° roll / pitch ground cap (F4), `px4_offboard_bridge` deleted once the hold test passes (F5), nothing changes on the real drone (F6), a velocity loop only (F7); neutral = `active` false, also for the K6 window (F8), the velocity ceilings in the controller (F9), the controller active whenever its inputs are fresh (F10), staleness checked in the controller and the guard (F11), the controller in the demo too (F12), the `px4` backend filling the ESP's `/flight/state` fields so the guard has one code path (F13), throttle within hover ± 0.15 under mask 15 (F14), shared values repeated in each node's section and checked to agree (F15; first a `/**:` section, changed the same day because it stopped `-p backend:=loopback` from overriding `backend: esp` in `make real-dry`), `hover_throttle` 0.0 = not measured = inactive (F16), a `reason` field on `/control/attitude_setpoint` (F17), the guard clamps an out-of-limit setpoint with a warning and drops a malformed one (F18), neutral in the simulation = PX4's own zero-velocity hold (F19). Dated notes on §1's guard limits (F9), C1.1 (the attitude signs are REP-103, as `/fc/attitude`; the `reason` field), C1.2 (PX4's estimate counts in SITL only), C1.4 (the cap value), C1.5, C2 (F8) and E1.2 (the simulation will run `flight_interface`).
 - Decision **extended**: [[ADR-022 CI Gates and Lint Rules|ADR-022]]: a local pre-commit hook `golden-vectors` runs `drone/tests/vectors/generate.py --check`, so the `lint` job now fails when the committed vectors and their independent generator disagree (#232, PR #233).
 
-## 12. Still open
+## 12. What changed on 2026-11-24
+
+- 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] §2.4 F20–F25 for #199 Phase 7 (`make sim` through the controller and `flight_interface`): the simulation's hover throttle is 0.60, PX4's own value for the x500 (F20; changed the same day to 0.73, measured in attitude Offboard: with 0.60 the drone sank); the simulation's `flight_interface` image builds `px4_msgs` from source in a `sim` stage (F21); `sim_start.sh` configures and activates `flight_interface`, then waits for the Offboard stream before it asks for Offboard (F22); take-off to 1.0 m (F23; changed the same day to 2.0 m: PX4 calls the heading good for control only above 1.5 m, so the hold test descends to 1.0 m through the controller); the simulation's mask only in `config/sim.yaml`, no `MASK` in `make sim` (F24); `make sim-smoke` checks REQ-SAF-017 at `mission_node`'s output and REQ-SAF-018 on `/control/attitude_setpoint` (F25). Dated note on F1 the same day: in the simulation the vertical measured velocity is PX4's `z_deriv`, not its biased `vz`.
+- 2026-11-24, decisions **added**: [[ADR-025 flight_interface Ground Node|ADR-025]] F26–F27 for #199 Phase 8: the SITL hold test is `make sim-hold`, descending to about 1.0 m by gesture, judged on Gazebo ground truth from the hold's start point, 3 runs in a row (F26); sim-tuned gains only in `config/sim.yaml` (F27).
+- 2026-11-24, decision **added**: ADR-025 F28, the controller's gains and limits can be changed live with `ros2 param set`, checked like at start-up. Decision **changed**: F12, the demo runs no controller. Note on F21: `px4_msgs` built in its own image stage. Decision **changed**: F2, a simulated pilot in the `px4` backend flies the axes the ground does not own (masks 8, 11), since a fixed hover throttle let the simulated drone fly away.
+
+## 13. What changed on 2026-11-25
+
+- 2026-11-25, note on [[ADR-025 flight_interface Ground Node|ADR-025]] F19 (#199): the `px4` backend's neutral holds the position and heading where it started (a position setpoint), not only a zero velocity, which climbed in SITL with PX4's biased `vz`. Simulation only.
+
+## 14. What changed on 2026-11-26
+
+- 2026-11-26, notes on [[ADR-025 flight_interface Ground Node|ADR-025]] (#199, from the branch's test report, BrunoBMFT): F19, an axis empty when the hold point froze is filled by the first fresh value; F11 **changed**, the controller's target must be fresh at the next tick, like the guard's; F13, the `px4` drone state's `rx_time` is PX4's last position, not the poll time; F28 **changed**, `hover_throttle` may go to 0.0 (a pause) and back live; A1, the `px4` E-stop answer says there is no BYE; F26, `make sim-hold` checks who held and has a neutral phase; F25, `make sim-smoke` checks heading, drift after the loss, a missing mask and non-finite samples; F8, the `px4` neutral is a position hold. Simulation only, except F11 and F28, which apply to the controller in every mode.
+- 2026-11-27, notes on [[ADR-025 flight_interface Ground Node|ADR-025]] (#199, PR #253 review, BrunoBMFT): F10, the controller's integrators run only while `/flight/state` (fresh within 0.5 s) says its output is applied, so nothing winds up while the pilot or PX4 flies; F28, each integrator stores its term, so a live `ki` change does not jump the output; F4 and C1.4, the 15° cap is per axis (about 21° on a diagonal); A7, the sim E-stop answer says PX4 keeps the last setpoint when no neutral went out; E1.4, the tests' ROS domains move to 60–101 and a mode may not use them; F26, the neutral-phase box is centred on the position at the pause and watched without gaps, and the 60 s hold is what verifies REQ-NAV-001; F19, neutral is calmer in the simulation than on the drone. [[ADR-019 Sim Backends|ADR-019]] §2: the Betaflight SITL adapter test is planned, not done (note). No safety decision changed.
+- 2026-11-27, new decision F29 in [[ADR-025 flight_interface Ground Node|ADR-025]] (#199, PR #253 review, ThiagoTEP, BrunoBMFT): on the real drone the cascade controller is not used; Betaflight Position Hold holds position ([[ADR-016 Flow Sensor Path|ADR-016]] update 2026-11-24) and gestures will nudge it through MSP Override on roll / pitch (needs a roll / pitch mask and #236, flown only after the cage, #239). The controller is simulation-only; #200 is an MTF-02P bench check, not a ground velocity estimator, so F6 holds. Lifting F6 would need a ground velocity source, #254 merged (#252) and #236. Pointers added to C1.2, F1, F6, F7, F10, F16 and §3.
+
+## 15. Still open
 
 See [[Open Questions]] and the remaining **Open** rows in [[PC_to_ESP]] §12, [[ESP_to_FC]] §12.2 and [[ThoneFlow]] §10.2.
 
-## 13. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 | --- | --- |

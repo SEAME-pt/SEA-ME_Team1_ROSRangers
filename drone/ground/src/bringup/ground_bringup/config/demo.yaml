@@ -8,6 +8,10 @@
 #
 # The containers read this file from the source folder (mounted read-only at
 # /config): edit it, then restart the container (docker compose restart flight).
+# The mask is set in every node that declares it, with the same value
+# (ADR-025 F15, test/test_config.py checks it). No `/**:` section: it would
+# stop a `-p` on the command line from overriding a node's own value.
+
 intent_node:
   ros__parameters:
     input_source: topic   # gesture_node's /gesture/raw, not UDP

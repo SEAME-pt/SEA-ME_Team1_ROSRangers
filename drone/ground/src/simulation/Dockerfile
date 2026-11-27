@@ -5,9 +5,11 @@
 #        Micro XRCE-DDS agent. Long to build (several GB). The Makefile builds it
 #        alone (make px4-image: --target px4, tagged seame-px4-sim:jazzy-1.17),
 #        so make clean and fclean keep it.
-#   sim  (final) PX4_IMAGE + intent_node, mission_node and px4_offboard_bridge
-#        (it imports mission_node.spin; the smoke scenario runs intent_node),
-#        started by sim_start.sh (make sim, make sim-smoke). Compose sets
+#   sim  (final) PX4_IMAGE + intent_node and sim_smoke (the scenario of make
+#        sim-smoke runs its own intent_node). The px4 service runs
+#        sim_start.sh (make sim, make sim-smoke); the sim_smoke service runs the
+#        scenario. flight_interface (px4 backend) is its own image (#199,
+#        src/flight_interface/Dockerfile, stage sim). Compose sets
 #        PX4_IMAGE to the tagged image (the Makefile's PX4_IMAGE). Without it
 #        (a plain docker build) the px4 stage is built here too, which takes
 #        long: use make px4-image, then make sim.
@@ -51,17 +53,16 @@ CMD ["bash"]
 FROM ${PX4_IMAGE} AS sim
 USER root
 COPY docker/entrypoint.sh /entrypoint.sh
-COPY src/simulation/sim_start.sh /sim_start.sh
+COPY src/simulation/sim_start.sh src/simulation/sim_lib.sh /
 RUN mkdir -p /ws && chown dev:dev /ws
 USER dev
 WORKDIR /ws
 
 COPY --chown=dev:dev src/intent/intent_node src/intent_node
-COPY --chown=dev:dev src/mission/mission_node src/mission_node
-COPY --chown=dev:dev src/simulation/px4_offboard_bridge src/px4_offboard_bridge
+COPY --chown=dev:dev src/simulation/sim_smoke src/sim_smoke
 # On top of the PX4 workspace (px4_msgs), so /ws/install/setup.bash sources both
 RUN . /opt/ros/jazzy/setup.sh && . /home/dev/ros2_px4_ws/install/setup.sh \
-    && colcon build --packages-select intent_node mission_node px4_offboard_bridge
+    && colcon build --packages-select intent_node sim_smoke
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/sim_start.sh"]

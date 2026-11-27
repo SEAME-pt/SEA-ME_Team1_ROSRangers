@@ -37,7 +37,7 @@ except ImportError:
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 85
+TEST_DOMAIN_ID = 64
 FAKE_CAMERA = Path(__file__).with_name("fake_camera.py")
 # fake_camera.py runs as a script, so its sys.path starts at test/. Add the
 # package folder last: an installed gesture_node (colcon, CI) still wins, so

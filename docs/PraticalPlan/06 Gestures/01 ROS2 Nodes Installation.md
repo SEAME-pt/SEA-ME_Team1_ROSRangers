@@ -3,7 +3,7 @@ title: ROS 2 Nodes Installation (Docker, run and test each node)
 type: guide
 status: draft
 date: 2026-10-16
-updated: 2026-11-20
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -69,18 +69,19 @@ Docker with the Compose plugin (usable without `sudo`), `make`, a webcam at `/de
 | `gesture` | `gesture_node`: webcam, "Gestures" window, `/gesture/raw` |
 | `intent` | `intent_node` on `/gesture/raw` |
 | `mission` | `mission_node` |
+| `controller` | `controller_node`: velocity target → attitude setpoint ([[07 Controller Node]]), real and sim modes; inactive until it has a measured velocity |
 | `fake_flight_state` | a **pretend** `/flight/state` ([[04 Mission Node]] §7.1), demo mode only. Never with a real drone |
 | `echo` | the live table (the drone and the chain, §4.6), and the `ros2` CLI (§5) |
 | `flight_interface` | the real `/flight/state`, real mode only ([[05 Flight Interface Node]] §7) |
-| `px4`, `sim_smoke` | the simulation and its test, sim modes only ([[PX4 SITL Setup]] §7) |
+| `px4`, `flight_interface_sim`, `sim_smoke`, `sim_hold` | the simulation (PX4, `flight_interface` with the `px4` backend) and its tests, sim modes only ([[PX4 SITL Setup]] §7) |
 
 Each **mode** is a compose profile with its env file, `drone/ground/env/<mode>.env`. The file sets the profile, the parameter file (`ground_bringup`'s `config/<mode>.yaml`), the ROS domain and the discovery range together:
 
 | Mode | Services | `/flight/state` from |
 | :--- | :--- | :--- |
 | `demo` (`make`) | gesture, intent, mission, echo, `fake_flight_state` | `fake_flight_state` (pretend) |
-| `sim` (`make sim`) | gesture, intent, mission, echo, `px4` | `px4_offboard_bridge` |
-| `real` (`make real`) | gesture, intent, mission, echo, `flight_interface` | `flight_interface` |
+| `sim` (`make sim`) | gesture, intent, mission, controller, echo, `flight_interface_sim`, `px4` | `flight_interface_sim` (backend `px4`) |
+| `real` (`make real`) | gesture, intent, mission, controller, echo, `flight_interface` | `flight_interface` |
 | `real-dry` (`make real-dry`) | the same as `real`, with `env/real.env` | `flight_interface`, loopback backend: no drone ([[05 Flight Interface Node]] §7.1) |
 
 **Before the first run: the env files.** Git never holds their values ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3). Copy the templates, then fill in the empty values (the domain and discovery range) with the ones the safety pilot gives you:
@@ -107,8 +108,9 @@ From `drone/ground/`:
 | `make test`, `make unit`, `make smoke`, `make test-sitl` | the tests (§7) |
 | `make clean` | `down` + removes this project's images |
 | `make fclean` / `make re` | `clean` + removes the venv, the workspace, `build/`, `logs/` and this project's other Docker objects / `fclean`, then `make` |
-| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.2) |
-| `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.3) |
+| `make sim` / `make sim-down` | the chain against PX4 SITL + Gazebo instead of the pretend `fake_flight_state`: fly the simulated drone with the webcam ([[PX4 SITL Setup]] §7.3) |
+| `make sim-smoke` | the headless simulation test with scripted gestures ([[PX4 SITL Setup]] §7.4) |
+| `make sim-hold` | the SITL position-hold test, REQ-NAV-001, 3 runs ([[PX4 SITL Setup]] §7.5) |
 | `make real` | the real mode, the drone: checks `env/real.env`, the PSK file and that the ESP answers, then starts the chain and `flight_interface` unconfigured and prints the operator steps ([[05 Flight Interface Node]] §7). Never configures, activates or ARMs |
 | `make real-dry` | the same without the drone (`flight_interface` on the loopback backend): to rehearse the operator steps |
 | `make real-down` | asks first (it cuts the drone's link), then stops the real mode |
@@ -121,7 +123,7 @@ The code is copied into the images, so run `make` again after an edit: it rebuil
 
 ### 4.5 `ROS_DOMAIN_ID`
 
-Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). `make` refuses a domain another mode uses, the tests' 81–98, and 0 or 42: the domains a plain terminal and the native launch files use, so a native `flight_interface` can't join a mode (E1.4). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
+Each mode has its own domain ([[ADR-025 flight_interface Ground Node|ADR-025]] E1.3), set by its env file (`GROUND_DOMAIN_ID`, §4.2). `make` refuses a domain another mode uses, the tests' 60–101, and 0 or 42: the domains a plain terminal and the native launch files use, so a native `flight_interface` can't join a mode (E1.4). The containers ignore your terminal's `ROS_DOMAIN_ID`. A host terminal that talks to the nodes needs the mode's values: `export ROS_DOMAIN_ID=<GROUND_DOMAIN_ID> ROS_AUTOMATIC_DISCOVERY_RANGE=<GROUND_DISCOVERY_RANGE>` from `env/<mode>.env`.
 
 ### 4.6 The live table
 
@@ -165,6 +167,10 @@ VELOCITY  mission_node  /mission/velocity_target     live
     up/down     0
     yaw         left 20.00 deg/s
     ground owns: yaw only (mask 8)
+
+CONTROL   controller_node  /control/attitude_setpoint live
+    active      False
+    reason      no_velocity
 ```
 
 - **Title:** the mode: `DEMO: PRETEND /flight/state`, `REAL: DRONE`, `REAL-DRY: NO DRONE (loopback)` or `SIM: PX4 SITL`. `MODE ?` means it was started outside a mode (§8).
@@ -174,16 +180,17 @@ VELOCITY  mission_node  /mission/velocity_target     live
 - **BATTERY:** pack voltage and the average per cell. It can't see single cells: the per-cell check before a session stays ([[Battery Log]]). Same sources as ATTITUDE.
 - **MISSION:** `why` appears only in `IDLE`: why the gestures do nothing.
 - **VELOCITY:** the target in words; its last line says which axes the ground owns (the mask), so "the gesture does nothing" reads as "yaw only".
+- **CONTROL:** the controller's attitude setpoint: `active` and its `reason` (`no_velocity` on the real drone, where the controller is not used), and while active the roll, pitch, yaw rate and throttle ([[07 Controller Node]] §6). The demo runs no controller: the row says so.
 
 **Alerts** go on a line under the title, each marked `!!`: red is a fault, yellow is "not OK yet". Colour only on a terminal. The radio and the safety pilot always win over what the table says ([[Safety Rules]]).
 
 | Alert | Means | Do |
 | :--- | :--- | :--- |
 | `MONITOR ERROR: <exception>` | the table itself failed on a message: rows may be missing data | don't trust the table; restart it (`docker compose run --rm echo`) and file a bug with the traceback from its output |
-| `<N> <topic> PUBLISHERS: <nodes>` | more than one node publishes `/flight/state`, `/mission/velocity_target` or `/fc/*`, which must have one | stop the extra node it names |
+| `<N> <topic> PUBLISHERS: <nodes>` | more than one node publishes `/flight/state`, `/mission/velocity_target`, `/control/attitude_setpoint` or `/fc/*`, which must have one | stop the extra node it names |
 | `<N> <topic> PUBLISHERS: <node> x<N> (restarted? or started twice)` | the same name more than once: a node killed (`docker kill`, OOM) and restarted stays listed until its DDS lease runs out (seconds), or the node was really started twice | wait a few seconds; if it stays, a node runs twice: stop the extra one |
 | `E-STOP: <reason>` | `flight_interface` is in E-stop: nothing goes to the drone | find the cause in `logs/flight_interface/latest.log`; `~/reset_estop` ([[05 Flight Interface Node]] §5) |
-| `FAILSAFE` | the ESP sends its own failsafe output (sim: no PX4 data yet, or it stopped) | the safety pilot flies; check the Wi-Fi and the ground (sim: wait for PX4, [[PX4 SITL Setup]] §7) |
+| `FAILSAFE` | the ESP sends its own failsafe output | the safety pilot flies; check the Wi-Fi and the ground |
 | `FC LINK LOST` | the ESP gets no answer from the FC | the safety pilot flies; check the FC wiring and power |
 | `NO LINK` | no recent state from the ESP (Wi-Fi lost, ESP off), or the ground can't command the drone and nothing above says why | check the ESP and the Wi-Fi |
 | `NO /flight/state (N s)` / `BAD /flight/state` | its publisher stopped / sent something unreadable | check that publisher's log |
@@ -263,12 +270,12 @@ From `drone/ground/`:
 
 | Command | Needs | Runs |
 | :--- | :--- | :--- |
-| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `px4_offboard_bridge`, `drone/tests/tools`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
+| `make test` | Python 3.12 (the venv); ROS 2 Jazzy for the ROS suites; `cmake` for the C++ library; `pre-commit` | every suite: `colcon test` of each ground package, the coverage gate (package tests + `drone/tests/ros`, 90 %), `sd_protocol_py`, the C++ protocol library, `sim_smoke`'s checks, `drone/tests/tools`, the HIL host part, `pre-commit run --all-files` (it fixes files in place: run again after a fix) |
 | `make unit` | Python 3.12 | the suites that need no ROS 2 (the package tests' ROS cases are skipped), no pre-commit |
 | `make pkg-test` / `make e2e-test` | ROS 2 Jazzy | `colcon test` only / `drone/tests/ros` only |
 | `make test-sitl` | `git`, `gcc`, network on the first run | Betaflight SITL and `drone/tests/sitl`. The first run clones and builds Betaflight into `build/betaflight` (a few minutes); `BF_DIR=<checkout>` uses another one |
 | `make smoke` | Docker | the smoke test (§7.3) |
-| `make sim-smoke` | Docker, several GB for the PX4 image | the chain against PX4 SITL, not in CI ([[PX4 SITL Setup]] §7.3) |
+| `make sim-smoke` / `make sim-hold` | Docker, several GB for the PX4 image | the chain / the position hold against PX4 SITL, not in CI ([[PX4 SITL Setup]] §7.4, §7.5) |
 
 The test targets run every suite even if one fails and end with one summary row per suite (per package for `colcon`): `PASS`, `FAIL`, `SKIP` (a tool is missing, e.g. no Jazzy; it does not fail the run) or `TIMEOUT` (each suite is stopped after 20 min, `SUITE_TIMEOUT`). Full output in `logs/test/<suite>.log`. The suites are in `tools/run_tests.sh`. The C++ suite runs `ctest` only: its 80 % coverage gate runs in CI.
 
@@ -286,7 +293,7 @@ Tests that need ROS 2 are skipped where ROS 2 is missing (`make unit`). With `RE
 
 ### 7.5 In CI
 
-`ground-ros2` builds and tests the ground packages (`gesture_node`, `intent_node`, `mission_node`, `flight_interface`, `ground_bringup`) and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
+`ground-ros2` builds and tests the ground packages (`gesture_node`, `intent_node`, `mission_node`, `controller_node`, `flight_interface`, `ground_bringup`) and `drone/tests/ros` (90 % coverage gate); `ground-docker` runs the smoke test. Both run on PRs that touch `drone/ground/`, `drone/tests/ros/` or `ci.yaml` ([[Testing Strategy]], [[ADR-022 CI Gates and Lint Rules|ADR-022]]).
 
 ---
 
@@ -335,3 +342,10 @@ Recognition problems: [[02 Gesture Node]] §13. Modes and velocities: [[04 Missi
 | **Smoke test** | A short end-to-end check of the built images (`make smoke`). |
 | **STALE** | A live-table row whose topic has stopped for more than 1 s; the last values stay. |
 | **Topic** | A named channel nodes publish and subscribe to. |
+| **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
+| **Compose profile** | A named group of services in `docker-compose.yml`, started together with `--profile` (one per mode). |
+| **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |

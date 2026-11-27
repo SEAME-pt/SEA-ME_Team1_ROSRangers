@@ -3,7 +3,7 @@ title: Gesture Pipeline (overview)
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-16
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -34,8 +34,8 @@ flowchart LR
   G -->|"/gesture/intent"| M[mission_node]
   FI -->|"/flight/state"| M
   FFS["fake_flight_state<br/>(pretend)"] -.->|"/flight/state"| M
-  M -->|"/mission/velocity_target"| C["controller + estimator<br/>(planned)"]
-  C --> FI[flight_interface]
+  M -->|"/mission/velocity_target"| C[controller_node]
+  C -->|"/control/attitude_setpoint"| FI[flight_interface]
   FI -->|"Wi-Fi (UDP / TCP)"| E["ESP8266<br/>(planned)"]
   E -->|"MSP over UART"| FC[Betaflight FC]
 ```
@@ -46,8 +46,8 @@ flowchart LR
 | `intent_node` ([[03 Intent Node\|03]]) | decides what the **operator** wants; filters noise and lost hands | `/gesture/raw` → `/gesture/intent` | ==🟢built== |
 | `mission_node` ([[04 Mission Node\|04]]) | decides what the **drone** does: modes, limits, owned axes | `/gesture/intent` + `/flight/state` → `/mission/velocity_target` | ==🟢built==, numbers not reviewed |
 | `fake_flight_state`, `fake_intent` ([[04 Mission Node\|04]] §7) | test without a drone | made-up `/flight/state`, `/gesture/intent` | ==🟠pretend, never with a real drone== |
-| controller + estimator ([[06 Final Connections and Missing Parts\|06]] §2.1) | velocity → attitude | `/mission/velocity_target` → setpoints | ==🔴planned== |
-| `flight_interface` ([[05 Flight Interface Node\|05]]) | sends setpoints to the drone safely, publishes the real `/flight/state` | setpoints → ESP, drone → `/flight/state` | ==🟢built== (ESP backend; PX4 backend planned) |
+| `controller_node` ([[07 Controller Node\|07]]) | velocity → attitude, using the measured velocity | `/mission/velocity_target` + `/estimate/velocity` → `/control/attitude_setpoint` | ==🟢built== (flies in the simulator only; on the drone Betaflight holds position, [[06 Final Connections and Missing Parts\|06]] §2.1) |
+| `flight_interface` ([[05 Flight Interface Node\|05]]) | sends setpoints to the drone safely, publishes the real `/flight/state` | setpoints → ESP (or PX4 in the simulator), drone → `/flight/state` | ==🟢built== (ESP and PX4 backends) |
 | ESP8266 firmware ([[Protocol Spec v0]]) | bridges Wi-Fi to the FC | packets → MSP | ==🔴planned== |
 
 ---
@@ -55,7 +55,7 @@ flowchart LR
 ## 🗂️ 2. Notes in this section
 
 - [[01 ROS2 Nodes Installation]]: ROS 2 basics, running everything in Docker, tests, troubleshooting.
-- [[02 Gesture Node]], [[03 Intent Node]], [[04 Mission Node]], [[05 Flight Interface Node]]: one note per node.
+- [[02 Gesture Node]], [[03 Intent Node]], [[04 Mission Node]], [[05 Flight Interface Node]], [[07 Controller Node]]: one note per node.
 - [[06 Final Connections and Missing Parts]]: what the chain still needs, and nodes to add later.
 
 ---
@@ -114,7 +114,7 @@ The **left hand** makes the mirror image of each pose. Up, down, forward and bac
 
 | What | Where |
 | :--- | :--- |
-| The ROS 2 packages, each with its `test/` folder and its Dockerfile | `drone/ground/src/<component>/` (`gesture/`, `intent/`, `mission/`, `flight_interface/`) |
+| The ROS 2 packages, each with its `test/` folder and its Dockerfile | `drone/ground/src/<component>/` (`gesture/`, `intent/`, `mission/`, `controller/`, `flight_interface/`) |
 | Tests of the nodes together | `drone/tests/ros/` |
 | `Makefile`, `docker-compose.yml` | `drone/ground/` |
 | Node and test logs (not in Git) | `drone/ground/logs/` |
@@ -125,7 +125,7 @@ The **left hand** makes the mirror image of each pose. Up, down, forward and bac
 
 `cd drone/ground && make`. Everything else: [[01 ROS2 Nodes Installation|01]] §4.
 
-Against the simulated drone (PX4 SITL + Gazebo): `make sim`, and the headless test `make sim-smoke` ([[PX4 SITL Setup]] §7).
+Against the simulated drone (PX4 SITL + Gazebo): `make sim`, the headless test `make sim-smoke` and the position-hold test `make sim-hold` ([[PX4 SITL Setup]] §7).
 
 ---
 
@@ -157,3 +157,12 @@ A trained landmark classifier instead of the rule-based `recognize()`, and the s
 | **ROS 2** | The second-generation Robot Operating System middleware used for robotics integration. |
 | **Topic** | A named channel on which ROS 2 nodes publish and subscribe to messages (`/gesture/raw`, `/gesture/intent`, `/mission/velocity_target`). |
 | **UDP** | User Datagram Protocol: connectionless transport suited to refreshed, time-sensitive data (the drone link). |
+| **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
+| **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
+| **px4 backend** | Sim-only backend of `flight_interface`: attitude setpoints (or, when nothing commands, PX4's own hold of a frozen position) → PX4, PX4 state → `/flight/state`, PX4 velocity → `/estimate/velocity`. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
+| **FC** | Flight Controller: on this project the OddityRC F7 AIO (STM32F722, Betaflight target `ODDITYRCF7AIO`) of the 2.5" drone. It stabilises the aircraft and takes MSP from the ESP on UART4. |
+| **ESP** | The ESP-12F module (ESP8266) on the drone: the Wi-Fi bridge between the ground PC and the FC, wired to FC UART4. |
+| **MSP** | MultiWii Serial Protocol, used for communication with Betaflight flight controllers. |

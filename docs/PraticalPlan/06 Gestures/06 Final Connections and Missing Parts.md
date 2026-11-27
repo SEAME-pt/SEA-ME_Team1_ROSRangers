@@ -3,7 +3,7 @@ title: Final Connections and Missing Parts
 type: architecture
 status: draft
 date: 2026-10-16
-updated: 2026-11-19
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -21,9 +21,9 @@ What the gesture chain still needs before a gesture moves the real drone (§2), 
 
 | § | Part | Why | Status |
 | :---: | :--- | :--- | :---: |
-| 2.1 | controller + estimator | velocity target → attitude setpoints | ==🟠planned, Module 1== |
-| 2.2 | PX4 backend for `flight_interface` | the simulator through the real node | ==🟠planned, Module 1== |
-| 2.3 | gestures driving `flight_interface` in the simulator | the whole chain end to end | ==🟠planned, Module 1== |
+| 2.1 | controller | velocity target → attitude setpoints | ==🟢built, simulation only== (#199); on the drone Betaflight holds position |
+| 2.2 | PX4 backend for `flight_interface` | the simulator through the real node | ==🟢built== (#199) |
+| 2.3 | gestures driving `flight_interface` in the simulator | the whole chain end to end | ==🟡runs== (`make sim`); ==🟠webcam tests== (#202) |
 | 2.4 | `override_active` from the ESP | the gate in `mission_node` and `flight_interface` | ==🟢built== (#176) |
 | 2.5 | `gesture_node` leftovers | ADR and the MediaPipe Tasks API | ==🟠to do== |
 | 3.1 | `camera_node` | camera frames as a ROS topic | ==🟣idea, optional== |
@@ -39,23 +39,26 @@ What the gesture chain still needs before a gesture moves the real drone (§2), 
 
 ```mermaid
 flowchart LR
-  M[mission_node] -->|"/mission/velocity_target"| C["controller + estimator<br/>(2.1, missing)"]
+  M[mission_node] -->|"/mission/velocity_target"| C["controller_node<br/>(2.1)"]
   C -->|"/control/attitude_setpoint"| FI[flight_interface]
   FI -->|esp| ESP([ESP gateway])
-  FI -.->|"px4 (2.2, missing)"| PX4([PX4 SITL])
+  FI -->|"px4 (2.2)"| PX4([PX4 SITL])
+  FI -->|"/estimate/velocity<br/>(sim)"| C
 ```
 
-### 2.1 Controller + estimator
+### 2.1 Controller
 
-Turns `/mission/velocity_target` and the estimated velocity (flow, IMU, baro) into attitude and throttle on `/control/attitude_setpoint`, which `flight_interface` sends. Yaw only (mask 8) first; roll and pitch once there is a velocity estimate. Until it exists, `flight_interface` sends neutral sticks. Its contract: [[ADR-025 flight_interface Ground Node|ADR-025]] C1.
+Turns `/mission/velocity_target` and the measured velocity into attitude and throttle on `/control/attitude_setpoint`, which `flight_interface` sends. Its contract: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4.
+
+Controller built (#199): `controller_node`, [[07 Controller Node]]. It flies the simulation, where the `px4` backend gives the measured velocity; `make sim-hold` holds 60 s within REQ-NAV-001. It is simulation-only: on the real drone nothing publishes `/estimate/velocity`, so it stays inactive. There, Betaflight's Position Hold holds position with the flow sensor ([[ADR-016 Flow Sensor Path|ADR-016]]), and gestures will move the drone by nudging it: a roll or pitch deflection beyond Betaflight's `pos_hold_deadband` becomes a target velocity, and on release the drone brakes and holds the new point. That needs a roll / pitch mask and the FC's override mask set on the drone, and is flown only after the cage ([[ADR-025 flight_interface Ground Node|ADR-025]] F29).
 
 ### 2.2 PX4 backend for `flight_interface`
 
-A `px4` backend that sends the attitude setpoints to PX4 SITL and publishes `/flight/state` from PX4. It replaces `px4_offboard_bridge` in `make sim`; the two never run together, since both publish `/flight/state` ([[PX4 SITL Setup]], [[ADR-019 Sim Backends|ADR-019]]).
+Built (#199). The `px4` backend sends the attitude setpoints to PX4 SITL (or PX4's own position hold while nothing commands), publishes `/flight/state` from PX4 and the measured velocity on `/estimate/velocity`. It runs only in the simulation image of `flight_interface`, as the service `flight_interface_sim` of `make sim` ([[PX4 SITL Setup]] §7, [[05 Flight Interface Node|05]], [[ADR-019 Sim Backends|ADR-019]]).
 
 ### 2.3 Gestures driving `flight_interface` in the simulator
 
-The whole chain, webcam → gesture → intent → mission → controller → `flight_interface` → PX4, with the gesture speed limits, hand loss → hover, and no gesture ever arming, each checked by a test.
+The whole chain, webcam → gesture → intent → mission → controller → `flight_interface` → PX4, with the gesture speed limits, hand loss → hover, and no gesture ever arming, each checked by a test. The chain runs (`make sim`, #199), and `make sim-smoke` checks it with scripted gestures; the webcam tests are #202.
 
 ### 2.4 `override_active` from the ESP
 
@@ -100,7 +103,7 @@ Shows the mode, intent and reason from `/mission/state` to the operator. Display
 | Term | Meaning |
 | --- | --- |
 | **ADR** | Architecture Decision Record: a documented decision and its rationale. |
-| **Backend** | The part of `flight_interface` that talks to one kind of drone: `loopback`, `esp`, later `px4`. |
+| **Backend** | The part of `flight_interface` that talks to one kind of drone: `loopback`, `esp`, `px4` (simulation only). |
 | **Bringup package** | A ROS 2 package that holds only launch and parameter files to start a whole system. |
 | **Compose profile** | A named group of services in `docker-compose.yml`, started together with `--profile`. |
 | **JSON** | A text format for structured data, used inside the gesture topics. |
@@ -110,3 +113,8 @@ Shows the mode, intent and reason from `/mission/state` to the operator. Display
 | **SITL** | Software In The Loop: the flight code runs on the PC against a simulator. |
 | **Spike** | A short, time-boxed investigation to answer a question before building. |
 | **Tasks API** | MediaPipe's newer API that replaces the removed `mp.solutions`. |
+| **Attitude setpoint** | Roll, pitch, yaw rate and throttle: what the controller asks the drone to hold. |
+| **Controller** | `controller_node`: turns the velocity target into an attitude setpoint ([[07 Controller Node]]). |
+| **Measured velocity** | The velocity the drone really has, on `/estimate/velocity`: from PX4, in the simulation only. On the real drone nothing publishes it: Betaflight's Position Hold holds position itself. |
+| **PX4** | An open-source flight-control stack, used here only in simulation (PX4 SITL + Gazebo). |
+| **REQ ID** | A requirement identifier, `REQ-<area>-NNN`, registered in [[Requirements]]. |
