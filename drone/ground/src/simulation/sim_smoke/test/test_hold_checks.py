@@ -5,6 +5,7 @@ import math
 import pytest
 from sim_smoke.hold_checks import (
     HOLD_SEC,
+    MAX_GAP_SEC,
     MAX_HEADING_DEG,
     RESUME_SEC,
     active_check,
@@ -13,6 +14,7 @@ from sim_smoke.hold_checks import (
     displacement,
     heading_check,
     hold_checks,
+    nearest_sample,
     neutral_mode_check,
     resume_check,
 )
@@ -158,14 +160,57 @@ def test_neutral_mode_check():
     assert not neutral_mode_check([]).ok
 
 
-def test_box_checks_from_the_first_sample():
+PAUSE = (0.0, 0.0, 0.0, 1.4)  # the truth at the pause
+
+
+def neutral(samples, origin=PAUSE, t_from=0.5, t_to=20.0):
+    """box_checks on the samples from t_from to t_to, as hold_scenario."""
+    inside = [s for s in samples if t_from <= s[0] <= t_to]
+    return box_checks(inside, "neutral", origin, t_from, t_to)
+
+
+def test_box_checks_from_the_pause_point():
     samples = still(z=1.4, seconds=20.0)
     samples[50] = (5.0, 0.2, 0.1, 1.52)  # 0.22 m and +0.12 m: inside
-    assert all(c.ok for c in box_checks(samples, "neutral"))
+    assert all(c.ok for c in neutral(samples))
     samples[60] = (6.0, 0.3, 0.0, 1.4)
-    horizontal, vertical = box_checks(samples, "neutral")
-    assert not horizontal.ok and vertical.ok
-    assert not box_checks(samples[:1], "neutral")[0].ok
+    coverage, horizontal, vertical = neutral(samples)
+    assert coverage.ok and not horizontal.ok and vertical.ok
+
+
+def test_box_drift_during_the_switch_counts():
+    # PR #253 review: the drone moved 0.3 m between the pause and the settle
+    # time, then stayed there. From the first judged sample it would pass;
+    # from the pause point it fails.
+    samples = still(z=1.4, seconds=20.0, x=0.3)
+    _, horizontal, _ = neutral(samples)
+    assert not horizontal.ok
+
+
+def test_box_needs_the_whole_phase_watched():
+    samples = still(z=1.4, seconds=20.0)
+    two = [samples[10], samples[-1]]  # 2 samples: no longer enough
+    assert not neutral(two)[0].ok
+    gap = samples[:50] + samples[60:]  # 1 s without truth inside
+    assert not neutral(gap)[0].ok
+    late_start = samples[20:]  # nothing from 0.5 s to 2.0 s
+    assert not neutral(late_start)[0].ok
+    early_end = samples[:150]  # nothing after 14.9 s
+    assert not neutral(early_end)[0].ok
+    assert neutral(samples)[0].ok
+
+
+def test_box_without_a_pause_point_or_samples_fails():
+    samples = still(z=1.4, seconds=20.0)
+    assert not neutral(samples, origin=None)[0].ok
+    assert not box_checks(samples[:1], "neutral", PAUSE, 0.0, 20.0)[0].ok
+
+
+def test_nearest_sample():
+    samples = [(0.0, 1.0, 0.0, 1.0), (0.1, 2.0, 0.0, 1.0), (0.3, 3.0, 0.0, 1.0)]
+    assert nearest_sample(samples, 0.12)[1] == 2.0
+    assert nearest_sample(samples, 0.3 + MAX_GAP_SEC + 0.01) is None
+    assert nearest_sample([], 0.0) is None
 
 
 def test_heading_check():

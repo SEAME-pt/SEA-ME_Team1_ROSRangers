@@ -258,7 +258,13 @@ def neutral_phase(node):
     time.sleep(hc.RESUME_SEC + 0.5)
     t_from = t_pause + hc.NEUTRAL_SETTLE_SEC
     truth = node.between(node.truth, t_from, t_resume)
-    checks = hc.box_checks(truth, "neutral (PX4 holds)")
+    # The box is centred where the drone was at the pause: PX4 froze its hold
+    # point there (F19), so drift during the switch counts too.
+    around_pause = node.between(
+        node.truth, t_pause - hc.MAX_GAP_SEC, t_pause + hc.MAX_GAP_SEC
+    )
+    origin = hc.nearest_sample(around_pause, t_pause)
+    checks = hc.box_checks(truth, "neutral (PX4 holds)", origin, t_from, t_resume)
     checks.append(
         hc.heading_check(node.between(node.yaws, t_from, t_resume), "neutral: heading")
     )

@@ -17,7 +17,8 @@ Offboard, attitude setpoints), not PX4's own hold. Then the neutral phase
 (#199, 2026-11-26): the controller is paused (hover_throttle 0.0), so
 flight_interface sends neutral and PX4 holds the frozen point
 (px4_logic.NeutralHold) in position Offboard; it must stay within the same
-REQ-NAV-001 box, and the controller must fly again once resumed.
+REQ-NAV-001 box around where it was at the pause, watched without gaps for
+the whole phase, and the controller must fly again once resumed.
 """
 
 import math
@@ -124,29 +125,63 @@ def active_check(setpoints):
     )
 
 
-def box_checks(samples, label):
-    """samples: [(t, x, y, z)]. The REQ-NAV-001 box from the first sample:
-    horizontal <= HORIZONTAL_M, vertical within +-VERTICAL_M. Used for the
-    neutral phase (label says which)."""
-    name_h = f"{label}: horizontal from its start point"
+def nearest_sample(samples, t):
+    """The (t, x, y, z) sample closest in time to t, or None if none is
+    within MAX_GAP_SEC of it (the truth was not watched then)."""
+    best = None
+    for sample in samples:
+        if best is None or abs(sample[0] - t) < abs(best[0] - t):
+            best = sample
+    if best is None or abs(best[0] - t) > MAX_GAP_SEC:
+        return None
+    return best
+
+
+def box_checks(samples, label, origin, t_from, t_to):
+    """samples: [(t, x, y, z)] between t_from and t_to; origin: the
+    (t, x, y, z) sample the box is centred on (the position at the pause,
+    where PX4 froze its hold point), or None if there was none.
+
+    Returns three checks (label says which phase):
+      * coverage: samples from t_from to t_to with no gap over MAX_GAP_SEC,
+        at the start, inside or at the end (2 samples are not enough);
+      * horizontal <= HORIZONTAL_M and vertical within +-VERTICAL_M of the
+        origin (REQ-NAV-001's box).
+    Example: pause at (0, 0, 1.40); a sample at (0.15, 0.20, 1.52) is
+    hypot(0.15, 0.20) = 0.25 m (inside) and +0.12 m (inside)."""
+    name_h = f"{label}: horizontal from the pause point"
+    if origin is None:
+        return [Check(label, False, "no truth sample at the pause")]
     if len(samples) < 2:
         return [Check(label, False, f"{len(samples)} truth samples")]
-    bad = sc.non_finite_check(label, samples)
+    bad = sc.non_finite_check(label, samples + [origin])
     if bad is not None:
         return [bad]
-    _, x0, y0, z0 = samples[0]
+    _, x0, y0, z0 = origin
+    times = [s[0] for s in samples]
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    gaps.append(times[0] - t_from)  # not watched at the start
+    gaps.append(t_to - times[-1])  # not watched at the end
+    largest_gap = max(gaps)
     horizontal = max(math.hypot(x - x0, y - y0) for _, x, y, _ in samples)
     up = max(z - z0 for _, _, _, z in samples)
     down = max(z0 - z for _, _, _, z in samples)
-    span = samples[-1][0] - samples[0][0]
+    span = times[-1] - times[0]
     return [
+        Check(
+            f"{label}: truth without gaps",
+            largest_gap <= MAX_GAP_SEC,
+            f"{span:.1f} s of {t_to - t_from:.1f} s, largest gap "
+            f"{largest_gap * 1000:.0f} ms (<= {MAX_GAP_SEC * 1000:.0f}), "
+            f"{len(samples)} samples",
+        ),
         Check(
             name_h,
             horizontal <= HORIZONTAL_M,
             f"max {horizontal:.3f} m (<= {HORIZONTAL_M}) over {span:.1f} s",
         ),
         Check(
-            f"{label}: vertical from its start point",
+            f"{label}: vertical from the pause point",
             up <= VERTICAL_M and down <= VERTICAL_M,
             f"max +{up:.3f} / -{down:.3f} m (+-{VERTICAL_M})",
         ),
