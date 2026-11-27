@@ -34,17 +34,24 @@ constexpr std::uint32_t kOverrideStatusMaxAgeMs = 500;
 // so each exchange takes ~19 ms on the drone and RC at 50 Hz can take every
 // slot.
 // A due MSP_STATUS poll goes before the next RC when the last status is this
-// old, so override_state() stays known: 300 ms, plus at most one RC in flight
-// (kReplyTimeoutMs), plus the status reply (kReplyTimeoutMs), is 400 ms, under
-// kOverrideStatusMaxAgeMs. It delays that RC by one exchange (~16 ms).
+// old, so override_state() stays known. Worst case: 300 ms, plus one RC in
+// flight that times out (kReplyTimeoutMs) and its drain (kDrainMs), plus the
+// status reply (kReplyTimeoutMs): 300 + 50 + 50 + 50 = 450 ms, under
+// kOverrideStatusMaxAgeMs. It delays that RC by one exchange (~19 ms).
 constexpr std::uint32_t kStatusUrgentAgeMs = 300;
 // #252: likewise a due MSP_BOXIDS poll when the list is this old, so it is read
 // again long before kMaxValueAgeMs forgets it (override_state() needs it).
 constexpr std::uint32_t kBoxIdsUrgentAgeMs = 5000;
-// #252: after an urgent-kind request timed out, it is not urgent again for this
-// long. An FC that never answers it would otherwise cost RC a timeout and a
-// drain (~100 ms) every cycle, which breaks the 1 s of RC acks ARM and RESUME
-// need (#188). With 5 s it happens at most once every 5 s.
+// #252: a status or box list request that failed (timeout, error reply or a
+// reply that does not decode) is retried at once as urgent: one lost reply
+// must not leave the status stale. From the second failure in a row it waits
+// before it is urgent again, kUrgentBackoffFirstMs and then twice as long per
+// failure, up to kUrgentBackoffMs: 2nd 400 ms, 3rd 800 ms, 4th 1.6 s,
+// 5th 3.2 s, 6th and later 5 s. A failed urgent request costs RC a gap (a
+// timeout and a drain, ~100 ms), which breaks the 1 s of RC acks ARM and
+// RESUME need (#188), so an FC that never answers it costs that at most once
+// every 5 s. A good reply ends the run of failures.
+constexpr std::uint32_t kUrgentBackoffFirstMs = 400;
 constexpr std::uint32_t kUrgentBackoffMs = 5000;
 constexpr std::uint32_t kReplyTimeoutMs = 50;
 // After a timeout, nothing is sent for this long and any reply that arrives is
@@ -175,10 +182,11 @@ private:
     std::uint32_t period_ms;
     std::uint32_t last_sent_ms;
     bool sent_once;
-    // #252: the last request of this kind timed out at timeout_ms (cleared by
-    // a reply), so it is not urgent for kUrgentBackoffMs.
-    bool timed_out;
-    std::uint32_t timeout_ms;
+    // #252: failed requests of this kind in a row (timeout, error reply or
+    // a reply that does not decode) and when the last one failed. A good
+    // reply sets failures back to 0. See kUrgentBackoffMs.
+    std::uint8_t failures;
+    std::uint32_t failed_ms;
   };
 
   void on_reply(const msp::Reply &reply, std::uint32_t now_ms);
@@ -193,6 +201,12 @@ private:
   Poll *most_overdue_poll(std::uint32_t now_ms);
   // The poll of command `cmd`, or nullptr (RC is not a poll).
   Poll *find_poll(std::uint8_t cmd);
+  // #252: count a failed request of command `cmd` / end its run of failures.
+  void note_failure(std::uint8_t cmd, std::uint32_t now_ms);
+  void note_success(std::uint8_t cmd);
+  // #252: how long a poll with `failures` failures in a row waits before it
+  // can be urgent again (0: at once).
+  static std::uint32_t urgent_backoff_ms(std::uint8_t failures);
 
   Poll polls_[5];
   bool rc_pending_ = false;

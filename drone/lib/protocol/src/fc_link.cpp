@@ -6,12 +6,12 @@
 namespace sd {
 
 FcLink::FcLink()
-    : polls_{{msp::kAttitude, kAttitudePeriodMs, 0, false, false, 0},
-             {msp::kStatus, kStatusPeriodMs, 0, false, false, 0},
-             {msp::kAnalog, kAnalogPeriodMs, 0, false, false, 0},
+    : polls_{{msp::kAttitude, kAttitudePeriodMs, 0, false, 0, 0},
+             {msp::kStatus, kStatusPeriodMs, 0, false, 0, 0},
+             {msp::kAnalog, kAnalogPeriodMs, 0, false, 0, 0},
              // Last: at start-up the polls above go first, as before.
-             {msp::kApiVersion, kApiVersionPeriodMs, 0, false, false, 0},
-             {msp::kBoxIds, kBoxIdsPeriodMs, 0, false, false, 0}} {}
+             {msp::kApiVersion, kApiVersionPeriodMs, 0, false, 0, 0},
+             {msp::kBoxIds, kBoxIdsPeriodMs, 0, false, 0, 0}} {}
 
 void FcLink::set_rc(const std::uint16_t channels[msp::kRcChannels]) {
   if (rc_pending_) {
@@ -87,21 +87,59 @@ FcLink::Poll *FcLink::find_poll(std::uint8_t cmd) {
   return found;
 }
 
+void FcLink::note_failure(std::uint8_t cmd, std::uint32_t now_ms) {
+  Poll *const p = find_poll(cmd);
+  if (p == nullptr) {
+    return; // RC is not a poll
+  }
+  if (p->failures < UINT8_MAX) {
+    ++p->failures;
+  }
+  p->failed_ms = now_ms;
+}
+
+void FcLink::note_success(std::uint8_t cmd) {
+  Poll *const p = find_poll(cmd);
+  if (p != nullptr) {
+    p->failures = 0;
+  }
+}
+
+std::uint32_t FcLink::urgent_backoff_ms(std::uint8_t failures) {
+  // 0 or 1 failure: no wait (one lost reply is retried at once). Then
+  // kUrgentBackoffFirstMs, doubled per extra failure, capped. Example:
+  // 4 failures -> 400, 800, 1600 ms.
+  if (failures < 2) {
+    return 0;
+  }
+  std::uint32_t wait = kUrgentBackoffFirstMs;
+  for (std::uint8_t n = 2; n < failures && wait < kUrgentBackoffMs; ++n) {
+    wait = wait * 2;
+  }
+  return std::min(wait, kUrgentBackoffMs);
+}
+
 FcLink::Poll *FcLink::urgent_poll(std::uint32_t now_ms) {
   const auto is_urgent = [this, now_ms](const Poll &p) {
-    // A request of this kind timed out recently: not urgent (an FC that never
-    // answers it must not cost RC ~100 ms every cycle, #188).
-    if (p.timed_out && now_ms - p.timeout_ms < kUrgentBackoffMs) {
+    // Requests of this kind failed in a row: not urgent while it backs off (an
+    // FC that never answers it must not cost RC ~100 ms every cycle, #188).
+    if (now_ms - p.failed_ms < urgent_backoff_ms(p.failures)) {
       return false;
     }
     // The next page of a box list being read is urgent too, or a list longer
-    // than one page would never be read again on a slow FC.
+    // than one page would never be read again on a slow FC. A failed page
+    // sets box_page_ back to 0, so this cannot repeat forever.
     if (p.cmd == msp::kBoxIds && box_page_ > 0) {
       return true;
     }
     // Never before the first request of its kind (start-up keeps the usual
-    // order: attitude first, RC first), and only when due.
-    if (!p.sent_once || now_ms - p.last_sent_ms < p.period_ms) {
+    // order: attitude first, RC first). Only when due, except the retry after
+    // one failure, which goes at once.
+    if (!p.sent_once) {
+      return false;
+    }
+    const bool retry = p.failures == 1;
+    if (!retry && now_ms - p.last_sent_ms < p.period_ms) {
       return false;
     }
     if (p.cmd == msp::kStatus) {
@@ -136,11 +174,7 @@ std::size_t FcLink::poll(std::uint32_t now_ms, std::uint8_t *out,
     if (in_flight_cmd_ == msp::kBoxIds) {
       box_page_ = 0; // a lost page: read the list again from the start
     }
-    Poll *const lost = find_poll(in_flight_cmd_);
-    if (lost != nullptr) {
-      lost->timed_out = true; // #252: not urgent for kUrgentBackoffMs
-      lost->timeout_ms = now_ms;
-    }
+    note_failure(in_flight_cmd_, now_ms); // #252
     // A silent FC must not starve the polls: after an RC timeout one due poll
     // goes before the next RC, so the FC is seen when it answers again.
     poll_first_ = in_flight_cmd_ == msp::kSetRawRc;
@@ -223,10 +257,6 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   }
   in_flight_ = false;
   ++counters_.replies;
-  Poll *const answered = find_poll(reply.cmd);
-  if (answered != nullptr) {
-    answered->timed_out = false; // #252: urgent again when needed
-  }
   // #188: a new run after a timeout, or after a silence of kFcLostMs with no
   // request in flight (a stalled loop): checked before last_reply_ms_ moves.
   if (!alive_run_ || !any_reply_ || now_ms - last_reply_ms_ >= kFcLostMs) {
@@ -245,6 +275,10 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
     if (reply.cmd == msp::kSetRawRc) {
       rc_run_ = false; // '!': the FC refused the RC frame (#188)
     }
+    if (reply.cmd == msp::kBoxIds) {
+      box_page_ = 0; // a refused page: read the list again from the start
+    }
+    note_failure(reply.cmd, now_ms); // #252
     return;
   }
   bool ok = false;
@@ -298,6 +332,14 @@ void FcLink::on_reply(const msp::Reply &reply, std::uint32_t now_ms) {
   }
   if (!ok) {
     ++counters_.unexpected;
+    note_failure(reply.cmd, now_ms); // #252
+    return;
+  }
+  // #252: a box list counts as read only when its last page came (box_page_
+  // back to 0), so a list whose later page keeps failing still backs off.
+  const bool list_done = reply.cmd != msp::kBoxIds || box_page_ == 0;
+  if (list_done) {
+    note_success(reply.cmd);
   }
 }
 
