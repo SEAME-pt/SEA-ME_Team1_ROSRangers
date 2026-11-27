@@ -48,7 +48,7 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 96
+TEST_DOMAIN_ID = 78
 NODE = [sys.executable, "-m", "flight_interface.link_node"]
 LAUNCH = ["ros2", "launch", "flight_interface", "flight_interface.launch.py"]
 

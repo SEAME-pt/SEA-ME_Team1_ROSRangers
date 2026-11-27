@@ -48,7 +48,7 @@ from mission_node.fake_inputs import (
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them):
 # colcon tests packages in parallel, and running containers or teammates
 # must not see these topics.
-TEST_DOMAIN_ID = 87
+TEST_DOMAIN_ID = 67
 PUBLISH_PERIOD = 0.05  # the probe publishes like intent_node: 20 Hz
 TRANSPORT_SLACK_SEC = 0.05
 ZERO = (0.0, 0.0, 0.0, 0.0)

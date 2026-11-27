@@ -62,7 +62,7 @@ except ModuleNotFoundError as error:  # no sd_protocol; any other import error f
     FakeEsp = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 95
+TEST_DOMAIN_ID = 77
 
 
 def setpoint_json(pitch=0.0, yaw_rate=0.0):

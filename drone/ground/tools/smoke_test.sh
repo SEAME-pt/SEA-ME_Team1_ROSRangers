@@ -48,9 +48,9 @@ SELF=$(realpath "$0")
 # Absolute before the cd below, so a relative SMOKE_LOG_DIR still works
 LOG_DIR=${SMOKE_LOG_DIR:+$(realpath -m "$SMOKE_LOG_DIR")}
 cd "$(dirname "$0")/.."
-export ROS_DOMAIN_ID=86 # tests use 81-85 and 87-97: `grep -r TEST_DOMAIN_ID src ../tests`
+export ROS_DOMAIN_ID=65 # tests' block 60-101 (ADR-025 E1.4): `grep -r TEST_DOMAIN_ID src ../tests`
 # The compose services take their domain from GROUND_DOMAIN_ID (the modes'
-# env files), never from ROS_DOMAIN_ID: the same 86 for them. Their
+# env files), never from ROS_DOMAIN_ID: the same 65 for them. Their
 # parameters: the demo's (fake_flight_state and flight_interface use their
 # own file whatever the mode).
 export GROUND_DOMAIN_ID=$ROS_DOMAIN_ID GROUND_MODE=demo GROUND_DISCOVERY_RANGE=LOCALHOST
