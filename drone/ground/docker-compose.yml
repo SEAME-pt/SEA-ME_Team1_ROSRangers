@@ -379,12 +379,18 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${GROUND_LOG_DIR:-./logs}:/logs
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    # start_period covers the longest sim_start.sh can take before it touches
+    # /tmp/sim_ready: its waits add up to 300 (PX4 ready) + 10 (take-off
+    # height set) + 120 (flight_interface active) + 30 (Offboard stream) +
+    # 30 (take-off) + 60 (take-off height) + 30 (heading good) + 20
+    # (Offboard) = 600 s. A slow first start must not mark px4 unhealthy
+    # while the script would still finish (PR #253 review).
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/sim_ready"]
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 420s
+      start_period: 600s
 
   # The scripted scenario and its checks (src/simulation/sim_smoke/): its own
   # intent_node, gestures on /gesture/raw, a rosbag and summary.md in

@@ -17,10 +17,11 @@ stream_last=""
 streaming() {
     local now
     now=$(px4_field offboard_control_mode timestamp | awk '{print $1}')
-    if [ -n "$now" ] && [ -n "$stream_last" ] && [ "$now" != "$stream_last" ]; then
+    local previous=$stream_last
+    stream_last=$now
+    if [ -n "$now" ] && [ -n "$previous" ] && [ "$now" != "$previous" ]; then
         return 0
     fi
-    stream_last=$now
     return 1
 }
 

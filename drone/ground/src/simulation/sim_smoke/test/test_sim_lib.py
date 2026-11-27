@@ -130,6 +130,14 @@ def test_streaming_needs_two_different_timestamps(tmp_path):
     assert run(bin_dir, body) == (0, "1\n1\n0")
 
 
+def test_streaming_stops_when_the_timestamp_stops(tmp_path):
+    # PR #253 review: 100, 200, 200, 200 is a stream that stopped after 200
+    stamps = [mode_at(100), mode_at(200), mode_at(200), mode_at(200)]
+    bin_dir = fake_listener(tmp_path, {"offboard_control_mode": stamps})
+    body = "; ".join(["streaming; echo $?"] * 4)
+    assert run(bin_dir, body) == (0, "1\n0\n1\n1")
+
+
 def test_not_streaming_without_px4(tmp_path):
     bin_dir = fake_listener(tmp_path, {})
     assert run(bin_dir, "streaming; echo $?; streaming; echo $?") == (0, "1\n1")
