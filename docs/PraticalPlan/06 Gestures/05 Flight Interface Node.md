@@ -3,7 +3,7 @@ title: Flight Interface Node (attitude setpoint → drone, drone state → /flig
 type: architecture
 status: draft
 date: 2026-11-16
-updated: 2026-11-26
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -49,6 +49,8 @@ The gesture nodes know nothing about the radio link. `flight_interface` is the o
 
 `drone/ground/src/flight_interface/flight_interface/`, image `rosrangers/flight_interface:jazzy`. The simulation uses the `sim` stage of the same Dockerfile, `rosrangers/flight_interface-sim:jazzy`: the same image plus `px4_msgs`, which only the `px4` backend imports.
 
+The simulation's compose service `flight_interface_sim` is the same node: the same package, Dockerfile and executable as the real `flight_interface` service. Only four things differ: the image stage (`sim`, with `px4_msgs`, so the real image and CI never carry PX4 code; ADR-025 F3, F21), the parameter file (`config/sim.yaml`, backend `px4`), the compose profiles (`sim`, `sim-smoke`, `sim-hold`) and the DDS transport (UDP only, to reach PX4's container).
+
 | Piece | What it does |
 | :--- | :--- |
 | `guard.py` | every rule of §5, no ROS imports |
@@ -83,11 +85,11 @@ The node starts **unconfigured**. The operator runs `configure`, then `activate`
 | Watchdog | no valid drone state for 0.5 s → zero setpoints and `link_ok` false, so `mission_node` goes `IDLE`; no latch |
 | Gate | a commanding setpoint needs `STREAMING`, override on, a known mask and the FC link alive; otherwise neutral |
 | Limits | roll / pitch ≤ 15°, yaw rate ≤ 45 °/s, throttle within hover ± 0.15 (only under mask 15). Beyond them: clamped, with a throttled warning. Axes outside the mask: level and the hover throttle. Mask 15 with no measured hover throttle: neutral |
-| Neutral | `active` false. The `esp` backend sends mode 0 (the pilot's sticks); the `px4` backend streams the position where neutral started (zero velocity), so PX4 holds that point |
+| Neutral | `active` false. The `esp` backend sends mode 0 (the pilot's sticks); the `px4` backend streams the position where neutral started (zero velocity), so PX4 holds that point. On the drone nothing holds it but the pilot: it drifts, so a neutral moment (link loss, inactive controller) looks calmer in the simulation than it will on the drone |
 | ARM | only the operator's `~/arm_control`, in `SESSION_IDLE`, with a fresh link and the FC alive. Never by itself, also not after a reconnect (REQ-SAF-023) |
 | RESUME | only the operator's `~/resume`, after the ESP's link failsafe. Never by itself |
 | Held requests | ARM and RESUME go out after 1.5 s of neutral setpoints; dropped after 3 s or when their conditions go |
-| E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop`. The `px4` backend (sim) has no `BYE`: its answer says so, and PX4's Offboard-loss failsafe takes over (A1 note, 2026-11-26) |
+| E-stop | `~/estop` (or an unexpected error): one neutral setpoint, then `BYE`, then nothing. Latched until `~/reset_estop`. The `px4` backend (sim) has no `BYE`, and its answer says what happens instead: after the one neutral PX4 holds that point; with no neutral (an unexpected error) it keeps the last setpoint it got. Either way nothing more is sent, so PX4's Offboard-loss failsafe takes over (ADR-025 A1, A7) |
 | Sessions | the `esp` backend reconnects by itself, never with ARM |
 | No restart | a dead node stays dead; the ESP's failsafe takes over |
 | ROS stays on this PC | the real mode's domain from `env/real.env` and `LOCALHOST` discovery, so another laptop on the drone's Wi-Fi can't call its services. A native `ros2 launch` on the host defaults to `ROS_DOMAIN_ID=42` (ADR-025 E1.4) |

@@ -3,7 +3,7 @@ title: ADR-019 — Simulation Backends
 type: adr
 status: accepted
 date: 2026-10-12
-updated: 2026-11-26
+updated: 2026-11-27
 project: SEA autonomous drone
 aliases:
   - D19
@@ -31,7 +31,10 @@ Two simulators, both behind the **same `flight_interface`**:
 
 ## 2. Consequences
 
-The sim-to-real gap is largest at the interface: PX4 takes setpoints, Betaflight takes stick values. The adapter that converts attitude/thrust into channel values is tested against Betaflight SITL, and the flight behaviour against PX4.
+The sim-to-real gap is largest at the interface: PX4 takes setpoints, Betaflight takes stick values. ~~The adapter that converts attitude/thrust into channel values is tested against Betaflight SITL, and the flight behaviour against PX4.~~ The flight behaviour is tested against PX4. The adapter that converts attitude/thrust into channel values is planned to be tested against Betaflight SITL, but no test does that yet.
+
+> [!note] 2026-11-27 (PR #253 review): the struck sentence described the plan, not what exists
+> It contradicted the 2026-11-26 note in §1: no `flight_interface` backend talks to Betaflight SITL, and no test checks the attitude/thrust-to-channel conversion against it. No decision changed.
 
 ## 3. Related pages
 

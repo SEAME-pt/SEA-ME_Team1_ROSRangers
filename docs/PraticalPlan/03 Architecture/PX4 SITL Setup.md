@@ -3,7 +3,7 @@ title: PX4 SITL Setup
 type: how-to
 status: verified
 date: 2026-10-15
-updated: 2026-11-26
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - simulation
@@ -97,6 +97,7 @@ Then start the agent and `make px4_sitl gz_x500` as in §3, **without** `HEADLES
 
 - The `px4io/px4-sitl` image on the PX4 quickstart page is headless without Gazebo or ROS 2. It is a smoke test only.
 - Clean up with `docker rm -f px4sim`.
+- Neutral is calmer here than on the drone. In the simulation, neutral (`active` false) is PX4's position hold of a frozen point ([[ADR-025 flight_interface Ground Node|ADR-025]] F19); on the drone it is mode 0 through the ESP, which hands the sticks back to the safety pilot, and the drone drifts until the pilot holds it. A link loss or an inactive controller therefore looks better in SITL than it will on the drone (2026-11-27, PR #253 review).
 
 ## 7. The ground chain in the simulator (`make sim`, `make sim-smoke`, `make sim-hold`)
 
@@ -201,6 +202,8 @@ A missing mask in `/flight/state` fails the run (it is never assumed), and so do
 
 REQ-NAV-001: at 1.0 m, with zero velocity setpoints, the drone stays within **0.25 m** horizontally and **±0.15 m** vertically of the start point for **60 s**, judged on Gazebo's ground truth ([[ADR-025 flight_interface Ground Node|ADR-025]] F26).
 
+What each part verifies (2026-11-27): the 60 s hold is REQ-NAV-001, flown by the ground's controller with zero velocity setpoints (every setpoint active, PX4 in attitude Offboard). The 20 s neutral phase after it checks PX4's own position hold with the same box; it is not REQ-NAV-001's controller.
+
 ```sh
 make sim-hold          # 3 runs; passes only if all 3 pass
 make sim-hold RUNS=1   # one run (RUNS must be 1 or more)
@@ -208,9 +211,9 @@ make sim-hold RUNS=1   # one run (RUNS must be 1 or more)
 
 **Scenario** (`sim_smoke/hold_scenario.py`): no hands → `ENGAGE` → the descend gesture until Gazebo's height reads 1.0 m → no hands for 5 s, then the hold: 60 s of no hands. Then the **neutral phase** (2026-11-26): the scenario pauses the controller for 20 s by setting its `hover_throttle` to 0.0 through the parameter service (ADR-025 F28 note), so `flight_interface` sends neutral and PX4 holds the frozen point (F19); then it sets the value back. It reads the true position and heading straight from Gazebo (gz-transport, the model `x500_0`), next to PX4's estimate.
 
-**Checks** (`hold_checks.py`, unit-tested in `sim-smoke-python`): the hold starts at 1.0 ± 0.1 m; 60 s held with no gap in the truth; the largest horizontal distance and vertical deviation from the start point; the controller active for every setpoint of the hold; who held (every `/flight/state` with `override_active`, `mission_node` ENGAGED with intent NEUTRAL, PX4 in Offboard, every Offboard mode attitude: PX4's own hold would pass the distance checks too); the heading within 10°. Neutral phase, from 0.5 s after the pause: the same 0.25 m / ±0.15 m box from its own start point, the heading within 10°, every Offboard mode position, and an active setpoint within 2 s of the resume. A non-finite sample fails the check. `summary.md` also lists, not judged, the start and end of the hold in the truth and in PX4's estimate.
+**Checks** (`hold_checks.py`, unit-tested in `sim-smoke-python`): the hold starts at 1.0 ± 0.1 m; 60 s held with no gap in the truth; the largest horizontal distance and vertical deviation from the start point; the controller active for every setpoint of the hold; who held (every `/flight/state` with `override_active`, `mission_node` ENGAGED with intent NEUTRAL, PX4 in Offboard, every Offboard mode attitude: PX4's own hold would pass the distance checks too); the heading within 10°. Neutral phase, judged from 0.5 s after the pause to the resume: the truth watched without gaps (none over 0.5 s at the start, inside or at the end), the same 0.25 m / ±0.15 m box around the true position at the moment of the pause (where PX4 froze its hold point, so drift during the switch counts; 2026-11-27), the heading within 10°, every Offboard mode position, and an active setpoint within 2 s of the resume. A non-finite sample fails the check. `summary.md` also lists, not judged, the start and end of the hold in the truth and in PX4's estimate.
 
-The first runs (2026-11-24, #199): 3 of 3, at most 0.19 m horizontally and 0.08 m vertically, with the controller's starting gains. With the neutral phase (2026-11-26): 3 of 3, 12/12 checks each; the hold at most 0.18 m off, the neutral hold at most 0.11 m and 0.06 m, the controller flying again 0.02 s after the resume.
+The first runs (2026-11-24, #199): 3 of 3, at most 0.19 m horizontally and 0.08 m vertically, with the controller's starting gains. With the neutral phase (2026-11-26): 3 of 3, 12/12 checks each; the hold at most 0.18 m off, the neutral hold at most 0.11 m and 0.06 m, the controller flying again 0.02 s after the resume. With the review fixes (2026-11-27: integrators only while applied, the neutral box from the pause point, watched without gaps): 3 of 3, 13/13 checks each; the hold at most 0.207 m horizontally and 0.050 m vertically, the neutral hold at most 0.068 m and 0.051 m, the controller flying again within 0.01 s.
 
 ### 7.6 Output
 

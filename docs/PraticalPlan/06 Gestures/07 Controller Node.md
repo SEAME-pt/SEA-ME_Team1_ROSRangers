@@ -3,7 +3,7 @@ title: Controller_Node (velocity target → attitude setpoint)
 type: architecture
 status: draft
 date: 2026-11-24
-updated: 2026-11-26
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - gestures
@@ -22,7 +22,7 @@ aliases:
 `controller_node` sits between [[04 Mission Node|mission_node]] and [[05 Flight Interface Node|flight_interface]]. It turns the velocity `mission_node` wants ("0.3 m/s to the right") into the attitude that gets the drone there (roll, pitch, yaw rate, throttle), using the velocity the drone really has. It is the outer loop of a cascade: the inner loop, attitude → motors, stays in the flight controller (Betaflight on the drone, PX4 in the simulator).
 
 > [!WARNING] Status: DRAFT
-> - Flies only where a measured velocity exists. In the simulation (PX4 SITL) it does: `make sim-hold` holds 60 s, at most 0.19 m off (limit 0.25 m; REQ-NAV-001, [[PX4 SITL Setup]] §7.5). On the real drone there is none until the flow + height estimator (#200), so it stays inactive and nothing that reaches the drone changes.
+> - Flies only where a measured velocity exists. In the simulation (PX4 SITL) it does: `make sim-hold` holds 60 s, at most about 0.21 m off (limit 0.25 m; REQ-NAV-001, [[PX4 SITL Setup]] §7.5). On the real drone there is none until the flow + height estimator (#200), so it stays inactive and nothing that reaches the drone changes.
 > - The gains are the starting values; they were enough in SITL. The real drone gets its own tuning in the cage.
 > - Its rules are accepted decisions: [[ADR-025 flight_interface Ground Node|ADR-025]] C1 and §2.4 (F1–F28).
 
@@ -35,6 +35,7 @@ flowchart LR
   M[mission_node] -->|"/mission/velocity_target<br/>TwistStamped, body FLU, 20 Hz"| C["<b>controller_node</b>"]
   E["measured velocity<br/>sim: flight_interface (px4)<br/>drone: estimator (#200)"] -->|"/estimate/velocity<br/>TwistStamped, body FLU"| C
   C -->|"/control/attitude_setpoint<br/>JSON, 50 Hz"| FI[flight_interface]
+  FI -.->|"/flight/state<br/>(is the output applied?)"| C
 ```
 
 The gesture chain thinks in velocities; the flight controller holds an attitude. Something on the ground has to close the loop between them, and it must be the same code in the simulation and on the drone, so what passes in SITL is what flies. Only the source of the measured velocity changes (ADR-025 F1).
@@ -48,7 +49,7 @@ The gesture chain thinks in velocities; the flight controller holds an attitude.
 | Piece | What it does |
 | :--- | :--- |
 | `controller_logic.py` | the control law and every rule of §5, no ROS imports |
-| `controller_node.py` | the node: two subscriptions, one 50 Hz timer, parameters |
+| `controller_node.py` | the node: three subscriptions, one 50 Hz timer, parameters |
 | `spin.py` | Ctrl+C / `docker stop` → one last inactive setpoint, exit 0; a bad parameter → FATAL, exit 1 |
 
 ---
@@ -57,6 +58,7 @@ The gesture chain thinks in velocities; the flight controller holds an attitude.
 
 - `/mission/velocity_target` (`TwistStamped`, body FLU, yaw rate in rad/s) from `mission_node`.
 - `/estimate/velocity` (`TwistStamped`, body FLU): the measured velocity. In the simulation `flight_interface`'s `px4` backend publishes it from PX4; on the drone, the estimator of #200.
+- `/flight/state` (JSON) from `flight_interface`: whether the output is **applied**, i.e. reaches the vehicle (`link_ok`, `STREAMING`, override on, a known mask: the guard's own gate). It only decides whether the integrators run (§4); it never makes the output inactive.
 - Parameters (`controller_node.py`): `mask`, `hover_throttle`, `rate_hz`, the gains `kp_xy`, `ki_xy`, `kp_z`, `ki_z`, `tilt_cap_deg`, `throttle_band`, `target_timeout_sec`, `velocity_timeout_sec`, the topic names. A bad value stops the node at start-up. `mask` and `hover_throttle` must equal `flight_interface`'s: each mode file repeats them in both sections and `test_config.py` checks they agree.
 - **Live tuning** (ADR-025 F28): the gains, `tilt_cap_deg`, `throttle_band` and the two timeouts can change while it runs, checked like at start-up; a bad value is refused and the old one kept, and the log says `retuned: …`. A batch is all or none. `hover_throttle` may only go to 0.0 (a pause: always inactive, so `flight_interface` sends neutral) and back to its start value (F28 note, 2026-11-26; `make sim-hold` uses it). `mask`, `rate_hz` and the topics need a restart. From `drone/ground/`, in the mode's domain ([[01 ROS2 Nodes Installation|01]] §5):
 
@@ -78,7 +80,13 @@ One PI loop per axis on the velocity error (target − measured), every tick (50
 | Up | throttle around the hover throttle, divided by cos(roll)·cos(pitch) while tilted |
 | Yaw | the target yaw rate, passed through |
 
-The worked examples are in the comments of `controller_logic.py`. The integrators stop while the output is at its limit (anti-windup) and are cleared whenever the output goes inactive. Axes outside the mask get level attitude and the hover throttle.
+The worked examples are in the comments of `controller_logic.py`. Each integrator stores its term (`ki` × the integral of the error), so a live `ki` change keeps the output where it was. The integrators:
+
+- run only while the output is applied: with `/flight/state` older than 0.5 s, missing, or saying control is not possible (override off, PX4 not in Offboard, `flight_interface` inactive or in E-stop), they are cleared and the output is P only. Nothing builds up while the pilot or PX4 flies, so the takeover starts from zero;
+- stop while the output is at its limit and the error pushes it further (anti-windup); for the throttle that is the final value, after the tilt correction and the band;
+- are cleared whenever the output goes inactive.
+
+Axes outside the mask get level attitude and the hover throttle.
 
 ---
 
@@ -89,7 +97,7 @@ The worked examples are in the comments of `controller_logic.py`. The integrator
 | Input clamp | the target is clamped first: 0.5 m/s horizontal (as a vector, direction kept), 0.5 m/s vertical, 45 °/s yaw; a non-finite value counts as 0 |
 | Stale target | not fresh at the next tick (older than 0.25 s then) → a zero target: the drone holds zero velocity, at most 0.25 s after the last target (REQ-SAF-017, F11 note 2026-11-26) |
 | Active | only while a measured velocity arrived in the last 0.25 s and the hover throttle is measured (not 0.0). A zero target with a fresh measurement is active: "hold zero velocity", also while `mission_node` is not `ENGAGED` |
-| Limits | roll / pitch ≤ 15°, throttle within hover ± 0.15. `flight_interface`'s guard checks the same limits again |
+| Limits | roll ≤ 15° and pitch ≤ 15°, each on its own (so up to about 21° of total tilt on a diagonal), throttle within hover ± 0.15. `flight_interface`'s guard checks the same limits again |
 | Inactive | `active` false with the `reason`: neutral, whatever the numbers |
 
 Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]] C1, F4, F8–F11, F14, F16.
@@ -107,7 +115,7 @@ Every rule with its reason: [[ADR-025 flight_interface Ground Node|ADR-025]] C1,
   `roll`, `pitch` in degrees, `yaw_rate` in °/s, `throttle` 0–1, body FLU with REP-103 signs (as `/fc/attitude`): roll + = right side down, pitch + = nose down, yaw rate + = turn left.
 - `reason`: `ok`, `no_velocity`, `stale_velocity`, `no_hover_throttle`, or `stopped` (the last setpoint on the way out).
 - The live table's CONTROL row shows `active` and `reason`, and the numbers while active ([[01 ROS2 Nodes Installation|01]] §4.6).
-- Logs in `logs/controller/latest.log`: every change of `reason`, and every 5 s how many targets and measured velocities arrived.
+- Logs in `logs/controller/latest.log`: every change of `reason`, and every 5 s how many targets, measured velocities and flight states arrived.
 
 ---
 
@@ -124,7 +132,7 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 
 ## 🧪 8. Test
 
-`controller_logic.py` is tested without ROS (`test_controller_logic.py`: each axis' sign, saturation, anti-windup, the input clamp, staleness, the active rules, the masks). The node is tested with ROS (`test_controller_node_ros.py`, `test_controller_node_process.py`: the topics, the last setpoint on stop, a bad parameter). `test_ceilings_match.py` checks the velocity ceilings against `mission_node`'s. CI runs them in `ground-ros2` with its 90 % coverage gate; `make smoke` runs them inside the image. End to end: `make sim-smoke` and `make sim-hold` ([[PX4 SITL Setup]] §7.4, §7.5).
+`controller_logic.py` is tested without ROS (`test_controller_logic.py`: each axis' sign, saturation, anti-windup, the integrators while not applied and across a `ki` change, the input clamp, staleness, the active rules, the masks). The node is tested with ROS (`test_controller_node_ros.py`, `test_controller_node_process.py`: the topics, the last setpoint on stop, a bad parameter). `test_ceilings_match.py` checks the velocity ceilings against `mission_node`'s. CI runs them in `ground-ros2` with its 90 % coverage gate; `make smoke` runs them inside the image. End to end: `make sim-smoke` and `make sim-hold` ([[PX4 SITL Setup]] §7.4, §7.5).
 
 ---
 
@@ -144,7 +152,7 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 
 | ID | Requirement | Checked in |
 |---|---|---|
-| REQ-NAV-001 | Position hold in SITL: 0.25 m horizontal, ±0.15 m vertical, 60 s. | `make sim-hold` |
+| REQ-NAV-001 | Position hold in SITL: 0.25 m horizontal, ±0.15 m vertical, 60 s. | `make sim-hold`'s 60 s hold, flown by this controller (its neutral phase checks PX4's own hold, not this requirement) |
 | REQ-SAF-017 | Zero within 0.25 s of losing the target. | `test_controller_logic.py`, `make sim-smoke` |
 | REQ-SAF-018 | No command on an axis outside the mask. | `test_controller_logic.py`, `make sim-smoke` |
 
@@ -171,7 +179,9 @@ The `controller` compose service runs in the real and sim modes, with the mode's
 | **Cascade controller** | Two loops in a row: the ground's velocity loop sets the attitude, the flight controller's attitude loop sets the motors. |
 | **PI loop** | Proportional + integral control: reacts to the error now (P) and to the error built up over time (I). |
 | **Gain** | A multiplier in the loop: how strongly it reacts (`kp_*` to the error now, `ki_*` to the error built up). |
-| **Anti-windup** | The integrator stops growing while the output is already at its limit. |
+| **Anti-windup** | The integrator stops growing while the output is already at its limit (for the throttle: the final value, after the tilt correction). |
+| **Applied** | The setpoint reaches the vehicle: `/flight/state` is fresh and says control is possible. Only then do the integrators run. |
+| **Integral term** | The I part of the output, `ki` × the integral of the error; stored as such, so a `ki` change does not jump the output. |
 | **Attitude setpoint** | Roll, pitch, yaw rate and throttle that the drone should hold. |
 | **Hover throttle** | The throttle (0–1) that holds the drone level in the air; 0.0 means not measured. |
 | **Measured velocity** | The velocity the drone really has, from an estimator (PX4 in SITL, #200 on the drone). |

@@ -3,7 +3,7 @@ title: Architecture Document (Module 1)
 type: architecture
 status: active
 date: 2026-11-02
-updated: 2026-11-24
+updated: 2026-11-27
 project: SEA autonomous drone
 tags:
   - architecture
@@ -86,7 +86,7 @@ flowchart LR
 | `gesture_node` | webcam | `/gesture/raw` (`String`, JSON), or UDP to `intent_node` | per frame, with keep-alive; MediaPipe Holistic 14.5 FPS measured 2026-10-27 | in `dev`, CI + Docker |
 | `intent_node` | `/gesture/raw` or UDP `:5005` (parameter `input_source`) | `/gesture/intent` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`, CI + Docker |
 | `mission_node` | `/gesture/intent`, `/flight/state` | `/mission/velocity_target` (`TwistStamped`, `frame_id: base_link`), `/mission/state` (`String`) | 20 Hz (`publish_rate_hz`) | in `dev`. Demo mode: `fake_flight_state` feeds `/flight/state`. Real mode: `ground_bringup` `real.launch.py` (`make real`) starts `flight_interface` with `backend: esp` and `mask: 8` (`config/real.yaml`), which publishes the real `/flight/state` |
-| `controller_node` | `/mission/velocity_target`, `/estimate/velocity` (`TwistStamped`, body FLU) | `/control/attitude_setpoint` (`String`, JSON: `roll`, `pitch` deg, `yaw_rate` °/s, `throttle` 0–1, `active`, `reason`) | 50 Hz (`rate_hz`), active or not | in `dev` (#199). Flies only with a measured velocity: in the simulation from the `px4` backend; on the drone none until #200, so it sends `active` false. [[07 Controller Node]] |
+| `controller_node` | `/mission/velocity_target`, `/estimate/velocity` (`TwistStamped`, body FLU); `/flight/state` (its integrators run only while that says the output is applied, ADR-025 F10 note 2026-11-27) | `/control/attitude_setpoint` (`String`, JSON: `roll`, `pitch` deg, `yaw_rate` °/s, `throttle` 0–1, `active`, `reason`) | 50 Hz (`rate_hz`), active or not | in `dev` (#199). Flies only with a measured velocity: in the simulation from the `px4` backend; on the drone none until #200, so it sends `active` false. [[07 Controller Node]] |
 | `fake_flight_state` (test helper in `mission_node`) | – | `/flight/state` (`String`, JSON: `link_ok`, `esp_state`, `override_active`, `mask`, `airborne`) | 10 Hz (`rate_hz`) | in `dev`, stands in for `flight_interface` in `ground_bringup`'s `demo.launch.py` (`make`) and `mission_node`'s `mission_demo.launch.py` (no ESP needed) |
 | `fc_telemetry` (`flight_interface` package) | FC over MSP, read-only: USB (`transport:=usb`) or the ESP transparent bridge (`transport:=udp`, UDP 5760) | `/fc/attitude` (`Vector3Stamped`), `/fc/battery` (`BatteryState`) | 20 Hz (`attitude_hz`), 5 Hz (`battery_hz`) | in `dev` (#96, PR #169), CI `ground-ros2`; bench-tested 2026-11-06. A bench tool now: UDP 5760 needs the `esp_bridge` firmware, and with the gateway `flight_interface` publishes these topics |
 | `flight_interface` lifecycle node (`flight_interface` package) | `/control/attitude_setpoint` (`String`, JSON, from `controller_node`) | `/flight/state` (JSON as above, plus the fields below); `/fc/attitude`, `/fc/battery` from `STATE` (ESP backend, `publish_fc`); services `~/estop`, `~/reset_estop`, `~/resume`, `~/arm_control` (`std_srvs/Trigger`) | setpoints 50 Hz (`rate_hz`), state 10 Hz (`state_rate_hz`) | in `dev` (#103, PR #187): `loopback` and `esp` backends; the `esp` backend sends every setpoint as mode 0 (neutral) for now. The `px4` backend (simulation only, #199) flies PX4 SITL and also publishes `/estimate/velocity`. Details below and in [[ADR-025 flight_interface Ground Node\|ADR-025]] |
