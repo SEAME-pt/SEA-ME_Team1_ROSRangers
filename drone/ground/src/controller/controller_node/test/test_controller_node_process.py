@@ -35,7 +35,7 @@ except ImportError:
     rclpy = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 98
+TEST_DOMAIN_ID = 80
 PACKAGE = Path(__file__).resolve().parents[1]
 
 

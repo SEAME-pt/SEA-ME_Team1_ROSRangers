@@ -3,12 +3,14 @@
 Run with:  python3 -m pytest test -q        (from the package folder)
 """
 
+import json
 import math
 import unittest
 
 from controller_node.controller_logic import (
     CEILING_LINEAR_MPS,
     CEILING_YAW_DPS,
+    FLIGHT_STATE_TIMEOUT,
     GRAVITY,
     MAX_DT,
     MAX_INPUT_TIMEOUT,
@@ -19,7 +21,9 @@ from controller_node.controller_logic import (
     Controller,
     Gains,
     Params,
+    applied_from_state,
     clamp_target,
+    tilted_throttle,
 )
 
 DT = 0.02  # 50 Hz, flight_interface's rate
@@ -28,21 +32,42 @@ BAND = 0.15
 CAP = 15.0
 
 
+# /flight/state while the output reaches the vehicle (flight_interface ACTIVE,
+# STREAMING, override on): the integrators run.
+APPLIED = {
+    "link_ok": True,
+    "esp_state": "STREAMING",
+    "override_active": True,
+    "mask": 15,
+    "active": True,
+    "estop": False,
+}
+
+
+def state(**changes):
+    values = dict(APPLIED)
+    values.update(changes)
+    return json.dumps(values)
+
+
 def make(mask=15, gains=None, **kwargs):
     if gains is None:
         gains = Gains()
     return Controller(Params(hover_throttle=HOVER, mask=mask, gains=gains, **kwargs))
 
 
-def run(controller, target, measured, seconds, start=0.0):
-    """Feed the same target and measured velocity every tick; return the last
-    output and the time after the run."""
+def run(controller, target, measured, seconds, start=0.0, flight=None):
+    """Feed the same target, measured velocity and /flight/state (applied by
+    default) every tick; return the last output and the time after the run."""
+    if flight is None:
+        flight = state()
     now = start
     out = None
     ticks = round(seconds / DT)
     for _ in range(ticks):
         controller.on_target(*target, now)
         controller.on_velocity(*measured, now)
+        controller.on_flight_state(flight, now)
         out = controller.step(now)
         now = now + DT
     return out, now
@@ -172,10 +197,12 @@ class TestIntegrator(unittest.TestCase):
         controller = make(gains=Gains(kp_xy=0.0, ki_xy=1.0, kp_z=0.0, ki_z=0.0))
         controller.on_target(0.5, 0.0, 0.0, 0.0, 0.0)
         controller.on_velocity(0.0, 0.0, 0.0, 0.0)
+        controller.on_flight_state(state(), 0.0)
         controller.step(0.0)
         later = 0.0 + MAX_DT + 0.05
         controller.on_target(0.5, 0.0, 0.0, 0.0, later)
         controller.on_velocity(0.0, 0.0, 0.0, later)
+        controller.on_flight_state(state(), later)
         self.assertEqual(controller.step(later)["pitch"], 0.0)
 
     def test_first_step_does_not_integrate(self):
@@ -190,7 +217,121 @@ class TestIntegrator(unittest.TestCase):
         controller.step(now + 0.5)
         controller.on_target(0.5, 0.0, 0.0, 0.0, now + 0.5)
         controller.on_velocity(0.0, 0.0, 0.0, now + 0.5)
+        controller.on_flight_state(state(), now + 0.5)
         self.assertEqual(controller.step(now + 0.5)["pitch"], 0.0)
+
+
+class TestNotApplied(unittest.TestCase):
+    """PR #253 review (Dot99 #1): no integration while the output does not
+    reach the vehicle, so the first applied step has no wound-up term."""
+
+    def test_pilot_flying_then_takeover_has_no_windup(self):
+        # The pilot flies 0.3 m/s forward with override off for 120 s, target 0.
+        controller = make()
+        off = state(override_active=False)
+        out, now = run(
+            controller, (0.0, 0.0, 0.0, 0.0), (0.3, 0.0, 0.0), 120.0, flight=off
+        )
+        self.assertTrue(out["active"])  # F10: still active, only not applied
+        self.assertEqual(controller._x.term, 0.0)
+        # Takeover at zero velocity: no tilt from the past.
+        out, _ = run(controller, (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), DT, now)
+        self.assertEqual(out["pitch"], 0.0)
+
+    def test_first_applied_step_has_no_old_term(self):
+        # 2 s not applied with an error, then applied: kp * error plus only
+        # this step's ki * error * dt.
+        controller = make()
+        error = 0.2
+        off = state(esp_state="SESSION_IDLE")
+        _, now = run(
+            controller, (error, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 2.0, flight=off
+        )
+        out, _ = run(controller, (error, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), DT, now)
+        gains = Gains()
+        accel = gains.kp_xy * error + gains.ki_xy * error * DT
+        expected = math.degrees(math.atan(accel / GRAVITY))
+        self.assertAlmostEqual(out["pitch"], expected)
+
+    def test_every_not_applied_state_clears(self):
+        cases = {
+            "link down / inactive / E-stop": state(link_ok=False),
+            "not streaming": state(esp_state="LINK_FAILSAFE"),
+            "override off": state(override_active=False),
+            "no mask": state(mask=None),
+            "unknown mask": state(mask=7),
+            "not JSON": "not json",
+            "a JSON list": "[1, 2]",
+        }
+        for name, flight in cases.items():
+            with self.subTest(case=name):
+                controller = make()
+                run(controller, (0.3, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 1.0)
+                self.assertGreater(controller._x.term, 0.0)
+                run(controller, (0.3, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), DT, 1.0, flight)
+                self.assertEqual(controller._x.term, 0.0)
+
+    def test_no_flight_state_yet_is_not_applied(self):
+        controller = make()
+        for tick in range(50):
+            now = tick * DT
+            controller.on_target(0.3, 0.0, 0.0, 0.0, now)
+            controller.on_velocity(0.0, 0.0, 0.0, now)
+            self.assertTrue(controller.step(now)["active"])
+        self.assertEqual(controller._x.term, 0.0)
+
+    def test_stale_flight_state_is_not_applied(self):
+        controller = make()
+        controller.on_flight_state(state(), 0.0)
+        self.assertTrue(controller.output_applied(FLIGHT_STATE_TIMEOUT))
+        self.assertFalse(controller.output_applied(FLIGHT_STATE_TIMEOUT + 0.01))
+
+    def test_bad_state_text_is_reported(self):
+        controller = make()
+        self.assertTrue(controller.on_flight_state(state(), 0.0))
+        self.assertFalse(controller.on_flight_state("{", 0.0))
+        self.assertFalse(controller.on_flight_state(None, 0.0))
+
+    def test_applied_from_state(self):
+        self.assertTrue(applied_from_state(APPLIED))
+        self.assertFalse(applied_from_state(None))
+        self.assertFalse(applied_from_state(dict(APPLIED, mask=True)))
+        self.assertFalse(applied_from_state(dict(APPLIED, override_active="yes")))
+
+
+class TestThrottleWindup(unittest.TestCase):
+    """Thiago (PR #253): the z anti-windup looks at the final throttle,
+    after the tilt correction and the band."""
+
+    def test_tilted_throttle_example(self):
+        # The docstring's example: hover 0.70, band 0.15, correction 0.12
+        throttle, high, low = tilted_throttle(
+            0.12, 0.70, 0.15, math.cos(math.radians(10.0))
+        )
+        self.assertAlmostEqual(throttle, 0.82 / math.cos(math.radians(10.0)))
+        self.assertFalse(high or low)
+        throttle, high, _ = tilted_throttle(
+            0.12, 0.70, 0.15, math.cos(math.radians(20.0))
+        )
+        self.assertAlmostEqual(throttle, 0.85)
+        self.assertTrue(high)
+
+    def test_no_windup_while_tilt_clamps_the_throttle(self):
+        # Full tilt forward (15 deg, big horizontal error) and a climb error.
+        # The top of the band (0.85) is reached once (0.70 + c) / cos(15 deg)
+        # >= 0.85, i.e. c >= 0.85 * 0.966 - 0.70 = 0.121, while c is still
+        # inside the band (0.15). The term must stop there, not at 0.15.
+        gains = Gains(kp_xy=100.0, ki_xy=0.0, kp_z=0.05, ki_z=1.0)
+        controller = make(gains=gains)
+        out, now = run(controller, (0.5, 0.0, 0.2, 0.0), (-5.0, 0.0, 0.0), 3.0)
+        self.assertAlmostEqual(out["throttle"], HOVER + BAND)
+        stuck = controller._z.term
+        run(controller, (0.5, 0.0, 0.2, 0.0), (-5.0, 0.0, 0.0), 5.0, now)
+        self.assertEqual(controller._z.term, stuck)
+        needed = (HOVER + BAND) * math.cos(math.radians(CAP)) - HOVER
+        kp_part = gains.kp_z * 0.2
+        step_max = gains.ki_z * 0.2 * DT  # one step may overshoot by this
+        self.assertLessEqual(kp_part + stuck, needed + step_max)
 
 
 class TestFreshness(unittest.TestCase):
@@ -273,7 +414,7 @@ class TestHoverNotMeasured(unittest.TestCase):
         out, _ = run(controller, (0.5, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 0.5)
         self.assertFalse(out["active"])
         self.assertEqual(out["reason"], NO_HOVER_THROTTLE)
-        self.assertEqual(controller._x.integral, 0.0)
+        self.assertEqual(controller._x.term, 0.0)
 
     def test_checked_before_the_velocity(self):
         controller = Controller(Params(hover_throttle=0.0, mask=8))
@@ -296,9 +437,9 @@ class TestMask(unittest.TestCase):
     def test_unowned_integrators_stay_zero(self):
         controller = make(mask=8)
         run(controller, (0.5, 0.5, 0.5, 0.0), (0.0, 0.0, 0.0), 1.0)
-        self.assertEqual(controller._x.integral, 0.0)
-        self.assertEqual(controller._y.integral, 0.0)
-        self.assertEqual(controller._z.integral, 0.0)
+        self.assertEqual(controller._x.term, 0.0)
+        self.assertEqual(controller._y.term, 0.0)
+        self.assertEqual(controller._z.term, 0.0)
 
 
 class TestParams(unittest.TestCase):
@@ -355,10 +496,32 @@ class RetuneTests(unittest.TestCase):
     def test_integrators_are_kept(self):
         controller = make()
         run(controller, (0.0, 0.0, 0.2, 0.0), (0.0, 0.0, 0.0), 1.0)
-        integral = controller._z.integral
-        self.assertGreater(integral, 0.0)
+        term = controller._z.term
+        self.assertGreater(term, 0.0)
         controller.retune(Params(hover_throttle=HOVER, mask=15, gains=Gains(kp_z=0.4)))
-        self.assertEqual(controller._z.integral, integral)
+        self.assertEqual(controller._z.term, term)
+
+    def test_ki_from_0_does_not_jump(self):
+        # Thiago B: ki 0 for 60 s with 0.1 m/s of error, then ki 0.2. With a
+        # bare integral this gave 6.97 deg at zero error; now nothing.
+        controller = make(gains=P_ONLY)
+        _, now = run(controller, (0.1, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 60.0)
+        self.assertEqual(controller._x.term, 0.0)
+        controller.retune(Params(hover_throttle=HOVER, mask=15, gains=Gains()))
+        out, _ = run(controller, (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), DT, now)
+        self.assertEqual(out["pitch"], 0.0)
+
+    def test_ki_change_keeps_the_output(self):
+        # ki 0.2 -> 1.0: the next output (same error, no time passed for the
+        # new ki to act on) moves only by this step's ki * error * dt.
+        controller = make()
+        _, now = run(controller, (0.1, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 5.0)
+        term = controller._x.term
+        self.assertGreater(term, 0.0)
+        controller.retune(Params(hover_throttle=HOVER, mask=15, gains=Gains(ki_xy=1.0)))
+        out, _ = run(controller, (0.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0), DT, now)
+        # zero error now: the output is the kept term alone
+        self.assertAlmostEqual(out["pitch"], math.degrees(math.atan(term / GRAVITY)))
 
     def test_bad_value_changes_nothing(self):
         controller = make()

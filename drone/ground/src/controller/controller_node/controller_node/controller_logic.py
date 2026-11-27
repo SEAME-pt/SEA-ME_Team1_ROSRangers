@@ -28,18 +28,27 @@ Rules (ADR-025 §2.4):
   * Only the axes in the override mask are commanded (8 yaw, 11 + roll and
     pitch, 15 + throttle). The others are output as level / hover throttle and
     their integrators stay at zero (the px4 backend fills them, F2).
+  * The integrators run only while the output is applied: the last
+    /flight/state from flight_interface is fresh and says control is possible
+    (ADR-025 note 2026-11-27, PR #253 review). Otherwise they are cleared and
+    the output is P only, still `active` (F10), so nothing winds up while the
+    pilot or PX4 flies and the first applied step starts from zero.
 
 Loops, one per axis, PI on the velocity error (no D term: the derivative of a
 velocity is an acceleration, which is noisy):
   * Horizontal: error (m/s) -> wanted acceleration (m/s^2) -> tilt.
   * Vertical: error (m/s) -> throttle correction around the hover throttle.
   * Yaw: the clamped target yaw rate is passed through (C1.3).
-The integrators stop while their output is at its limit and would be pushed
-further (anti-windup), and skip a tick whose time step is not in (0, MAX_DT].
+Each integrator stores its term (ki times the integral of the error), so a
+live ki change keeps the output continuous and ki 0 adds nothing. It stops
+while its output is at its limit and would be pushed further (anti-windup;
+for the throttle, the final value after the tilt correction and the band),
+and skips a tick whose time step is not in (0, MAX_DT].
 
 The clock is passed in as monotonic seconds, so tests need no sleeping.
 """
 
+import json
 import math
 from dataclasses import dataclass, field
 
@@ -72,6 +81,11 @@ MAX_DT = 0.1
 # in the flight_interface guard, so the zero goes out within target_timeout
 # whatever the tick phase (F11, REQ-SAF-017; ADR-025 F11 note 2026-11-26).
 DEFAULT_TICK_PERIOD = 0.02
+
+# /flight/state older than this means "not applied": integrators cleared.
+# flight_interface may publish it at 5 Hz (one every 0.2 s), so 0.5 s is 2.5
+# of its slowest periods (ADR-025 note 2026-11-27).
+FLIGHT_STATE_TIMEOUT = 0.5
 
 # Axes the ground owns per override mask, as in mission_node and the guard.
 MASK_AXES = {
@@ -185,26 +199,73 @@ class Params:
 
 
 class _PiAxis:
-    """PI on one axis with an output limit and anti-windup."""
+    """PI on one axis with anti-windup. `term` is the integral part of the
+    output itself (ki times the integral of the error), not the bare
+    integral: a live ki change then keeps the output where it was, and with
+    ki 0 the term does not grow. Example: error 0.1 m/s for 60 s at ki 0,
+    then ki 0.2: the term is still 0, so no jump (with a bare integral it
+    would be 0.2 * 6.0 = 1.2 m/s^2, about 7 deg of tilt)."""
 
     def __init__(self):
-        self.integral = 0.0
+        self.term = 0.0
 
     def reset(self):
-        self.integral = 0.0
+        self.term = 0.0
+
+    def output(self, error, kp):
+        """kp * error + term, not clamped."""
+        return kp * error + self.term
+
+    def integrate(self, error, ki, dt, at_high, at_low):
+        """Add ki * error * dt to the term, unless dt is not usable or the
+        output is already at its high (low) limit and the error pushes it
+        higher (lower): anti-windup."""
+        dt_ok = dt is not None and 0.0 < dt <= MAX_DT
+        pushing_up = at_high and error > 0.0
+        pushing_down = at_low and error < 0.0
+        if dt_ok and not pushing_up and not pushing_down:
+            self.term = self.term + ki * error * dt
 
     def step(self, error, kp, ki, limit, dt):
-        """Output kp * error + ki * integral, clamped to +-limit. The integral
-        grows by error * dt only when dt is usable and the output is not at
-        its limit in the direction the error pushes (anti-windup)."""
-        output = kp * error + ki * self.integral
-        dt_ok = dt is not None and 0.0 < dt <= MAX_DT
-        pushing_up = output >= limit and error > 0.0
-        pushing_down = output <= -limit and error < 0.0
-        if dt_ok and not pushing_up and not pushing_down:
-            self.integral = self.integral + error * dt
-            output = kp * error + ki * self.integral
-        return _clamp(output, -limit, limit)
+        """Integrate (anti-windup against +-limit), then the output clamped
+        to +-limit."""
+        before = self.output(error, kp)
+        self.integrate(error, ki, dt, before >= limit, before <= -limit)
+        return _clamp(self.output(error, kp), -limit, limit)
+
+
+def tilted_throttle(correction, hover, band, lift_share):
+    """The throttle for a vertical correction while tilted, and whether it
+    is at the top or bottom of the band (for the z anti-windup).
+
+    The correction is kept within +-band, then divided by the share of thrust
+    that lifts, then clamped to hover +- band again (F14). Example: hover 0.70,
+    band 0.15 (top 0.85), correction +0.12 -> 0.82 level. At 10 deg of pitch:
+    0.82 / cos(10 deg) = 0.82 / 0.985 = 0.833, under the top. At 20 deg:
+    0.82 / 0.940 = 0.873, clamped to 0.85 and at the top."""
+    level_throttle = hover + _clamp(correction, -band, band)
+    raw = level_throttle / lift_share
+    high = hover + band
+    low = hover - band
+    return _clamp(raw, low, high), raw >= high, raw <= low
+
+
+def applied_from_state(state):
+    """True if a /flight/state dict says the output reaches the vehicle:
+    link_ok (link fresh, flight_interface ACTIVE, no E-stop, FC link alive),
+    STREAMING, override on and a known mask, the same gate as the guard's
+    control_possible(). In the simulation override_active is "armed and in
+    Offboard"."""
+    if not isinstance(state, dict):
+        return False
+    mask = state.get("mask")
+    known_mask = (
+        isinstance(mask, int) and not isinstance(mask, bool) and mask in MASK_AXES
+    )
+    link_ok = state.get("link_ok") is True
+    streaming = state.get("esp_state") == "STREAMING"
+    override = state.get("override_active") is True
+    return link_ok and streaming and override and known_mask
 
 
 class Controller:
@@ -225,6 +286,8 @@ class Controller:
         self._target_t = None
         self._velocity = (0.0, 0.0, 0.0)
         self._velocity_t = None
+        self._applied = False
+        self._state_t = None
         self._last_step_t = None
         self._x = _PiAxis()
         self._y = _PiAxis()
@@ -239,8 +302,8 @@ class Controller:
         (not measured, F16: always inactive, so flight_interface sends neutral)
         and back to its start value, which pauses the controller (ADR-025 F28
         note, 2026-11-26; make sim-hold's neutral phase uses it). The
-        integrators are kept, so a gain change does not jump the output back
-        to zero."""
+        integrators keep their terms (ki already inside), so a gain change
+        moves the output only by the kp part: no jump from a changed ki."""
         params.validate()
         if params.mask != self.params.mask:
             raise ValueError("mask cannot change while running (restart the node)")
@@ -267,6 +330,17 @@ class Controller:
         self._velocity = (float(vx), float(vy), float(vz))
         self._velocity_t = now
 
+    def on_flight_state(self, data, now):
+        """The JSON text of /flight/state. Returns False (and counts as not
+        applied) if it is not a JSON object."""
+        try:
+            state = json.loads(data)
+        except (TypeError, ValueError):
+            state = None
+        self._state_t = now
+        self._applied = applied_from_state(state)
+        return isinstance(state, dict)
+
     # ---------- freshness ----------
     @staticmethod
     def _fresh(t, now, limit):
@@ -279,6 +353,11 @@ class Controller:
 
     def velocity_fresh(self, now):
         return self._fresh(self._velocity_t, now, self.params.velocity_timeout)
+
+    def output_applied(self, now):
+        """The last /flight/state is fresh and says control is possible."""
+        fresh = self._fresh(self._state_t, now, FLIGHT_STATE_TIMEOUT)
+        return fresh and self._applied
 
     # ---------- output ----------
     def neutral(self, reason):
@@ -322,6 +401,12 @@ class Controller:
             self._reset()
             return self.neutral(reason)
 
+        # Output not applied (override off, not in Offboard, flight_interface
+        # not active or in E-stop): no integration, integrators cleared.
+        if not self.output_applied(now):
+            self._reset()
+            dt = None
+
         if self.target_fresh(now):
             target_x, target_y, target_z, target_wz = self._target
         else:
@@ -359,17 +444,18 @@ class Controller:
         # only cos(roll) * cos(pitch) of the thrust lifts, so the level value
         # is divided by it. Example: hover 0.70 at 10 deg of pitch ->
         # 0.70 / cos(10 deg) = 0.70 / 0.985 = 0.711. The result is clamped
-        # to the band again (F14).
+        # to the band again (F14). Anti-windup looks at that final throttle.
         hover = params.hover_throttle
         band = params.throttle_band
         throttle = hover
         if "z" in self.owned:
             error_z = target_z - measured_z
-            correction = self._z.step(error_z, gains.kp_z, gains.ki_z, band, dt)
-            level_throttle = hover + correction
             lift_share = math.cos(roll) * math.cos(pitch)
-            tilted_throttle = level_throttle / lift_share
-            throttle = _clamp(tilted_throttle, hover - band, hover + band)
+            before = self._z.output(error_z, gains.kp_z)
+            _, at_high, at_low = tilted_throttle(before, hover, band, lift_share)
+            self._z.integrate(error_z, gains.ki_z, dt, at_high, at_low)
+            correction = self._z.output(error_z, gains.kp_z)
+            throttle, _, _ = tilted_throttle(correction, hover, band, lift_share)
         else:
             self._z.reset()
 

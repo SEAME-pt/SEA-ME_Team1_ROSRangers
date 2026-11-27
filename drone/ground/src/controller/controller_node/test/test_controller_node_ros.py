@@ -1,8 +1,8 @@
 """ROS 2 tests for controller_node: real node, real topics, no drone.
 
 Starts ControllerNode next to a probe node that plays mission_node (on
-/mission/velocity_target) and the velocity estimate (on /estimate/velocity)
-and records /control/attitude_setpoint. The control law itself is checked
+/mission/velocity_target), the velocity estimate (on /estimate/velocity) and
+flight_interface's /flight/state, and records /control/attitude_setpoint. The control law itself is checked
 with a fake clock in test_controller_logic.py.
 
 Needs ROS 2 Jazzy sourced. Without rclpy the tests are skipped, unless
@@ -31,9 +31,16 @@ except ImportError:
     rclpy = None
 
 # Own ROS domain (one per test file, `grep -r TEST_DOMAIN_ID` lists them).
-TEST_DOMAIN_ID = 86
+TEST_DOMAIN_ID = 66
 KEYS = {"roll", "pitch", "yaw_rate", "throttle", "active", "reason"}
 HOVER = 0.7
+# flight_interface's /flight/state while the output is applied
+APPLIED = {
+    "link_ok": True,
+    "esp_state": "STREAMING",
+    "override_active": True,
+    "mask": 15,
+}
 
 
 def overrides(params):
@@ -60,6 +67,7 @@ class ControllerNodeTests(unittest.TestCase):
         self.velocity_pub = self.probe.create_publisher(
             TwistStamped, "/estimate/velocity", 10
         )
+        self.state_pub = self.probe.create_publisher(String, "/flight/state", 10)
         self.received = []
         self.probe.create_subscription(
             String,
@@ -81,9 +89,9 @@ class ControllerNodeTests(unittest.TestCase):
     def start(self, **params):
         return self.add(ControllerNode(parameter_overrides=overrides(params)))
 
-    def spin(self, seconds, target=None, velocity=None):
+    def spin(self, seconds, target=None, velocity=None, flight=None):
         """Spin for `seconds`, publishing the target and the measured velocity
-        (vx, vy, vz[, wz]) at 50 Hz when given."""
+        (vx, vy, vz[, wz]) and the /flight/state dict at 50 Hz when given."""
         end = time.monotonic() + seconds
         next_pub = 0.0
         while time.monotonic() < end:
@@ -102,6 +110,8 @@ class ControllerNodeTests(unittest.TestCase):
                     if len(values) > 3:
                         msg.twist.angular.z = float(values[3])
                     pub.publish(msg)
+                if flight is not None:
+                    self.state_pub.publish(String(data=json.dumps(flight)))
                 next_pub = now + 0.02
             self.executor.spin_once(timeout_sec=0.005)
 
@@ -136,6 +146,18 @@ class ControllerNodeTests(unittest.TestCase):
         self.assertEqual(last["reason"], "ok")
         self.assertGreater(last["pitch"], 0.0)  # forward: nose down (REP-103)
 
+    def test_reads_the_flight_state(self):
+        # PR #253 review: integrators run only while /flight/state says the
+        # output is applied; otherwise they stay cleared.
+        node = self.start(mask=15, hover_throttle=HOVER)
+        moving = {"target": (0.3, 0.0, 0.0), "velocity": (0.0, 0.0, 0.0)}
+        self.spin(1.0, flight=dict(APPLIED, override_active=False), **moving)
+        self.assertTrue(self.received[-1][1]["active"])
+        self.assertEqual(node._logic._x.term, 0.0)
+        self.spin(1.0, flight=APPLIED, **moving)
+        self.assertTrue(node._logic.output_applied(time.monotonic()))
+        self.assertGreater(node._logic._x.term, 0.0)
+
     def test_velocity_stops_then_inactive(self):
         self.start(mask=15, hover_throttle=HOVER)
         self.spin(0.8, target=(0.0, 0.0, 0.0), velocity=(0.0, 0.0, 0.0))
@@ -153,20 +175,17 @@ class ControllerNodeTests(unittest.TestCase):
         self.assertFalse(stopped[0]["active"])
 
     def test_stop_output_waits_for_the_last_setpoint_to_arrive(self):
-        # The node is destroyed right after stop_output: it must wait for the
-        # subscribers' acks, or the final "stopped" can be lost (PR #253 CI)
+        # The node is destroyed right after stop_output, as on SIGTERM: the
+        # final "stopped" must still reach the subscriber (PR #253 CI).
         node = self.start(mask=15, hover_throttle=HOVER)
-        waits = []
-        real_wait = node._pub.wait_for_all_acked
-
-        def recording_wait(timeout):
-            waits.append(timeout)
-            return real_wait(timeout)
-
-        node._pub.wait_for_all_acked = recording_wait
+        self.spin(0.5)  # discovery
         node.stop_output()
-        self.assertEqual(len(waits), 1)
-        self.assertAlmostEqual(waits[0].nanoseconds / 1e9, 0.5)
+        self.executor.remove_node(node)
+        self.nodes.remove(node)
+        node.destroy_node()
+        self.spin(0.3)
+        stopped = [m for _, m in self.received if m["reason"] == "stopped"]
+        self.assertEqual(len(stopped), 1)
 
     def test_bad_parameters_refused(self):
         bad = (
@@ -175,12 +194,34 @@ class ControllerNodeTests(unittest.TestCase):
             {"tilt_cap_deg": 20.0},
             {"kp_xy": "fast"},
             {"rate_hz": 0.5},
+            {"rate_hz": 5.0},  # tick 0.2 s > MAX_DT: refused as rate_hz
+            {"rate_hz": 9.99},
+            {"rate_hz": 101.0},
             {"hover_throttle": True},
         )
-        for params in bad:
-            with self.subTest(params=params):
-                with self.assertRaises(ValueError):
-                    ControllerNode(parameter_overrides=overrides(params))
+        created = []
+
+        class Recording(ControllerNode):
+            def __init__(self, **kwargs):
+                created.append(self)
+                super().__init__(**kwargs)
+
+        try:
+            for params in bad:
+                with self.subTest(params=params):
+                    with self.assertRaises(ValueError) as caught:
+                        Recording(parameter_overrides=overrides(params))
+                    if "rate_hz" in params:
+                        self.assertIn("rate_hz", str(caught.exception))
+        finally:
+            # The half-built nodes exist in ROS: destroy them.
+            for node in created:
+                node.destroy_node()
+
+    def test_rate_hz_range_edges_accepted(self):
+        for rate in (10.0, 100.0):
+            with self.subTest(rate_hz=rate):
+                self.start(rate_hz=rate)
 
     # ---------- live tuning ----------
     def test_live_gain_change(self):

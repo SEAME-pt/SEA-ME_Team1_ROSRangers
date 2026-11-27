@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """controller_node (#199): /mission/velocity_target + /estimate/velocity ->
 /control/attitude_setpoint. The control law is in controller_logic.py.
+It also reads /flight/state (flight_interface): while that is stale or says
+control is not possible, the integrators are cleared (nothing winds up while
+the output is not applied; ADR-025 note 2026-11-27).
 
 Single-threaded: one timer runs the logic and publishes, the subscriptions
 only store the latest message. No threads, no locks.
@@ -39,6 +42,7 @@ from std_msgs.msg import String
 
 from controller_node.controller_logic import (
     HOVER_NOT_MEASURED,
+    MAX_DT,
     MAX_INPUT_TIMEOUT,
     MAX_THROTTLE_BAND,
     MAX_TILT_CAP_DEG,
@@ -89,6 +93,7 @@ class ControllerNode(Node):
 
         self.declare_parameter("target_topic", "/mission/velocity_target")
         self.declare_parameter("velocity_topic", "/estimate/velocity")
+        self.declare_parameter("flight_state_topic", "/flight/state")
         self.declare_parameter("setpoint_topic", "/control/attitude_setpoint")
         self.declare_parameter("mask", 8)  # yaw only, as flight_interface; F15
         # Dynamic typing lets an integer through; number() checks the type.
@@ -105,9 +110,14 @@ class ControllerNode(Node):
                 raise ValueError(f"Parameter {name} must be a number, got {value!r}")
             return float(value)
 
+        # rate_hz from 1 / MAX_DT (10 Hz: the logic integrates no step longer
+        # than 0.1 s) to 100 Hz
         rate = number("rate_hz")
-        if not 1.0 <= rate <= 100.0:
-            raise ValueError(f"Parameter rate_hz must be in [1, 100], got {rate}")
+        min_rate = 1.0 / MAX_DT
+        if not min_rate <= rate <= 100.0:
+            raise ValueError(
+                f"Parameter rate_hz must be in [{min_rate:.0f}, 100], got {rate}"
+            )
         gains = Gains(
             kp_xy=number("kp_xy"),
             ki_xy=number("ki_xy"),
@@ -131,18 +141,22 @@ class ControllerNode(Node):
         target_topic = str(param("target_topic"))
         velocity_topic = str(param("velocity_topic"))
         setpoint_topic = str(param("setpoint_topic"))
+        flight_state_topic = str(param("flight_state_topic"))
         self.create_subscription(TwistStamped, target_topic, self._on_target, 10)
         self.create_subscription(TwistStamped, velocity_topic, self._on_velocity, 10)
+        self.create_subscription(String, flight_state_topic, self._on_flight_state, 10)
         self._pub = self.create_publisher(String, setpoint_topic, 10)
 
         self._target_window = 0
         self._velocity_window = 0
+        self._state_window = 0
         self._last_reason = None
         self.create_timer(1.0 / rate, self._tick)
         self.create_timer(HEALTH_REPORT_SEC, self._report_health)
 
         self.get_logger().info(
-            f"Reading {target_topic} and {velocity_topic}; publishing "
+            f"Reading {target_topic}, {velocity_topic} and {flight_state_topic}; "
+            f"publishing "
             f"{setpoint_topic} at {rate:.0f} Hz; mask {params.mask}, hover "
             f"throttle {params.hover_throttle}"
         )
@@ -195,6 +209,15 @@ class ControllerNode(Node):
         t = msg.twist
         self._logic.on_velocity(t.linear.x, t.linear.y, t.linear.z, time.monotonic())
 
+    def _on_flight_state(self, msg):
+        self._state_window += 1
+        if not self._logic.on_flight_state(msg.data, time.monotonic()):
+            self.get_logger().warning(
+                f"Bad /flight/state (not a JSON object), counted as not applied: "
+                f"{msg.data!r}",
+                throttle_duration_sec=2.0,
+            )
+
     # ---------- tick ----------
     def _publish(self, setpoint):
         msg = String()
@@ -211,9 +234,9 @@ class ControllerNode(Node):
 
     def _report_health(self):
         text = (
-            f"Health: {self._target_window} targets and {self._velocity_window} "
-            f"measured velocities in the last {HEALTH_REPORT_SEC:.0f} s; "
-            f"reason {self._last_reason}"
+            f"Health: {self._target_window} targets, {self._velocity_window} "
+            f"measured velocities and {self._state_window} flight states in the "
+            f"last {HEALTH_REPORT_SEC:.0f} s; reason {self._last_reason}"
         )
         if self._target_window == 0 or self._velocity_window == 0:
             self.get_logger().warning(text)
@@ -221,6 +244,7 @@ class ControllerNode(Node):
             self.get_logger().info(text)
         self._target_window = 0
         self._velocity_window = 0
+        self._state_window = 0
 
     def stop_output(self):
         """Publish one inactive setpoint on the way out (F8), so nobody keeps
